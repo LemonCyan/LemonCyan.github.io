@@ -6928,7 +6928,7 @@ docker load &lt; mysql_image.tar
 <li>配置 CAN 的消息报文；</li>
 </ol>
 <h2 id="内核"><a href="#内核" class="headerlink" title="内核"></a>内核</h2><p>Linux 中有对 CAN（Controller Area Network）总线的支持，主要通过 SocketCAN 子系统实现。内核编译时选择响应的支持芯片。</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">$ make linux-menuconfig</span><br><span class="line">Networking support ---&gt;</span><br><span class="line">CAN bus subsystem support ---&gt;</span><br><span class="line">--- CAN bus subsystem support</span><br><span class="line">Raw CAN Protocol (raw access with CAN-ID filtering)</span><br><span class="line">Broadcast Manager CAN Protocol (with content filtering)</span><br><span class="line">CAN Device Drivers ---&gt;</span><br><span class="line">Virtual Local CAN Interface (vcan)</span><br><span class="line">Platform CAN drivers with Netlink support</span><br><span class="line">[*] CAN bit-timing calculation</span><br><span class="line">Microchip 251x series SPI CAN Controller</span><br></pre></td></tr></table></figure>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">$ make linux-menuconfig</span><br><span class="line">Networking support ---&gt;</span><br><span class="line">CAN bus subsystem support ---&gt;</span><br><span class="line">--- <span class="function">CAN bus subsystem support</span></span><br><span class="line"><span class="function">Raw CAN <span class="title">Protocol</span> <span class="params">(raw access with CAN-ID filtering)</span></span></span><br><span class="line"><span class="function">Broadcast Manager CAN <span class="title">Protocol</span> <span class="params">(with content filtering)</span></span></span><br><span class="line"><span class="function">CAN Device Drivers ---&gt;</span></span><br><span class="line"><span class="function">Virtual Local CAN <span class="title">Interface</span> <span class="params">(vcan)</span></span></span><br><span class="line"><span class="function">Platform CAN drivers with Netlink support</span></span><br><span class="line"><span class="function">[*] CAN bit-timing calculation</span></span><br><span class="line"><span class="function">Microchip 251x series SPI CAN Controller</span></span><br></pre></td></tr></table></figure>
 
 <p>SocketCAN 支持多种 CAN 控制器硬件，通过不同的内核驱动程序实现对具体硬件的支持。例如，以下是一些常见的 CAN 控制器驱动程序：</p>
 <ul>
@@ -6988,6 +6988,17 @@ docker load &lt; mysql_image.tar
 <li>用户在主界面设置需要发送的报文为 OBJ 结构体数组，然后通过构造函数的方式传到发送线程，最后发送就行了。</li>
 <li>解析过程：接收函数循环接收报文，每接收到 n 帧就发送到解析线程，然后根据 ID 解析，将解析数据发送主界面显示（不要 append）</li>
 </ul>
+<h1 id="CAN-波特率及负载计算"><a href="#CAN-波特率及负载计算" class="headerlink" title="CAN 波特率及负载计算"></a>CAN 波特率及负载计算</h1><p>在 CAN 总线上，发送一帧数据所需的时间可以通过帧的总位数和波特率来计算。一个 CAN 数据帧的结构如下：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">起始位：<span class="number">1</span>位</span><br><span class="line">仲裁字段：<span class="number">11</span>位（标准帧）或<span class="number">29</span>位（扩展帧）</span><br><span class="line">控制字段：<span class="number">6</span>位</span><br><span class="line">数据字段：<span class="number">0</span>到<span class="number">8</span>字节（每字节<span class="number">8</span>位）</span><br><span class="line">CRC字段：<span class="number">15</span>位+<span class="number">1</span>位CRC界定符</span><br><span class="line">ACK字段：<span class="number">2</span>位（<span class="number">1</span>位ACK位和<span class="number">1</span>位ACK界定符）</span><br><span class="line">结束字段：<span class="number">7</span>位</span><br></pre></td></tr></table></figure>
+
+<p>对于一个标准帧，假设我们发送 8 字节的数据（最大数据长度），总位数：1 + 11 + 6 + 64 + 16 + 2 + 7 &#x3D; 107 位。对于 500kbps 的波特率：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">发送时间 = 总位数 / 波特率</span><br><span class="line">= <span class="number">107</span> 位 / <span class="number">500</span>,<span class="number">000</span> 位/秒</span><br><span class="line">= <span class="number">214</span> 微秒</span><br></pre></td></tr></table></figure>
+
+<p>CAN 总线负载是总线实际使用的带宽与总带宽的比值，通常表示为百分比。</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">总线负载=((总帧时间×每秒发送的帧数)/总可用时间)×<span class="number">100</span>%</span><br><span class="line">总帧时间：一帧数据的发送时间</span><br><span class="line">每秒发送的帧数：一秒钟内发送的帧数</span><br><span class="line">总可用时间：每秒可用的时间，即 <span class="number">1</span> 秒</span><br></pre></td></tr></table></figure>
+
+<p>假设每秒发送 1000 帧数据：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">总帧时间：<span class="number">214</span> 微秒 = <span class="number">214</span> \times <span class="number">10</span>^&#123;<span class="number">-6</span>&#125;秒</span><br><span class="line">每秒发送的帧数：<span class="number">1000</span> 帧</span><br><span class="line">总可用时间：<span class="number">1</span> 秒</span><br><span class="line">总线负载=((<span class="number">214</span>×<span class="number">10</span>$−<span class="number">6</span>$ 秒×<span class="number">1000</span> 帧/秒)/<span class="number">1</span> 秒)×<span class="number">100</span>%</span><br><span class="line">总线负载=(<span class="number">0.214</span>)×<span class="number">100</span>%</span><br><span class="line">总线负载=<span class="number">21.4</span>%</span><br></pre></td></tr></table></figure>
 ]]></content>
       <categories>
         <category>通讯协议</category>
@@ -7012,6 +7023,36 @@ docker load &lt; mysql_image.tar
 
 <p>通过 HAL 可以查询到设备为 volume 的设备，然后通过判断是否为&#x2F;dev&#x2F;sd 的设备，就可以判断出是否为 U 盘，然后调用 mount 就可以了。</p>
 <p>这时记录下 U 盘的 UDI，在检测到设备拨出时，再查询一下 U 盘的 UDI 是否还在，就知道 U 盘是否被拨出了。</p>
+]]></content>
+      <categories>
+        <category>通讯协议</category>
+        <category>USB</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>USB权限设置</title>
+    <url>/2024/05/20/%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE-USB-USB%E6%9D%83%E9%99%90%E8%AE%BE%E7%BD%AE/</url>
+    <content><![CDATA[<p>因 Linux 系统下将涉及到 usb 底层驱动的调用，运行时，一定要加 sudo 获取权限运行，否则 USB 设备没有权限操作。 </p>
+<p>现通过创建 UDEV 规则，配置 USB 权限后，可以调用指定设备不加权限运行。</p>
+<p>输入 lsusb，查看当前的 USB 设备的 ID，确定需要配置的 USB。</p>
+<p>创建一个新的 udev 规则。名称取为：99-myusb.rules</p>
+<p><code>sudo vi /etc/udev/rules.d/99-myusb.rules</code></p>
+<p>在 99-myusb.rules 文件中，输入以下内容</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">##</span><br><span class="line">ACTION==&quot;add&quot;,SUBSYSTEMS==&quot;usb&quot;, ATTRS&#123;idVendor&#125;==&quot;04d8&quot;, ATTRS&#123;idProduct&#125;==&quot;0053&quot;, GROUP=&quot;users&quot;, MODE=&quot;0777&quot;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>这条 <code>udev</code> 规则的作用是，当供应商 ID 为 <code>04d8</code> 且产品 ID 为 <code>0053</code> 的 USB 设备插入系统时，将该设备的用户组设置为 <code>users</code>，并赋予所有用户读、写、执行的全部权限。</li>
+</ul>
+<p>插拔一下 USBCAN 设备或重启一下电脑后，即可不加 sudo 权限运行程序了</p>
+<p>对某个特定 USB 设备设置权限。每当这个设备插入系统时，规则会自动应用。</p>
+<ol>
+<li><code>ACTION==&quot;add&quot;</code>：这表示规则在设备添加（插入）时生效。<code>udev</code> 可以根据不同的动作（如添加、移除等）触发规则，<code>add</code> 动作指设备插入时。</li>
+<li><code>SUBSYSTEMS==&quot;usb&quot;</code>：表示规则适用于 USB 子系统的设备。<code>udev</code> 管理系统中的设备，子系统用于分类，USB 是其中一种。</li>
+<li><code>ATTRS&#123;idVendor&#125;==&quot;04d8&quot;</code>：表示设备的供应商 ID（Vendor ID）为 <code>04d8</code>。每个 USB 设备都有唯一的供应商 ID，用于标识设备的制造商。</li>
+<li><code>ATTRS&#123;idProduct&#125;==&quot;0053&quot;</code>：表示设备的产品 ID（Product ID）为 <code>0053</code>。每个供应商的不同产品有不同的产品 ID，用于区分供应商的各个设备。</li>
+<li><code>GROUP=&quot;users&quot;</code>：表示设备的用户组被设置为 <code>users</code>。这决定了哪些用户组的成员有权访问该设备。</li>
+<li><code>MODE=&quot;0777&quot;</code>：表示设备的权限模式被设置为 <code>0777</code>，即所有用户对该设备都有读、写、执行权限。</li>
+</ol>
 ]]></content>
       <categories>
         <category>通讯协议</category>
@@ -7096,36 +7137,6 @@ docker load &lt; mysql_image.tar
       <categories>
         <category>通讯协议</category>
         <category>串口</category>
-      </categories>
-  </entry>
-  <entry>
-    <title>USB权限设置</title>
-    <url>/2024/05/20/%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE-USB-USB%E6%9D%83%E9%99%90%E8%AE%BE%E7%BD%AE/</url>
-    <content><![CDATA[<p>因 Linux 系统下将涉及到 usb 底层驱动的调用，运行时，一定要加 sudo 获取权限运行，否则 USB 设备没有权限操作。 </p>
-<p>现通过创建 UDEV 规则，配置 USB 权限后，可以调用指定设备不加权限运行。</p>
-<p>输入 lsusb，查看当前的 USB 设备的 ID，确定需要配置的 USB。</p>
-<p>创建一个新的 udev 规则。名称取为：99-myusb.rules</p>
-<p><code>sudo vi /etc/udev/rules.d/99-myusb.rules</code></p>
-<p>在 99-myusb.rules 文件中，输入以下内容</p>
-<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">##</span><br><span class="line">ACTION==&quot;add&quot;,SUBSYSTEMS==&quot;usb&quot;, ATTRS&#123;idVendor&#125;==&quot;04d8&quot;, ATTRS&#123;idProduct&#125;==&quot;0053&quot;, GROUP=&quot;users&quot;, MODE=&quot;0777&quot;</span><br></pre></td></tr></table></figure>
-
-<ul>
-<li>这条 <code>udev</code> 规则的作用是，当供应商 ID 为 <code>04d8</code> 且产品 ID 为 <code>0053</code> 的 USB 设备插入系统时，将该设备的用户组设置为 <code>users</code>，并赋予所有用户读、写、执行的全部权限。</li>
-</ul>
-<p>插拔一下 USBCAN 设备或重启一下电脑后，即可不加 sudo 权限运行程序了</p>
-<p>对某个特定 USB 设备设置权限。每当这个设备插入系统时，规则会自动应用。</p>
-<ol>
-<li><code>ACTION==&quot;add&quot;</code>：这表示规则在设备添加（插入）时生效。<code>udev</code> 可以根据不同的动作（如添加、移除等）触发规则，<code>add</code> 动作指设备插入时。</li>
-<li><code>SUBSYSTEMS==&quot;usb&quot;</code>：表示规则适用于 USB 子系统的设备。<code>udev</code> 管理系统中的设备，子系统用于分类，USB 是其中一种。</li>
-<li><code>ATTRS&#123;idVendor&#125;==&quot;04d8&quot;</code>：表示设备的供应商 ID（Vendor ID）为 <code>04d8</code>。每个 USB 设备都有唯一的供应商 ID，用于标识设备的制造商。</li>
-<li><code>ATTRS&#123;idProduct&#125;==&quot;0053&quot;</code>：表示设备的产品 ID（Product ID）为 <code>0053</code>。每个供应商的不同产品有不同的产品 ID，用于区分供应商的各个设备。</li>
-<li><code>GROUP=&quot;users&quot;</code>：表示设备的用户组被设置为 <code>users</code>。这决定了哪些用户组的成员有权访问该设备。</li>
-<li><code>MODE=&quot;0777&quot;</code>：表示设备的权限模式被设置为 <code>0777</code>，即所有用户对该设备都有读、写、执行权限。</li>
-</ol>
-]]></content>
-      <categories>
-        <category>通讯协议</category>
-        <category>USB</category>
       </categories>
   </entry>
   <entry>
