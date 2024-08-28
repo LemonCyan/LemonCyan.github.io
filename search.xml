@@ -396,7 +396,7 @@
 <p>加权限</p>
 <p><code>chmod a+x startShare.sh</code></p>
 <p>添加该脚本到自启中</p>
-<h2 id="启动文件"><a href="#启动文件" class="headerlink" title="启动文件"></a>启动文件</h2><p>另：如果不想每次重启后都挂载一遍的话，建议直接把挂载放入启动文件 首先，备份 <code>/etc/fstab</code> 文件 <code>cp fstab  fstab_bak</code> 其次，编辑 <code>fstab``vim fstab</code> 在最后一句添加</p>
+<h2 id="启动文件"><a href="#启动文件" class="headerlink" title="启动文件"></a>启动文件</h2><p>另：如果不想每次重启后都挂载一遍的话，建议直接把挂载放入启动文件 首先，备份 <code>/etc/fstab</code> 文件 <code>cp fstab  fstab_bak</code> 其次，编辑 <code>fstab</code> <code>vim fstab</code> 在最后添加</p>
 <figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="meta"># mount hgfs</span></span><br><span class="line">.host:/kali_share       /mnt/hgfs        fuse.vmhgfs-fuse       allow_other     <span class="number">0</span>       <span class="number">0</span></span><br></pre></td></tr></table></figure>
 
 <p>然后就能够不用每次重启挂载一遍。</p>
@@ -883,6 +883,42 @@
       </categories>
   </entry>
   <entry>
+    <title>OK3568的文件系统裁剪</title>
+    <url>/2024/08/28/0-%E5%B9%B3%E5%8F%B0-%E5%B5%8C%E5%85%A5%E5%BC%8F-OK3568%E7%9A%84%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F%E8%A3%81%E5%89%AA/</url>
+    <content><![CDATA[<h1 id="0-概述"><a href="#0-概述" class="headerlink" title="0. 概述"></a>0. 概述</h1><p>现阶段在工作过程中使用的是飞凌嵌入式的 OK3568 开发板，需要对文件系统进行针对性裁剪，缩减文件系统大小，现裁剪前官方文件系统大小为 1.28GB，裁剪后文件系统大小为 0.7GB</p>
+<h1 id="1-脚本分析"><a href="#1-脚本分析" class="headerlink" title="1. 脚本分析"></a>1. 脚本分析</h1><p>在官方提供的开发包中，所有的编译过程都是由根目录下的 <code>build.sh</code> 控制的，跟踪该脚本发现编译文件系统的步骤如下：</p>
+<ul>
+<li>执行 <code>build.sh rootfs</code> 通过 buildroot 方式编译文件系统</li>
+<li>执行时，脚本调用其中的 <code>build_rootfs</code> 方法</li>
+<li><code>build_rootfs</code> 方法通过命令行输入参数判断当时用的 <code>yocto</code> 或 <code>debian</code> 或 <code>distro</code> 或 <code>buildroot</code> 的方式编译文件系统，当前我们选择的是 <code>buildroot</code></li>
+<li>调用 <code>build_buildroot</code> 方法，执行 <code>device/rockchip/common</code> 中的 <code>mk-buildroot.sh</code> 脚本</li>
+<li>在 <code>mk-buildroot.sh</code> 脚本中调用 <code>buildroot/build/envsetup.sh</code>，<code>envsetup.sh</code> 用于初始化环境变量并设置 <code>buildroot/configs/OK3568_defconfig</code> 为 <code>buildroot</code> 编译文件系统的默认配置文件</li>
+<li>读取 <code>buildroot/configs/OK3568_defconfig</code> 中的配置，并覆盖正在使用的配置文件，正在使用的配置文件位于 <code>buildroot/.config</code>，通过 <code>buildroot/.config</code> 配置文件系统</li>
+</ul>
+<blockquote>
+<p><strong>编译选项对文件系统大小的影响：</strong></p>
+<p>例.取消 <code>BR2_PACKAGE_TENSORFLOW</code> 选项不一定会使文件系统镜像大小变小，原因如下：</p>
+<ul>
+<li>取消该选项只会影响到构建时是否编译 <code>TensorFlow</code> 软件包，对已经安装的软件包不会产生影响，因此对文件系统镜像大小的影响是有限的</li>
+<li><code>TensorFlow</code> 软件包可能并不占用很大的空间，因此取消该选项对文件系统镜像大小的影响也比较有限</li>
+</ul>
+<p>因此，取消某一编译选项并不是一个有效的方法来减小文件系统镜像大小，可以考虑通过</p>
+<ul>
+<li>删除不必要的文件</li>
+<li>调整压缩参数</li>
+</ul>
+</blockquote>
+<h1 id="2-裁剪"><a href="#2-裁剪" class="headerlink" title="2.裁剪"></a>2.裁剪</h1><h2 id="2-1-配置文件"><a href="#2-1-配置文件" class="headerlink" title="2.1 配置文件"></a>2.1 配置文件</h2><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;audio.config&quot;</span> 	#音频相关的配置信息，例如采样率、声道数、编码格式等（已删）</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;audio_gst.config&quot;</span>	#（已删）</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;base.config&quot;</span> 		#系统基本配置，例如时钟频率、内存分配、启动选项等</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;base_extra.config&quot;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;benchmark.config&quot;</span> #性能测试相关的配置信息，例如测试用例、测试参数</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;bt.config&quot;</span> 		#蓝牙相关的配置信息，例如蓝牙协议栈选项、蓝牙设备信息（禁删）</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;camera.config&quot;</span> 	#相机相关的配置信息，例如分辨率、曝光时间、帧率（已删）</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;camera_gst.config&quot;</span>	#（已删）</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;debug.config&quot;</span> 	#调试相关的配置信息，例如日志级别、调试选项等</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;debug2.config&quot;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;display.config&quot;</span> #显示相关的配置信息，例如分辨率、屏幕旋转、色彩空间等</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;gpu.config&quot;</span> GPU #相关的配置信息，例如 GPU 频率、GPU缓存选项等</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;network.config&quot;</span> #网络相关的配置信息，例如 IP 地址、子网掩码、网络协议等；</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;ntfs.config&quot;</span> NTFS #文件系统相关的配置信息，例如文件系统选项、磁盘分区信息等；</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;qt.config&quot;</span> #QT 库相关的配置信息，例如 QT 版本、QT编译选项等；</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;video_mpp.config&quot;</span> #视频相关的配置信息，例如编码格式、分辨率、帧率等；（已删）</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;video_gst.config&quot;</span> （已删）</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;video_gst_rtsp.config&quot;</span> #RTSP 协议相关的配置信息，例如 RTSP服务器地址、端口号等；（已删）</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;rk356x_arm64.config&quot;</span> #开发板的硬件配置信息，例如 CPU 架构、内存大小、外设选项等；</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;test.config&quot;</span> #测试相关的配置信息，例如测试用例、测试参数等。</span></span><br><span class="line"></span><br><span class="line">BR2_PACKAGE_RECOVERY=y	##启用Recovery软件包，用于在系统损坏或无法启动时恢复系统</span><br><span class="line">BR2_PACKAGE_RECOVERY_BOOTCONTROL=y	#启用RecoveryBootControl软件包，用于控制系统启动时是否进入Recovery模式</span><br><span class="line">BR2_PACKAGE_RECOVERY_RETRY=y	#启用RecoveryRetry软件包，用于在Recovery模式下重试更新操作</span><br><span class="line">BR2_PACKAGE_RECOVERY_USE_UPDATEENGINE=y	#启用UpdateEngine软件包，用于在Recovery模式下进行系统更新</span><br><span class="line">BR2_PACKAGE_RECOVERY_UPDATEENGINEBIN=y	#启用UpdateEngineBinary软件包，用于在Recovery模式下执行系统更新</span><br><span class="line">BR2_PACKAGE_RECOVERY_NO_UI=y	#启用NoUIRecovery软件包，用于在Recovery模式下禁用UI界面</span><br><span class="line">BR2_TARGET_ENABLE_ROOT_LOGIN=y	#启用root用户登录</span><br><span class="line">BR2_TARGET_GENERIC_ROOT_PASSWD=<span class="string">&quot;ubuntu&quot;</span>	#设置root用户的密码为<span class="string">&quot;ubuntu&quot;</span></span><br><span class="line">BR2_TARGET_GENERIC_GETTY_BAUDRATE_115200=y	#设置终端波特率为<span class="number">115200</span></span><br><span class="line">BR2_TARGET_LOCALTIME=<span class="string">&quot;Asia/Shanghai&quot;</span>	#设置系统时区为亚洲/上海</span><br><span class="line">BR2_ROOTFS_OVERLAY=<span class="string">&quot;board/rockchip/ok3568/fs-overlay/&quot;</span>	#设置根文件系统的覆盖目录</span><br><span class="line">BR2_PACKAGE_TENSORFLOW=y	#启用TensorFlow软件包（已删）</span><br><span class="line">BR2_PACKAGE_RKNPU2=y	#启用RKNPU2软件包，用于支持Rockchip芯片的神经网络加速（已删）</span><br><span class="line">BR2_PACKAGE_RKAIQ_TOOL_SERVER=y	#启用RKAIQToolServer软件包，用于支持Rockchip芯片的图像处理（已删）</span><br><span class="line">BR2_PACKAGE_FORLINX=y	#启用Forlinx软件包</span><br><span class="line">BR2_PACKAGE_MATRIX_BROWSER=y	#启用MatrixBrowser软件包，用于支持矩阵式键盘（已删）</span><br><span class="line">BR2_PACKAGE_DWKEYBOARD=y	#启用DWKeyboard软件包，用于支持多语言输入法（已删）</span><br><span class="line">BR2_PACKAGE_QUECTELCM=y	#启用QuectelCM软件包，用于支持Quectel无线模块（已删）</span><br><span class="line">BR2_PACKAGE_FORLINX_QT=y	#启用ForlinxQt软件包</span><br><span class="line">BR2_PACKAGE_FORLINX_CMD=y	#启用ForlinxCMD软件包</span><br><span class="line">BR2_PACKAGE_FFMPEG_AVRESAMPLE=y	#启用FFmpegAvresample软件包，用于音频重采样（已删）</span><br><span class="line">BR2_PACKAGE_FFMPEG_SWSCALE=y	#启用FFmpegSwscale软件包，用于视频缩放（已删）</span><br><span class="line">BR2_PACKAGE_HICOLOR_ICON_THEME=y	#启用HicolorIconTheme软件包，用于支持高分辨率图标（已删）</span><br><span class="line">BR2_PACKAGE_QT5BASE_SQLITE_QT=y	#启用Qt5BaseSQLiteQt软件包，用于支持SQLite数据库（已删）</span><br><span class="line">BR2_PACKAGE_QT5BASE_GIF=y	#启用Qt5BaseGIF软件包，用于支持GIF图像格式（已删）</span><br><span class="line">BR2_PACKAGE_QT5CHARTS=y	#启用Qt5Charts软件包，用于支持图表和统计数据的可视化（已删）</span><br><span class="line">BR2_PACKAGE_QT5SERIALBUS=y	#启用Qt5SerialBus软件包，用于支持串行总线通信</span><br><span class="line">BR2_PACKAGE_QT5WEBKIT=y	#启用Qt5WebKit软件包，用于支持Web浏览器（已删）</span><br><span class="line">BR2_PACKAGE_QT5WEBENGINE=y	#启用Qt5WebEngine软件包，用于支持Web浏览器引擎（已删）</span><br><span class="line">BR2_PACKAGE_UBOOT_TOOLS=y	#启用U-Boot工具软件包，用于支持U-Boot引导程序</span><br><span class="line">BR2_PACKAGE_PHP=y	#启用PHP软件包，用于支持服务器端脚本语言（已删）</span><br><span class="line">BR2_PACKAGE_PHP_SAPI_CGI=y	#启用PHPSAPICGI软件包，用于支持使用CGI接口运行PHP脚本（已删）</span><br><span class="line">BR2_PACKAGE_PHP_SAPI_CLI=y	#启用PHPSAPICLI软件包，用于支持使用命令行接口运行PHP脚本（已删）</span><br><span class="line">BR2_PACKAGE_PHP_EXT_FILEINFO=y	#启用PHPFileinfo扩展软件包，用于支持文件类型检测（已删）</span><br><span class="line">BR2_PACKAGE_PHP_EXT_OPCACHE=y	#启用PHPOpcache扩展软件包，用于提高PHP脚本的执行效率（已删）</span><br><span class="line">BR2_PACKAGE_PHP_EXT_READLINE=y	#启用PHPReadline扩展软件包，用于支持命令行编辑（已删）</span><br><span class="line">BR2_PACKAGE_PHP_EXT_ICONV=y	#启用PHPIconv扩展软件包，用于支持字符集转换（已删）</span><br><span class="line">BR2_PACKAGE_PHP_EXT_MBSTRING=y	#启用PHPMbstring扩展软件包，用于支持多字节字符集（已删）</span><br><span class="line">BR2_PACKAGE_PHP_EXT_JSON=y	#启用PHPJSON扩展软件包，用于支持dJSON数据格式</span><br><span class="line">BR2_PACKAGE_PHP_EXT_TOKENIZER=y	#启用PHPTokenizer扩展软件包，用于支持PHP代码解析（已删）</span><br><span class="line">BR2_PACKAGE_PHP_EXT_CURL=y	#启用PHPcURL扩展软件包，用于支持HTTP请求（已删）</span><br><span class="line">BR2_PACKAGE_PHP_EXT_FTP=y	#启用PHPFTP扩展软件包，用于支持FTP协议（已删）</span><br><span class="line">BR2_PACKAGE_PHP_EXT_SOAP=y	#启用PHPSOAP扩展软件包，用于支持SOAP协议（已删）</span><br><span class="line">BR2_PACKAGE_PHP_EXT_XMLRPC=y	#启用PHPXML-RPC扩展软件包，用于支持XML-RPC协议（已删）</span><br><span class="line">BR2_PACKAGE_TINYALSA=y	#启用TinyALSA软件包，用于支持音频功能（已删）</span><br><span class="line">BR2_PACKAGE_LZO=y	#启用LZO压缩软件包，用于支持数据压缩</span><br><span class="line">BR2_PACKAGE_LIBGTK3=y	#启用GTK3库软件包，用于支持图形用户界面</span><br><span class="line">BR2_PACKAGE_OPENCV3=y	#启用OpenCV3软件包，用于支持计算机视觉（已删）</span><br><span class="line">BR2_PACKAGE_OPENCV3_LIB_HIGHGUI=y	#编译OpenCV3中的HighGUI库（已删）</span><br><span class="line">BR2_PACKAGE_OPENCV3_WITH_GTK3=y	#启用GTK3支持（已删）</span><br><span class="line">BR2_PACKAGE_OPENCV3_LIB_PHOTO=y	#Photo库（已删）</span><br><span class="line">BR2_PACKAGE_OPENCV3_LIB_SHAPE=y	#Shape库（已删）</span><br><span class="line">BR2_PACKAGE_OPENCV3_LIB_STITCHING=y	#Stitching库（已删）</span><br><span class="line">BR2_PACKAGE_OPENCV3_WITH_JASPER=y	#启用Jasper支持（已删）</span><br><span class="line">BR2_PACKAGE_OPENCV3_WITH_JPEG=y	#启用JPEG支持（已删）</span><br><span class="line">BR2_PACKAGE_OPENCV3_WITH_PNG=y	#启用PNG支持（已删）</span><br><span class="line">BR2_PACKAGE_OPENCV3_WITH_PROTOBUF=y	#启用ProtocolBuffers支持。（已删）</span><br><span class="line">BR2_PACKAGE_OPENCV3_WITH_TIFF=y	#启用TIFF支持（已删）</span><br><span class="line">BR2_PACKAGE_OPENCV3_WITH_V4L=y	#启用Video4Linux支持。（已删）</span><br><span class="line">BR2_PACKAGE_IPROUTE2=y	#选中iproute2软件包进行编译</span><br><span class="line">BR2_PACKAGE_IPTABLES=y	#选中iptables软件包进行编译</span><br><span class="line">BR2_PACKAGE_IPTABLES_BPF_NFSYNPROXY=y	#编译iptables时启用BPF和nf_synproxy支持</span><br><span class="line">BR2_PACKAGE_IPTABLES_NFTABLES=y	#编译iptables时启用nftables支持</span><br><span class="line">BR2_PACKAGE_LIGHTTPD=y	#选中lighttpd软件包进行编译（已删）</span><br><span class="line">BR2_PACKAGE_LIGHTTPD_PCRE=y	#编译lighttpd时启用PCRE支持（已删）</span><br><span class="line">BR2_PACKAGE_OPENSSH=y	#选中OpenSSH软件包进行编译</span><br><span class="line">BR2_PACKAGE_VSFTPD=y	#选中vsftpd软件包进行编译</span><br><span class="line">BR2_PACKAGE_RKWIFIBT=n	#不选中rkwifibt软件包进行编译</span><br><span class="line">BR2_PACKAGE_USBMOUNT=n	#不选中usbmount软件包进行编译</span><br><span class="line">BR2_PACKAGE_OPENCV3_LIB_PYTHON=y	#编译OpenCV3中的Python库（已删）</span><br><span class="line">BR2_PACKAGE_LIBGTK3_BROADWAY=y	#编译libgtk3时启用Broadway支持</span><br><span class="line">BR2_PACKAGE_LIBGTK3_WAYLAND=y	#编译libgtk3时启用Wayland支持</span><br><span class="line">BR2_PACKAGE_OPENCV3_GUI_NONE=n	#编译OpenCV3时启用GUI支持</span><br><span class="line">BR2_PACKAGE_QT5SERIALPORT=y	#选中Qt5中的SerialPort模块进行编译</span><br></pre></td></tr></table></figure>
+
+<h2 id="2-2-软件包"><a href="#2-2-软件包" class="headerlink" title="2.2 软件包"></a>2.2 软件包</h2><p>Buildroot 的软件包配置文件位于 <code>~/buildroot/package/rockchip/Config.in</code>，包含了多个软件包的配置，可以在基于 Rockchip 硬件的嵌入式系统上进行构建和安装。这些软件包并不是全部必须的，具体需要哪些软件包取决于嵌入式系统的具体需求和配置。</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">ROS	机器人操作系统，提供了一种构建机器人应用的框架，包括硬件抽象、设备驱动、库、可视化工具、消息传递和软件包管理等功能	</span><br><span class="line">LocalPlayer	一个本地播放器，可以播放本地音频和视频文件	</span><br><span class="line">APL核心库	Alexa Presentation Language（APL）的核心库，提供了一个用于构建Alexa智能屏幕体验的框架	</span><br><span class="line">AVS设备SDK	Alexa Voice Service（AVS）设备SDK，提供了一个用于构建Alexa智能设备的框架，包括语音识别、语音合成、音频处理、设备控制等功能	</span><br><span class="line">Alexa智能屏幕SDK	构建Alexa智能屏幕应用的SDK，包括模板、组件、样式、事件等功能	</span><br><span class="line">ACS	Alexa客户端服务，提供了一个用于构建Alexa客户端应用的框架，包括设备授权、用户认证、设备状态管理等功能	</span><br><span class="line">Alexa客户端SDK	用于构建Alexa客户端应用的SDK，包括语音识别、语音合成、设备控制等功能	</span><br><span class="line">MPP	Media Processing Platform，提供了一个用于嵌入式系统中音视频处理的框架，包括编解码、滤镜、音频处理等功能	d</span><br><span class="line">地址检查器	提供了一种检查程序中地址错误的工具，帮助开发人员在程序开发过程中发现和纠正地址错误	</span><br><span class="line">GStreamer1 Rockchip	基于GStreamer1的Rockchip硬件加速插件，提供了硬件加速的音视频编解码和渲染功能	d</span><br><span class="line">相机引擎CIFISP	用于Rockchip芯片的ISP引擎，提供了图像处理、白平衡、自动曝光、自动对焦等功能	d</span><br><span class="line">WakeWordAgent	唤醒词引擎，提供了唤醒词检测和响应的功能	d</span><br><span class="line">PCBA	PCB组装和测试工具，用于测试和组装PCB板	d</span><br><span class="line">SoftAP	软件接入点，提供了一个基于软件的Wi-Fi接入点，可以让其他设备连接到嵌入式系统的Wi-Fi网络	d</span><br><span class="line">SoftAP服务器	提供了一个Web服务器，可以通过Web界面配置和管理SoftAP	d</span><br><span class="line">WifiautoSetup		d</span><br><span class="line">GStreamer1 IEP	基于GStreamer1的IEP插件，提供了硬件加速的视频编解码和渲染功能	d</span><br><span class="line">rkwifibt		d</span><br><span class="line">Rockchip实用工具	提供了一些用于Rockchip硬件的实用工具，包括升级工具、调试工具、驱动程序等	</span><br><span class="line">mdev挂载	提供了一种自动挂载U盘、SD卡等外部存储设备的工具	</span><br><span class="line">ALSA捕获	提供了一个用于ALSA音频捕获的应用程序，可以从音频设备中捕获音频数据	d</span><br><span class="line">UVC应用程序	提供了一个用于UVC摄像头的应用程序，可以捕获视频数据并进行处理	d</span><br><span class="line">UAC应用程序	提供了一个用于USB音频类设备的应用程序	d</span><br><span class="line">libmali	Arm Mali GPU的用户空间驱动程序	</span><br><span class="line">libhdmiset	提供了一个用于HDMI设置的库	d</span><br><span class="line">dialserver	提供了一个用于远程管理设备的服务器	</span><br><span class="line">linux-rga	Rockchip Graphics Accelerator（RGA）的Linux内核驱动程序	</span><br><span class="line">linux-serial-test	提供了一个用于Linux串口测试的应用程序	d</span><br><span class="line">iflytekSDK	提供了一个用于讯飞语音识别的SDK	d</span><br><span class="line">eq_drc_process	提供了一个用于音频均衡和动态范围控制的库	d</span><br><span class="line">alsa_ladspa	提供了一个用于ALSA音频的LADSPA插件库	d</span><br><span class="line">rockchip_test	提供了一些用于Rockchip硬件测试的工具	</span><br><span class="line">QStressTest	提供了一个用于系统压力测试的工具	</span><br><span class="line">rockchip_modules	提供了一些用于Rockchip硬件的内核模块	</span><br><span class="line">broadcom_bsa	Broadcom蓝牙栈的用户空间库	</span><br><span class="line">cypress_bsa	Cypress蓝牙栈的用户空间库	</span><br><span class="line">pm-suspend-api	提供了一个用于系统挂起和恢复的API	</span><br><span class="line">rtw_simple_config	提供了一个用于Realtek Wi-Fi芯片的简单配置工具	d</span><br><span class="line">recovery	提供了一个用于恢复系统的工具	</span><br><span class="line">modeset	提供了一个用于显示模式设置的工具	</span><br><span class="line">rkjpeg	提供了一个用于Rockchip JPEG编解码的库	d</span><br><span class="line">jpegdemo	提供了一个用于JPEG编解码的演示程序	d</span><br><span class="line">ueventd	提供了一个用于处理Linux系统事件的守护进程	</span><br><span class="line">rkupdate	提供了一个用于Rockchip系统升级的工具	</span><br><span class="line">rktoolkit	提供了一些用于Rockchip硬件的工具集	</span><br><span class="line">rkmedia	提供了一个用于Rockchip媒体处理的框架	d</span><br><span class="line">rockit	提供了一个用于音视频处理的框架	d</span><br><span class="line">rkadk	提供了一个用于Rockchip AI开发的工具集	d</span><br><span class="line">music	提供了一个用于音乐播放的应用程序	d</span><br><span class="line">video	提供了一个用于视频播放的应用程序	d</span><br><span class="line">camera		</span><br><span class="line">carmachine	提供了一个用于车载娱乐系统的应用程序	d</span><br><span class="line">gallery	提供了一个用于图库管理的应用程序	d</span><br><span class="line">QLauncher	这是一个基于 Rockchip 平台的启动器，用于启动设备上的应用程序和服务	</span><br><span class="line">QFacialGate	这是一个用于人脸识别的软件包，可以在 Rockchip 平台上实现人脸识别功能	d</span><br><span class="line">settings	这是一个提供设置和配置选项的软件包，可以帮助用户配置设备并进行各种设置	</span><br><span class="line">Qcamera		d</span><br><span class="line">qfm	这是一个文件管理器软件包，可以帮助用户管理设备上的文件和文件夹	</span><br><span class="line">qplayer		d</span><br><span class="line">Multivideoplayer		d</span><br><span class="line">Multicamera		d</span><br><span class="line">Qsetting		d</span><br><span class="line">powermanager	这是一个用于管理设备电源的软件包，可以帮助用户管理设备的电源状态和电池寿命	</span><br><span class="line">audioservice	这是一个用于管理设备音频的软件包，可以帮助用户管理设备的音频输入和输出	d</span><br><span class="line">securityAuth		</span><br><span class="line">recoverySystem	这是一个用于设备恢复和修复的软件包，可以帮助用户在设备出现问题时进行恢复和修复操作	</span><br><span class="line">Led_control_app		d</span><br><span class="line">Npu_powerctrl		d</span><br><span class="line">Npu_powerctrl_combine		d</span><br><span class="line">N4		</span><br><span class="line">Cae_vad		</span><br><span class="line">Ipc_share_memory		</span><br><span class="line">Rk_hw_vad		</span><br><span class="line">minigui	这是一个轻量级的 GUI（图形用户界面）框架，可以帮助开发人员构建简单的 GUI 应用程序	</span><br><span class="line">Minigui_demo		</span><br><span class="line">Kernel_modules		</span><br><span class="line">tensorflow		</span><br><span class="line">Rknpu</span><br><span class="line">rknpu2</span><br><span class="line">rknpu-fw</span><br><span class="line">rknn_demo	这些软件包都与瑞芯微的神经处理单元（NPU）相关，可以帮助开发人员构建和优化神经网络模型	d</span><br><span class="line">ficial_gate</span><br><span class="line">Rkfacial</span><br><span class="line">pose_body</span><br><span class="line">face_detect	这些软件包都与面部识别相关，可以帮助开发人员构建和优化面部识别模型	d</span><br><span class="line">rockx	这是一个 Rockchip 平台上的计算机视觉库，提供了各种计算机视觉算法和工具	d</span><br><span class="line">rockface	这是一个人脸识别库，可以在 Rockchip 平台上实现人脸识别功能	d</span><br><span class="line">mtp	这是一个用于在计算机和移动设备之间传输文件的协议，可以帮助用户快速地在设备之间传输文件	d</span><br><span class="line">alsa-config	这是一个用于配置 ALSA（Advanced Linux Sound Architecture）的软件包，可以帮助用户配置设备的音频输入和输出	d</span><br><span class="line">libcapsimage	这是一个用于处理图像的库，可以帮助开发人员处理和优化图像	d</span><br><span class="line">rkscript	这是一个用于运行脚本的工具，可以帮助用户在设备上运行各种脚本	</span><br><span class="line">Deviceio</span><br><span class="line">deviceio_release	这是用于设备输入输出的软件包，可以帮助开发人员编写和优化输入输出驱动程序	</span><br><span class="line">Dui	这是一个用于开发 UI（用户界面）应用程序的库，可以帮助开发人员构建和优化 UI 应用程序	</span><br><span class="line">ble_wificonfig	这是一个用于配置蓝牙和 Wi-Fi 连接的软件包，可以帮助用户配置设备的无线连接	d</span><br><span class="line">libavb、libavb_ab</span><br><span class="line">libavb_user	这些软件包都与 AVB（Android Verified Boot）相关，可以帮助用户验证设备的启动过程和系统完整性	d</span><br><span class="line">libv4l-rkmpp	这是一个用于处理视频的库，可以帮助开发人员处理和优化视频	d</span><br><span class="line">Bootcontrol</span><br><span class="line">LinuxAB	这些软件包都与启动控制相关，可以帮助用户管理设备的启动过程和控制	</span><br><span class="line">sensor-daemon	这是一个用于管理设备传感器的软件包，可以帮助用户管理设备的传感器和数据	</span><br><span class="line">rtc_demo	这是一个用于管理设备 RTC（Real-Time Clock）的软件包，可以帮助用户管理设备的时间和日期	</span><br><span class="line">rk_webui	这是一个用于开发 Web UI 应用程序的库，可以帮助开发人员构建和优化 Web UI 应用程序	d</span><br><span class="line">common_algorithm	这是一个用于处理常见算法的库，可以帮助开发人员处理和优化算法	</span><br><span class="line">ipcweb-backend</span><br><span class="line">Libgdbus</span><br><span class="line">libIPCProtocol</span><br><span class="line">librkdb	这些软件包都与进程间通信相关，可以帮助开发人员实现进程间通信和数据传输	</span><br><span class="line">Dbserver</span><br><span class="line">Netserver</span><br><span class="line">storage_manager</span><br><span class="line">Mediaserver</span><br><span class="line">aiserver	这些软件包都与设备管理和服务相关，可以帮助用户管理设备和服务	</span><br><span class="line">rk_oem	这是一个用于 OEM和定制化的软件包，可以帮助设备制造商定制和优化设备	</span><br><span class="line">rootfs_ubi_use_custom_filesystem	这是一个用于创建和管理 UBI（Unsorted Block Images）文件系统的软件包，可以帮助用户管理设备的文件系统	</span><br><span class="line">rkbar	这是一个用于管理设备底部导航栏的软件包，可以帮助用户管理设备底部导航栏	</span><br><span class="line">minilogger	这是一个用于记录日志的工具，可以帮助用户记录设备的运行日志	</span><br><span class="line">ipc-daemon</span><br><span class="line">CallFunIpc</span><br><span class="line">isp2-ipc	这些软件包都与进程间通信相关，可以帮助开发人员实现进程间通信和数据传输	</span><br><span class="line">smart_display_service	这是一个用于管理设备智能显示的软件包，可以帮助用户管理设备的显示和显示设置	</span><br><span class="line">onvif_server	这是一个用于实现 ONVIF（Open Network Video Interface Forum）协议的软件包，可以帮助用户实现网络视频监控功能	d</span><br><span class="line">eptz_demo	这是一个用于实现电子变焦和电子云台功能的软件包，可以帮助用户实现更好的视频监控功能	d</span><br><span class="line">rksl 和 sl_lock	这些软件包都与设备安全相关，可以帮助用户保护设备安全和数据隐私	</span><br><span class="line">mult_uvc_demo	这是一个用于管理多个 UVC（USB Video Class）摄像头的软件包，可以帮助用户管理多个摄像头并进行视频捕捉和处理	d</span><br><span class="line">pcba_adb_test	这是一个用于测试设备 PCBA（Printed Circuit Board Assembly）的软件包，可以帮助用户测试设备硬件和连接性	</span><br><span class="line">camera_factory_test_server	这是一个用于测试设备摄像头的软件包，可以帮助用户测试设备摄像头的性能和质量	d</span><br><span class="line">thunderboot	这是一个用于启动控制和固件更新的软件包，可以帮助用户管理设备的启动过程和固件更新	</span><br><span class="line">startup_app_ipc	这是一个用于进程间通信的软件包，可以帮助开发人员实现进程间通信和数据传输	</span><br><span class="line">rkaiq_tool_server	这是一个用于调试和优化 ISP（Image Signal Processor）的软件包，可以帮助开发人员调试和优化设备的图像处理功能	d</span><br><span class="line">rkiio	这是一个用于管理设备输入输出的软件包，可以帮助用户管理设备的输入输出	</span><br><span class="line">lvgl	这是一个用于开发 GUI 应用程序的库，可以帮助开发人员构建和优化 GUI 应用程序	</span><br><span class="line">cvr_app	这是一个用于Rockchip芯片的视频录制应用程序，可以在嵌入式系统上运行。它支持多种视频格式，包括H<span class="number">.264</span>和H<span class="number">.265</span>。该应用程序可以通过配置文件进行配置，以满足不同的录制需求。例如，可以设置录制分辨率、帧率、码率等参数	d</span><br><span class="line">rkipc	这是一个用于Rockchip芯片的IPC（Inter-Process Communication）库，用于在嵌入式系统中实现进程间通信。它提供了多种IPC机制，包括共享内存、消息队列、信号量等。该库可以用于不同的应用程序之间进行通信，例如音视频采集、编码、解码等	</span><br><span class="line">rkfsmk	这是一个用于Rockchip芯片的文件系统制作工具，用于制作嵌入式系统中的文件系统。它支持多种文件系统格式，包括ext2、ext3、ext4等。该工具可以根据配置文件生成文件系统镜像，以便在嵌入式系统中使用	</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+]]></content>
+      <categories>
+        <category>0.平台</category>
+        <category>嵌入式</category>
+      </categories>
+  </entry>
+  <entry>
     <title>OK4418平台</title>
     <url>/2024/08/27/0-%E5%B9%B3%E5%8F%B0-%E5%B5%8C%E5%85%A5%E5%BC%8F-OK4418%E5%B9%B3%E5%8F%B0/</url>
     <content><![CDATA[<h1 id="连接开发板"><a href="#连接开发板" class="headerlink" title="连接开发板"></a>连接开发板</h1><h2 id="调试串口"><a href="#调试串口" class="headerlink" title="调试串口"></a>调试串口</h2><p>通过调试串口连接开发板，调试串口为 DB9，上位机直接连接，波特率为 115200，登录名为 root</p>
@@ -980,6 +1016,8 @@
 <figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">编译配置文件：device/rockchip/common/build.sh</span><br><span class="line">板级配置文件：device/rockchip/ok3568/BoardConfig-ok3568.mk</span><br><span class="line">buildroot 配置文件：buildroot/configs/OK3568_defconfig</span><br><span class="line">uboot 配置文件：u-boot/configs/OK3568-C_defconfig</span><br></pre></td></tr></table></figure>
 
 <h1 id="编译配置文件"><a href="#编译配置文件" class="headerlink" title="编译配置文件"></a>编译配置文件</h1><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"></span><br></pre></td></tr></table></figure>
+
+<h1 id="文件系统映射位置"><a href="#文件系统映射位置" class="headerlink" title="文件系统映射位置"></a>文件系统映射位置</h1><p><img src="https://raw.githubusercontent.com/liuluhua/liuluhua.github.io/ImageBed/obsidian/1724828423000ozqokd.png" alt="gh"></p>
 ]]></content>
       <categories>
         <category>0.平台</category>
@@ -1144,6 +1182,31 @@
       </categories>
   </entry>
   <entry>
+    <title>关于RTOS的Tick值</title>
+    <url>/2024/08/28/0-%E5%B9%B3%E5%8F%B0-%E5%B5%8C%E5%85%A5%E5%BC%8F-%E5%85%B3%E4%BA%8ERTOS%E7%9A%84Tick%E5%80%BC/</url>
+    <content><![CDATA[<h1 id="什么是系统滴答"><a href="#什么是系统滴答" class="headerlink" title="什么是系统滴答"></a>什么是系统滴答</h1><p>系统滴答（SysTick），有些地方也叫时钟节拍、系统心跳等。</p>
+<p>操作系统可以多任务间进行切换，就是靠一个系统定时器以固定频率中断，为操作系统提供调度（上下文切换）才能实现任务切换。</p>
+<p><img src="https://raw.githubusercontent.com/liuluhua/liuluhua.github.io/ImageBed/obsidian/1724829939000nsn3np.png" alt="gh"></p>
+<p>而这个定时器，就是我们本文说的系统滴答。早些年的 51、430 单片机，跑 RTOS，都是单独利用一个 Timer 定时器提供系统滴答。为了考虑跑 RTOS 这个问题，Cortex-M 内核自带系统滴答这个定时器。</p>
+<p><img src="https://raw.githubusercontent.com/liuluhua/liuluhua.github.io/ImageBed/obsidian/1724830070000koqxlk.png" alt="gh"></p>
+<p>你会发现市面上很多单片机基本都自带有 SysTick 这个定时器，像 Cortex-M0、 M3、 M4 这些内核的单片机都有的，而且只要简单调用官方写好的 API 函数即可使用。</p>
+<h1 id="系统配置文件"><a href="#系统配置文件" class="headerlink" title="系统配置文件"></a>系统配置文件</h1><p>通常，系统滴答（OS_TICKS）位于系统配置文件中，对系统配置文件进行配置也是重要的一步。比如 FreeRTOSConfig.h&#x2F; ucos 系统的 os_cfg.h（一些系统通过图形化界面进行配置，其实也是对系统配置文件进行配置）。</p>
+<p><img src="https://raw.githubusercontent.com/liuluhua/liuluhua.github.io/ImageBed/obsidian/1724830215000zo7ci5.png" alt="gh"></p>
+<p>OS_TICKS 一般是配置为 1000，从宏定义和注释很容易理解，就是每秒系统滴答的次数。系统滴答配置 1000，代表系统 1ms 要进行一次轮转调度，检查是否有更高优先级任务要执行（并切换任务）。100M 主频的单片机，执行一次调度（几十条语句），时间在 us 级别。1000 是一个比较适合的中等值，其他 100、10000，或者 2000 也可以，只是不利于系统以及编程。</p>
+<ul>
+<li>如果滴答太大，10K，甚至 100K，对系统的负担比较大。因为自身调度会占用 CPU 时间。</li>
+<li>1ms 滴答一次，方便编程系统延时。2k、10k 这种值，在用到系统延时时，不方便计算。<br>  vTaskDelay(1000);<br>  如果滴答值为 1000，则代表延时 1 秒；<br>  如果滴答值为 2000，则代表延时 0.5 秒，很明显这种不利于编程；</li>
+<li>实时操作系统的 SysTick，在没有特殊情况下，最好默认配置 1000；</li>
+<li>在系统允许的情况下，SysTick 数值越大，系统实时性越高；反之实时性越差；</li>
+<li>主频相对偏低（比如低于 10M）的处理器，SysTick 值可以适当配置低一点；</li>
+</ul>
+]]></content>
+      <categories>
+        <category>0.平台</category>
+        <category>嵌入式</category>
+      </categories>
+  </entry>
+  <entry>
     <title>实时OS和分时OS</title>
     <url>/2024/07/12/0-%E5%B9%B3%E5%8F%B0-%E5%B5%8C%E5%85%A5%E5%BC%8F-%E5%AE%9E%E6%97%B6OS%E5%92%8C%E5%88%86%E6%97%B6OS/</url>
     <content><![CDATA[<h1 id="实时操作系统（RTOS）"><a href="#实时操作系统（RTOS）" class="headerlink" title="实时操作系统（RTOS）"></a>实时操作系统（RTOS）</h1><p>RTOS，英文全称 Real Time Operating System，即实时操作系统。</p>
@@ -1264,6 +1327,337 @@
 <p>数据来源：《航空微电子》第 2 期 2022 年 6 月 总第 5 期</p>
 </blockquote>
 ]]></content>
+      <categories>
+        <category>0.平台</category>
+        <category>嵌入式</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>嵌入式Qt的窗口系统</title>
+    <url>/2024/08/28/0-%E5%B9%B3%E5%8F%B0-%E5%B5%8C%E5%85%A5%E5%BC%8F-%E5%B5%8C%E5%85%A5%E5%BC%8FQt%E7%9A%84%E7%AA%97%E5%8F%A3%E7%B3%BB%E7%BB%9F/</url>
+    <content><![CDATA[<p>自从 Qt 5.0 发布以来，Qt 不再包含自己的窗口系统（QWS）实现。对于单进程用例，Qt 平台抽象是一个优秀的解决方案。Wayland 可以支持多种图形化流程。</p>
+<p>有多个平台插件可能在嵌入式 Linux 系统上可用：EGLFS，LinuxFB，DirectFB，Wayland。这些可用性取决于 Qt 的配置。在许多板上选择 eglfs 作为默认选项。如果默认值不合适，QT_QPA_PLATFORM 则可以使用环境变量参数来请求另一个插件。或者，对于快速测试，-platform 命令行可以使用相同的语法。</p>
+<h1 id="配置特定设备"><a href="#配置特定设备" class="headerlink" title="配置特定设备"></a>配置特定设备</h1><p>对于给定的设备构建 Qt 需要一个工具链和一个 sysroot。另外，一些设备需要针对 EGL 和 OpenGL ES 2.0 支持的供应商特定的适配代码。这与非加速平台无关，例如使用 LinuxFB 插件的平台，仅用于基于软件的渲染。</p>
+<p>目录 qtbase &#x2F; mkspecs &#x2F; devices 包含许多设备的配置和图形适配代码。例如，linux-rasp-pi2-g++mkspec 包含构建设置，如 Raspberry Pi 2 设备的最佳编译器和链接器标志。mkspec 还包含有关 eglfs 钩子的实现（供应商特定的适配代码）的信息，或者是对适合的 eglfs 设备集成插件的引用。通过配置工具的-device 参数选择设备。在此参数之后的名称必须至少部分地匹配设备下的一个子目录。</p>
+<p>以下是 Raspberry Pi 2 的示例配置。对于大多数嵌入式 Linux 板，configure 命令看起来类似：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">./configure -release -opengl es2 -device linux-rasp-pi2-g++ -device-option CROSS_COMPILE = $TOOLCHAIN/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian/bin/arm-linux-gnueabihf- -sysroot $ROOTFS -prefix /usr/local/qt5</span><br></pre></td></tr></table></figure>
+
+<p>最重要的参数是 <code>-device</code> 和 <code>-sysroot</code>。通过指定 <code>-sysroot</code>，<code>configure</code> 特征检测测试使用的包含文件和库以及 Qt 本身，取自指定的位置，而不是主机 PC 的标准位置。这意味着在主机上安装开发包是无关紧要的。例如，要获得 libinput 支持 libinput，在主机环境中安装开发头和库是不够的。相反，目标架构（例如 ARM）的标头和库必须存在于 <code>sysroot</code>。</p>
+<p><code>pkg-config</code> 在执行交叉编译时也得到支持。<code>configure</code> 自动设置 <code>PKG_CONFIG_LIBDIR</code> 为 <code> pkg-config</code> 基于 <code>sysroot</code> 代替主机的报告编译器和链接器设置。这通常功能很好，没有任何进一步的调整。但是，<code>PKG_CONFIG_PATH</code> 运行前，主机必须先设置环境变量 <code>configure</code>。否则，Qt 构建可能会尝试从主机系统使用不适当的头文件和库。</p>
+<p>指定 <code>-sysroot</code> 在 <code>--sysroot</code> 调用编译器时自动设置参数的结果。在某些情况下，这是不可取的，可以通过传递 <code>-no-gcc-sysroot</code> 来禁用 <code>configure</code>。</p>
+<p><code>-prefix</code>，<code>-extprefix</code> 并 <code>-hostprefix</code> 控制 Qt 构建的目标目标目录。在上述示例中，Qt 的 ARM 版本预计将放置在 <code>/usr/local/qt5</code> 目标设备上。请注意，运行 <code>make install</code> 不会部署任何设备。相反，该 <code>install</code> 步骤将目标指定的目录 <code>extprefix</code> 默认为 <code>sysroot+ prefix</code>，因此是可选的。然而，在很多情况下，“污染”是不可取的，因此指定 <code>-extprefix</code> 变得重要。最后，<code>-hostprefix</code> 允许从目标的二进制文件分离主机工具，如 <code>qmake</code>，<code>rcc</code>，<code>uic</code>。给定时，这些工具将安装在指定的目录下，而不是 <code>extprefix</code>。</p>
+<p>有关详细信息，请参阅 Qt 配置选项。</p>
+<h1 id="嵌入式-Linux-设备的平台插件"><a href="#嵌入式-Linux-设备的平台插件" class="headerlink" title="嵌入式 Linux 设备的平台插件"></a>嵌入式 Linux 设备的平台插件</h1><h2 id="EGLFS"><a href="#EGLFS" class="headerlink" title="EGLFS"></a>EGLFS</h2><p>EGL 是 OpenGL 和本机窗口系统之间的接口。Qt 可以使用 EGL 进行上下文和表面管理，但是 API 不包含平台特定的内容：创建本机窗口（这不一定是屏幕上的实际窗口）仍然必须通过平台特定的方式完成。因此需要板或 GPU 特定的适配代码。这样的修改可以被提供为 eglfs 钩子，其可以是编译到平台插件中的单个源文件，或作为动态加载的 EGL 设备集成插件。</p>
+<p>EGLFS 是一个平台插件，用于在没有实际的窗口系统（如 X11 或 Wayland）的 EGL 和 OpenGL ES 2.0 之上运行 Qt5 应用程序。<strong>除了 Qt Quick 2 和本机 OpenGL 应用程序，它还支持软件渲染的窗口（例如 QWidget）</strong>。在后一种情况下，小部件的内容将使用 CPU 渲染成图像，然后将其上传到纹理并由插件合成。</p>
+<p>这是包含 GPU 的现代嵌入式 Linux 设备的推荐插件。</p>
+<p>EGLFS 强制第一个顶级窗口（无论是 QWidget 还是 QQuickView）成为全屏幕。此窗口也被选择为根部件窗口窗口，其中所有其他顶级窗口小部件（例如对话框，弹出菜单或组合框下拉列表）都被合成。这是必要的，因为使用 EGLFS 总是有一个本机窗口和 EGL 窗口表面，这些窗口属于首先创建的窗口小部件或窗口。当主窗口在整个应用程序的整个生命周期中存在，并且所有其他窗口小部件都是非顶层或之后创建的主窗口显示时，此方法运行良好。</p>
+<p>对于基于 OpenGL 的窗口还有其他限制。从 Qt 5.3 起，eglfs 支持一个全屏 GL 窗口（例如，基于 OpenGL 的 QWindow，QQuickView 或 QGLWidget）。打开额外的 OpenGL 窗口或混合这些窗口与基于 QWidget 的内容是不支持的并终止应用程序与错误消息。</p>
+<p>如有必要，eglfs 可以使用以下环境变量进行配置：</p>
+<ul>
+<li>QT_QPA_EGLFS_INTEGRATION- 除了编译的钩子之外，还可以以动态加载的插件的形式提供设备或供应商特定的适配。这个环境变量强制执行一个特定的插件。例如，将其设置为 eglfs_kms 使用 KMS &#x2F; DRM 后端。这只是在设备 makepecs 中没有指定静态或编入钩子的选项。在实践中，传统的编入钩子很少被使用，几乎所有后端都被迁移到插件。设备制造商仍然包含相关 EGLFS_DEVICE_INTEGRATION 条目：该特定设备的首选后端的名称。这是可选的，但是非常有用，以避免在目标系统中存在多个插件的情况下设置此环境变量。DISPLAY 在桌面环境中，根据环境变量的存在，KMS 或 X11 后端是优先的。请注意，在某些电路板上使用特殊的值 none 而不是实际的插件。这表明使用 EGL 与 framebuffer 不需要特殊的集成，所以不能加载插件。</li>
+<li>QT_QPA_EGLFS_PHYSICAL_WIDTH 和 QT_QPA_EGLFS_PHYSICAL_HEIGHT-物理屏幕宽度和高度以毫米为单位。在不能从帧缓冲设备&#x2F; dev &#x2F; fb0 或其他方式查询值的平台上，使用默认 DPI 为 100。此变量可用于覆盖任何此类默认值。设置此选项很重要，因为基于 QWidget 或 Qt Quick Controls 的应用程序依赖于这些值。使用硬编码设置运行可能会导致用户界面元素大小不适合在使用中显示。</li>
+<li>QT_QPA_EGLFS_ROTATION- 指定在基于 QWidget 的应用程序中应用于软件渲染内容的旋转。支持的值为 180,90 和-90。这不适用于基于 OpenGL 的窗口，包括 Qt Quick。Qt Quick 应用程序可以在 QML 场景中应用转换。无论应用程序类型如何，标准的 eglfs 鼠标光标总是考虑到该值，具有适当定位和旋转的指针图像。特殊光标实现（如 KMS &#x2F; DRM 后端的硬件光标）可能不支持旋转。</li>
+<li>QT_QPA_EGLFS_FORCEVSYNC- 设置后，每次调用 eglSwapBuffers（）后，帧缓冲设备上的 eglfs 请求 FBIO_WAITFORVSYNC。这仅适用于依赖于 fbdevLinux 的传统子系统的后端。通常，默认交换间隔为 1，Qt 假定调用 eglSwapBuffers（）处理 vsync; 如果没有（例如，由于驱动程序错误），请尝试设置 QT_QPA_EGLFS_FORCEVSYNC 为非零值。</li>
+<li>QT_QPA_EGLFS_FORCE888 - 设置时，在创建新的上下文，窗口或屏幕外表面时，将忽略红色，绿色和蓝色颜色通道大小。相反，插件要求每个通道 8 位配置。这对于在默认情况下选择具有小于 32 或 24 位&#x2F;像素（例如 5-6-5 或 4-4-4）的配置的设备可能是有用的，但是已知不是理想的，例如，由于绑带效应。而不是更改应用程序代码，此变量提供了一个更容易的快捷方式来强制 24 或 32 bpp 配置。</li>
+</ul>
+<p>此外，以下较不常用的变量也可用：</p>
+<ul>
+<li>QT_QPA_EGLFS_FB - 覆盖帧缓冲设备。默认是&#x2F;dev&#x2F;fb0。在大多数嵌入式平台上，这不是很相关，因为帧缓冲区仅用于查询显示维度等设置。然而，在某些设备上，该参数提供了指定要在多个显示设置中使用的显示的功能，类似于 LinuxFB 中的 fb 参数。</li>
+<li>QT_QPA_EGLFS_WIDTH 和 QT_QPA_EGLFS_HEIGHT- 包含屏幕宽度和高度（以像素为单位）。在 eglfs 尝试从 framebuffer 设备&#x2F; dev &#x2F; fb0 中确定尺寸时，但是这并不总是和手动指定大小可能变得必要。</li>
+<li>QT_QPA_EGLFS_DEPTH - 覆盖屏幕的颜色深度。在 framebuffer 设备&#x2F; dev &#x2F; fb0 不可用或查询不成功的平台上，使用默认值 32。此变量可用于覆盖任何此类默认值。请注意，这仅影响 QScreen 报告的颜色深度值。它与 EGL 配置和 OpenGL 渲染使用的颜色深度无关。</li>
+<li>QT_QPA_EGLFS_SWAPINTERVAL- 默认情况下 1 将要求交换间隔。这使得能够与显示器垂直刷新同步。该值可以用此环境变量覆盖。例如，传递 0 将禁用交换阻塞，导致尽可能快地运行而没有任何同步。</li>
+<li>QT_QPA_EGLFS_DEBUG - 设置时，调试输出上会打印一些调试信息。例如，输入的 QSurfaceFormat 和所选 EGL 配置的属性在创建新上下文时打印。与 Qt Quick 的 QSG_INFO 变量一起，可以为与 EGL 配置相关的故障排除提供有用的信息。</li>
+</ul>
+<p>除此之外 QT_QPA_EGLFS_DEBUG，eglfs 还支持更现代的 Qt 分类日志记录系统。以下日志记录类别可用：</p>
+<ul>
+<li><code>qt.qpa.egldeviceintegration</code> - 为动态加载的后端启用日志记录。非常有用的检查后端是否正在使用。</li>
+<li><code> qt.qpa.input</code> - 启用来自 evdev 和 libinput 输入处理程序的调试输出。检查给定输入设备是否被识别和打开非常有用。</li>
+<li><code> qt.qpa.eglfs.kms</code> - 在 KMS &#x2F; DRM 后端启用详细日志记录。</li>
+</ul>
+<p>运行后 configure，确保检查其输出。由于相应的配置测试失败，没有启用必要的 eglfs 后端，libudev 或 libinput 是相当常见的问题，可以通过这种方式快速识别。当有不想要的“不”的结果，运行 configure 与-v 才能看到编译器和链接调用每个配置测试打开详细输出。</p>
+<p>注意：关于缺少标题，库或似乎隐含的链接器故障的错误通常是不完整或破碎的 sysroot 的标志，与 Qt 无关，也不能被 Qt 解决。</p>
+<p>例如，当使用 Broadcom 专有图形驱动程序定位 Raspberry Pi 时，输出应包含以下内容。如果不是这样，没有必要进一步进行构建，因为如果没有 Raspberry Pi 特定的后端，加速图形将不起作用，即使 Qt 的其余部分成功编译。</p>
+<p>QPA 后端：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">EGLFS ................................yes</span><br><span class="line">EGLFS 详细信息：</span><br><span class="line">EGLFS i.Mx6 ........................ no</span><br><span class="line">EGLFS i.Mx6 Wayland ................ no</span><br><span class="line">EGLFS EGLDevice .................... no</span><br><span class="line">EGLFS GBM .......................... no</span><br><span class="line">EGLFS mali.........................</span><br><span class="line">EGLFS Rasberry Pi ..................yes</span><br><span class="line">XL 上的 EGL .........................</span><br></pre></td></tr></table></figure>
+
+<h2 id="LinuxFB"><a href="#LinuxFB" class="headerlink" title="LinuxFB"></a>LinuxFB</h2><p>该插件通过 Linux 的 fbdev 子系统直接写入帧缓冲区。<strong>只支持软件渲染内容</strong>。请注意，在某些设置上，显示性能预计将受到限制。</p>
+<p>从 Qt 5.9 开始，由于 fbdev 在 Linux 内核中被弃用，DRM dumb 缓冲区支持也是可用的。必须通过将 <code>QT_QPA_FB_DRM</code> 环境变量设置为非零值来请求。当设置时，只要系统支持哑缓冲区，传统的帧缓冲设备&#x2F;dev&#x2F;fb0 就不会被访问。相反，通过 DRM API 设置渲染，类似于 <code>eglfs_kmseglfs</code> 的后端。输出将被双缓冲和页面翻转，为软件渲染内容提供适当的 vsync。</p>
+<p>注意：当使用哑缓冲区时，以下所述的任何选项都不适用，因为物理和逻辑屏幕尺寸等属性都将被自动查询。</p>
+<p>该 linuxfb 插件允许通过将它们传递给 <code>QT_QPA_PLATFORM</code> 环境变量或 <code>-platform</code> 命令行选项来指定其他设置。例如，<code>QT_QPA_PLATFORM=linuxfb:fb=/dev/fb1</code> 指定 <code>/dev/fb1</code> 必须使用帧缓冲设备而不是默认值 <code>fb0</code>。可以通过用冒号分隔多个设置来指定多个设置。</p>
+<ul>
+<li>fb&#x3D;&#x2F;dev&#x2F;fbN - 指定帧缓冲设备。在多个显示设置上，这通常允许在不同显示器上运行应用程序。暂时没有办法从一个 Qt 应用程序使用多个帧缓冲区。</li>
+<li><code>size=&lt;width&gt; x&lt;height&gt;</code> - 指定屏幕大小（以像素为单位）。插件尝试从 framebuffer 设备查询物理和逻辑的显示维度。然而，这可能并不总是导致正确的结果，因此可能需要明确指定值。</li>
+<li><code>mmsize=&lt;width&gt; x&lt;height&gt;</code> - 物理宽度和高度（以毫米为单位）。</li>
+<li><code>offset=&lt;width&gt; x&lt;height&gt;</code> - 指定屏幕左上角的像素偏移量。默认位置在(0, 0)。</li>
+<li><code>nographicsmodeswitch</code> - 不要将虚拟终端切换到图形模式（KD_GRAPHICS）。除了切换到图形模式外，闪烁的光标和屏幕消隐也通常被禁用。设置此参数时，也会跳过这些参数。</li>
+<li><code>tty=/dev/ttyN</code> - 覆盖虚拟控制台。仅在 nographicsmodeswitch 未设置时使用。</li>
+</ul>
+<p>从 Qt 5.9 起，在窗口大小调整策略中，eglfs 和 linuxfb 的行为已被同步：第一个顶级窗口被迫使用两个平台插件覆盖整个屏幕。如果不想这样，环境变量设置 <code>QT_QPA_FB_FORCE_FULLSCREEN</code> 到 0 以恢复早期的 Qt 版本的行为。</p>
+<h1 id="输入"><a href="#输入" class="headerlink" title="输入"></a>输入</h1><p>当没有窗口系统存在时，鼠标，键盘，以及触摸输入是通过直接读取 <code>evdev</code> 或使用辅助库如 <code>libinput</code> 或 <code>tslib</code>。请注意，这要求 <code>/dev/input/event*</code> 用户可以读取设备节点。<code>eglfs</code> 并 <code>linuxfb</code> 具有编译的所有输入处理代码。</p>
+<h2 id="使用-libinput"><a href="#使用-libinput" class="headerlink" title="使用 libinput"></a>使用 <code>libinput</code></h2><p>libinput 是一个用于处理输入设备的库。它提供了 Qt 自己的 evdev 输入支持的替代方案。为了能够使用 libinput，请确保所开发的文件 libudev 和 libinput 配置和构建 Qt 时可用。xkbcommon 如果需要键盘支持，也是必需的。由于这些插件默认使用 eglfs，因此 linuxfb 无需进一步的操作 libinput。如果 libinput 支持不可用或环境变量 <code>QT_QPA_EGLFS_NO_LIBINPUT</code> 设置，Qt 自己的 evdev 处理程序进来玩。</p>
+<h2 id="输入-eglfs-和-linuxfb-而不用-libinput"><a href="#输入-eglfs-和-linuxfb-而不用-libinput" class="headerlink" title="输入 eglfs 和 linuxfb 而不用 libinput"></a>输入 eglfs 和 linuxfb 而不用 libinput</h2><p>像设备节点名称参数可以在环境变量设置 <code>QT_QPA_EVDEV_MOUSE_PARAMETERS</code>，<code>QT_QPA_EVDEV_KEYBOARD_PARAMETERS</code> 和 <code>QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS</code>。用冒号分隔条目。这些参数作为传递-plugin 命令行参数中的设置的替代方法，并且对于某些后端，它们是至关重要的：eglfs 和 linuxfb 使用内置的输入处理程序，因此-plugin 在使用中没有单独的参数。</p>
+<p>此外，内置的输入处理程序可以通过设置被禁用 <code>QT_QPA_EGLFS_DISABLE_INPUT</code> 或 <code>QT_QPA_FB_DISABLE_INPUT</code> 到 1。</p>
+<h2 id="鼠标"><a href="#鼠标" class="headerlink" title="鼠标"></a>鼠标</h2><p>鼠标光标每当出现 <code>QT_QPA_EGLFS_HIDECURSOR</code>（对于 eglfs）或 <code>QT_QPA_FB_HIDECURSOR</code>（对于 linuxfb）未设置，Qt 的基于 libudev 的设备发现报告至少有一个鼠标可用。当 libudev 不存在支持时，鼠标光标始终显示，除非通过环境变量显式禁用。</p>
+<p>支持热插拔，但只有当 Qt 配置了 libudev 支持（即，如果 libudev 开发头在配置时在 sysroot 中存在）。这允许在应用程序运行时连接或断开输入设备。evdev 鼠标处理器支持以下额外的参数：</p>
+<ul>
+<li><code>/dev/input/...</code> - 指定输入设备的名称。当没有给出时，Qt 通过 libudev 或通过可用节点来查找合适的设备。</li>
+<li><code>nocompress</code> - 默认情况下，与最后一个 Qt 鼠标事件相比，不会导致更改位置的输入事件被压缩; 在更改位置或按钮状态后，才会发送新的 Qt 鼠标事件。可以通过设置 nocompress 参数来禁用。</li>
+<li><code>dejitter</code> - 指定抖动限制。默认情况下禁用消隐功能。</li>
+<li><code>grab</code> - 当 1，Qt 将抓住设备专用。</li>
+<li><code>abs</code> - 一些触摸屏报告绝对坐标，不能与触摸板区分开来。在这种特殊情况下，通过 abs 表示设备正在使用绝对事件。</li>
+</ul>
+<h2 id="键盘"><a href="#键盘" class="headerlink" title="键盘"></a>键盘</h2><p>该了 evdev 键盘处理程序支持以下额外的参数：</p>
+<ul>
+<li><code>/dev/input/... </code>- 指定输入设备的名称。当没有给出时，Qt 通过 libudev 或通过可用节点来查找合适的设备。</li>
+<li><code>grab</code> - 启用抓取输入设备。</li>
+<li><code>keymap</code> - 指定自定义键盘映射文件的名称。</li>
+<li><code>enable-compose</code> - 启用合成。</li>
+<li><code>repeat-delay</code> - 设置自定义键重复延迟。</li>
+<li><code>repeat-rate</code> - 设置自定义键重复率。</li>
+</ul>
+<p>在没有停用终端会话的嵌入式 Linux 系统上，由于输入事件由 Qt 应用程序和 tty 处理，按键上的行为可能会令人困惑。为了克服这一点，可以使用以下选项：</p>
+<ul>
+<li>EGLFS 和 LinuxFB 尝试通过设置 tty 的键盘模式来禁用应用程序启动时的终端键盘 K_OFF。这样可以防止键盘进入终端。如果由于某些原因需要恢复标准行为，请将环境变量设置 QT_QPA_ENABLE_TERMINAL_KEYBOARD 为 1。请注意，仅当应用程序从远程控制台（例如，通过 ssh）启动并且终端键盘输入保持启用时，该功能才起作用。</li>
+<li>另一种方法是使用了 evdev 键盘处理程序的 grab 通过传递参数抢&#x3D; 1 在 QT_QPA_EVDEV_KEYBOARD_PARAMETERS。这样会导致尝试在输入设备上进行抓取。如果 grab 成功，只要 Qt 应用程序运行，系统中没有其他组件从中接收事件。这种方法更适合远程启动的应用程序，因为它不需要访问 tty 设备。</li>
+<li>最后，对于许多专门的嵌入式 Linux 图像，首先启用标准终端会话是没有意义的。请参阅您的构建环境的文档，了解如何禁用它们。例如，当使用 Yocto Project 生成图像时，取消设置将 SYSVINIT_ENABLED_GETTYS 导致 getty 任何虚拟终端无任何进程运行，从而导致无输入。</li>
+</ul>
+<p>如果默认内置键盘映射不够，可以通过 keymap 参数或使用 eglfs 特定的 loadKeymap（）函数指定不同的键盘映射。后者允许在运行时切换键盘映射。但是请注意，这需要使用 eglfs 的内置键盘处理程序; 当通过-plugin 命令行参数加载键盘处理程序时，不支持它。</p>
+<p>注意：目前不支持特殊的系统组合键，例如控制台切换（Ctrl + Alt + Fx）或 zap（Ctrl + Alt + Backspace），并被忽略。</p>
+<p>要生成自定义键盘映射，可以使用 kmap2qmap 实用程序。这可以在 qttools 模块中找到。源文件必须是标准的 Linux kmap 格式，这是内核的 loadkeys 命令所理解的。这意味着可以使用以下源生成 qmap 文件：</p>
+<ul>
+<li>在 Linux 控制台工具（LCT）项目。</li>
+<li>Xorg X11 键盘映射可以转换 kmap 为该 ckbcomp 实用程序的格式。</li>
+<li>由于 kmap 文件是纯文本文件，它们也可以手工制作。</li>
+</ul>
+<p>kmap2qmap 是一个命令行程序，至少需要 2 个文件作为参数。最后一个是生成的.qmap 文件，而其他所有文件都被解析为输入.kmap 文件。例如：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">kmap2qmap i386 /qwertz/de-latin1-nodeadkeys.kmap include/compose.latin1.inc de-latin1-nodeadkeys.qmap</span><br></pre></td></tr></table></figure>
+
+<p>注意：kmap2qmap 不支持 Linux 内核支持的所有（伪）符号。转换标准键盘图时，会显示许多警告，关于 Show_Registers，Hex_A 等等; 这些消息可以安全地被忽略。</p>
+<h2 id="触摸"><a href="#触摸" class="headerlink" title="触摸"></a>触摸</h2><p>对于一些电阻式单触摸触摸屏，可能需要退回使用 tslib 而不是依赖于 Linux 多点触控协议和事件设备。对于现代触摸屏，这是不必要的。tslib 可以通过设置环境变量 <code>QT_QPA_EGLFS_TSLIB</code> 或 <code>QT_QPA_FB_TSLIB1</code> 来启用支持。要更改设备，请 <code>TSLIB_TSDEVICE</code> 在命令行中设置环境变量或传递设备名称。请注意，tslib 输入处理程序生成鼠标事件并支持单触摸，而不是 <code>evdevtouch</code> 生成真正的多点触控 <code>QTouchEvent</code> 事件。 evdev 触摸处理器支持以下额外的参数：</p>
+<ul>
+<li>&#x2F;dev&#x2F;input&#x2F;… - 指定输入设备的名称。当没有给出时，Qt 通过 libudev 或通过可用节点来查找合适的设备。</li>
+<li>rotate- 在某些触摸屏上，坐标必须旋转，这可以通过设置 rotate 为 90,180 或 270 进行。</li>
+<li>invertx 和 inverty- 反转输入事件中的 X 或 Y 坐标，通过 invertx 或 inverty。</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="keyword">export</span> QT_QPA_EVDEV_TOUCHSCREEN_PARAMETERS=/dev/input/event5:rotate=<span class="number">180</span></span><br></pre></td></tr></table></figure>
+
+<p>在启动应用程序之前，会导致明确指定的触摸设备并翻转坐标 - 当实际屏幕和触摸屏的方向不匹配时很有用。</p>
+<h2 id="笔式平板电脑"><a href="#笔式平板电脑" class="headerlink" title="笔式平板电脑"></a>笔式平板电脑</h2><p>该 evdevtablet 插件为 Wacom 和类似的基于笔的平板电脑提供了基本的支持。它仅生成 QTabletEvent 事件。要启用它，请传递 <code>QT_QPA_GENERIC_PLUGINS=evdevtablet </code> 给环境，或者 <code>-plugin evdevtablet</code> 在命令行中传递参数。插件可以使用设备节点参数，例如 <code> QT_QPA_GENERIC_PLUGINS=evdevtablet:/dev/event1</code>，Qt 的自动设备发现（基于 libudev 或演练&#x2F;dev&#x2F;input&#x2F;event*）不起作用或行为不正常的情况。</p>
+<h2 id="调试输入设备"><a href="#调试输入设备" class="headerlink" title="调试输入设备"></a>调试输入设备</h2><p>通过启用 qt.qpa.input 日志规则，例如通过将 QT_LOGGING_RULES 环境变量设置为，可以向调试输出打印一些信息 qt.qpa.input&#x3D;true。这对于检测正在使用哪个设备或对设备发现问题进行故障排除非常有用。</p>
+<h2 id="使用自定义鼠标光标图像"><a href="#使用自定义鼠标光标图像" class="headerlink" title="使用自定义鼠标光标图像"></a>使用自定义鼠标光标图像</h2><p>eglfs 自带的 32x32 尺寸的鼠标光标图像。如果这些还不够，可以通过将 <code>QT_QPA_EGLFS_CURSOR</code> 环境变量设置为 JSON 文件的名称来提供自定义游标地图集。该文件也可以通过 Qt 的资源系统嵌入到应用程序中。</p>
+<p>例如，每行具有 8 个光标图像的嵌入式光标图集可以指定如下：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">&#123;</span><br><span class="line">	“image”：“：/cursor-atlas.png”</span><br><span class="line">	“cursorsPerRow”：<span class="number">8</span>，</span><br><span class="line">	“热点”：[</span><br><span class="line">		[<span class="number">7</span>，<span class="number">2</span>]</span><br><span class="line">		[<span class="number">12</span>，<span class="number">3</span>]</span><br><span class="line">		[<span class="number">12</span>，<span class="number">12</span>]</span><br><span class="line">		...</span><br><span class="line">	]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>请注意，图像预计将紧紧地包装在图集中：光标的宽度和高度根据总图像大小和 cursorsPerRow 设置决定。地图集必须为所有支持的游标提供图像。</p>
+<h1 id="显示输出"><a href="#显示输出" class="headerlink" title="显示输出"></a>显示输出</h1><p>当连接多个显示器时，从一个单一 Qt 应用程序中定向一个或多个显示器的支持级别在平台插件之间变化，并且通常取决于设备及其图形堆栈。</p>
+<h2 id="eglfs-与-eglfs-kms-后端"><a href="#eglfs-与-eglfs-kms-后端" class="headerlink" title="eglfs 与 eglfs_kms 后端"></a>eglfs 与 eglfs_kms 后端</h2><p>当 KMS &#x2F; DRM 后台正在使用时，eglfs 报告 QGuiApplication :: screens（）中的所有可用屏幕。应用程序可以使用不同的窗口通过 QWindow :: setScreen（）来定位不同的屏幕。</p>
+<p>注意：每个屏幕的一个全屏窗口的限制仍然适用。使 QWindow 可见后更改屏幕也不受支持。因此，嵌入式应用程序必须在调用 QWindow :: show（）之前进行所有必要的 QWindow :: setScreen（）调用。</p>
+<p>当开始在给定的嵌入式设备上开发时，通常需要验证设备和驱动程序的行为，并且所连接的显示器应该是正常工作的。一个简单的方法是使用 hellowindow 示例。用-platform eglfs –multiscreen –timeout 参数启动它在每个连接的屏幕上显示一个旋转的 Qt 标志几秒钟。</p>
+<p>注意：下面描述的大多数配置选项适用于所有基于 KMS &#x2F; DRM 的后端，无论缓冲管理技术（GBM 或 EGLStreams）如何。</p>
+<p>KMS &#x2F; DRM 后端还支持通过 JSON 文件进行自定义配置。将环境变量设置为 <code>QT_QPA_EGLFS_KMS_CONFIG</code> 文件的名称以启用此功能。该文件也可以通过 Qt 资源系统嵌入到应用程序中。示例配置如下：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">&#123;</span><br><span class="line">	“device”：“/ dev / dri / card1”，</span><br><span class="line">	“hwcursor”：<span class="literal">false</span>，</span><br><span class="line">	“pbuffers”：真的，</span><br><span class="line">	“输出”：[</span><br><span class="line">		&#123;</span><br><span class="line">			“name”：“VGA1”，</span><br><span class="line">			“关闭模式”</span><br><span class="line">		&#125;，</span><br><span class="line">		&#123;</span><br><span class="line">			“name”：“HDMI1”，</span><br><span class="line">			“mode”：“<span class="number">1024</span>x768”</span><br><span class="line">		&#125;</span><br><span class="line">	]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这里我们配置指定的设备</p>
+<ul>
+<li>它不会使用硬件光标（通过 OpenGL 退回渲染鼠标光标;默认情况下，启用硬件光标，因为它们更有效），</li>
+<li>它将使用标准的 EGL pbuffer 表面返回 QOffscreenSurface（默认情况下，这是禁用的，而是使用 gbm 表面），</li>
+<li>VGA 连接器上的输出被禁用，而 HDMI 处于活动状态，分辨率为 1024x768。</li>
+</ul>
+<p>另外，这样的配置也禁用寻找设备 libudev，而是使用指定的设备。</p>
+<p>何时 mode 未定义，系统选择报告为首选的模式。为可接受的值 mode 是：off，current，preferred，宽度 x 高度，或模式行字符串。</p>
+<p>默认情况下，DRM 层报告的所有屏幕都将被视为一个大型虚拟桌面。鼠标光标实现将考虑到这一点，并按预期在屏幕上移动。尽管不推荐，虚拟桌面模式可以通过设置被禁用 separateScreens，以 false 在配置上，如果需要的话。</p>
+<p>默认情况下，根据系统报告的连接器顺序，虚拟桌面从左到右形成。这可以通过设置 virtualIndex 为从 0 开始的值来更改。例如，以下配置使用首选分辨率，但确保虚拟桌面中的左侧是屏幕连接到 HDMI 端口，而右侧是屏幕连接到 DisplayPort：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">&#123;</span><br><span class="line">	“device”：“drm-nvdc”，</span><br><span class="line">	“输出”：[</span><br><span class="line">		&#123;</span><br><span class="line">			“name”：“HDMI1”，</span><br><span class="line">			“virtualIndex”：<span class="number">0</span></span><br><span class="line">		&#125;，</span><br><span class="line">		&#123;</span><br><span class="line">			“name”：“DP1”，</span><br><span class="line">			“virtualIndex”：<span class="number">1</span></span><br><span class="line">		&#125;</span><br><span class="line">	]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>数组中的元素的顺序是不相关的。具有未指定虚拟索引的输出将放在其他虚拟索引之后，并保留 DRM 连接器列表中的原始顺序。</p>
+<p>要创建一个垂直的桌面空间（即，从上到下而不是从左到右堆叠），添加一个 virtualDesktopLayout 属性后面 device 的值 vertical。</p>
+<p>注意：建议虚拟桌面中的所有屏幕使用相同的分辨率，否则像鼠标光标那样的元素可能会在输入仅存在于一个给定屏幕上的区域时以意想不到的方式运行。</p>
+<p>何时 virtualIndex 不够，该属性 virtualPos 可用于明确指定问题屏幕的左上角位置。以前面的例子，假设 HDMI1 的分辨率为 1080p，下面第一个基于 HDMI 的屏幕放在第一个：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">&#123;</span><br><span class="line">	...</span><br><span class="line">	“输出”：[</span><br><span class="line">		...</span><br><span class="line">		&#123;</span><br><span class="line">			“name”：“HDMI2”，</span><br><span class="line">			“virtualPos”：“<span class="number">0</span>，<span class="number">1080</span>”</span><br><span class="line">		&#125;</span><br><span class="line">	]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>注意：在需要鼠标支持时避免这样的配置。鼠标光标的行为可能是意想不到的非线性布局。Touch 应该没有问题。</p>
+<p>在某些情况下，通过 DRM 自动查询物理屏幕尺寸可能会失败。通常 <code>QT_QPA_EGLFS_PHYSICAL_WIDTH</code>，<code>QT_QPA_EGLFS_PHYSICAL_HEIGHT</code> 环境变量将用于提供缺失值，但是当存在多个屏幕时，这并不适用。而是使用列表中的 <code>physicalWidth</code> 和 <code>physicalHeight</code> 属性 <code>outputs</code> 来指定以毫米为单位的大小。</p>
+<p>注意：不同的物理尺寸和不同的逻辑 DPI 不鼓励，因为它可能会导致意外的问题，因为一些图形堆栈组件不知道多个屏幕，仅依靠第一个屏幕的值。</p>
+<p>从每个有源输出 outputs 阵列对应于一个 QScreen 从报告实例 QGuiApplication ::屏幕（）。QGuiApplication :: primaryScreen（）报告的主屏幕是默认首先注册的屏幕。当不使用时 virtualIndex，这意味着决定是基于 DRM 连接器顺序。要覆盖这一点，属性设置 primary，以 true 对在所需的条目 outputs 列表。例如，为了确保与 VGA 输出相对应的屏幕将是主要的，即使系统首先报告 HDMI，则可以执行以下操作：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">&#123;</span><br><span class="line">	“device”：“/ dev / dri / card0”，</span><br><span class="line">	“输出”：[</span><br><span class="line">		&#123;“name”：“HDMI1”&#125;，</span><br><span class="line">		&#123;“name”：“VGA1”，“mode”：“<span class="number">1280</span>x720”，“primary”：<span class="literal">true</span>&#125;，</span><br><span class="line">		&#123;“name”：“LVDS1”，“mode”：“off”&#125;</span><br><span class="line">	]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>为了进行故障排除，可能会启用 KMS &#x2F; DRM 后端的调试日志。为此，启用分类日志记录规则 <code>qt.qpa.eglfs.kms</code>。</p>
+<p>注意：在嵌入式环境中，虚拟桌面比全窗口系统更为有限。应该避免 Windows 重叠多个屏幕，非全屏窗口和屏幕之间的移动窗口，并且可能无法正常运行。</p>
+<p>多屏幕设置最常用和最受支持的用例是为每个屏幕打开一个专用的 QQuickWindow 或 QQuickView。使用 threadedQt Quick 场景图的默认渲染循环，这些窗口中的每个都将获得自己的专用渲染线程。这是很好的，因为线程可以基于 vsync 独立调节，并且不会相互干扰。通过 basic 循环，这可能会产生问题，动画可能会因此而恶化。</p>
+<p>例如，发现所有连接的屏幕，并为每个屏幕创建一个 QQuickView 可以这样完成：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">(<span class="type">int</span> argc, <span class="type">char</span> **argv)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="function">QGuiApplication <span class="title">app</span><span class="params">(argc, argv)</span></span>;</span><br><span class="line">    QVector&lt;QQuickView *&gt;views;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">for</span>(QScreen * screen : app.<span class="built_in">screens</span>())&#123;</span><br><span class="line">        QQuickView * view = <span class="keyword">new</span> QQuickView;</span><br><span class="line">        view-&gt;<span class="built_in">setScreen</span>(screen);</span><br><span class="line">        view-&gt;<span class="built_in">setResizeMode</span>(QQuickView::SizeRootObjectToView);</span><br><span class="line">        view-&gt;<span class="built_in">setSource</span>(<span class="built_in">QUrl</span>(<span class="string">&quot;qrc:/main.qml&quot;</span>));</span><br><span class="line">        QObject::<span class="built_in">connect</span>(view-&gt;<span class="built_in">engine</span>(), &amp;QQmlEngine::quit, qGuiApp, &amp;QCoreApplication::quit);</span><br><span class="line">        views.<span class="built_in">append</span>(view);</span><br><span class="line">        view-&gt;<span class="built_in">showFullScreen</span>();</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="type">int</span> result = app.<span class="built_in">exec</span>();</span><br><span class="line">    </span><br><span class="line">    <span class="built_in">qDeleteAll</span>(views);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="eglfs-与-eglfs-kms-egldevice-后端"><a href="#eglfs-与-eglfs-kms-egldevice-后端" class="headerlink" title="eglfs 与 eglfs_kms_egldevice 后端"></a>eglfs 与 eglfs_kms_egldevice 后端</h2><p>通常在 Tegra 设备上使用的这种后端与上述 KMS &#x2F; DRM 后端类似，不同之处在于它依赖于 EGLDevice 和 EGLStream 扩展而不是 GBM。</p>
+<p>有关此方法的技术细节，请查看演示文稿。</p>
+<p>截至 Qt 5.7，该后端与基于 GBM 的后端共享了许多内部实现。这意味着支持多个屏幕和高级配置通道 <code>QT_QPA_EGLFS_KMS_CONFIG</code>。一些设置，如 hwcursor 和 pbuffers 不适用。</p>
+<p>默认情况下，后端将自动为每个输出的默认平面选择正确的 EGL 层。必要时，可以通过将 <code>QT_QPA_EGLFS_LAYER_INDEX</code> 环境变量设置为所需层的索引来覆盖。此方法目前不支持多个输出，因此其使用应限于具有单个屏幕的系统。要查看哪些层可用，并调试潜在的启动问题，请启用日志记录类别 qt.qpa.eglfs.kms。</p>
+<p>在某些情况下，即使屏幕报告已经设置了所需分辨率，也可能需要执行应用程序启动时设置的视频模式。这通常是被优化的，但如果屏幕保持关闭状态，请尝试将环境变量设置为 <code>QT_QPA_EGLFS_ALWAYS_SET_MODE</code> 非零值并重新启动应用程序。</p>
+<p>要配置后端使用的 EGLStream 对象的行为，请使用 <code>QT_QPA_EGLFS_STREAM_FIFO_LENGTH</code> 环境变量。这假定 KHR_stream_fifo 是目标系统支持的。默认情况下，流以邮箱模式运行。要切换到 FIFO 模式，请设置 1 或更大的值。该值指定流可以容纳的最大帧数。</p>
+<p>在某些系统上，可能需要通过预定义的连接器来定位特定的覆盖平面。强制层索引通过 <code>QT_QPA_EGLFS_LAYER_INDEX</code> 不执行平面配置，因此本身不适用。相反，在这种特殊情况下，使用 <code>QT_QPA_EGLFS_KMS_CONNECTOR_INDEX</code> 和 <code>QT_QPA_EGLFS_KMS_PLANE_INDEX</code> 环境变量。当这些设置被设置时，只有指定的连接器和平面将被使用，所有其他输出将被忽略。后端将负责选择对应于所需平面的 EGL 层和配置平面。</p>
+<h2 id="在-KMS-DRM-上有多个屏幕的系统中触摸输入"><a href="#在-KMS-DRM-上有多个屏幕的系统中触摸输入" class="headerlink" title="在 KMS &#x2F; DRM 上有多个屏幕的系统中触摸输入"></a>在 KMS &#x2F; DRM 上有多个屏幕的系统中触摸输入</h2><p>触摸屏在多显示系统中需要额外的考虑因素，因为触摸事件必须路由到正确的虚拟屏幕，这需要触摸屏和显示器输出之间的正确映射。</p>
+<p>映射通过 <code>QT_QPA_EGLFS_KMS_CONFIG</code> 前面部分中指定和描述的 JSON 配置文件完成。当 <code>touchDevice</code> 属性存在于 <code>outputs</code> 数组的元素中时，该值被视为设备节点，并且触摸设备与所讨论的显示输出相关联。</p>
+<p>例如，假设我们的触摸屏具有&#x2F; dev &#x2F; input &#x2F; event5 的设备节点，并且是集成到通过 HDMI 连接的显示器作为辅助屏幕的触摸屏，以下配置确保正确的触摸（和合成鼠标）事件转换：</p>
+<figure class="highlight plaintext"><table><tr><td class="code"><pre><span class="line">&#123;</span><br><span class="line">	“device”：“drm-nvdc”，</span><br><span class="line">	“输出”：[</span><br><span class="line">		&#123;</span><br><span class="line">			“name”：“HDMI1”，</span><br><span class="line">			“touchDevice”：“/ dev / input / event5”，</span><br><span class="line">			“virtualIndex”：1</span><br><span class="line">		&#125;，</span><br><span class="line">		&#123;</span><br><span class="line">			“name”：“DP1”，</span><br><span class="line">			“virtualIndex”：0</span><br><span class="line">		&#125;</span><br><span class="line">	]</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>注意：如有疑问，请 <code>QT_LOGGING_RULES=qt.qpa.*=true</code> 在启动应用程序之前通过设置环境变量来启用图形和输入子系统的日志记录。这将有助于识别正确的输入设备节点，并且可能会发现可能难以调试的输出配置问题。</p>
+<p>注意：从 Qt 5.8 起，上述只支持 <code>evdevtouch</code> 输入后端。其他变体，例如基于 <code>libinput</code> 的变体，将继续将事件路由到主屏幕。要强制在具有多个输入后端的系统上使用 <code>evdevtouch</code>，请将环境变量设置 <code>QT_QPA_EGLFS_NO_LIBINPUT</code> 为 1。</p>
+<h2 id="eglfs-与其他后端"><a href="#eglfs-与其他后端" class="headerlink" title="eglfs 与其他后端"></a>eglfs 与其他后端</h2><p>通常基于通过供应商的 EGL 实现直接针对帧缓冲区或组合 API 的其他后端，通常对多个显示器提供有限或不支持的支持。在使用 Vivante GPU 的基于 i.MX6 的电路板上，与 <code>linuxfb</code> 类似，<code>QT_QPA_EGLFS_FB</code> 环境变量可用于指定要缓存的帧缓冲区。在 <code>Raspberry Pi </code> 上，<code>QT_QPA_EGLFS_DISPMANX_ID</code> 环境变量可用于指定要输出的屏幕。该值对应于其中一个 <code>DISPMANX_ID_</code> 常量，请参考 <code>Dispmanx</code> 文档。请注意，与 <code>KMS / DRM</code> 不同，这些方法通常不允许从同一应用程序输出到多个屏幕。或者，驱动程序特定的环境变量或内核参数也可以用于控制所使用的帧缓冲区。</p>
+<h2 id="视频内存"><a href="#视频内存" class="headerlink" title="视频内存"></a>视频内存</h2><p>具有固定数量的专用视频内存的系统在运行基于 Qt Quick 的 Qt 应用程序或类似 QOpenGLWidget 的类之前，可能需要特别注意。对于这样的应用，默认设置可能不足，特别是当它们以高分辨率（例如，全高清）屏幕显示时。在这种情况下，他们可能以意想不到的方式开始失败。建议确保至少有 128 MB 的 GPU 内存可用。对于没有为 GPU 保留的固定内存量的系统，这不是一个问题。</p>
+<h2 id="linuxfb"><a href="#linuxfb" class="headerlink" title="linuxfb"></a>linuxfb</h2><p>使用 fbplugin 参数指定要使用的 framebuffer 设备。</p>
+<h2 id="Unix-信号处理程序"><a href="#Unix-信号处理程序" class="headerlink" title="Unix 信号处理程序"></a>Unix 信号处理程序</h2><p>面向控制台的平台插件，如 eglfs 和 linuxfb 默认安装信号处理程序来捕获 interrupt（SIGINT），suspend 和 continue（SIGTSTP，SIGCONT）和 terminate（SIGTERM）。这样，当应用程序终止或由于 kill 或 Ctrl+C 或暂停时，可以恢复键盘，终端光标和可能的其他图形状态 Ctrl+Z。（尽管通过键盘终止或暂停只能在 QT_QPA_ENABLE_TERMINAL_KEYBOARD 设置时进行，如上面的“输入”部分所述）。然而，在某些情况下，捕获 SIGINT 可能是不合需要的，因为它可能会与远程调试冲突。因此，QT_QPA_NO_SIGNAL_HANDLER 提供环境变量以选择退出所有内置信号处理。</p>
+<h2 id="字体"><a href="#字体" class="headerlink" title="字体"></a>字体</h2><p>Qt 通常用于 fontconfig 提供对系统字体的访问。如果 fontconfig 不可用，Qt 会回退使用 QBasicFontDatabase。在这种情况下，Qt 应用程序将在 Qt 的 lib&#x2F;fonts 目录中查找字体。Qt 会自动检测预渲染的字体和 TrueType 字体。可以通过设置 QT_QPA_FONTDIR 环境变量来覆盖此目录。</p>
+<p>有关支持的格式的详细信息，请参阅嵌入式 Linux 字体的 Qt。</p>
+<p>注意： Qt 不再在 lib&#x2F;fonts 目录中装载任何字体。这意味着由平台（系统映像）提供必要的字体。</p>
+<h1 id="嵌入式-Linux-设备上的窗口系统的平台插件"><a href="#嵌入式-Linux-设备上的窗口系统的平台插件" class="headerlink" title="嵌入式 Linux 设备上的窗口系统的平台插件"></a>嵌入式 Linux 设备上的窗口系统的平台插件</h1><h2 id="XCB"><a href="#XCB" class="headerlink" title="XCB"></a>XCB</h2><p>这是常规桌面 Linux 平台上使用的 X11 插件。在一些嵌入式环境中，它为 Xcb 提供了 X 和必要的开发文件，这个插件就像在普通的 PC 桌面上一样。</p>
+<p>注意：在某些设备上，由于 EGL 实现与 Xlib 不兼容，因此在 X 下没有 EGL 和 OpenGL 支持。在这种情况下，XCB 插件是在没有 EGL 支持的情况下构建的，这意味着 Qt Quick 2 或其他基于 OpenGL 的应用程序不适用于此平台插件。然而，仍然可以使用它来运行软件渲染的应用程序（例如基于 QWidget）。</p>
+<p>作为一般规则，XCB 在嵌入式设备上的使用是不可取的。像 eglfs 这样的插件可能会提供更好的性能和硬件加速。</p>
+<h2 id="Wayland"><a href="#Wayland" class="headerlink" title="Wayland"></a>Wayland</h2><p>Wayland 是一个重量轻的开窗系统; 或者更准确地说，它是用于客户端与显示服务器通信的协议。</p>
+<p>Qt Wayland 模块提供了一个 wayland 平台插件，允许 Qt 应用程序连接到 Wayland 合成器。</p>
+<p>注意：使用 Weston 参考合成器时，您可能会遇到触摸屏输入的问题。有关更多信息，请参阅 Qt Wiki。</p>
+]]></content>
+      <categories>
+        <category>0.平台</category>
+        <category>嵌入式</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>嵌入式介绍</title>
+    <url>/2024/08/28/0-%E5%B9%B3%E5%8F%B0-%E5%B5%8C%E5%85%A5%E5%BC%8F-%E5%B5%8C%E5%85%A5%E5%BC%8F%E4%BB%8B%E7%BB%8D/</url>
+    <content><![CDATA[<h1 id="嵌入式-linux-开发介绍"><a href="#嵌入式-linux-开发介绍" class="headerlink" title="嵌入式 linux 开发介绍"></a>嵌入式 linux 开发介绍</h1><h2 id="嵌入式系统简介"><a href="#嵌入式系统简介" class="headerlink" title="嵌入式系统简介"></a>嵌入式系统简介</h2><ul>
+<li>一般定义<br>  以应用为中心、以计算机技术为基础、软件硬件可裁剪、适应应用系统，对功能、可靠性、成本、体积、功耗严格要求的专用计算机系统</li>
+<li>广义上讲<br>  凡是带有微处理器的专用软硬件系统都可称为嵌入式系统。</li>
+</ul>
+<p>嵌入式系统又分为多个模块部分</p>
+<ul>
+<li>ARM &#x3D;重视理论实践</li>
+<li>系统移植 &#x3D;重视流程    </li>
+<li>驱动 &#x3D;重视框架</li>
+</ul>
+<h2 id="嵌入式系统的组成"><a href="#嵌入式系统的组成" class="headerlink" title="嵌入式系统的组成"></a>嵌入式系统的组成</h2><ul>
+<li><p>软件（linux，VXwork   +   应用程序） </p>
+</li>
+<li><p>硬件（C51，stm32， arm，mips powerpc  + DRAM  emmc  uart） 	</p>
+</li>
+<li><p>win<br>  BIOS  &#x3D;&gt;  win 系统&#x3D;&#x3D;&gt;   文件系统&#x2F;加载驱动   &#x3D;&#x3D;&gt;   应用程序</p>
+</li>
+<li><p>linux<br>  bootloader（引导程序） &#x3D;&#x3D;&gt;  linux 内核  &#x3D;&#x3D;&gt;  挂载文件系统&#x2F;驱动  &#x3D;&#x3D;&gt;  应用程序</p>
+</li>
+</ul>
+<p>运行操作系统的优点：</p>
+<ul>
+<li>方便开发</li>
+<li>将硬件与软件隔离（保护硬件）</li>
+</ul>
+<h2 id="嵌入式-linnux-系统移植做哪些工作"><a href="#嵌入式-linnux-系统移植做哪些工作" class="headerlink" title="嵌入式 linnux 系统移植做哪些工作"></a>嵌入式 linnux 系统移植做哪些工作</h2><p>产品升级（产品添加某些功能模块，产品裁剪了某些功能模块，A8 –》 A9</p>
+<h1 id="嵌入式开发环境的搭建"><a href="#嵌入式开发环境的搭建" class="headerlink" title="嵌入式开发环境的搭建"></a>嵌入式开发环境的搭建</h1><p>采用的交叉开发模式，即编译和运行不在同一台主机上</p>
+<p><img src="https://raw.githubusercontent.com/liuluhua/liuluhua.github.io/ImageBed/obsidian/1724828271000tutret.png" alt="gh"></p>
+<h2 id="GCC-简介"><a href="#GCC-简介" class="headerlink" title="GCC 简介"></a>GCC 简介</h2><p>Gcc 的编译流程：</p>
+<ul>
+<li>预处理 gcc -E</li>
+<li>编译 gcc -S</li>
+<li>汇编 gcc -c</li>
+<li>链接	     gcc</li>
+</ul>
+<h2 id="gcc-工具集"><a href="#gcc-工具集" class="headerlink" title="gcc 工具集"></a>gcc 工具集</h2><ul>
+<li>readelf：功能：readelf 可以显示 elf 格式可执行文件的信息</li>
+<li>size：功能：size 列出目标文件每一段的大小以及总体的大小</li>
+<li>nm：功能：nm 可以列出目标文件中的符号。	</li>
+<li>strip 功能：strip 用来丢弃目标文件中的全部或者特定符号，减小文件体积。对于嵌入式系统，这个命令必不可少。</li>
+<li>objcopy：功能：objcopy 可以进行目标文件格式转换 objcopy -O binary hello  hello.bin objcopy -O binary u-boot u-boot.bin</li>
+<li>objdump: 功能：反汇编 objdump -d hello  objdump -d hello &gt; hello.dis</li>
+<li>addr2line 功能：addr2line 能够把程序地址转换为文件名和行号，前提是这个可执行文件包括调试符号。</li>
+</ul>
+<h2 id="安装交叉编译工具链"><a href="#安装交叉编译工具链" class="headerlink" title="安装交叉编译工具链"></a>安装交叉编译工具链</h2><ul>
+<li>解压 gcc-4.6…   到 tootchain</li>
+<li>配置环境变量</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">sudo vi /etc/bash.bashrc </span><br><span class="line"><span class="keyword">export</span> PATH=$PATH:/home/linux/toolchain/gcc<span class="number">-4.6</span><span class="number">.4</span>/bin/ </span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>重启 source &#x2F;etc&#x2F;bash.bashrc</li>
+<li>测试 arm-none-linux-gnueabi-gcc –v</li>
+</ul>
+<h2 id="TFTP-服务器的安装和配置"><a href="#TFTP-服务器的安装和配置" class="headerlink" title="TFTP 服务器的安装和配置"></a>TFTP 服务器的安装和配置</h2><p>tftp 是用来下载远程文件最简单的网络协议</p>
+<p><img src="https://raw.githubusercontent.com/liuluhua/liuluhua.github.io/ImageBed/obsidian/17248283040004sf8cs.png" alt="gh"></p>
+<ul>
+<li>修改配置文件，开启 tftp 服务</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">sudo vi /etc/<span class="keyword">default</span>/tftp-hapa</span><br></pre></td></tr></table></figure>
+
+<p>修改成：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">TFTP_USERNAME=<span class="string">&quot;tftp&quot;</span> </span><br><span class="line">TFTP_DIRECTORY=<span class="string">&quot;/tftpboot&quot;</span>   <span class="comment">//指定tftp服务器的目录，将来要下载东西都是从这个目录下下载，需自行创建，然后修改权限为777</span></span><br><span class="line">TFTP_ADDRESS=<span class="string">&quot;0.0.0.0:69&quot;</span>    <span class="comment">//69： tftp  专有的端口</span></span><br><span class="line">TFTP_OPTIONS=<span class="string">&quot;-c  -s  -l&quot;</span>    <span class="comment">//man tftpd可查看各个选项的含义</span></span><br><span class="line"><span class="comment">//-c：表示可以在服务器目录下（/tftpboot）下创建新文件，默认不能创建新文件，只能修改或覆盖</span></span><br><span class="line"><span class="comment">//-s: 改变 tftp 启动的根目录，也就是客户端在使用 tftp 时不需要输入/tftpboot 目录</span></span><br><span class="line"><span class="comment">//-l：表示以监听模式启动 tftp 服务器</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>创建服务器的根目录&#x2F;tftpboot</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">sudo mkdir /tftpboot</span><br><span class="line">chmod <span class="number">777</span> /tftpboot -R</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>重启 tftp 服务器</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">sudo service tftpd-hpa restart</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>登录本机进行测试</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">tftp localhost 或者 tftp <span class="number">192.168</span><span class="number">.1</span><span class="number">.111</span> 或者 tftp <span class="number">127.0</span><span class="number">.0</span><span class="number">.1</span></span><br><span class="line">tftp&gt; get xxx    <span class="comment">//从服务器（/tftpboot 目录）下载文件名为 XXX 的文件</span></span><br><span class="line">tftp&gt; put xxx         <span class="comment">//xxx 为你想要往服务器（/tftpboot 目录）发送的文件</span></span><br><span class="line">tftp&gt; q                   <span class="comment">//q 表示退出</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="nfs-服务器的安装和配置"><a href="#nfs-服务器的安装和配置" class="headerlink" title="nfs 服务器的安装和配置"></a>nfs 服务器的安装和配置</h2><p>nfs 主要用来进行目录的共享（把本地的一个目录通过网络导出，其他设备可以远程访问该目录），我们的测试程序不用通过下载到目标板，目标机可以通过共享目录访问，提高开发效率。</p>
+<ul>
+<li>修改配置文件</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">sudo vi /etc/<span class="keyword">export</span></span><br></pre></td></tr></table></figure>
+
+<p>在最后一行添加：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">/source/rootfs *(rw,sync,no_subtree_check,no_root_squash)</span><br><span class="line"><span class="comment">///source/rootfs 是指定的共享目录，需自己创建</span></span><br><span class="line"><span class="comment">//rw：具有读写权限</span></span><br><span class="line"><span class="comment">//sync：文件同步</span></span><br><span class="line"><span class="comment">//no_subtree_check: 如果共享子目录，则不检查父目录的权限</span></span><br><span class="line"><span class="comment">//no_root_squash: 如果客户端为 root 用户，则它对此目录有 root 权限</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>重启 nfs 服务</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">sudo service nfs-kernel-server restart</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>创建共享目录 <code>mkdir /source/rootfs</code></li>
+</ul>
+<h2 id="ubuntu-的网络配置"><a href="#ubuntu-的网络配置" class="headerlink" title="ubuntu 的网络配置"></a>ubuntu 的网络配置</h2><p>配置虚拟机 IP（桥接），设置 IP 地址，&#96;sudo vi &#x2F;etc&#x2F;network&#x2F;interfaces&#96;&#96;</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="keyword">auto</span> eth0</span><br><span class="line">iface eth0 inet <span class="type">static</span></span><br><span class="line">address <span class="number">192.168</span><span class="number">.1</span><span class="number">.111</span></span><br><span class="line">netmask <span class="number">255.255</span><span class="number">.255</span><span class="number">.0</span></span><br><span class="line">gateway <span class="number">192.168</span><span class="number">.1</span><span class="number">.1</span> </span><br></pre></td></tr></table></figure>
+
+<p>设置 DNS，<code>sudo vi /etc/resolv.conf </code> 在最后一行添加：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">nameserver <span class="number">192.168</span><span class="number">.1</span><span class="number">.1</span></span><br></pre></td></tr></table></figure>
+
+<p>重启网络服务</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">sudo /etc/init.d/networking restart</span><br></pre></td></tr></table></figure>
+
+<h1 id="开发环境测试"><a href="#开发环境测试" class="headerlink" title="开发环境测试"></a>开发环境测试</h1><h2 id="SD-启动盘制作和-u-boot-的烧写"><a href="#SD-启动盘制作和-u-boot-的烧写" class="headerlink" title="SD 启动盘制作和 u-boot 的烧写"></a>SD 启动盘制作和 u-boot 的烧写</h2><h3 id="制作-SD-卡"><a href="#制作-SD-卡" class="headerlink" title="制作 SD 卡"></a>制作 SD 卡</h3><p>目的：通过 SD 卡烧写 uboot 到开发板上</p>
+<h3 id="烧写-uboot-到-emmc-上"><a href="#烧写-uboot-到-emmc-上" class="headerlink" title="烧写 uboot 到 emmc 上"></a>烧写 uboot 到 emmc 上</h3><ul>
+<li>连接串口和板子，运行串口通信程序(putty 第一天工具中)</li>
+<li>关闭开发板电源，将拨码开关 SW1 调至(1000)(SD 启动模式)后打开电源</li>
+<li>将刚才做好的 SD 启动盘插入 SD 卡插槽</li>
+<li>倒计时按下任意键，进入 uboot 界面</li>
+<li>烧写<ul>
+<li>在终端上执行 <code>sdfuse flashall</code></li>
+<li>等待终端无输出是表示烧写结束</li>
+</ul>
+</li>
+</ul>
+<h1 id="从网络下载内核、设备树，并挂载文件系统"><a href="#从网络下载内核、设备树，并挂载文件系统" class="headerlink" title="从网络下载内核、设备树，并挂载文件系统"></a>从网络下载内核、设备树，并挂载文件系统</h1><h2 id="如何把服务器（ubuntu-中的-tftpboot-目录）下的内核和设备树下载到开发板？"><a href="#如何把服务器（ubuntu-中的-tftpboot-目录）下的内核和设备树下载到开发板？" class="headerlink" title="如何把服务器（ubuntu 中的&#x2F;tftpboot 目录）下的内核和设备树下载到开发板？"></a>如何把服务器（ubuntu 中的&#x2F;tftpboot 目录）下的内核和设备树下载到开发板？</h2><ul>
+<li>将你要下载的东西放到服务器目录下。<ul>
+<li>拷贝 uImage、exynos4412-fs4412.dtb 到 ubuntu 的&#x2F;tftpboot 目录下。</li>
+</ul>
+</li>
+<li>将第一天&#x2F;镜像文件&#x2F;rootfs.tar.xz 拷贝到 ubuntu 的 &#x2F;source 下并解压</li>
+<li>开发板启动，在 u-boot 界面(倒计时按下任意键)进行下载。<ul>
+<li>Ubuntu IP: 192.168.9.120 </li>
+<li>开发板 IP: 192.168.9.233</li>
+</ul>
+</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="meta">#setenv serverip 192.168.9.120</span></span><br><span class="line"><span class="meta">#setenv ipaddr 192.168.9.233</span></span><br><span class="line"><span class="meta">#setenv bootcmd tftp 41000000 uImage\;tftp 42000000 exynos4412-fs4412.dtb\;bootm 41000000 - 42000000 console=ttySAC2,115200 init=/linuxrc ip=192.168.9.233</span></span><br><span class="line"><span class="meta">#saveenv</span></span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>重启开发板</li>
+</ul>
+<h1 id="从-EMMC-加载内核和文件系统"><a href="#从-EMMC-加载内核和文件系统" class="headerlink" title="从 EMMC 加载内核和文件系统"></a>从 EMMC 加载内核和文件系统</h1><h2 id="烧写镜像到-emmc-中"><a href="#烧写镜像到-emmc-中" class="headerlink" title="烧写镜像到 emmc 中"></a>烧写镜像到 emmc 中</h2><h2 id="设置启动参数，从-emmc-加载镜像"><a href="#设置启动参数，从-emmc-加载镜像" class="headerlink" title="设置启动参数，从 emmc 加载镜像"></a>设置启动参数，从 emmc 加载镜像</h2>]]></content>
       <categories>
         <category>0.平台</category>
         <category>嵌入式</category>
@@ -1452,6 +1846,17 @@
       </categories>
   </entry>
   <entry>
+    <title>测量语句运行时间</title>
+    <url>/2024/08/28/0-%E5%B9%B3%E5%8F%B0-%E5%B5%8C%E5%85%A5%E5%BC%8F-%E6%B5%8B%E9%87%8F%E8%AF%AD%E5%8F%A5%E8%BF%90%E8%A1%8C%E6%97%B6%E9%97%B4/</url>
+    <content><![CDATA[<p>测量一个事件持续的时间</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> “stdio.h”</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> “stdlib.h”</span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> “time.h”</span></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">( )</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="type">long</span> i = <span class="number">10000000L</span>;</span><br><span class="line">	<span class="type">clock_t</span> start, finish;</span><br><span class="line">	<span class="type">double</span> Total_time;</span><br><span class="line">	<span class="comment">/* 测量一个事件持续的时间*/</span></span><br><span class="line">	<span class="built_in">printf</span>( <span class="string">&quot;Time to do %ld empty loops is &quot;</span>, i );</span><br><span class="line">	</span><br><span class="line">	start = <span class="built_in">clock</span>();</span><br><span class="line">	<span class="keyword">while</span>( i--) ;</span><br><span class="line">	finish = <span class="built_in">clock</span>();</span><br><span class="line">	</span><br><span class="line">	Total_time = (<span class="type">double</span>)(finish-start) / CLOCKS_PER_SEC;</span><br><span class="line">	<span class="built_in">printf</span>( <span class="string">&quot;%f seconds/n&quot;</span>, Total_time);</span><br><span class="line">	<span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+]]></content>
+      <categories>
+        <category>0.平台</category>
+        <category>嵌入式</category>
+      </categories>
+  </entry>
+  <entry>
     <title>随手记</title>
     <url>/2024/07/12/0-%E5%B9%B3%E5%8F%B0-%E5%B5%8C%E5%85%A5%E5%BC%8F-%E9%9A%8F%E6%89%8B%E8%AE%B0/</url>
     <content><![CDATA[<h1 id="MIPI-接口的含义"><a href="#MIPI-接口的含义" class="headerlink" title="MIPI 接口的含义"></a>MIPI 接口的含义</h1><blockquote>
@@ -1531,13 +1936,7 @@
   <entry>
     <title>ARM和X86</title>
     <url>/2024/07/24/0-%E5%B9%B3%E5%8F%B0-%E5%B9%B3%E5%8F%B0%E7%9B%B8%E5%85%B3-ARM%E5%92%8CX86/</url>
-    <content><![CDATA[<p>围绕 ARM 处理器设计的计算机与围绕 Intel 或 AMD 设计的计算机是不可互换使用的。有两个基本问题是它们都要解决的，尽管方式各有不同：</p>
-<ul>
-<li>如何平衡晶体管数量与程序复杂性？</li>
-<li>如何确定速度、功耗和成本的优先级？</li>
-</ul>
-<h1 id="定义"><a href="#定义" class="headerlink" title="定义"></a>定义</h1><p>许多 IT 人士都非常熟悉 x86 处理器，因为它是大多数计算机和服务器硬件中使用的处理器类型。从架构角度来说，x86 系统中的硬件组件（如声卡、显卡、内存、存储器和 CPU）都是相互独立的。大多数组件都有单独的芯片，称为控制器。我们可以对这些组件进行更改或扩展，而不会影响连接性或整个硬件平台。</p>
-<p>而 ARM 处理器没有单独的 CPU。相反，处理单元与其他硬件控制器位于同一物理载板上，形成一个集成电路。此外，与英特尔或 AMD CPU 不同，没有所谓的 ARM 处理器制造商。相反，Arm Holdings 公司将芯片的设计方案授权给其他硬件制造商，然后这些制造商将 ARM 处理器芯片整合到他们的硬件设计中。与传统基于 x86 的计算机不同，ARM 芯片不可互换使用，并且具有高度的应用特定性。这些处理器在所谓的系统级芯片（SoC）中一起制造的。</p>
+    <content><![CDATA[<p>ARM 是基于 RISC 的产品，而 PC 的代言人是 x86，基于 CISC。ARM、x86 之争，其实就是 RISC 和 CISC 之争。</p>
 <h1 id="RISC-和-CISC"><a href="#RISC-和-CISC" class="headerlink" title="RISC 和 CISC"></a>RISC 和 CISC</h1><p>计算机科学中两种主要理念之间的分歧：简化程序员的工作&#x2F;简化微处理器的工作。</p>
 <p>要想使用计算机执行任何高效的操作，操作系统及其执行的程序需要与中央处理器（CPU）以及其他硬件（如内存、存储器和网卡）进行交互。CPU 发挥着在操作系统（和上面运行的程序）与这些硬件之间进行调解的作用。为了简化程序员的工作，CPU 有一组预定义的操作和计算，称为指令集或 ISA（指令集架构）。操作系统及其执行的程序（均由程序员编写）依赖这些指令来执行低层功能，例如：</p>
 <ul>
@@ -1551,8 +1950,7 @@
 <p>在现实中，大多数计算机仅使用 CISC 计算机所提供的大量指令中的一小部分。最终，精简指令集计算机（RISC）处理器设计应运而生。RISC 处理器也有一个指令集，但其中每条指令仅代表一个能耗较低的简单操作。这就使汇编语言程序员的工作变得更加复杂，但却简化了处理器的工作。利用 RISC 处理器和先进的 RISC 计算机，可以通过运行多条指令或通过将复杂工作推给编译器（而不是 CPU 内核）来执行复杂操作。</p>
 <p>其中离不开一些权衡与取舍。x86 CPU 往往具有非常快的计算能力，并且在编程和指令数量方面会更加清晰或简单，但它的代价，就是更大、更昂贵且具有大量晶体管的芯片。ARM 处理器对于某些类型的操作而言可能非常快，但单个指令的重复循环可能会减慢它的速度，这是因为操作更为复杂，并且定义和执行操作的更多工作被推给了编程（和程序员），而不是指令集。 </p>
 <p>此外，鉴于以上差异，我们可能难以计算其 MIPS（每秒百万条指令，一种对计算机原始处理能力的常用度量），因为不同类型的处理器在执行同一活动时需要用到不同的指令集。</p>
-<p>ARM 与 x86 的能耗</p>
-<p>RISC 架构源自为小型计算机或微型计算机（最终成为 PC）制造性能更好、外形更小的芯片的需求。于是，这就引出了第二个基本设计问题：究竟是侧重于芯片性能（处理速度或时钟速度）还是能源消耗（功耗）。</p>
+<h1 id="ARM-与-x86-的能耗"><a href="#ARM-与-x86-的能耗" class="headerlink" title="ARM 与 x86 的能耗"></a>ARM 与 x86 的能耗</h1><p>RISC 架构源自为小型计算机或微型计算机（最终成为 PC）制造性能更好、外形更小的芯片的需求。于是，这就引出了第二个基本设计问题：究竟是侧重于芯片性能（处理速度或时钟速度）还是能源消耗（功耗）。</p>
 <p>由于 ARM 处理器集成到了 SoC 上，因此长期以来围绕的焦点就是整体资源管理，包括低能耗和更低的热量生成。例如，ARM 架构（如 ARMv8）往往没有简单的散热系统（手机上没有风扇）。而另一方面，x86 CPU 倾向于支持高端处理速度，而不是以低功耗为目标。</p>
 <p>虽然两种 CPU 设计都具有高性能（ARM 和 x86 阵营都有速度在世界上数一数二的超级计算机），但 ARM 设计往往侧重于更小巧的外形、电池使用时间、尺寸、免除散热要求和成本（这也许是最重要的）等方面。这就是 ARM 处理器主导智能手机、平板电脑甚至树莓派系统等小型电子产品和移动设备的原因。而 x86 架构在服务器、PC 甚至笔记本电脑中更为常见，因为这些领域需要实时的速度和灵活性，并且对散热和尺寸的限制较少。</p>
 ]]></content>
@@ -1590,6 +1988,63 @@
 <li>备份数据：虽然有非破坏性转换方法，但仍建议备份数据以防万一。</li>
 <li>非破坏性转换（不会丢失数据）：convert X: &#x2F;fs:ntfs。其中 X: 是要转换的驱动器号。</li>
 </ul>
+]]></content>
+      <categories>
+        <category>0.平台</category>
+        <category>平台相关</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>计算机概念</title>
+    <url>/2024/08/28/0-%E5%B9%B3%E5%8F%B0-%E5%B9%B3%E5%8F%B0%E7%9B%B8%E5%85%B3-%E8%AE%A1%E7%AE%97%E6%9C%BA%E6%A6%82%E5%BF%B5/</url>
+    <content><![CDATA[<h1 id="冯·诺依曼结构计算机的原理"><a href="#冯·诺依曼结构计算机的原理" class="headerlink" title="冯·诺依曼结构计算机的原理"></a>冯·诺依曼结构计算机的原理</h1><p>所有的计算机语言，不管是 Java, Python, Go, C, C++, PHP…… ， 最终都要变成基本的二进制指令，在冯·诺依曼结构计算机上按规矩执行。</p>
+<p>了解 CPU 和内存是怎么工作的： CPU 从内存取出指令，进行译码和执行，执行时从内存中取出数据放到寄存器中， 进行计算， 然后把结果写回到内存。如果是跳转指令， CPU 则取出跳转目的地的指令继续执行。基本的指令组成了顺序、循环、分支等基本的程序结构，形成了更为强大的编程语言的基础。</p>
+<p>CPU 和内存、硬盘等设备的速度不匹配，是冯·诺依曼结构计算机的一个核心问题，为了解决这个问题，科学家们绞尽脑汁，想尽了办法， 又引出了一堆概念： 缓存，DMA， 同步，异步，阻塞….</p>
+<h1 id="进程和线程"><a href="#进程和线程" class="headerlink" title="进程和线程"></a>进程和线程</h1><p>所有的程序要么会成为一个独立的进程去执行，要么是进程中的一个线程 。几乎所有的编程语言都会涉及到对多进程或者多线程编程的支持， 特别是多线程的并发编程。</p>
+<p>进程是对一个运行中的程序的抽象，没有这个概念。对于 CPU 来讲， 只是从某个地方取指令，译码执行，它不会意识到执行的程序已经发生了切换，另外一个程序（准确地讲叫进程）已经成功地抢班夺权。</p>
+<p>每个进程都有一个被操作系统维护的进程控制块， 里边保存了这个进程在运行时的重要信息，是进程能来回切换的重要保证。而线程则寄居于进程之内 ， 共享进程提供福利（代码和数据）的同时， 还拥有自己的一亩三分地。</p>
+<p>线程的出现，提升了系统的性能、吞吐量和响应性。 但是多进程&#x2F;多线程编程也带来了一系列问题： 同步，通信，锁， 死锁。。。</p>
+<h1 id="虚拟内存"><a href="#虚拟内存" class="headerlink" title="虚拟内存"></a>虚拟内存</h1><p>虚拟内存的重要作用就是给各进程提供一个由虚拟地址组成的独立区域，每个进程在自己的独立区域里执行，互不影响。指令必须在物理内存中才能被执行， 操作系统把每个进程的虚拟地址映射到实际地址上去，其中实现分段，分页，页表，动用 CPU 的 TLB 来加速。</p>
+<p>程序并不是一下子全部装载到内存的， 而是用到的时候才进行装载。</p>
+<h1 id="网络的核心概念"><a href="#网络的核心概念" class="headerlink" title="网络的核心概念"></a>网络的核心概念</h1><p>核心概念是： 分组交换， TCP&#x2F;IP 参考模型， socket , http(s)。</p>
+<p>网络数据是被切分成适合网络传输的小块，给每个小块编上号， 每个小块都独立地走相同甚至不同的网络路径， 到达你这里，重新排序，组合，然后才展示给你， 这就是分组交换。使用分组交换可以充分的利用网络带宽： 在你不使用的间隙，别人也可以利用。</p>
+<p>但是一个很明显的问题就是分组数据丢失了怎么办？ 如何检测， 怎么重发，如何缓存已经收到分组数据等一系列烦人的问题接踵而来。 这就是 TCP 要干的事情。如果你能体会到 TCP 是在端系统实现的，中间节点一无所知，我想你就 Get 到了分组交换和分层的真谛。</p>
+<p>TCP&#x2F;IP 参考模型定义了 5 层： 应用层，传输层，网络层，链路层，物理层。你一定得理解所谓的分层只不过是把你的数据层层包装而已，在传输的过程层中每到一个节点都会拆开某一层的包装，查看一下数据， 然后再次包装，转发出去，直到终点。</p>
+<h1 id="Hash-和-RSA"><a href="#Hash-和-RSA" class="headerlink" title="Hash 和 RSA"></a>Hash 和 RSA</h1><p>如果说 Https 是网络安全通信的一大基石， 那 Hash 和 RSA 则是基石的基石。</p>
+<p>RSA 有一对钥匙， 一个是私有的、保密的， 另外一个是公有的。RSA 的概念很简单， 但是为了实现真正的安全消息传输，作为第一步必须得有数据签名做保证，你需要理解如何对消息用 Hash 形成摘要，然后用私钥签名，又是如何验证这个签名的。</p>
+]]></content>
+      <categories>
+        <category>0.平台</category>
+        <category>平台相关</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>转载-CISC和RISC发展中的纠缠</title>
+    <url>/2024/08/28/0-%E5%B9%B3%E5%8F%B0-%E5%B9%B3%E5%8F%B0%E7%9B%B8%E5%85%B3-%E8%BD%AC%E8%BD%BD-CISC%E5%92%8CRISC%E5%8F%91%E5%B1%95%E4%B8%AD%E7%9A%84%E7%BA%A0%E7%BC%A0/</url>
+    <content><![CDATA[<p>CISC 是英文“Complex Instruction Set Computer”的缩写，中文意思是“复杂指令集”，它是指英特尔生产的 x86（intel CPU 的一种命名规范）系列 CPU 及其兼容 CPU（其他厂商如 AMD,VIA 等生产的 CPU），它基于 PC 机(个人电脑)体系结构。这种 CPU 一般都是 32 位的结构，所以我们也把它成为 IA-32CPU。（IA: Intel Architecture，Intel 架构）。CISC 型 CPU 目前主要有 intel 的服务器 CPU 和 AMD 的服务器 CPU 两类。</p>
+<p>RISC 是英文“Reduced Instruction Set Computing ” 的缩写，中文意思是“精简指令集”。它是在 CISC(Complex Instruction Set Computer)指令系统基础上发展起来的，有人对 CISC 机进行测试表明，各种指令的使用频度相当悬殊，最常使用的是一些比较简单的指令，它们仅占指令总数的 20％，但在程序中出现的频度却占 80％。复杂的指令系统必然增加微处理器的复杂性，使处理器的研制时间长，成本高。并且复杂指令需要复杂的操作，必然会降低计算机的速度。基于上述原因，20 世纪 80 年代 RISC 型 CPU 诞生了，相对于 CISC 型 CPU ,RISC 型 CPU 不仅精简了指令系统，还采用了一种叫做“超标量和超流水线结构”，大大增加了并行处理能力（并行处理并行处理是指一台服务器有多个 CPU 同时处理。并行处理能够大大提升服务器的数据处理能力。部门级、企业级的服务器应支持 CPU 并行处理技术）。也就是说，架构在同等频率下，采用 RISC 架构的 CPU 比 CISC 架构的 CPU 性能高很多，这是由 CPU 的技术特征决定的。目前在中高档服务器中普遍采用这一指令系统的 CPU，特别是高档服务器全都采用 RISC 指令系统的 CPU。RISC 指令系统更加适合高档服务器的操作系统 UNIX，现在 Linux 也属于类似 UNIX 的操作系统。RISC 型 CPU 与 Intel 和 AMD 的 CPU 在软件和硬件上都不兼容。</p>
+<p>那么，目前 CISC 和 RISC 是现代微处理器的两大基础指令集结构。从技术和历史角度来看，CISC 和 RISC 的诞生和发展并非是你死我活的关系，RISC 被提出后，才将传统的指令集系统称为 CISC。而结构体系上的不同又令两者在发展道路上分道扬镳，渐行渐远。在这漫长的发展过程中，RISC 也曾经努力过，力求进入 CISC 的领域；CISC 也奋斗过，希望在 RISC 的世界中分得一杯羹。</p>
+<p>ARM 是基于 RISC 的产品，而 PC 的代言人是 x86，基于 CISC。ARM、x86 之争，其实就是 RISC 和 CISC 之争。RISC 和 CISC 在长达 30 年的纠葛之后，再一次正面碰撞到了一起。如果说之前的 RISC 和 CISC 的碰撞都只是部分领域的小打小闹，那么现在 ARM 和 x86 有可能带来的是一场技术革命，一场全局化的战争。今天，我们将追本溯源，来看看 RISC 和 CISC 在历史上的交锋，和那些鲜为人知的故事。</p>
+<p>今天，业内普遍认为 PC 性能的提升，特别是 CPU 性能的提升，动力来自于晶体管制造技术的不断进步。只有晶体管数量更多、运行频率更高，才能在单位时间内完成更多的工作任务，这也是上个世纪 70 年代以前的 PC 发展主流思想。当时的计算机速度很慢，特别是存储速度非常慢，广泛使用的慢速磁带存储设备以及大容量内存的缺乏，让计算机对每一字节空间的应用都很珍惜。在这样的情况下，人们倾向于在一条指令中完成更多的工作，比如“从内存和寄存器读取数据相加后，写入内存”。这实际上是四条指令，首先是从内存读取数据，其次是从寄存器读取数据，第三是相加，最后才是写入内存。一条指令可以完成四项工作，这是当时计算机的主流设计方案。</p>
+<p>在上世纪 70 年代左右，IBM 以及其他企业的从业人员发现，目前的 PC 发展方向存在一定的问题。如果按照现在指令集发展的方向继续发展的话，那么现有的指令集系统会越来越复杂。而同时期编译器的流行，让这种情况发生了变化：一方面指令集越来越复杂，一方面编译器却很少使用这么多复杂的指令集。而且如此多的复杂指令，CPU 难以对每一个指令都做出优化，甚至部分复杂指令本身耗费的时间反而更多。对这件事情的总结，就是后来著名的“8020”定律，也就是在所有的指令集中，只有 20%最常用，80%基本上罕有问津。</p>
+<p>时间进入了 1980 年代， Reduced Instruction Set Computing，也就是 RISC 精简指令集开始出现。这种指令集的优势在于将计算机中最常用的 20%的指令集集中优化，而剩下的不常用的 80%则采用拆分为常用指令集等方式运行。在 RISC 提出之后，人们才赋予了传统指令集一个正式的名称:ComplexInstruction Set Computing，也就是 CISC 复杂指令集。一时间，掀起了关于 RISC 和 CISC 究竟谁更好的争论。</p>
+<p>英特尔的选择在指令集争论还没有结束的时候，英特尔在 IBM 不屑一顾地眼光下接下了为 IBM 生产民用 PC 的中央处理器的业务。实际上 IBM 并非无法自己生产 CPU，而是 IBM 觉得个人 PC 远没有大型主机的利润高，自家的 Power 架构用在兼容机上实在是“杀鸡焉用牛刀”。英特尔于是在之前研发的 C4004 处理器的基础上继续开发——C4004 处理器也并非英特尔自愿开发的产品，而是来自于日本一家名为 Busicom 的厂商的订货需求。也就是这个订货需求，为日后的 x86 的发展打下了基础。兼容 PC 的发展，带来了全球的信息化革命大潮。</p>
+<p>很快英特尔生产了 8086 处理器，并依靠 PC 的快速发展一炮走红。这个时间段恰好是 RISC 开始崭露头角，CISC 被众人鄙视的年代。在 RISC 提出后，业内对 RISC 的未来发展进行了几乎一边倒的赞扬。从教学开始，美国大学计算机原理和系统结构的教材和教学模式全部来自于 RISC 的发明人 Hennessy 的理论，介绍的内容则是 Hennessy 研发的以 RISC 为基础的 MIPS 架构。而当时的研发论文 IEEE 和 ACM 发表的内容也基本上都对 RISC 提出了各种褒扬，x86 以及 CISC 被认为是没有什么前途的东西。</p>
+<p>英特尔在当时的确是一个小公司，旗下只有几款产品，CPU 业务也才刚起步。面对整个业界一边倒向 RISC 的现状，英特尔要么一条道走到黑继续兼容自己的 8086 下定决心做 x86，要么放弃看起来没有什么希望的 CISC 投入 RISC 的怀抱。实际上当时 PC 刚刚起步，市场空间和前景极为庞大，如果放弃 PC 市场，可能对英特尔未来的发展带来巨大的不确定性。况且当时的 PC 用户已经有不少了，加上市场惯性，英特尔至少可以坚持开发两三代产品满足这部分 PC 用户的需求。在这样的情况下，英特尔毅然决定继续开发 x86，于是 80286 和 80386 等产品依次出炉。后来的事情大家都知道了，英特尔依靠 PC 市场赚得盆满钵盈，坚定了其在 x86 市场继续发力的决心。</p>
+<p>高性能的 RISC 没有进入通用 PC 市场 PC 市场拱手让人、甚至连专利都没有注册，堪称 IBM 百年来最大的失误。看着自己当年随意选择的英特尔渐渐成长为可与自己匹敌的业界巨头，就连“备胎”AMD（AMD 当时是 IBM 根据反垄断条例而选择的 x86 处理器第二供货商）都逐渐发展壮大，IBM 后悔不迭。不过没关系，RISC 还在，IBM 还可以在高性能市场上呼风唤雨。</p>
+<p>事实上，在上世纪 80 年代中末期，大量基于 RISC 的新指令集和产品的问世，让人们看到了精简指令集的威力。SGI 的工作站基于 MIPS，速度超群；IBM 的 Power 系列就不用说了，堪称巨型计算机的首选产品；还有 DEC Alpha 架构的处理器，都是 RISC 的代表之作。RISC 在高性能计算机上展现出的强大魅力，让用户和业界为之神往。</p>
+<p>在这种情况下，英特尔也坐不住了。俗话说，吃着碗里的，看着锅里的。英特尔碗里面吃着 x86 这块大肥肉，锅里的 RISC 虽然是小肥牛，但也的确不错。于是，英特尔秘密开发了基于 RISC 的处理器 80860，希望打入通用计算机市场。但问题是，谁用呢？PC 已经是 x86 架构了，RISC 连兼容的操作系统和软件都没有，从头去建立生态系统和软件圈子，当时的英特尔很难成功。但英特尔决定多做一代试试看，于是不久之后又推出了新的 80960 处理器，依旧是 RISC 架构，向下兼容 80860，继续延续完全卖不动的“宿命”。于是英特尔想想干脆算了，直接做 x86，一条道走到黑！</p>
+<p>被拒绝的 Acorn 乱世出英雄，在上世纪 70 年代末 80 年代初，RISC 刚被提出、CISC 被众人鄙视、PC 刚刚起步的乱世年代，一家小公司的出现，改变了 RISC 和 CISC 在业界的态势。</p>
+<p>就是在这间仓库中，ARM 公司的几大股东在一起开会，对全球移动计算市场产生巨大震撼的 ARM 架构就此诞生。</p>
+<p>这家公司始创于 1978 年 12 月 5 日，创始人是物理学家赫尔曼·豪泽（Hermann Hauser）和工程师 ChrisCurry。公司的名字也很有意思，叫做 Cambridge Processing Unit，意为剑桥处理器公司，简写为 CPU。</p>
+<p>1979 年，CPU 公司改名了，叫做 Acorn，主营业务从为市场提供电子设备，转向提供比较廉价的计算机设备。有多廉价呢？定价在 500 英镑以内。但是公司很快发现，摩托罗拉的 CPU 太慢价格又贵（摩托罗拉很快在 CPU 市场上被英特尔打得找不到北，惨淡收场）。于是 Acorn 公司去找英特尔索要 80286 的设计资料，打算自行搭建 PC 兼容机，但被英特尔无情拒绝了。</p>
+<p>不知道英特尔会不会为这个决定而痛苦终身？被拒绝后的 Acorn 虽然火冒三丈，但志气滔天：不就是 CPU 吗！买不到还不能自己做吗？1985 年，一款使用 RISC 指令集，名字叫做 Acorn RISC Machion 的 CPU 诞生了，它的简称就是 ARM。</p>
+<p>ARM 的特点是性能功耗比非常优秀，比如苹果的首款掌上触屏个人电子设备 Newton Message Pad 就使用了 ARM 处理器，随后还生产了多个型号。可惜由于软件和硬件技术局限等问题，它没有获得太大成功。但这为 ARM 的发展奠定了基础。1990 年，Acorn 公司干脆改名为 ARM。苹果出资 150 万英镑入股，Acorn 公司以价值 150 万英镑的知识产权和 12 个工程师入股。还有一个大股东是 VLSI，是一家芯片制造商。接下来由于市场不景气等原因，ARM 决定开放授权，成为一家设计公司，将自己的设计和知识产权授权给其他厂商生产芯片。这成为 ARM 辉煌的起点。</p>
+<p>英特尔的逆袭和 ARM 的扩大英特尔最终发达起来了，占据了全球 PC 市场的绝大部分份额，IBM 再也无</p>
+<p>法撼动英特尔的地位。但 CISC 的性能始终是硬伤，英特尔肯定看到了这一点，如果 x86 的性能一直无法赶上在顶端的 RISC 处理器，英特尔就没有办法把触手伸到最肥沃的服务器和超级计算机市场。从原理来说，x86 架构基于 CISC，本身问题不少，效率和发展方向都成问题。不过英特尔并不担心，在潜心研究了 RISC 后，英特尔开始大胆在基于 CISC 的 x86 中引入 RISC 的设计思想，增加了额外的一些“翻译层”。CPU 外部依旧是 x86，但是内部运行更为类似精简的 RISC，于是 CPU 效能得到极大的提升。Atom 本来是英特尔进入超便携移动计算市场的利器，但是 ARM 成功阻击了它。</p>
+<p>在 Pentium 品牌推出后，英特尔开始逐渐在 x86 中引入 RISC 的设计思想。借助 PC 市场上攫取的巨额利润，英特尔开始疯狂提升 x86 处理器的性能。于是，在服务器和超级计算机市场上，英特尔的 Xeon 品牌开始逐渐发力，性能和当时的 RISC 处理器相比已不落下风甚至略有胜出。最终英特尔完成了逆袭的过程，x86 在服务器市场上大放光彩，甚至开始占据绝大部分市场份额，成就了 CISC 战胜 RISC 的神话。</p>
+<p>不过在移动计算市场上，英特尔却无法复制这样的神话。高性能市场对功耗敏感度不高，性能是最重要的指标，英特尔可以凭借强大的研发能力来威胁对手，获取胜利。但移动计算市场对功耗极为敏感， 英特尔几次试图进入都无法获得成功。ARM 在这个领域遍地开花，从手机到平板电脑，ARM 凭借自己超高的性能功耗比屡获成功。</p>
+<p>目前，x86 处理器占据了超过 90%的个人电脑市场，以 ARM 为代表的 RISC 产品则同样占据了超过 90%的移动计算市场。</p>
 ]]></content>
       <categories>
         <category>0.平台</category>
@@ -1866,8 +2321,43 @@
       </categories>
   </entry>
   <entry>
-    <title>云服务管理软件：开源的 1panel</title>
-    <url>/2024/08/27/0-%E5%B9%B3%E5%8F%B0-%E6%9C%8D%E5%8A%A1%E5%99%A8-%E4%BA%91%E6%9C%8D%E5%8A%A1%E7%AE%A1%E7%90%86%E8%BD%AF%E4%BB%B6%EF%BC%9A%E5%BC%80%E6%BA%90%E7%9A%84-1panel/</url>
+    <title>chatGPT对接微信公众号</title>
+    <url>/2024/08/22/0-%E5%B9%B3%E5%8F%B0-%E6%9C%8D%E5%8A%A1%E5%99%A8-chatGPT%E5%AF%B9%E6%8E%A5%E5%BE%AE%E4%BF%A1%E5%85%AC%E4%BC%97%E5%8F%B7/</url>
+    <content><![CDATA[<p>这里需要我们自定义来处理用户发送过来的消息，首先需要导入 werobot 这个依赖，这是微信公众号官方让我们自定义消息处理的模块。</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">pip install werobot</span><br><span class="line">pip install openai</span><br></pre></td></tr></table></figure>
+
+<p>示例：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="keyword">import</span> werobot </span><br><span class="line"><span class="meta"># token是微信公众号用来指定接入当前云服务器的服务的凭证，代表是自己人接入的，等一下就有什么用了 </span></span><br><span class="line">robot = werobot.<span class="built_in">WeRoBot</span>(token=<span class="string">&#x27;123456&#x27;</span>) </span><br><span class="line">@robot.handler def <span class="built_in">hello</span> (messages): </span><br><span class="line"><span class="meta"># messages.content是用户发送的内容 </span></span><br><span class="line"><span class="built_in">print</span>(messages.content) </span><br><span class="line"><span class="keyword">return</span> <span class="string">&quot;hello!&quot;</span> </span><br><span class="line"></span><br><span class="line">robot.config[<span class="string">&#x27;HOST&#x27;</span>] = <span class="string">&#x27;0.0.0.0&#x27;</span> </span><br><span class="line">robot.config[<span class="string">&#x27;PORT&#x27;</span>] = <span class="number">80</span> </span><br><span class="line">robot.<span class="built_in">run</span>()</span><br></pre></td></tr></table></figure>
+
+<p>以上的代码是用户在公众号发送什么消息都回复 hello</p>
+<p>整合 chatGPT 服务</p>
+<p>前提：</p>
+<p>要注册 openai 的账号，在账户下面生成 api_key 供程序调用</p>
+<p>服务器能够访问外网，这样才能调用成功</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="keyword">import</span> werobot </span><br><span class="line"><span class="keyword">import</span> openai </span><br><span class="line">openai.api_key = <span class="string">&quot;你的api_key&quot;</span> </span><br><span class="line">robot = werobot.<span class="built_in">WeRoBot</span>() </span><br><span class="line"><span class="keyword">class</span> <span class="built_in">RobotConfig</span>(object): </span><br><span class="line">HOST=<span class="string">&quot;0.0.0.0&quot;</span> </span><br><span class="line">PORT= <span class="number">80</span> </span><br><span class="line">TOKEN = <span class="string">&quot;you token&quot;</span> <span class="meta"># token是微信公众号用来接入云服务器的服务的凭证</span></span><br><span class="line">robot.config.<span class="built_in">from_object</span>(RobotConfig) </span><br><span class="line"></span><br><span class="line">def <span class="built_in">generate_response</span>(prompt): </span><br><span class="line">response = openai.Completion.<span class="built_in">create</span>( </span><br><span class="line">model=<span class="string">&quot;text-davinci-003&quot;</span>, </span><br><span class="line">prompt=prompt, </span><br><span class="line">temperature=<span class="number">0.7</span>, </span><br><span class="line">max_tokens=<span class="number">3000</span>, </span><br><span class="line">top_p=<span class="number">1</span>, </span><br><span class="line">frequency_penalty=<span class="number">0</span>, </span><br><span class="line">presence_penalty=<span class="number">0</span></span><br><span class="line">) </span><br><span class="line">message = response.choices[<span class="number">0</span>].text </span><br><span class="line"><span class="keyword">return</span> message.<span class="built_in">strip</span>() </span><br><span class="line">@robot.handler </span><br><span class="line">def <span class="built_in">hello</span> (messages): </span><br><span class="line"><span class="built_in">print</span>(messages.content) </span><br><span class="line"><span class="keyword">return</span> <span class="built_in">generate_response</span>(messages.content) </span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&quot;__main__&quot;</span>: </span><br><span class="line">robot.<span class="built_in">run</span>()</span><br></pre></td></tr></table></figure>
+
+<p>完成后使用 python 启动脚本</p>
+<p>配置公众号相关信息</p>
+<p>前提：</p>
+<p>需要保证前面的服务已经启动</p>
+<p>修改云服务的安全组，启用 80 端口</p>
+<p>修改消息服务器设置，让我们自定义来处理用户发送的消息</p>
+<p>修改公众号服务器配置信息</p>
+<p>url：里面是你的云服务器的 IP，后面加不了端口号，默认只能使用 80 端口，https 默认就是 443 端口。&#x2F;chatgpt 可以随便写</p>
+<p>token：就是前面讲的自己的凭证,可以自己定义</p>
+<p>EncodingAESKey：随机生成就行</p>
+<p>确定云服务器上的服务没有问题的话，就点提交就行了</p>
+<p>升级一下 pip</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">python -m pip install --upgrade pip</span><br></pre></td></tr></table></figure>
+]]></content>
+      <categories>
+        <category>0.平台</category>
+        <category>服务器</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>云服务管理软件-1panel</title>
+    <url>/2024/08/27/0-%E5%B9%B3%E5%8F%B0-%E6%9C%8D%E5%8A%A1%E5%99%A8-%E4%BA%91%E6%9C%8D%E5%8A%A1%E7%AE%A1%E7%90%86%E8%BD%AF%E4%BB%B6-1panel/</url>
     <content><![CDATA[<p>云服务管理软件：开源的 1panel</p>
 <p>创建 1panel 文件夹，进入后，执行以下命令安装：</p>
 <figure class="highlight sh"><table><tr><td class="code"><pre><span class="line"><span class="comment">#先安装docker</span></span><br><span class="line">sudo apt install docker.io</span><br><span class="line"></span><br><span class="line">curl -sSL https://resource.fit2cloud.com/1panel/package/quick_start.sh -o quick_start.sh &amp;&amp; sudo bash quick_start.sh</span><br></pre></td></tr></table></figure>
@@ -2487,6 +2977,133 @@
       <categories>
         <category>0.平台</category>
         <category>服务器</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>代码日志输出</title>
+    <url>/2024/08/28/1-%E8%AF%AD%E8%A8%80-0-%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F-%E4%BB%A3%E7%A0%81%E6%97%A5%E5%BF%97%E8%BE%93%E5%87%BA/</url>
+    <content><![CDATA[<p>软件一般都要输出日志，方便排错和跟踪运行情况。所有日志文件的格式还是要美化点好，以免在查找关键信息时费时费力。</p>
+<p>所以日志函数要支持：</p>
+<ul>
+<li>时间和地点。即什么时候哪个地方报的信息。</li>
+<li>为了方便调用，必须支持多重格式的输出，所以使用 printf 的格式是最好的。</li>
+</ul>
+<h1 id="宏定义"><a href="#宏定义" class="headerlink" title="宏定义"></a>宏定义</h1><p>通过一个宏定义来把要打印的信息写到一个日志文件中，这样不仅可以记录程序每次运行的状态便于 debug，而且在发布时只需要注释掉宏定义而不必删除每一个使用该宏的地方，不会出现因删除代码而出现的错误。宏还可以加一个参数传入文件的路径，就可以自定义日志文件的位置。</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> TRACEOUT(p) \</span></span><br><span class="line"><span class="meta">&#123; \</span></span><br><span class="line"><span class="meta">time_t timeval; \</span></span><br><span class="line"><span class="meta">timeval=time(NULL); \</span></span><br><span class="line"><span class="meta">FILE *log; \</span></span><br><span class="line"><span class="meta">log = fopen(<span class="string">&quot;log.txt&quot;</span>,<span class="string">&quot;a&quot;</span>);\</span></span><br><span class="line"><span class="meta">fprintf(log,<span class="string">&quot;%s -- %s\n&quot;</span>,p,ctime(&amp;timeval));\</span></span><br><span class="line"><span class="meta">fclose(log); \</span></span><br><span class="line"><span class="meta">&#125;</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> LOG_DBG(fmt,...) \</span></span><br><span class="line"><span class="meta">do &#123; \</span></span><br><span class="line"><span class="meta">fprintf(stdout,<span class="string">&quot;[DEBUG] %s:%d - &quot;</span>fmt<span class="string">&quot;\n&quot;</span>, \</span></span><br><span class="line"><span class="meta">__FILE__,__LINE__, ##__VA_ARGS__); \</span></span><br><span class="line"><span class="meta">&#125; while(0)</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> LOG_ERR(fmt,...) \</span></span><br><span class="line"><span class="meta">do &#123; \</span></span><br><span class="line"><span class="meta">fprintf(stderr,<span class="string">&quot;[ERROR] %s:%d - &quot;</span>fmt<span class="string">&quot;\n&quot;</span>, \</span></span><br><span class="line"><span class="meta">__FILE__,__LINE__, ##__VA_ARGS__); \</span></span><br><span class="line"><span class="meta">&#125; while(0)</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="built_in">TRACEOUT</span>(<span class="string">&quot;hello&quot;</span>);</span><br><span class="line">	<span class="built_in">LOG_DBG</span>(<span class="string">&quot;hello&quot;</span>);</span><br><span class="line">	<span class="built_in">LOG_ERR</span>(<span class="string">&quot;hello&quot;</span>);</span><br><span class="line">	<span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h1 id="函数"><a href="#函数" class="headerlink" title="函数"></a>函数</h1><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdarg.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;time.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> LOG_FILE    <span class="string">&quot;./a.log&quot;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> LOG_DEFAULT( fmt, ... )         log_out( LOG_FILE, __FILE__, __LINE__, fmt, ##__VA_ARGS__)</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> LOG_TOXFILE( flog, fmt, ... )   log_out( flog, __FILE__, __LINE__, fmt, ##__VA_ARGS__)</span></span><br><span class="line"> </span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">log_out</span><span class="params">(<span class="type">char</span>* flog, <span class="type">char</span> *file, <span class="type">int</span> line, <span class="type">char</span>* fmt, ...)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    va_list arg;</span><br><span class="line">    <span class="type">char</span>    pre[<span class="number">128</span>], tmp[<span class="number">1024</span>];</span><br><span class="line">    <span class="type">long</span>    clock;</span><br><span class="line">    <span class="keyword">struct</span>  <span class="title class_">tm</span> *c_ptr;</span><br><span class="line">    FILE    *fp;</span><br><span class="line">    <span class="built_in">time</span>( &amp;clock );</span><br><span class="line">    c_ptr = <span class="built_in">localtime</span>(&amp;clock);</span><br><span class="line">    <span class="built_in">sprintf</span>( pre, <span class="string">&quot;[%04d%02d%02d%02d%02d%02d_%s.%d]&quot;</span>,</span><br><span class="line">         c_ptr-&gt;tm_year+<span class="number">1900</span>, c_ptr-&gt;tm_mon+<span class="number">1</span>, c_ptr-&gt;tm_mday,</span><br><span class="line">         c_ptr-&gt;tm_hour, c_ptr-&gt;tm_min, c_ptr-&gt;tm_sec, file, line );</span><br><span class="line">    <span class="built_in">va_start</span>(arg, fmt);</span><br><span class="line">    <span class="built_in">vsprintf</span>(tmp, fmt, arg);</span><br><span class="line">    <span class="built_in">va_end</span> (arg);</span><br><span class="line">    <span class="comment">//log to stdout</span></span><br><span class="line">    <span class="keyword">if</span>( !flog )&#123;</span><br><span class="line">        <span class="built_in">printf</span>( <span class="string">&quot;%-32.32s  %s&quot;</span>, pre, tmp );</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">//log to file</span></span><br><span class="line">    <span class="keyword">if</span>( !(fp = <span class="built_in">fopen</span>( flog, <span class="string">&quot;at&quot;</span> ) ) )  <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">    <span class="built_in">fprintf</span>( fp, <span class="string">&quot;%-32.32s  %s&quot;</span>, pre, tmp );</span><br><span class="line">    <span class="built_in">fclose</span>( fp );</span><br><span class="line">     </span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>调用方法：</p>
+<ul>
+<li>LOG_DEFAULT 日志输出到默认的日志文件</li>
+<li>LOG_TOXFILE 日志输出到指定的日志文件，参数是 0，则日志打印到标准输出</li>
+</ul>
+]]></content>
+      <categories>
+        <category>1.语言</category>
+        <category>0.设计模式</category>
+      </categories>
+  </entry>
+  <entry>
+    <title>代码注释</title>
+    <url>/2024/08/28/1-%E8%AF%AD%E8%A8%80-0-%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F-%E4%BB%A3%E7%A0%81%E6%B3%A8%E9%87%8A/</url>
+    <content><![CDATA[<h1 id="注释部分"><a href="#注释部分" class="headerlink" title="注释部分"></a>注释部分</h1><h2 id="函数部分-function"><a href="#函数部分-function" class="headerlink" title="函数部分 function"></a>函数部分 function</h2><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">/*************************************************</span></span><br><span class="line"><span class="comment">Function: // 函数名称</span></span><br><span class="line"><span class="comment">Description: // 函数功能、性能等的描述</span></span><br><span class="line"><span class="comment">Calls: // 被本函数调用的函数清单</span></span><br><span class="line"><span class="comment">Called By: // 调用本函数的函数清单</span></span><br><span class="line"><span class="comment">Table Accessed: // 被访问的表（此项仅对于牵扯到数据库操作的程序）</span></span><br><span class="line"><span class="comment">Table Updated: // 被修改的表（此项仅对于牵扯到数据库操作的程序）</span></span><br><span class="line"><span class="comment">Input: // 输入参数说明，包括每个参数的作</span></span><br><span class="line"><span class="comment">// 用、取值说明及参数间关系。</span></span><br><span class="line"><span class="comment">Output: // 对输出参数的说明。</span></span><br><span class="line"><span class="comment">Return: // 函数返回值的说明</span></span><br><span class="line"><span class="comment">Others: // 其它说明</span></span><br><span class="line"><span class="comment">*************************************************/</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="全局变量-global-variable"><a href="#全局变量-global-variable" class="headerlink" title="全局变量 global variable"></a>全局变量 global variable</h2><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* The ErrorCode when SCCP translate */</span></span><br><span class="line"><span class="comment">/* Global Title failure, as follows */</span> <span class="comment">// 变量作用、含义</span></span><br><span class="line"><span class="comment">/* 0 － SUCCESS 1 － GT Table error */</span></span><br><span class="line"><span class="comment">/* 2 － GT error Others － no use */</span> <span class="comment">// 变量取值范围</span></span><br><span class="line"><span class="comment">/* only function SCCPTranslate() in */</span></span><br><span class="line"><span class="comment">/* this modual can modify it, and other */</span></span><br><span class="line"><span class="comment">/* module can visit it through call */</span></span><br><span class="line"><span class="comment">/* the function GetGTTransErrorCode() */</span> <span class="comment">// 使用方法</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="头文件-h"><a href="#头文件-h" class="headerlink" title="头文件 .h"></a>头文件 .h</h2><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/************************************************************</span></span><br><span class="line"><span class="comment">Copyright (C), 1988-1999, Huawei Tech. Co., Ltd.</span></span><br><span class="line"><span class="comment">FileName: test.cpp</span></span><br><span class="line"><span class="comment">Author: Version : Date:</span></span><br><span class="line"><span class="comment">Description: // 模块描述</span></span><br><span class="line"><span class="comment">Version: // 版本信息</span></span><br><span class="line"><span class="comment">Function List: // 主要函数及其功能</span></span><br><span class="line"><span class="comment">1. -------</span></span><br><span class="line"><span class="comment">History: // 历史修改记录</span></span><br><span class="line"><span class="comment">&lt;author&gt; &lt;time&gt; &lt;version &gt; &lt;desc&gt;</span></span><br><span class="line"><span class="comment">David 96/10/12 1.0 build this moudle</span></span><br><span class="line"><span class="comment">***********************************************************/</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="配置文件-cfg"><a href="#配置文件-cfg" class="headerlink" title="配置文件 .cfg"></a>配置文件 .cfg</h2><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">/*************************************************</span></span><br><span class="line"><span class="comment">Copyright (C), 1988-1999, Huawei Tech. Co., Ltd.</span></span><br><span class="line"><span class="comment">File name: // 文件名</span></span><br><span class="line"><span class="comment">Author: Version: Date: // 作者、版本及完成日期</span></span><br><span class="line"><span class="comment">Description: // 用于详细说明此程序文件完成的主要功能，与其他模块</span></span><br><span class="line"><span class="comment">// 或函数的接口，输出值、取值范围、含义及参数间的控</span></span><br><span class="line"><span class="comment">// 制、顺序、独立或依赖等关系</span></span><br><span class="line"><span class="comment">Others: // 其它内容的说明</span></span><br><span class="line"><span class="comment">Function List: // 主要函数列表，每条记录应包括函数名及功能简要说明</span></span><br><span class="line"><span class="comment">1. ....</span></span><br><span class="line"><span class="comment">History: // 修改历史记录列表，每条修改记录应包括修改日期、修改</span></span><br><span class="line"><span class="comment">// 者及修改内容简述</span></span><br><span class="line"><span class="comment">1. Date:</span></span><br><span class="line"><span class="comment">Author:</span></span><br><span class="line"><span class="comment">Modification:</span></span><br><span class="line"><span class="comment">2. ...</span></span><br><span class="line"><span class="comment">*************************************************/</span></span><br></pre></td></tr></table></figure>
+
+<h1 id="Doxygen"><a href="#Doxygen" class="headerlink" title="Doxygen"></a>Doxygen</h1><p>Doxygen 是一个程序的文件产生工具，可将程序中的特定批注转换成为说明文件。通常我们在写程序时，或多或少都会写上批注，但是对于其它人而言，要直接探索程序里的批注，与打捞铁达尼号同样的辛苦。大部分有用的批注都是属于针对函式，类别等等的说明。所以，如果能依据程序本身的结构，将批注经过处理重新整理成为一个纯粹的参考手册，对于后面利用您的程序代码的人而言将会减少许多的负担。不过，反过来说，整理文件的工作对于您来说，就是沉重的负担。</p>
+<p>Doxygen 就是在您写批注时，稍微按照一些它所制订的规则。接着，他就可以帮您产生出漂亮的文档了。</p>
+<p>因此，Doxygen 的使用可分为两大部分:</p>
+<ul>
+<li>特定格式的批注撰写</li>
+<li>利用 Doxygen 的工具来产生文档</li>
+</ul>
+<p>目前 Doxygen 可处理的程序语言包含：</p>
+<ul>
+<li>C&#x2F;C++</li>
+<li>Java</li>
+<li>IDL (Corba, Microsoft 及 KDE-DCOP 类型)</li>
+</ul>
+<p>而可产生出来的文档格式有：</p>
+<ul>
+<li>HTML</li>
+<li>XML</li>
+<li>LaTeX</li>
+<li>RTF</li>
+<li>Unix Man Page<br>而其中还可衍生出不少其它格式。HTML 可以打包成 CHM 格式，而 LaTeX 可以透过一些工具产生出 PS 或是 PDF 文档。</li>
+</ul>
+<h2 id="安装"><a href="#安装" class="headerlink" title="安装"></a>安装</h2><ul>
+<li>安装 Doxygen</li>
+<li>安装 graphviz<ul>
+<li>graphviz 是一个由 AT&amp;T 实验室启动的开源工具包，用于绘制 DOT 语言脚本描述的图形。Doxygen 使用 graphviz 自动生成类之间和文件之间的调用关系图，如不需要此功能可不安装该工具包。</li>
+</ul>
+</li>
+<li>安装 Windows Help Workshop<ul>
+<li>Doxygen 使用这个工具可以生成 CHM 格式的文档。</li>
+</ul>
+</li>
+</ul>
+<h2 id="配置"><a href="#配置" class="headerlink" title="配置"></a>配置</h2><p>Doxygen 产生文档可以分为三个步骤。</p>
+<ul>
+<li>在程序代码中加上符合 Doxygen 所定义批注格式</li>
+<li>使用 Doxywizard 进行配置</li>
+<li>使用 Doxygen 来产生批注文档</li>
+</ul>
+<h2 id="撰写正确格式的批注"><a href="#撰写正确格式的批注" class="headerlink" title="撰写正确格式的批注"></a>撰写正确格式的批注</h2><p>并非所有程序代码中的批注都会被 Doxygen 所处理。您必需依照正确的格式撰写。原则上，Doxygen 仅处理与程序结构相关的批注，如 Function，Class ，档案的批注等。对于 Function 内部的批注则不做处理。Doxygen 可处理下面几种类型的批注。</p>
+<p>JavaDoc 类型：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">* ... 批注 ...</span></span><br><span class="line"><span class="comment">*/</span></span><br></pre></td></tr></table></figure>
+
+<p>Qt 类型：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">/*!</span></span><br><span class="line"><span class="comment">* ... 批注 ...</span></span><br><span class="line"><span class="comment">*/</span></span><br></pre></td></tr></table></figure>
+
+<p>单行型式的批注：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">/// ... 批注 ...</span></span><br></pre></td></tr></table></figure>
+
+<p>或</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">//! ... 批注 ...</span></span><br></pre></td></tr></table></figure>
+
+<p>要使用哪种型态完全看自己的喜好。以笔者自己来说，大范围的注解我会使用 JavaDoc 型的。单行的批注则使用”&#x2F;&#x2F;&#x2F;“ 的类型。此外，由于 Doxygen 对于批注是视为在解释后面的程序代码。也就是说，任何一个批注都是在说明其后的程序代码。如果要批注前面的程式码则需用下面格式的批注符号。</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">/*!&lt; ... 批注 ... */</span></span><br><span class="line"><span class="comment">/**&lt; ... 批注 ... */</span></span><br><span class="line"><span class="comment">//!&lt; ... 批注 ...</span></span><br><span class="line"><span class="comment">///&lt; ... 批注 ...</span></span><br></pre></td></tr></table></figure>
+
+<p>上面这个方式并不适用于任何地方，只能用在 class 的 member 或是 function 的参数上。举例来说，若我们有下面这样的 class。</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">MyClass</span> &#123;</span><br><span class="line">	<span class="keyword">public</span>:</span><br><span class="line">		<span class="type">int</span> member1 ;</span><br><span class="line">		<span class="type">int</span> member2:</span><br><span class="line">		<span class="function"><span class="type">void</span> <span class="title">member_function</span><span class="params">()</span></span>;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>加上批注后，就变成这样：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">* 我的自订类别说明 ...</span></span><br><span class="line"><span class="comment">*/</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">MyClass</span> &#123;</span><br><span class="line">	<span class="keyword">public</span>:</span><br><span class="line">		<span class="type">int</span> member1 ; <span class="comment">///&lt; 第一个 member 说明 ...</span></span><br><span class="line">		<span class="type">int</span> member2: <span class="comment">///&lt; 第二个 member 说明 ...</span></span><br><span class="line">		<span class="function"><span class="type">int</span> <span class="title">member_function</span><span class="params">(<span class="type">int</span> a, <span class="type">int</span> b)</span></span>;</span><br><span class="line">&#125;;</span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">* 自订类别的 member_funtion 说明 ...</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* @param a 参数 a 的说明</span></span><br><span class="line"><span class="comment">* @param b 参数 b 的说明</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* @return 传回 a+b。</span></span><br><span class="line"><span class="comment">*/</span></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">MyClass::member_function</span><span class="params">( <span class="type">int</span> a, <span class="type">int</span> b )</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="keyword">return</span> a+b ;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>当您使用 Doxygen 产生说明文档时，Doxygen 会帮您 parsing 您的程式码。并且依据程序结构建立对应的文件。然后再将您的批注，依据其位置套入于正确的地方。您可能已经注意到，除了一般文字说明外，还有一些其它特别的指令，像是@param 及@return 等。这正是 Doxygen 另外一个重要的部分，因为一个类别或是函式其实都有固定几个要说明的部分。为了让 Doxygen 能够判断，所有我们就必需使用这些指令，来告诉 Doxygen 后面的批注是在说明什么东西。Doxygen 在处理时，就会帮您把这些部分做特别的处理或是排版。甚至是制作参考连结。</p>
+<p>首先，我们先说明在 Doxygen 中对于类别或是函数批注的一个特定格式。</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">* class 或 function 的简易说明...</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* class 或 function 的详细说明...</span></span><br><span class="line"><span class="comment">* ...</span></span><br><span class="line"><span class="comment">*/</span></span><br></pre></td></tr></table></figure>
+
+<p>上面这个例子要说的是，在 Doxygen 处理一个 class 或是 function 注解时，会先判断第一行为简易说明。这个简易说明将一直到空一行的出现。或是遇到第一个”.” 为止。之后的批注将会被视为详细说明。两者的差异在于 Doxygen 在某些地方只会显示简易说明，而不显示详细说明。如：class 或 function 的列表。</p>
+<p>另一种比较清楚的方式是指定@brief 的指令。这将会明确的告诉 Doxygen，何者是简易说明。例如：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">* @brief class 或 function 的简易说明...</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* class 或 function 的详细说明...</span></span><br><span class="line"><span class="comment">* ...</span></span><br><span class="line"><span class="comment">*/</span></span><br></pre></td></tr></table></figure>
+
+<p>除了这个 class 及 function 外，Doxygen 也可针对档案做说明，条件是该批注需置于档案的前面。主要也是利用一些指令，通常这部分注解都会放在档案的开始地方。如：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">/*! \file myfile.h</span></span><br><span class="line"><span class="comment">\brief 档案简易说明</span></span><br><span class="line"><span class="comment">详细说明.</span></span><br><span class="line"><span class="comment">\author 作者信息</span></span><br><span class="line"><span class="comment">*/</span></span><br></pre></td></tr></table></figure>
+
+<p>如您所见，档案批注约略格式如上，请别被 <code>&quot;\&quot;</code> 所搞混。其实，<code>&quot;\&quot;</code> 与”@” 都是一样的，都是告诉 Doxygen 后面是一个指令。两种在 Doxygen 都可使用。笔者自己比较偏好使用”@”。</p>
+<p>接着我们来针对一些常用的指令做说明：@file 档案的批注说明。Doxygen 所支持的指令很多，有些甚至是关于输出排版的控制。您可从 Doxygen 的使用说明中找到详尽的说明。</p>
+<p>下面我们准备一组 example.h 及 example.cpp 来说明 Doxygen 批注的使用方式：example.h:</p>
+<ul>
+<li>@author 作者的信息</li>
+<li>@brief 用于 class 或 function 的批注中，后面为 class 或 function 的简易说明。</li>
+<li>@param 格式为 @param arg_name 参数说明,主要用于函式说明中，后面接参数的名字，然后再接关于该参数的说明。</li>
+<li>@return 后面接函数传回值的说明。用于 function 的批注中。说明该函数的传回值。</li>
+<li>@retval 格式为 @retval value 传回值说明,主要用于函式说明中，说明特定传回值的意义。所以后面要先接一个传回值。然后在放该传回值的说明。</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">* @file 本范例的 include 档案。</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* 这个档案只定义 example 这个 class。</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* @author garylee@localhost</span></span><br><span class="line"><span class="comment">*/</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> EXAMPLE_OK 0 <span class="comment">///&lt; 定义 EXAMPLE_OK 的宏为 0。</span></span></span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">* @brief Example class 的简易说明</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* 本范例说明 Example class。</span></span><br><span class="line"><span class="comment">* 这是一个极为简单的范例。</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">*/</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Example</span> &#123;</span><br><span class="line">	<span class="keyword">private</span>:</span><br><span class="line">		<span class="type">int</span> var1 ; <span class="comment">///&lt; 这是一个 private 的变数</span></span><br><span class="line">	<span class="keyword">public</span>:</span><br><span class="line">		<span class="type">int</span> var2 ; <span class="comment">///&lt; 这是一个 public 的变数成员。</span></span><br><span class="line">		<span class="type">int</span> var3 ; <span class="comment">///&lt; 这是另一个 public 的变数成员。</span></span><br><span class="line">		<span class="function"><span class="type">void</span> <span class="title">ExFunc1</span><span class="params">(<span class="type">void</span>)</span></span>;</span><br><span class="line">		<span class="function"><span class="type">int</span> <span class="title">ExFunc2</span><span class="params">(<span class="type">int</span> a, <span class="type">char</span> b)</span></span>;</span><br><span class="line">		<span class="function"><span class="type">char</span> *<span class="title">ExFunc3</span><span class="params">(<span class="type">char</span> *c)</span> </span>;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>example.cpp:</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">* @file 本范例的程序代码档案。</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* 这个档案用来定义 example 这个 class 的</span></span><br><span class="line"><span class="comment">* member function。</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* @author garylee@localhost</span></span><br><span class="line"><span class="comment">*/</span></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">* @brief ExFunc1 的简易说明</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* ExFunc1 没有任何参数及传回值。</span></span><br><span class="line"><span class="comment">*/</span></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">Example::ExFunc1</span><span class="params">(<span class="type">void</span>)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="comment">// empty funcion.</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">* @brief ExFunc2 的简易说明</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* ExFunc3()传回两个参数相加的值。</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* @param a 用来相加的参数。</span></span><br><span class="line"><span class="comment">* @param b 用来相加的参数。</span></span><br><span class="line"><span class="comment">* @return 传回两个参数相加的结果。</span></span><br><span class="line"><span class="comment">*/</span></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">ExFunc2</span><span class="params">(<span class="type">int</span> a, <span class="type">char</span> b)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="keyword">return</span> (a+b);</span><br><span class="line">&#125;</span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment">* @brief ExFunc3 的简易说明</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* ExFunc3()只传回参数输入的指标。</span></span><br><span class="line"><span class="comment">*</span></span><br><span class="line"><span class="comment">* @param c 传进的字符指针。</span></span><br><span class="line"><span class="comment">* @retval NULL 空字符串。</span></span><br><span class="line"><span class="comment">* @retval !NULL 非空字符串。</span></span><br><span class="line"><span class="comment">*/</span></span><br><span class="line"><span class="function"><span class="type">char</span> * <span class="title">ExFunc2</span><span class="params">(<span class="type">char</span> * c)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="keyword">return</span> c;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+]]></content>
+      <categories>
+        <category>1.语言</category>
+        <category>0.设计模式</category>
       </categories>
   </entry>
   <entry>
@@ -11033,6 +11650,44 @@ done
       </categories>
   </entry>
   <entry>
+    <title>信号量</title>
+    <url>/2024/08/28/0-%E5%B9%B3%E5%8F%B0-Linux-IO-%E4%BF%A1%E5%8F%B7%E9%87%8F/</url>
+    <content><![CDATA[<h1 id="介绍"><a href="#介绍" class="headerlink" title="介绍"></a>介绍</h1><p>Linux 的信号量是一种<strong>进程间通信机制</strong>，用于控制进程对共享资源的访问。信号量是一个计数器，用于表示某个共享资源的可用数量。进程可以使用信号量来申请共享资源的访问权限，也可以使用信号量来释放已经申请到的资源。</p>
+<p>Linux 中的信号量包括两种类型：二进制信号量和计数信号量。二进制信号量只有两个取值，分别表示资源的空闲和占用状态。计数信号量的取值可以是任意正整数，表示可用资源的数量。</p>
+<p>进程可以使用 semget() 函数创建一个信号量集，使用 semop() 函数对信号量进行操作。semop() 函数可以对信号量进行加锁和解锁操作，还可以等待信号量的值达到某个条件。当某个进程占用了一个资源时，它需要对相应的信号量进行加锁操作，以防止其他进程同时访问该资源。当进程释放资源时，需要对相应的信号量进行解锁操作，以便其他进程可以访问该资源。</p>
+<h1 id="SIG-簇函数"><a href="#SIG-簇函数" class="headerlink" title="SIG 簇函数"></a>SIG 簇函数</h1><p>在 Linux 中，信号量通常用于进程间的同步和互斥操作。例如，多个进程需要访问同一个共享文件时，可以使用信号量来控制对该文件的访问。</p>
+<p>在 Linux 中，SIG 簇函数是一组用于处理信号的系统调用函数，可以用来注册信号处理函数、发送信号、阻塞信号等操作。这些函数的名称都以 “sig” 开头，例如 sigaction、sigprocmask、sigqueue 等。</p>
+<p>下面是一些常用的 SIG 簇函数：</p>
+<ul>
+<li>sigaction 函数：用于注册信号处理函数。该函数可以指定一个函数指针作为信号处理函数，当接收到指定信号时，系统会自动调用该函数进行处理。sigaction 函数还可以设置信号的处理方式，例如忽略信号、执行默认操作、执行指定的处理函数等。</li>
+<li>sigprocmask 函数：用于设置进程的信号屏蔽字。进程可以使用该函数屏蔽某些信号，以免在处理某个信号时被其他信号中断。当某个信号被屏蔽后，它将被暂时忽略，直到该信号被解除屏蔽。</li>
+<li>sigpending 函数：用于获取当前进程的未决信号集。未决信号是指已经发送给进程但尚未处理的信号。sigpending 函数可以获取当前进程的未决信号集，并将其保存在一个 sigset_t 类型的变量中。</li>
+<li>sigsuspend 函数：用于挂起当前进程，直到收到指定信号为止。该函数可以用于等待某个信号的到来，并阻塞当前进程，直到收到指定信号后才会继续执行。</li>
+<li>sigqueue 函数：用于向指定进程发送信号，并可以携带一个整数值作为附加数据。该函数可以用于进程间的通信，例如向另一个进程发送通知消息等。</li>
+</ul>
+<p>这些 SIG 簇函数可以帮助我们更好地处理信号，实现进程间的通信和同步操作。在使用这些函数时，需要注意信号的处理顺序和优先级，以免出现意外的结果。</p>
+<h1 id="信号量用作定时器"><a href="#信号量用作定时器" class="headerlink" title="信号量用作定时器"></a>信号量用作定时器</h1><p>信号量可以用作定时器的一种实现方式。具体来说，可以使用 setitimer 函数设置一个定时器，当定时器到期时，系统会自动向当前进程发送一个指定的信号，进程可以通过信号处理函数来处理该信号。</p>
+<p>以下是一个使用信号量实现定时器的示例代码：</p>
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;signal.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;unistd.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/time.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;sys/sem.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> SEM_KEY 0x12345678</span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">int</span> sem_id;</span><br><span class="line"></span><br><span class="line"><span class="keyword">union</span> <span class="title class_">semun</span> &#123;</span><br><span class="line">	<span class="type">int</span> val;</span><br><span class="line">	<span class="keyword">struct</span> <span class="title class_">semid_ds</span> *buf;</span><br><span class="line">	<span class="type">unsigned</span> <span class="type">short</span> *array;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">handler</span><span class="params">(<span class="type">int</span> signum)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="built_in">printf</span>(<span class="string">&quot;Timer expired.\n&quot;</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">set_timer</span><span class="params">(<span class="type">int</span> sec)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="keyword">struct</span> <span class="title class_">itimerval</span> timer;</span><br><span class="line">	timer.it_value.tv_sec = sec;</span><br><span class="line">	timer.it_value.tv_usec = <span class="number">0</span>;</span><br><span class="line">	timer.it_interval.tv_sec = <span class="number">0</span>;</span><br><span class="line">	timer.it_interval.tv_usec = <span class="number">0</span>;</span><br><span class="line">	<span class="built_in">setitimer</span>(ITIMER_REAL, &amp;timer, <span class="literal">NULL</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">init_sem</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="keyword">union</span> <span class="title class_">semun</span> arg;</span><br><span class="line">	arg.val = <span class="number">0</span>;</span><br><span class="line">	sem_id = <span class="built_in">semget</span>(SEM_KEY, <span class="number">1</span>, IPC_CREAT | <span class="number">0666</span>);</span><br><span class="line">	<span class="built_in">semctl</span>(sem_id, <span class="number">0</span>, SETVAL, arg);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">wait_sem</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="keyword">struct</span> <span class="title class_">sembuf</span> sb;</span><br><span class="line">	sb.sem_num = <span class="number">0</span>;</span><br><span class="line">	sb.sem_op = <span class="number">-1</span>;</span><br><span class="line">	sb.sem_flg = <span class="number">0</span>;</span><br><span class="line">	<span class="built_in">semop</span>(sem_id, &amp;sb, <span class="number">1</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">void</span> <span class="title">post_sem</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="keyword">struct</span> <span class="title class_">sembuf</span> sb;</span><br><span class="line">	sb.sem_num = <span class="number">0</span>;</span><br><span class="line">	sb.sem_op = <span class="number">1</span>;</span><br><span class="line">	sb.sem_flg = <span class="number">0</span>;</span><br><span class="line">	<span class="built_in">semop</span>(sem_id, &amp;sb, <span class="number">1</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">	<span class="built_in">signal</span>(SIGALRM, handler);</span><br><span class="line">	<span class="built_in">init_sem</span>();</span><br><span class="line">	<span class="built_in">set_timer</span>(<span class="number">5</span>);</span><br><span class="line">	<span class="built_in">wait_sem</span>();</span><br><span class="line">	<span class="built_in">printf</span>(<span class="string">&quot;Exiting...\n&quot;</span>);</span><br><span class="line">	<span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>在上面的示例代码中，我们使用了 setitimer 函数来设置一个 5 秒的定时器，当定时器到期时，系统会向当前进程发送 SIGALRM 信号。我们在程序中注册了 SIGALRM 信号的处理函数 handler，当收到该信号时，会输出一条消息。</p>
+<p>为了实现等待定时器到期的功能，我们使用了信号量。在程序开始时，我们调用了 init_sem 函数来初始化信号量。在程序中，我们使用了 wait_sem 函数来等待信号量的值变为 0，这个函数会阻塞当前进程直到收到信号量为止。在信号处理函数中，我们调用了 post_sem 函数来将信号量的值加 1，这样就可以让等待信号量的进程继续执行了。</p>
+<p>当程序运行时，它会等待 5 秒钟，然后输出一条消息并退出。如果需要更长或更短的定时器，可以修改 set_timer 函数中的参数。</p>
+<h1 id="Linux-中的信号量和-Qt-的信号槽机制"><a href="#Linux-中的信号量和-Qt-的信号槽机制" class="headerlink" title="Linux 中的信号量和 Qt 的信号槽机制"></a>Linux 中的信号量和 Qt 的信号槽机制</h1><p>Linux 中的信号量和 Qt 中的信号槽都是用于<strong>实现进程间通信和事件处理</strong>的机制，但实现方式和应用场景有所不同。</p>
+<p>Linux 中的信号量是一种进程间通信机制，用于控制进程<strong>对共享资源的访问</strong>。信号量是一个计数器，用于表示某个共享资源的可用数量。进程可以使用信号量来申请共享资源的访问权限，也可以使用信号量来释放已经申请到的资源。Linux 中的信号量通常用于<strong>进程间的同步和互斥操作</strong>，例如多个进程需要访问同一个共享文件时，可以使用信号量来控制对该文件的访问。</p>
+<p>Qt 中的信号槽是一种<strong>事件处理</strong>机制，用于在对象之间<strong>传递消息和处理事件</strong>。当一个对象发生某个事件时，它会发送一个信号，其他对象可以连接到该信号并定义一个槽函数来处理该事件。Qt 中的信号槽机制可以用于实现对象之间的通信和协作，例如在一个窗口中点击一个按钮时，可以发送一个信号来通知其他对象执行相应的操作。</p>
+<p>虽然 Linux 中的信号量和 Qt 中的信号槽机制都可以用于进程间通信和事件处理，但它们的实现方式和应用场景有所不同。在 Linux 中，信号量通常用于控制对共享资源的访问，而在 Qt 中，信号槽机制通常用于处理事件和实现对象之间的通信。</p>
+<h2 id="sigaction"><a href="#sigaction" class="headerlink" title="sigaction"></a>sigaction</h2><p>sigaction 和 Qt 的信号槽机制都是用于处理信号的机制，sigaction 主要用于实现进程间通信和事件处理，而 Qt 的信号槽机制主要用于处理 GUI 事件和实现对象之间的通信。</p>
+<p>sigaction 是 Linux 中用于处理信号的函数，可以设置信号处理函数、信号屏蔽字等。当进程接收到某个信号时，会自动调用对应的信号处理函数来处理该信号。sigaction 主要用于实现<strong>进程间通信和事件处理</strong>，例如在多进程编程中，可以使用 sigaction 实现进程间的同步和互斥操作。</p>
+<p>Qt 中的信号槽机制是一种事件处理机制，用于在对象之间传递消息和处理事件。当一个对象发生某个事件时，它会发送一个信号，其他对象可以连接到该信号并定义一个槽函数来处理该事件。Qt 中的信号槽机制可以用于实现<strong>对象之间的通信和协作</strong>，例如在一个窗口中点击一个按钮时，可以发送一个信号来通知其他对象执行相应的操作。</p>
+]]></content>
+      <categories>
+        <category>0.平台</category>
+        <category>Linux</category>
+        <category>IO</category>
+      </categories>
+  </entry>
+  <entry>
     <title>文件IO</title>
     <url>/2024/06/07/0-%E5%B9%B3%E5%8F%B0-Linux-IO-%E6%96%87%E4%BB%B6IO/</url>
     <content><![CDATA[<p>文件 IO</p>
@@ -11363,7 +12018,8 @@ chdir();
     <title>机器大小端校验</title>
     <url>/2024/05/22/0-%E5%B9%B3%E5%8F%B0-Linux-%E5%85%B6%E4%BB%96-%E6%9C%BA%E5%99%A8%E5%A4%A7%E5%B0%8F%E7%AB%AF%E6%A0%A1%E9%AA%8C/</url>
     <content><![CDATA[<h1 id="大小端字节序"><a href="#大小端字节序" class="headerlink" title="大小端字节序"></a>大小端字节序</h1><p>大端字节序（Big-Endian）和小端字节序（Little-Endian）是两种不同的字节存储顺序方式，用于在多字节数据类型（如整数、浮点数）在内存中的表示。</p>
-<p>在大端字节序中，较高字节（最高有效字节）保存在较低的存储地址，而较低字节（最低有效字节）保存在较高的存储地址。换句话说，数据的高位字节存储在低地址位置，低位字节存储在高地址位置。</p>
+<p>在大端字节序中，较高字节（最高有效字节）保存在较低的存储地址，而较低字节（最低有效字节）保存在较高的存储地址。</p>
+<p>换句话说，数据的高位字节存储在低地址位置，低位字节存储在高地址位置。</p>
 <p>例如，整数值 0x12345678 在大端字节序中的存储顺序如下：</p>
 <figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">地址： <span class="number">0x1000</span>   <span class="number">0x1001</span>   <span class="number">0x1002</span>   <span class="number">0x1003</span></span><br><span class="line">数据：  <span class="number">0x12</span>     <span class="number">0x34</span>     <span class="number">0x56</span>     <span class="number">0x78</span></span><br></pre></td></tr></table></figure>
 
@@ -11399,7 +12055,11 @@ chdir();
 <p>32 位系统小端字节序：</p>
 <figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line">地址： <span class="number">0x1000</span>   <span class="number">0x1001</span>   <span class="number">0x1002</span>   <span class="number">0x1003</span></span><br><span class="line">数据：  <span class="number">0x78</span>     <span class="number">0x56</span>     <span class="number">0x34</span>     <span class="number">0x12</span></span><br></pre></td></tr></table></figure>
 
-<h1 id="校验方法"><a href="#校验方法" class="headerlink" title="校验方法"></a>校验方法</h1><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">int</span> num = <span class="number">0x01020304</span>;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">char</span> *ptr = (<span class="type">unsigned</span> <span class="type">char</span>*)&amp;num;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (*ptr == <span class="number">0x01</span>) &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;大端字节序\n&quot;</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;小端字节序\n&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<h1 id="校验方法"><a href="#校验方法" class="headerlink" title="校验方法"></a>校验方法</h1><figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">int</span> num = <span class="number">0x01020304</span>;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">char</span> *ptr = (<span class="type">unsigned</span> <span class="type">char</span>*)&amp;num;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (*ptr == <span class="number">0x01</span>) &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;大端字节序\n&quot;</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;小端字节序\n&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span></span>&#123;</span><br><span class="line">	<span class="type">short</span> <span class="type">int</span> x;</span><br><span class="line">	<span class="type">char</span> x1,x2;</span><br><span class="line">	x= <span class="number">0x1122</span>;</span><br><span class="line">	</span><br><span class="line">	x1=((<span class="type">char</span> *)&amp;x)[<span class="number">0</span>];<span class="comment">//低地址</span></span><br><span class="line">	x2=((<span class="type">char</span> *)&amp;x)[<span class="number">1</span>];<span class="comment">//高地址</span></span><br><span class="line">	</span><br><span class="line">	<span class="built_in">printf</span>(<span class="string">&quot;x1=%x\n&quot;</span>,x1);</span><br><span class="line">	<span class="built_in">printf</span>(<span class="string">&quot;x2=%x\n&quot;</span>,x2);</span><br><span class="line">	<span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight cpp"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="type">int</span> <span class="title">checkCPU</span><span class="params">()</span></span>&#123;</span><br><span class="line">	<span class="keyword">union</span> <span class="title class_">w</span></span><br><span class="line">	&#123;</span><br><span class="line">		<span class="type">int</span> a;</span><br><span class="line">		<span class="type">char</span> b;</span><br><span class="line">	&#125;c;</span><br><span class="line">	c.a = <span class="number">1</span>;</span><br><span class="line">	<span class="keyword">return</span>(c.b==<span class="number">1</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
 ]]></content>
       <categories>
         <category>0.平台</category>
