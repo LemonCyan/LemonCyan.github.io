@@ -1,0 +1,1028 @@
+
+<!DOCTYPE html><html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 7.3.0">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>FreeModbus 解析 - LemonCyan</title>
+
+  
+    <meta name="description" content="RTU 流程分析执行 main() 中的 eStatus &#x3D; eMBInit(MB_RTU, 0x0A, 0, 9600, MB_PAR_NONE);，进入初始化过程。其中，初始化的从设备地址为 0x0A，这是 Modbus 协议支持的范围内的有效地址，也就是说可以使用 1 到 247 之间的任意地址。因为设置为 RTU 模式，所以需要为 RTU 的一些参数赋值，这些参数通过以下初始化函数配置：">
+<meta property="og:type" content="article">
+<meta property="og:title" content="FreeModbus 解析">
+<meta property="og:url" content="https://lemoncyan.github.io/2023/12/20/4-%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE-Modbus-FreeModbus-%E8%A7%A3%E6%9E%90/">
+<meta property="og:site_name" content="LemonCyan">
+<meta property="og:description" content="RTU 流程分析执行 main() 中的 eStatus &#x3D; eMBInit(MB_RTU, 0x0A, 0, 9600, MB_PAR_NONE);，进入初始化过程。其中，初始化的从设备地址为 0x0A，这是 Modbus 协议支持的范围内的有效地址，也就是说可以使用 1 到 247 之间的任意地址。因为设置为 RTU 模式，所以需要为 RTU 的一些参数赋值，这些参数通过以下初始化函数配置：">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+<meta property="article:published_time" content="2023-12-20T13:11:48.000Z">
+<meta property="article:modified_time" content="2024-12-30T10:21:02.000Z">
+<meta property="article:author" content="liuluhua">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+  
+  
+  
+  
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"},"dateCreated":"2023-12-20T13:11:48+00:00","dateModified":"2024-12-30T10:21:02+00:00","datePublished":"2023-12-20T13:11:48+00:00","description":"","headline":"FreeModbus 解析","mainEntityOfPage":{"@type":"WebPage","@id":"https://lemoncyan.github.io/2023/12/20/4-%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE-Modbus-FreeModbus-%E8%A7%A3%E6%9E%90/"},"publisher":{"@type":"Organization","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png","logo":{"@type":"ImageObject","url":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"}},"url":"https://lemoncyan.github.io/2023/12/20/4-%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE-Modbus-FreeModbus-%E8%A7%A3%E6%9E%90/","image":[]}</script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css" />
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="config.avatar" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">LemonCyan</div><div class="sub cap">LemonCyan`s Charging</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"><a class="nav-item active" title="博客" href="/" style="color:#1BCDFC"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M5.879 2.879C5 3.757 5 5.172 5 8v8c0 2.828 0 4.243.879 5.121C6.757 22 8.172 22 11 22h2c2.828 0 4.243 0 5.121-.879C19 20.243 19 18.828 19 16V8c0-2.828 0-4.243-.879-5.121C17.243 2 15.828 2 13 2h-2c-2.828 0-4.243 0-5.121.879M8.25 17a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75M9 12.25a.75.75 0 0 0 0 1.5h6a.75.75 0 0 0 0-1.5zM8.25 9A.75.75 0 0 1 9 8.25h6a.75.75 0 0 1 0 1.5H9A.75.75 0 0 1 8.25 9" clip-rule="evenodd"/><path fill="currentColor" d="M5.235 4.058C5 4.941 5 6.177 5 8v8c0 1.823 0 3.058.235 3.942L5 19.924c-.975-.096-1.631-.313-2.121-.803C2 18.243 2 16.828 2 14v-4c0-2.829 0-4.243.879-5.121c.49-.49 1.146-.707 2.121-.803zm13.53 15.884C19 19.058 19 17.822 19 16V8c0-1.823 0-3.059-.235-3.942l.235.018c.975.096 1.631.313 2.121.803C22 5.757 22 7.17 22 9.999v4c0 2.83 0 4.243-.879 5.122c-.49.49-1.146.707-2.121.803z" opacity=".5"/></svg></a><a class="nav-item" title="文档" href="/wiki/" style="color:#3DC550"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M14.25 4.48v3.057c0 .111 0 .27.02.406a.936.936 0 0 0 .445.683a.96.96 0 0 0 .783.072c.13-.04.272-.108.378-.159L17 8.005l1.124.534c.106.05.248.119.378.16a.958.958 0 0 0 .783-.073a.936.936 0 0 0 .444-.683c.021-.136.021-.295.021-.406V3.031c.113-.005.224-.01.332-.013C21.154 2.98 22 3.86 22 4.933v11.21c0 1.112-.906 2.01-2.015 2.08c-.97.06-2.108.179-2.985.41c-1.082.286-1.99 1.068-3.373 1.436c-.626.167-1.324.257-1.627.323V5.174c.32-.079 1.382-.203 1.674-.371c.184-.107.377-.216.576-.323m5.478 8.338a.75.75 0 0 1-.546.91l-4 1a.75.75 0 0 1-.364-1.456l4-1a.75.75 0 0 1 .91.546" clip-rule="evenodd"/><path fill="currentColor" d="M18.25 3.151c-.62.073-1.23.18-1.75.336a8.2 8.2 0 0 0-.75.27v3.182l.75-.356l.008-.005a1.13 1.13 0 0 1 .492-.13c.047 0 .094.004.138.01c.175.029.315.1.354.12l.009.005l.749.356V3.647z"/><path fill="currentColor" d="M12 5.214c-.334-.064-1.057-.161-1.718-.339C8.938 4.515 8.05 3.765 7 3.487c-.887-.234-2.041-.352-3.018-.412C2.886 3.007 2 3.9 2 4.998v11.146c0 1.11.906 2.01 2.015 2.079c.97.06 2.108.179 2.985.41c.486.129 1.216.431 1.873.726c1.005.451 2.052.797 3.127 1.034z" opacity=".5"/><path fill="currentColor" d="M4.273 12.818a.75.75 0 0 1 .91-.545l4 1a.75.75 0 1 1-.365 1.455l-4-1a.75.75 0 0 1-.545-.91m.909-4.545a.75.75 0 1 0-.364 1.455l4 1a.75.75 0 0 0 .364-1.455z"/></svg></a><a class="nav-item" title="探索" href="/explore/" style="color:#FA6400"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M20 12a8 8 0 1 1-16 0a8 8 0 0 1 16 0" opacity=".5"/><path fill="currentColor" d="M17.712 5.453c1.047-.193 2.006-.259 2.797-.152c.77.103 1.536.393 1.956 1.064c.446.714.312 1.542-.012 2.258c-.33.728-.918 1.499-1.672 2.268c-1.516 1.547-3.836 3.226-6.597 4.697c-2.763 1.472-5.495 2.484-7.694 2.92c-1.095.217-2.098.299-2.923.201c-.8-.095-1.6-.383-2.032-1.075c-.47-.752-.296-1.63.07-2.379c.375-.768 1.032-1.586 1.872-2.403L4 12.416c0 .219.083.71.168 1.146c.045.23.09.444.123.596c-.652.666-1.098 1.263-1.339 1.756c-.277.567-.208.825-.145.925c.072.116.305.305.937.38c.609.073 1.44.018 2.455-.183c2.02-.4 4.613-1.351 7.28-2.772c2.667-1.42 4.85-3.015 6.23-4.423c.694-.707 1.15-1.334 1.377-1.836c.233-.515.167-.75.107-.844c-.07-.112-.289-.294-.883-.374c-.542-.072-1.272-.041-2.163.112L16.87 5.656c.338-.101.658-.17.842-.203"/></svg></a><a class="nav-item" title="社交" href="/friends/" style="color:#F44336"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="m13.629 20.472l-.542.916c-.483.816-1.69.816-2.174 0l-.542-.916c-.42-.71-.63-1.066-.968-1.262c-.338-.197-.763-.204-1.613-.219c-1.256-.021-2.043-.098-2.703-.372a5 5 0 0 1-2.706-2.706C2 14.995 2 13.83 2 11.5v-1c0-3.273 0-4.91.737-6.112a5 5 0 0 1 1.65-1.651C5.59 2 7.228 2 10.5 2h3c3.273 0 4.91 0 6.113.737a5 5 0 0 1 1.65 1.65C22 5.59 22 7.228 22 10.5v1c0 2.33 0 3.495-.38 4.413a5 5 0 0 1-2.707 2.706c-.66.274-1.447.35-2.703.372c-.85.015-1.275.022-1.613.219c-.338.196-.548.551-.968 1.262" opacity=".5"/><path fill="currentColor" d="M10.99 14.308c-1.327-.978-3.49-2.84-3.49-4.593c0-2.677 2.475-3.677 4.5-1.609c2.025-2.068 4.5-1.068 4.5 1.609c0 1.752-2.163 3.615-3.49 4.593c-.454.335-.681.502-1.01.502c-.329 0-.556-.167-1.01-.502"/></svg></a></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="Search"></form><div id="search-result"></div><div class="search-no-result">No Results!</div></div>
+
+
+
+<widget class="widget-wrapper recent post-list"><div class="widget-header dis-select"><span class="name">Recent Update</span></div><div class="widget-body fs14"><a class="item title" href="/2026/01/13/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-%E6%9C%8D%E5%8A%A1%E5%99%A8-%E6%9C%8D%E5%8A%A1%E5%99%A8%E5%AE%89%E5%85%A8-%E6%9C%8D%E5%8A%A1%E5%99%A8%E5%AE%89%E5%85%A8%E5%AE%8C%E6%95%B4%E6%8C%87%E5%8D%97/"><span class="title">服务器安全完整指南</span></a><a class="item title" href="/2026/01/13/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-%E6%9C%8D%E5%8A%A1%E5%99%A8-%E5%8F%8D%E5%90%91%E4%BB%A3%E7%90%86/"><span class="title">反向代理</span></a><a class="item title" href="/2026/01/10/3-%E5%BC%80%E5%8F%91%E6%A1%86%E6%9E%B6-Qt-Publish-%E4%BA%8B%E4%BB%B6%E5%A4%84%E7%90%86/"><span class="title">Qt 事件处理机制详解</span></a><a class="item title" href="/2026/01/08/3-%E5%BC%80%E5%8F%91%E6%A1%86%E6%9E%B6-Qt-Publish-%E7%BC%93%E5%86%B2%E6%B1%A0/"><span class="title">Qt 缓冲池设计与实现</span></a><a class="item title" href="/2025/07/19/3-%E5%BC%80%E5%8F%91%E6%A1%86%E6%9E%B6-Qt-Publish-QTimer%E5%AE%9A%E6%97%B6%E5%99%A8%E7%9A%84%E4%BD%BF%E7%94%A8/"><span class="title">Qt 定时器完全指南：QTimer 从入门到精通</span></a><a class="item title" href="/2025/12/30/3-%E5%BC%80%E5%8F%91%E6%A1%86%E6%9E%B6-Qt-Publish-qmake%E5%AE%8C%E5%85%A8%E6%8C%87%E5%8D%97/"><span class="title">qmake完全指南</span></a><a class="item title" href="/2026/01/12/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-%E7%BD%91%E7%BB%9C-03-Hiddify-Manager%E9%85%8D%E7%BD%AE-%E5%A6%82%E4%BD%95%E5%AE%89%E8%A3%85%E4%B8%8D%E5%90%8C%E7%89%88%E6%9C%AC%E7%9A%84Hiddify-Manager/"><span class="title">如何安装不同版本的Hiddify Manager</span></a><a class="item title" href="/2026/01/12/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-%E7%BD%91%E7%BB%9C-09-%E5%AE%89%E5%85%A8%E5%92%8C%E6%95%85%E9%9A%9C%E6%8E%92%E9%99%A4-%E5%A6%82%E4%BD%95%E6%A0%B9%E6%8D%AE%E7%89%B9%E5%AE%9A%E6%A0%BC%E5%BC%8F%E4%BD%BF%E7%94%A8%E6%89%80%E9%9C%80%E7%9A%84%E5%B9%B2%E5%87%80IP/"><span class="title">如何根据特定格式使用所需的干净IP</span></a><a class="item title" href="/2026/01/12/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-%E7%BD%91%E7%BB%9C-09-%E5%AE%89%E5%85%A8%E5%92%8C%E6%95%85%E9%9A%9C%E6%8E%92%E9%99%A4-%E5%9C%A8SSH%E4%B8%8A%E7%A6%81%E7%94%A8SSH%E5%AF%86%E7%A0%81%E8%AE%A4%E8%AF%81/"><span class="title">在SSH上禁用SSH密码认证</span></a><a class="item title" href="/2026/01/12/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-%E7%BD%91%E7%BB%9C-09-%E5%AE%89%E5%85%A8%E5%92%8C%E6%95%85%E9%9A%9C%E6%8E%92%E9%99%A4-%E5%A6%82%E4%BD%95%E7%A1%AE%E4%BF%9D%E6%9C%8D%E5%8A%A1%E5%99%A8IP%E6%88%96%E5%9F%9F%E5%90%8D%E5%B9%B2%E5%87%80/"><span class="title">如何确保服务器IP或域名干净</span></a></div></widget>
+</div>
+<footer class="footer dis-select"><div class="social-wrap"><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/08a41b181ce68.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3845874.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3616429.svg"/></a><a class="social" href="/about/#comments" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/942ebbf1a4b91.svg"/></a></div></footer>
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">Home</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">Blog</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/4-%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE/">4.通讯协议</a> <span class="sep"></span> <a class="cap breadcrumb-link" href="/categories/Modbus/">Modbus</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">Posted on: <time datetime="2023-12-20T13:11:48.000Z">2023-12-20</time></span><span class="sep updated"></span><span class="text updated">Updated on: <time datetime="2024-12-30T10:21:02.000Z">2024-12-30</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>FreeModbus 解析</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h1 id="RTU-流程分析"><a href="#RTU-流程分析" class="headerlink" title="RTU 流程分析"></a>RTU 流程分析</h1><p>执行 <code>main()</code> 中的 <code>eStatus = eMBInit(MB_RTU, 0x0A, 0, 9600, MB_PAR_NONE);</code>，进入初始化过程。其中，初始化的从设备地址为 <code>0x0A</code>，这是 Modbus 协议支持的范围内的有效地址，也就是说可以使用 1 到 247 之间的任意地址。因为设置为 RTU 模式，所以需要为 RTU 的一些参数赋值，这些参数通过以下初始化函数配置：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">pvMBFrameStartCur = eMBRTUStart;</span><br><span class="line">pvMBFrameStopCur = eMBRTUStop;</span><br><span class="line">peMBFrameSendCur = eMBRTUSend;</span><br><span class="line">peMBFrameReceiveCur = eMBRTUReceive;</span><br><span class="line">pvMBFrameCloseCur = MB_PORT_HAS_CLOSE ? vMBPortClose : <span class="literal">NULL</span>;</span><br><span class="line">pxMBFrameCBByteReceived = xMBRTUReceiveFSM;</span><br><span class="line">pxMBFrameCBTransmitterEmpty = xMBRTUTransmitFSM;</span><br><span class="line">pxMBPortCBTimerExpired = xMBRTUTimerT35Expired;</span><br></pre></td></tr></table></figure>
+
+<p>这些配置中，特别重要的是 <code>xMBRTUReceiveFSM</code> 和 <code>xMBRTUTransmitFSM</code> 这两个函数，它们定义了 Modbus 状态机的接收和发送状态。以下是接收状态机的图示：</p>
+<p><img src="https://raw.githubusercontent.com/liuluhua/liuluhua.github.io/ImageBed/2024/1735193562000d8h4r4.png" alt="xMBRTUReceiveFSM"></p>
+<p><code>xMBRTUReceiveFSM</code> 实现了 Modbus 接收状态机的转变逻辑，状态流程可以如下描述：</p>
+<ol>
+<li><p><strong>上电启动或复位</strong>：设备进入 <code>STATE_RX_INIT</code> 状态。在这个阶段，为了避免协议栈在初始化阶段接收到无效的串口数据，设备需要等待一个定时期，时长为 <code>T35</code>。若 <code>T35</code> 时间内无数据接收，才会进入 <code>STATE_RX_IDLE</code> 状态，开始接收有效数据。</p>
+</li>
+<li><p><strong>进入接收状态</strong>：在 <code>STATE_RX_IDLE</code> 状态下，一接收到第一个字节，定时器启动并转换状态至 <code>STATE_RX_RCV</code>。每接收一个字节，定时器被复位，持续直到 <code>T35</code> 超时。如果接收到的数据格式符合要求，完整数据帧接收结束，重新进入 <code>STATE_RX_IDLE</code> 状态；若数据过长，系统转入 <code>STATE_RX_ERROR</code> 状态，等待接收完成后放弃当前帧，重新回到 <code>STATE_RX_IDLE</code> 状态。当然，所有状态的转换需要 <code>BOOL xMBRTUTimerT35Expired(void)</code> 函数的支持。</p>
+</li>
+</ol>
+<p>接下来是发送状态机的图示：</p>
+<p><img src="https://raw.githubusercontent.com/liuluhua/liuluhua.github.io/ImageBed/2024/1735193577000b9fw8a.png" alt="xMBRTUTransmitFSM"></p>
+<p><strong>发送状态机</strong> 简单许多。其在 <code>STATE_TX_IDLE</code> 状态下，表示没有发送需求。当需要发送数据时，则进入 <code>STATE_TX_XMIT</code> 状态。</p>
+<p>关于 <code>xMBRTUTimerT35Expired</code> 函数，若定时器的初始化设定时基为 50 微秒触发一次中断，Modbus 如何在不同波特率下判断 3.5 个字符的超时呢？在定时器中断时，调用 <code>pxMBPortCBTimerExpired</code> 函数。实际上，<code>T35</code> 超时的函数则是 <code>xMBRTUTimerT35Expired</code>，两者存在何种关系呢？在 <code>eMBRTUInit</code> 中，<code>xMBPortTimersInit((USHORT) usTimerT35_50us)</code> 进行了重新初始化。如果波特率大于 19200，设置固定的 1800 微秒，否则则使用 3.5 个字符的时间间隔。大波特率采用固定时间或许是为了避免因判断时间过小而误判正常的线路延迟。</p>
+<p><strong>运行到 <code>eStatus = eMBEnable();</code></strong> 这个步骤相对简单，执行此函数后激活协议栈、串口和定时器。</p>
+<p>**进入 <code>void eMBPoll();</code>**，在这里有一个关键的检查，<code>if (xMBPortEventGet(&amp;eEvent) == TRUE)</code> 控制着事件处理状态机。这个事件处理实际上是关于一个事件队列的问题，事件通过 <code>eQueuedEvent</code> 被反馈到多个状态机和超时函数。例如，一次事件可能会通过 <code>xMBPortEventPost(EV_FRAME_SENT);</code> 被发送供后续调度。</p>
+<p>确认 RTU 模式的运行流程后，可以进一步分析接收和发送的细节。</p>
+<ol>
+<li><p><strong>接收 Buffer 的使用及有效状态</strong>：接收数据时，状态为 <code>STATE_RX_IDLE</code>，此时可能表明一帧数据的传输已完成。从 <code>mbrtu.c</code> 中的 <code>eMBInit</code> 看，显然进入 <code>STATE_RX_IDLE</code> 状态后，接收的第一个字节会令状态变至 <code>STATE_RX_RCV</code>，并将剩余字节放置于 <code>ucRTUBuf</code> 中。接收字节的数据长度通过 <code>usRcvBufferPos</code> 进行管理，这一过程需要经过 <code>T35</code> 时间来验证是否结束接收。在 <code>xMBRTUTimerT35Expired</code> 函数中，状态为 <code>STATE_RX_RCV</code> 时触发了 <code>xNeedPoll = xMBPortEventPost(EV_FRAME_RECEIVED);</code>，这表明该状态会向 <code>eMBPoll</code> 发送一条消息以处理新接收的数据帧。</p>
+</li>
+<li><p><strong>消息的提取与使用</strong>：当 <code>eMBPoll</code> 中的 <code>if (xMBPortEventGet(&amp;eEvent) == TRUE)</code> 检测到 <code>EV_FRAME_RECEIVED</code> 事件后，将调用 <code>peMBFrameReceiveCur</code> 以获取消息帧。此时调用的正是 <code>eMBRTUReceive</code> 方法。打开该函数，可以清楚看到它如何从 <code>ucRTUBuf</code> 中提取数据并赋值于从机地址 <code>ucRcvAddress</code>、帧内容地址 <code>ucMBFrame</code> 及数据长度 <code>usLength</code>（不包括地址位和 CRC 校验位）。</p>
+</li>
+<li><p><strong>数据处理与反馈</strong>：消息取出后，接下来是在 <code>eMBPoll</code> 的 <code>case EV_FRAME_RECEIVED</code> 中，检查所接消息是否符合设定的目的地址。如果该消息不是广播且未发生异常，则进入 <code>case EV_EXECUTE:</code> 处理步骤，接下来通过功能码判断数据帧的目的。如果测得帧数据为协议栈支持的功能码，将调用相应的处理函数。例如，对于读取输入寄存器的请求，会调用 <code>mb.c</code> 中定义的 <code>eMBFuncReadInputRegister</code>，该函数本质上会调用 <code>eMBRegInputCB</code>.</p>
+</li>
+<li><p><strong>结果的反馈</strong>：处理函数执行后，寄存器的值被提取，帧格式已准备好，数据发送的具体实现发生在串口发送完成的中断中。此时，<code>prvvUARTTxReadyISR</code> 被调用，接着是 <code>pxMBFrameCBTransmitterEmpty</code>，这会将发送状态机转入 <code>STATE_TX_XMIT</code> 并触发 <code>xMBPortSerialPutByte</code> 以发送数据。</p>
+</li>
+</ol>
+<h1 id="RTU-源码分析"><a href="#RTU-源码分析" class="headerlink" title="RTU 源码分析"></a>RTU 源码分析</h1><h2 id="eMBInit"><a href="#eMBInit" class="headerlink" title="eMBInit"></a>eMBInit</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    eMBErrorCode eStatus;</span><br><span class="line">    eStatus = eMBInit(MB_RTU, <span class="number">0x0A</span>, <span class="number">0</span>, <span class="number">38400</span>, MB_PAR_EVEN);</span><br><span class="line">    <span class="comment">/* Enable the Modbus Protocol Stack. */</span></span><br><span class="line">    eStatus = eMBEnable();</span><br><span class="line">    <span class="keyword">for</span>(;;) &#123;</span><br><span class="line">        (<span class="type">void</span>)eMBPoll(); <span class="comment">/* Here we simply count the number of poll cycles. */</span></span><br><span class="line">        usRegInputBuf[<span class="number">0</span>]++;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>首先，利用 <code>eMBInit</code> 函数来初始化 Modbus 协议栈，所使用的参数包括协议模式 <code>MB_RTU</code>、设备地址 <code>0x0A</code>、端口号 <code>0</code>、波特率 <code>38400</code> 和奇偶校验位 <code>MB_PAR_EVEN</code>。在 <code>eMBInit</code> 的内部，程序根据配置的模式选择适当的函数进行初始化：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">if</span> MB_RTU_ENABLED &gt; 0</span></span><br><span class="line"><span class="keyword">case</span> MB_RTU:</span><br><span class="line">    pvMBFrameStartCur = eMBRTUStart;</span><br><span class="line">    pvMBFrameStopCur = eMBRTUStop;</span><br><span class="line">    peMBFrameSendCur = eMBRTUSend;</span><br><span class="line">    peMBFrameReceiveCur = eMBRTUReceive;</span><br><span class="line">    pvMBFrameCloseCur = MB_PORT_HAS_CLOSE ? vMBPortClose : <span class="literal">NULL</span>;</span><br><span class="line">    pxMBFrameCBByteReceived = xMBRTUReceiveFSM;</span><br><span class="line">    pxMBFrameCBTransmitterEmpty = xMBRTUTransmitFSM;</span><br><span class="line">    pxMBPortCBTimerExpired = xMBRTUTimerT35Expired;</span><br><span class="line">    eStatus = eMBRTUInit(ucMBAddress, ucPort, ulBaudRate, eParity);</span><br><span class="line">    <span class="keyword">break</span>;</span><br><span class="line"><span class="meta">#<span class="keyword">endif</span></span></span><br></pre></td></tr></table></figure>
+
+<p>在这段代码中，<code>pvMBFrameStartCur</code>、<code>pvMBFrameStopCur</code> 等变量分别指代不同的协议栈函数接口。通过这样的机制，可以为不同的通信模式赋值及初始化对应的操作函数。这种编写模式极为经典且值得借鉴。当 <code>eMBRTUInit</code> 成功执行后，底层的串口和定时器也将进行相应的初始化。初始化完成后，全局变量 <code>eMBState</code> 会被设置为 <code>STATE_DISABLED</code>，这标志着协议栈还未启用。</p>
+<p>初始化参数包括从设备地址、端口号、波特率和奇偶校验位，同时还会初始化计时器以便后续的数据接收过程。</p>
+<h2 id="eMBEnable"><a href="#eMBEnable" class="headerlink" title="eMBEnable"></a>eMBEnable</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">eMBErrorCode <span class="title function_">eMBEnable</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    eMBErrorCode eStatus = MB_ENOERR;</span><br><span class="line">    <span class="keyword">if</span> (eMBState == STATE_DISABLED) &#123;</span><br><span class="line">        <span class="comment">/* Activate the protocol stack. */</span></span><br><span class="line">        pvMBFrameStartCur();</span><br><span class="line">        eMBState = STATE_ENABLED; </span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        eStatus = MB_EILLSTATE; </span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> eStatus;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>在调用 <code>eMBEnable</code> 函数时，该函数会首先确认协议栈的状态是否为 <code>STATE_DISABLED</code>。若条件满足，便会调用之前初始化的 <code>pvMBFrameStartCur</code>（即 <code>eMBRTUStart</code>）来激活协议栈。随后，全局变量 <code>eRcvState</code> 将被设定为 <code>STATE_RX_INIT</code>，串口和定时器功能也将被启用，标志着数据传输准备就绪。</p>
+<h2 id="eMBPoll"><a href="#eMBPoll" class="headerlink" title="eMBPoll"></a>eMBPoll</h2><p>在一个无限循环中，<code>eMBPoll</code> 函数会不断执行。首先，通过 <code>xMBPortEventGet(&amp;eEvent)</code> 来检查是否有事件发生。如果没有事件，则不进入状态机；这保证了在未接收到数据的情况下，控制流程不会被无谓的操作耗费。</p>
+<p>当定时器到期后，收到了超时事件，这会调用 <code>pxMBPortCBTimerExpired</code> 函数。根据当前的接收状态 <code>eRcvState</code>，会触发不同的事件，例如在 <code>STATE_RX_INIT</code> 状态下，发送 <code>EV_READY</code> 事件，表明就绪状态；在 <code>STATE_RX_RCV</code> 状态下，发送 <code>EV_FRAME_RECEIVED</code> 事件，表明接收到数据帧。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">switch</span> (eRcvState) &#123;</span><br><span class="line">    <span class="keyword">case</span> STATE_RX_INIT:</span><br><span class="line">        xNeedPoll = xMBPortEventPost(EV_READY);</span><br><span class="line">        <span class="keyword">break</span>;</span><br><span class="line">    <span class="keyword">case</span> STATE_RX_RCV:</span><br><span class="line">        xNeedPoll = xMBPortEventPost(EV_FRAME_RECEIVED);</span><br><span class="line">        <span class="keyword">break</span>; </span><br><span class="line">    <span class="keyword">case</span> STATE_RX_ERROR:</span><br><span class="line">        <span class="keyword">break</span>;</span><br><span class="line">    <span class="keyword">default</span>:</span><br><span class="line">        assert((eRcvState == STATE_RX_INIT) || (eRcvState == STATE_RX_RCV) || (eRcvState == STATE_RX_ERROR));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>此时，<code>eMBPoll</code> 将基于发送的事件执行相应的操作，协议栈便开始运行。</p>
+<h2 id="接收数据"><a href="#接收数据" class="headerlink" title="接收数据"></a>接收数据</h2><p>在 <code>eMBPoll</code> 循环中，串口中断被激活，数据接收时首先触发串口中断程序，调用接收状态机：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br></pre></td><td class="code"><pre><span class="line">BOOL <span class="title function_">xMBRTUReceiveFSM</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    BOOL xTaskNeedSwitch = FALSE;</span><br><span class="line">    UCHAR ucByte;</span><br><span class="line">    </span><br><span class="line">    assert(eSndState == STATE_TX_IDLE); <span class="comment">/* Always read the character. */</span></span><br><span class="line">    (<span class="type">void</span>)xMBPortSerialGetByte((CHAR*)&amp;ucByte);</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">switch</span> (eRcvState) &#123;</span><br><span class="line">        <span class="keyword">case</span> STATE_RX_INIT:</span><br><span class="line">            vMBPortTimersEnable();</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        <span class="keyword">case</span> STATE_RX_ERROR:</span><br><span class="line">            vMBPortTimersEnable();</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        <span class="keyword">case</span> STATE_RX_IDLE:</span><br><span class="line">            usRcvBufferPos = <span class="number">0</span>;</span><br><span class="line">            ucRTUBuf[usRcvBufferPos++] = ucByte;</span><br><span class="line">            eRcvState = STATE_RX_RCV;</span><br><span class="line">            <span class="comment">/* Enable t3.5 timers. */</span></span><br><span class="line">            vMBPortTimersEnable();</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        <span class="keyword">case</span> STATE_RX_RCV:</span><br><span class="line">            <span class="keyword">if</span> (usRcvBufferPos &lt; MB_SER_PDU_SIZE_MAX) &#123;</span><br><span class="line">                ucRTUBuf[usRcvBufferPos++] = ucByte;</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                eRcvState = STATE_RX_ERROR;</span><br><span class="line">            &#125;</span><br><span class="line">            vMBPortTimersEnable();</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> xTaskNeedSwitch; </span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>当前全局变量 <code>eRcvState</code> 为 <code>STATE_RX_IDLE</code> 时，接收状态机首先读取入队的字节。同时，启动了相应的定时器。当进入到 <code>STATE_RX_RCV</code> 状态后，继续接收字节，直到进入超时状态。超时发生后，协议栈将通过发送 <code>EV_FRAME_RECEIVED</code> 事件，告知接收状态已完成。</p>
+<h3 id="数据的处理"><a href="#数据的处理" class="headerlink" title="数据的处理"></a>数据的处理</h3><p>数据接收之后，协议栈的 <code>eMBRTUReceive</code> 函数将进行 CRC 校验，并负责提取数据帧地址、长度或进行其他一致性检查。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">eMBErrorCode <span class="title function_">eMBRTUReceive</span><span class="params">(UCHAR* pucRcvAddress, UCHAR** pucFrame, USHORT* pusLength)</span> &#123;</span><br><span class="line">    BOOL xFrameReceived = FALSE;</span><br><span class="line">    eMBErrorCode eStatus = MB_ENOERR;</span><br><span class="line">    ENTER_CRITICAL_SECTION();</span><br><span class="line">    </span><br><span class="line">    assert(usRcvBufferPos &lt; MB_SER_PDU_SIZE_MAX); <span class="comment">/* Length and CRC check */</span></span><br><span class="line">    </span><br><span class="line">    <span class="keyword">if</span> ((usRcvBufferPos &gt;= MB_SER_PDU_SIZE_MIN) &amp;&amp;</span><br><span class="line">        (usMBCRC16((UCHAR*)ucRTUBuf, usRcvBufferPos) == <span class="number">0</span>)) &#123;</span><br><span class="line">        *pucRcvAddress = ucRTUBuf[MB_SER_PDU_ADDR_OFF];</span><br><span class="line">        *pusLength = (USHORT)(usRcvBufferPos - MB_SER_PDU_PDU_OFF - MB_SER_PDU_SIZE_CRC);</span><br><span class="line">        *pucFrame = (UCHAR*)&amp;ucRTUBuf[MB_SER_PDU_PDU_OFF];</span><br><span class="line">        xFrameReceived = TRUE;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        eStatus = MB_EIO; </span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    EXIT_CRITICAL_SECTION();</span><br><span class="line">    <span class="keyword">return</span> eStatus; </span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>该函数会验证接收到的数据有效性，并在有效的情况下将数据转发至上层处理。当数据帧成功提取后，发送 <code>EV_EXECUTE</code> 事件，表示可以进行后续的处理。</p>
+<p>在处理数据的阶段，系统会根据接收到的功能码在 <code>xFuncHandlers</code> 数组中查找对应的处理函数并执行。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">case</span> EV_EXECUTE:</span><br><span class="line">    ucFunctionCode = ucMBFrame[MB_PDU_FUNC_OFF];</span><br><span class="line">    eException = MB_EX_ILLEGAL_FUNCTION;</span><br><span class="line">    <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; MB_FUNC_HANDLERS_MAX; i++) &#123;</span><br><span class="line">        <span class="keyword">if</span> (xFuncHandlers[i].ucFunctionCode == <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125; <span class="keyword">else</span> <span class="keyword">if</span> (xFuncHandlers[i].ucFunctionCode == ucFunctionCode) &#123;</span><br><span class="line">            eException = xFuncHandlers[i].pxHandler(ucMBFrame, &amp;usLength);</span><br><span class="line">            <span class="keyword">break</span>; </span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (ucRcvAddress != MB_ADDRESS_BROADCAST) &#123;</span><br><span class="line">        <span class="keyword">if</span> (eException != MB_EX_NONE) &#123;</span><br><span class="line">            usLength = <span class="number">0</span>;</span><br><span class="line">            ucMBFrame[usLength++] = (UCHAR)(ucFunctionCode | MB_FUNC_ERROR);</span><br><span class="line">            ucMBFrame[usLength++] = eException; </span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> ((eMBCurrentMode == MB_ASCII) &amp;&amp; MB_ASCII_TIMEOUT_WAIT_BEFORE_SEND_MS) &#123;</span><br><span class="line">            vMBPortTimersDelay(MB_ASCII_TIMEOUT_WAIT_BEFORE_SEND_MS);</span><br><span class="line">        &#125;</span><br><span class="line">        eStatus = peMBFrameSendCur(ucMBAddress, ucMBFrame, usLength); </span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">break</span>;</span><br></pre></td></tr></table></figure>
+
+<p>综上所述，整个流程包含了协议栈的初始化、启动、轮询、数据的接收及处理，得以形成一个完整的从机操作循环。通过有效的状态管理与事件机制，确保了数据传输的可靠与准确。</p>
+<h1 id="RTU-函数解析"><a href="#RTU-函数解析" class="headerlink" title="RTU 函数解析"></a>RTU 函数解析</h1><h2 id="eMBInit-1"><a href="#eMBInit-1" class="headerlink" title="eMBInit"></a>eMBInit</h2><ol>
+<li><p><strong>设置设备站号</strong><br>定义设备在 Modbus 网络中的唯一标识，这个站号通常用来区分不同的从设备。范围通常为 1 到 247，使得网络中的每个设备能够被明确识别。</p>
+</li>
+<li><p><strong>设置函数接口</strong><br>准备和配置应用程序将要使用的函数接口，确保系统能够有效地与设备通信。</p>
+</li>
+<li><p><strong>eMBRTUInit</strong><br>该函数负责初始化 RTU（Remote Terminal Unit）模式下的 Modbus 协议通信。</p>
+<ul>
+<li><p><strong>xMBPortSerialInit</strong><br>初始化串口设置，以确保能够通过串行接口进行数据传输。  </p>
+<ul>
+<li><p><strong>设置打开串口的名称</strong><br>指定用于与设备通信的串口，例如 “COM3”。</p>
+</li>
+<li><p><strong>serialInit</strong><br>包含一系列打开串口和配置其属性的步骤。</p>
+<ul>
+<li><p><strong>打开串口</strong><br>通过系统调用激活指定的串口，准备开始数据传输。</p>
+</li>
+<li><p><strong>设置串口属性</strong><br>配置串口的基本通信参数，包括：</p>
+<ul>
+<li>波特率：例如 9600 或 19200（单位：bit&#x2F;s），决定数据传输的速度。</li>
+<li>数据位：通常设置为 8 位，这是传输数据的基本单位。</li>
+<li>奇偶校验位：设置为无、奇或偶，以便于错误检测。</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p><strong>计算计时器计时时间</strong><br>确定 Modbus 报文的超时时间，以确保及时响应。</p>
+</li>
+<li><p><strong>xMBPortTimersInit</strong><br>初始化定时器以处理时间事件。</p>
+<ul>
+<li><strong>TimersInit</strong><br>配置定时器以单次触发模式，单位设为毫秒（ms），以便实时监控 Modbus 事件。</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p><strong>设置为 RTU 模式</strong><br>将通信模式配置为 RTU，以便按照 Modbus RTU 协议格式进行消息传输。</p>
+</li>
+<li><p><strong>eMBState &#x3D; STATE_DISABLED</strong><br>将当前状态设为禁用，以便后续操作准备就绪。</p>
+</li>
+</ol>
+<h2 id="eMBEnable-1"><a href="#eMBEnable-1" class="headerlink" title="eMBEnable"></a>eMBEnable</h2><ol>
+<li><p><strong>pvMBFrameStartCur</strong>（函数指针指向 eMBRTUStart）<br>开启 Modbus 通信帧并进入接收模式。</p>
+<ul>
+<li><p><strong>eRcvState &#x3D; STATE_RX_INIT</strong><br>设置接收状态为初始化，以检测接收的 Modbus 帧。</p>
+</li>
+<li><p><strong>vMBPortSerialEnable( TRUE, FALSE );</strong><br>修改串口状态为接收模式，准备接收数据，同时禁用发送模式。</p>
+</li>
+<li><p><strong>vMBPortTimersEnable</strong><br>启动超时计时器，开始监控接收状态。</p>
+<ul>
+<li><p><strong>定时器中断事件</strong>（判断 eRcvState）<br>定义不同接收到状态时的行为。</p>
+<ul>
+<li><p><strong>STATE_RX_INIT</strong><br>将事件标志设置为 EV_READY，表示准备接收数据。</p>
+</li>
+<li><p><strong>STATE_RX_RCV</strong><br>将事件标志设置为 EV_FRAME_RECEIVED，表示接收到完整的 Modbus 帧。</p>
+</li>
+<li><p><strong>STATE_RX_ERROR</strong><br>或者处理接收过程中发生的错误情况。</p>
+</li>
+</ul>
+</li>
+<li><p><strong>执行完中断事件，定时器关闭</strong><br>中断处理完后，如无新的接收事件，则停止定时器。</p>
+</li>
+<li><p><strong>eRcvState &#x3D; STATE_RX_IDLE</strong><br>设置接收状态为空闲，等待下一个帧的到来。</p>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p><strong>eMBState &#x3D; STATE_ENABLED</strong><br>状态更新为启用，表示设备已准备好接收和发送 Modbus 消息。</p>
+</li>
+</ol>
+<h2 id="eMBPoll-1"><a href="#eMBPoll-1" class="headerlink" title="eMBPoll"></a>eMBPoll</h2><p><strong>xMBPortEventGet</strong>（判断事件）<br>监控和处理事件，确定下一步操作。</p>
+<ol>
+<li><p><strong>EV_READY</strong><br>当设备准备好接收数据时触发相关事件。</p>
+</li>
+<li><p><strong>EV_FRAME_RECEIVED</strong><br>当完整的 Modbus 帧被接收时触发。  </p>
+<ul>
+<li><p><strong>peMBFrameReceiveCur</strong>（函数指针指向 eMBRTUReceive）<br>开始处理接收到的帧。</p>
+<ul>
+<li><p><strong>校验数据长度和 CRC</strong><br>确认数据的完整性和有效性，防止因数据损坏而导致的错误响应。</p>
+</li>
+<li><p><strong>保存设备站号</strong><br>存储来自 Modbus 帧中的设备站号，以便后续参考。</p>
+</li>
+<li><p><strong>保存待校验数据首地址和长度</strong><br>记录数据的起始位置和长度，以便进行进一步的处理和操作。</p>
+</li>
+</ul>
+</li>
+<li><p><strong>检查设备站号是否相同</strong><br>确认接收的站号是否与预期的站号一致，以保证数据的正确性。</p>
+</li>
+<li><p><strong>xMBPortEventPost</strong><br>将事件队列中的事件设为 EV_EXECUTE，准备执行相应操作。</p>
+</li>
+</ul>
+</li>
+<li><p><strong>EV_EXECUTE</strong><br>一旦接收到事件，执行相关操作并返回处理结果。</p>
+</li>
+<li><p><strong>EV_FRAME_SENT</strong><br>标志表示数据帧已成功发送，确认数据传输的完成。</p>
+</li>
+</ol>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>License</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">Newer</div><a href="/2023/12/21/4-%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE-Modbus-FreeModbus-%E5%8D%8F%E8%AE%AE/">FreeModbus 协议</a></div><div class="item" id="next"><div class="note">Older</div><a href="/2023/12/19/4-%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE-Modbus-libmodbus-%E6%89%8B%E5%86%8C/">libmodbus 手册</a></div></section></div>
+
+
+
+
+  <div class="related-wrap md-text" id="comments">
+    <section class='header cmt-title cap theme'>
+      <p>快来参与讨论吧~</p>
+
+    </section>
+    <section class='body cmt-body utterances'>
+      
+
+<svg class="loading" style="vertical-align:middle;fill:currentColor;overflow:hidden;" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2709"><path d="M832 512c0-176-144-320-320-320V128c211.2 0 384 172.8 384 384h-64zM192 512c0 176 144 320 320 320v64C300.8 896 128 723.2 128 512h64z" p-id="2710"></path></svg>
+
+<div id="utterances" repo="luhuaCyan/luhuaCyan.github.io" issue-term="title" theme="preferred-color-scheme" label="comment"></div>
+
+    </section>
+  </div>
+
+
+
+<footer class="page-footer footnote"><hr><div class="sitemap" style="column-count:4;"><div class="sitemap-group"><span class="fs15">博客</span><a href="/">近期发布</a><a href="/blog/categories/">分类</a><a href="/blog/tags/">标签</a><a href="/blog/archives/">归档</a></div><div class="sitemap-group"><span class="fs15">项目</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">社交</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">关于</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div></div><div class="text"><p>本站为个人学习笔记记录和整理，所有内容仅用于个人知识梳理、复习回顾及学习交流。<br>声明：本站所有资源收集整理于网络,本站不参与制作,用于互联网爱好者学习和研究,如不慎侵犯了您的权利,请及时联系站长处理删除。敬请谅解！</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">On This Page</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#RTU-%E6%B5%81%E7%A8%8B%E5%88%86%E6%9E%90"><span class="toc-text">RTU 流程分析</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#RTU-%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90"><span class="toc-text">RTU 源码分析</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#eMBInit"><span class="toc-text">eMBInit</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#eMBEnable"><span class="toc-text">eMBEnable</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#eMBPoll"><span class="toc-text">eMBPoll</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E6%8E%A5%E6%94%B6%E6%95%B0%E6%8D%AE"><span class="toc-text">接收数据</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%95%B0%E6%8D%AE%E7%9A%84%E5%A4%84%E7%90%86"><span class="toc-text">数据的处理</span></a></li></ol></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#RTU-%E5%87%BD%E6%95%B0%E8%A7%A3%E6%9E%90"><span class="toc-text">RTU 函数解析</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#eMBInit-1"><span class="toc-text">eMBInit</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#eMBEnable-1"><span class="toc-text">eMBEnable</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#eMBPoll-1"><span class="toc-text">eMBPoll</span></a></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>Scroll to Top</span></a><a class="buttom" onclick="util.scrollComment()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M8 10.5h8M8 14h5.5M17 3.338A9.95 9.95 0 0 0 12 2C6.477 2 2 6.477 2 12c0 1.6.376 3.112 1.043 4.453c.178.356.237.763.134 1.148l-.595 2.226a1.3 1.3 0 0 0 1.591 1.592l2.226-.596a1.63 1.63 0 0 1 1.149.133A9.96 9.96 0 0 0 12 22c5.523 0 10-4.477 10-10c0-1.821-.487-3.53-1.338-5"/></svg><span>Join Discussion</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  window.canonical["param"] = {"permalink":"https://lemoncyan.github.io/2023/12/20/4-%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE-Modbus-FreeModbus-%E8%A7%A3%E6%9E%90/","checklink":"/js/plugins/video.js"};
+  const ctx = {
+    date_suffix: {
+      just: `Just`,
+      min: `minutes ago`,
+      hour: `hours ago`,
+      day: `days ago`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        if ($(el).find('.loading-wrap').length == 0){
+          $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+        }
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `Switched to Light Mode`,
+      dark: `Switched to Dark Mode`,
+      auto: `Switched to Auto Mode`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+  <script type="module">
+  const el = document.querySelector("#comments #utterances");
+  util.viewportLazyload(el, load_utterances, true);
+
+  function load_utterances() {
+    if (!el) return;
+    try {
+      el.innerHTML = '';
+    } catch (error) {
+      console.error(error);
+    }
+    const script = document.createElement('script');
+    script.src = 'https://utteranc.es/client.js';
+    script.async = true;
+    for (const key of Object.keys(el.attributes)) {
+      const attr = el.attributes[key];
+      if (['class', 'id'].includes(attr.name) === false) {
+        script.setAttribute(attr.name, attr.value);
+      }
+    }
+    el.appendChild(script);
+  }
+</script>
+
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.chat-file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>
