@@ -1,0 +1,1025 @@
+
+<!DOCTYPE html><html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 7.3.0">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>Linux设备驱动模型与D-Bus软件消息总线底层架构指南 - LemonCyan</title>
+
+  
+    <meta name="description" content="深度剖析 Linux 内核设备驱动模型的底层架构与匹配逻辑，对比解析用户空间 D-Bus 软件消息总线的设计模式。涵盖 bus_type&#x2F;device&#x2F;device_driver 匹配链、kobject&#x2F;kset 层级、D-Bus 3层 IPC 架构及完整的 libdbus C 语言编程实战。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Linux设备驱动模型与D-Bus软件消息总线底层架构指南">
+<meta property="og:url" content="https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E6%80%BB%E7%BA%BF-2-Linux%E8%AE%BE%E5%A4%87%E9%A9%B1%E5%8A%A8%E6%A8%A1%E5%9E%8B%E4%B8%8ED-Bus%E8%BD%AF%E4%BB%B6%E6%B6%88%E6%81%AF%E6%80%BB%E7%BA%BF%E5%BA%95%E5%B1%82%E6%9E%B6%E6%9E%84%E6%8C%87%E5%8D%97/">
+<meta property="og:site_name" content="LemonCyan">
+<meta property="og:description" content="深度剖析 Linux 内核设备驱动模型的底层架构与匹配逻辑，对比解析用户空间 D-Bus 软件消息总线的设计模式。涵盖 bus_type&#x2F;device&#x2F;device_driver 匹配链、kobject&#x2F;kset 层级、D-Bus 3层 IPC 架构及完整的 libdbus C 语言编程实战。">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+<meta property="article:published_time" content="2026-07-17T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-07-17T03:19:06.522Z">
+<meta property="article:author" content="liuluhua">
+<meta property="article:tag" content="Linux">
+<meta property="article:tag" content="驱动模型">
+<meta property="article:tag" content="bus_type">
+<meta property="article:tag" content="D-Bus">
+<meta property="article:tag" content="IPC通信">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+  
+  
+  
+  <meta name="keywords" content="Linux,驱动模型,bus_type,D-Bus,IPC通信">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"},"dateCreated":"2026-07-17T00:00:00+00:00","dateModified":"2026-07-17T03:19:06+00:00","datePublished":"2026-07-17T00:00:00+00:00","description":"","headline":"Linux设备驱动模型与D-Bus软件消息总线底层架构指南","mainEntityOfPage":{"@type":"WebPage","@id":"https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E6%80%BB%E7%BA%BF-2-Linux%E8%AE%BE%E5%A4%87%E9%A9%B1%E5%8A%A8%E6%A8%A1%E5%9E%8B%E4%B8%8ED-Bus%E8%BD%AF%E4%BB%B6%E6%B6%88%E6%81%AF%E6%80%BB%E7%BA%BF%E5%BA%95%E5%B1%82%E6%9E%B6%E6%9E%84%E6%8C%87%E5%8D%97/"},"publisher":{"@type":"Organization","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png","logo":{"@type":"ImageObject","url":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"}},"url":"https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E6%80%BB%E7%BA%BF-2-Linux%E8%AE%BE%E5%A4%87%E9%A9%B1%E5%8A%A8%E6%A8%A1%E5%9E%8B%E4%B8%8ED-Bus%E8%BD%AF%E4%BB%B6%E6%B6%88%E6%81%AF%E6%80%BB%E7%BA%BF%E5%BA%95%E5%B1%82%E6%9E%B6%E6%9E%84%E6%8C%87%E5%8D%97/","keywords":"Linux, 驱动模型, bus_type, D-Bus, IPC通信","image":[]}</script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css" />
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="config.avatar" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">LemonCyan</div><div class="sub cap">LemonCyan`s Charging</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"><a class="nav-item active" title="博客" href="/" style="color:#1BCDFC"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M5.879 2.879C5 3.757 5 5.172 5 8v8c0 2.828 0 4.243.879 5.121C6.757 22 8.172 22 11 22h2c2.828 0 4.243 0 5.121-.879C19 20.243 19 18.828 19 16V8c0-2.828 0-4.243-.879-5.121C17.243 2 15.828 2 13 2h-2c-2.828 0-4.243 0-5.121.879M8.25 17a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75M9 12.25a.75.75 0 0 0 0 1.5h6a.75.75 0 0 0 0-1.5zM8.25 9A.75.75 0 0 1 9 8.25h6a.75.75 0 0 1 0 1.5H9A.75.75 0 0 1 8.25 9" clip-rule="evenodd"/><path fill="currentColor" d="M5.235 4.058C5 4.941 5 6.177 5 8v8c0 1.823 0 3.058.235 3.942L5 19.924c-.975-.096-1.631-.313-2.121-.803C2 18.243 2 16.828 2 14v-4c0-2.829 0-4.243.879-5.121c.49-.49 1.146-.707 2.121-.803zm13.53 15.884C19 19.058 19 17.822 19 16V8c0-1.823 0-3.059-.235-3.942l.235.018c.975.096 1.631.313 2.121.803C22 5.757 22 7.17 22 9.999v4c0 2.83 0 4.243-.879 5.122c-.49.49-1.146.707-2.121.803z" opacity=".5"/></svg></a><a class="nav-item" title="文档" href="/wiki/" style="color:#3DC550"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M14.25 4.48v3.057c0 .111 0 .27.02.406a.936.936 0 0 0 .445.683a.96.96 0 0 0 .783.072c.13-.04.272-.108.378-.159L17 8.005l1.124.534c.106.05.248.119.378.16a.958.958 0 0 0 .783-.073a.936.936 0 0 0 .444-.683c.021-.136.021-.295.021-.406V3.031c.113-.005.224-.01.332-.013C21.154 2.98 22 3.86 22 4.933v11.21c0 1.112-.906 2.01-2.015 2.08c-.97.06-2.108.179-2.985.41c-1.082.286-1.99 1.068-3.373 1.436c-.626.167-1.324.257-1.627.323V5.174c.32-.079 1.382-.203 1.674-.371c.184-.107.377-.216.576-.323m5.478 8.338a.75.75 0 0 1-.546.91l-4 1a.75.75 0 0 1-.364-1.456l4-1a.75.75 0 0 1 .91.546" clip-rule="evenodd"/><path fill="currentColor" d="M18.25 3.151c-.62.073-1.23.18-1.75.336a8.2 8.2 0 0 0-.75.27v3.182l.75-.356l.008-.005a1.13 1.13 0 0 1 .492-.13c.047 0 .094.004.138.01c.175.029.315.1.354.12l.009.005l.749.356V3.647z"/><path fill="currentColor" d="M12 5.214c-.334-.064-1.057-.161-1.718-.339C8.938 4.515 8.05 3.765 7 3.487c-.887-.234-2.041-.352-3.018-.412C2.886 3.007 2 3.9 2 4.998v11.146c0 1.11.906 2.01 2.015 2.079c.97.06 2.108.179 2.985.41c.486.129 1.216.431 1.873.726c1.005.451 2.052.797 3.127 1.034z" opacity=".5"/><path fill="currentColor" d="M4.273 12.818a.75.75 0 0 1 .91-.545l4 1a.75.75 0 1 1-.365 1.455l-4-1a.75.75 0 0 1-.545-.91m.909-4.545a.75.75 0 1 0-.364 1.455l4 1a.75.75 0 0 0 .364-1.455z"/></svg></a><a class="nav-item" title="探索" href="/explore/" style="color:#FA6400"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M20 12a8 8 0 1 1-16 0a8 8 0 0 1 16 0" opacity=".5"/><path fill="currentColor" d="M17.712 5.453c1.047-.193 2.006-.259 2.797-.152c.77.103 1.536.393 1.956 1.064c.446.714.312 1.542-.012 2.258c-.33.728-.918 1.499-1.672 2.268c-1.516 1.547-3.836 3.226-6.597 4.697c-2.763 1.472-5.495 2.484-7.694 2.92c-1.095.217-2.098.299-2.923.201c-.8-.095-1.6-.383-2.032-1.075c-.47-.752-.296-1.63.07-2.379c.375-.768 1.032-1.586 1.872-2.403L4 12.416c0 .219.083.71.168 1.146c.045.23.09.444.123.596c-.652.666-1.098 1.263-1.339 1.756c-.277.567-.208.825-.145.925c.072.116.305.305.937.38c.609.073 1.44.018 2.455-.183c2.02-.4 4.613-1.351 7.28-2.772c2.667-1.42 4.85-3.015 6.23-4.423c.694-.707 1.15-1.334 1.377-1.836c.233-.515.167-.75.107-.844c-.07-.112-.289-.294-.883-.374c-.542-.072-1.272-.041-2.163.112L16.87 5.656c.338-.101.658-.17.842-.203"/></svg></a><a class="nav-item" title="社交" href="/friends/" style="color:#F44336"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="m13.629 20.472l-.542.916c-.483.816-1.69.816-2.174 0l-.542-.916c-.42-.71-.63-1.066-.968-1.262c-.338-.197-.763-.204-1.613-.219c-1.256-.021-2.043-.098-2.703-.372a5 5 0 0 1-2.706-2.706C2 14.995 2 13.83 2 11.5v-1c0-3.273 0-4.91.737-6.112a5 5 0 0 1 1.65-1.651C5.59 2 7.228 2 10.5 2h3c3.273 0 4.91 0 6.113.737a5 5 0 0 1 1.65 1.65C22 5.59 22 7.228 22 10.5v1c0 2.33 0 3.495-.38 4.413a5 5 0 0 1-2.707 2.706c-.66.274-1.447.35-2.703.372c-.85.015-1.275.022-1.613.219c-.338.196-.548.551-.968 1.262" opacity=".5"/><path fill="currentColor" d="M10.99 14.308c-1.327-.978-3.49-2.84-3.49-4.593c0-2.677 2.475-3.677 4.5-1.609c2.025-2.068 4.5-1.068 4.5 1.609c0 1.752-2.163 3.615-3.49 4.593c-.454.335-.681.502-1.01.502c-.329 0-.556-.167-1.01-.502"/></svg></a></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="Search"></form><div id="search-result"></div><div class="search-no-result">No Results!</div></div>
+
+
+
+<widget class="widget-wrapper recent post-list"><div class="widget-header dis-select"><span class="name">Recent Update</span></div><div class="widget-body fs14"><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-9-%E5%B5%8C%E5%85%A5%E5%BC%8FLinux%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98%E6%8C%87%E5%8D%97/"><span class="title">嵌入式 Linux 启动性能优化与工具链/应用程序调优指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-6-Linux%E5%85%B1%E4%BA%AB%E5%BA%93%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%E5%AF%BB%E5%9D%80%E6%9C%BA%E5%88%B6%E5%8F%8A%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8/"><span class="title">Linux 共享库动态加载与运行时链接器寻址机制及进阶应用</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-7-%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%B5%8C%E5%85%A5%E5%BC%8F%E4%BA%A4%E5%8F%89%E5%B7%A5%E5%85%B7%E9%93%BE%E6%9E%84%E5%BB%BAcrosstool-ng%E6%B7%B1%E5%BA%A6%E5%AE%9E%E6%88%98/"><span class="title">交叉编译与嵌入式交叉工具链构建 crosstool-ng 深度实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-8-%E7%8E%B0%E4%BB%A3%E6%9E%84%E5%BB%BA%E7%B3%BB%E7%BB%9FMeson-Ninja%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%BC%80%E6%BA%90%E5%BA%93%E7%A7%BB%E6%A4%8D%E5%AE%9E%E6%88%98/"><span class="title">现代构建系统 Meson + Ninja 交叉编译与开源库移植实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-3-%E9%99%88%E7%9A%93%E3%80%8A%E8%B7%9F%E6%88%91%E5%AD%A6Makefile%E3%80%8B%E7%B2%BE%E7%BC%96%E4%B8%8E%E5%AE%9E%E6%88%98%E8%BF%9B%E9%98%B6%E6%8C%87%E5%8D%97/"><span class="title">陈皓《跟我学Makefile》精编与实战进阶指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-4-%E5%A4%8D%E6%9D%82C-C-%E9%A1%B9%E7%9B%AE%E7%9A%84%E5%A4%9A%E6%96%87%E4%BB%B6%E5%A4%B9Makefile%E8%AE%BE%E8%AE%A1%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%8C%96%E7%BC%96%E8%AF%91%E6%9E%B6%E6%9E%84/"><span class="title">复杂 C/C++ 项目的多文件夹 Makefile 设计与自动化编译架构</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-5-%E9%9D%99%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E4%B8%8E%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E6%A0%B8%E5%BF%83%E6%9C%BA%E5%88%B6%E4%B8%8E%E5%BC%80%E5%8F%91%E5%AE%9E%E6%88%98/"><span class="title">静态链接库与动态链接库核心机制与开发实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-1-GCC-G-%E7%BC%96%E8%AF%91%E5%99%A8%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E4%B8%8E%E5%91%BD%E4%BB%A4%E8%A1%8C%E9%80%89%E9%A1%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/"><span class="title">GCC/G++ 编译器工作原理与命令行选项深度指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-10-Linux%E6%AE%B5%E9%94%99%E8%AF%AF%E6%8E%92%E6%9F%A5%E4%B8%8EGDB%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%E8%B0%83%E8%AF%95%E5%AE%9E%E6%88%98/"><span class="title">Linux 段错误排查与 GDB 核心转储调试实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-2-GNU-Make%E4%B8%8EMakefile%E6%9E%84%E5%BB%BA%E5%9F%BA%E7%A1%80%E5%85%A5%E9%97%A8%E6%89%8B%E5%86%8C/"><span class="title">GNU Make 与 Makefile 构建基础入门手册</span></a></div></widget>
+</div>
+<footer class="footer dis-select"><div class="social-wrap"><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/08a41b181ce68.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3845874.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3616429.svg"/></a><a class="social" href="/about/#comments" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/942ebbf1a4b91.svg"/></a></div></footer>
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">Home</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">Blog</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">Posted on: <time datetime="2026-07-17T00:00:00.000Z">2026-07-17</time></span><span class="sep updated"></span><span class="text updated">Updated on: <time datetime="2026-07-17T03:19:06.522Z">2026-07-17</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>Linux设备驱动模型与D-Bus软件消息总线底层架构指南</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h1 id="Linux设备驱动模型与D-Bus软件消息总线底层架构指南"><a href="#Linux设备驱动模型与D-Bus软件消息总线底层架构指南" class="headerlink" title="Linux设备驱动模型与D-Bus软件消息总线底层架构指南"></a>Linux设备驱动模型与D-Bus软件消息总线底层架构指南</h1><p>在操作系统设计中，“总线（Bus）”是一个被高度抽象的软硬件概念。在 Linux 内核态，总线（如 Platform, I2C, SPI）是连接物理设备与驱动程序的纽带，构成了<strong>内核统一设备驱动模型</strong>的核心；而在 Linux 用户态，总线则被赋予了全新的使命——<strong>D-Bus 消息总线</strong>作为一种高效的二进制 IPC 机制，承载起桌面会话、系统守护进程与各类应用程序之间的通信桥梁。</p>
+<p>本指南将带你穿梭于 Linux 的内核态与用户态，深度剖析“硬件驱动总线”与“软件消息总线”的底层架构设计、数据结构、匹配流程，并提供完整的 C 语言底层编程实战，帮助你彻底掌握总线抽象的艺术。</p>
+<hr>
+<h2 id="第一部分：Linux-统一设备驱动模型-Kernel-Space-Bus"><a href="#第一部分：Linux-统一设备驱动模型-Kernel-Space-Bus" class="headerlink" title="第一部分：Linux 统一设备驱动模型 (Kernel Space Bus)"></a>第一部分：Linux 统一设备驱动模型 (Kernel Space Bus)</h2><p>Linux 内核需要支持成千上万的硬件平台。为了防止驱动开发演变为无组织的代码泥潭，内核引入了**统一设备驱动模型 (Device Driver Model)**。它利用面向对象的设计思想，将硬件实体、控制逻辑与传输总线进行解耦。</p>
+<h3 id="1-1-核心三驾马车：Bus-Device-Driver"><a href="#1-1-核心三驾马车：Bus-Device-Driver" class="headerlink" title="1.1 核心三驾马车：Bus, Device, Driver"></a>1.1 核心三驾马车：Bus, Device, Driver</h3><p>在 Linux 内核中，设备驱动模型的骨架由三个核心结构体支撑，它们互相关联，形成了一个经典的三角形拓扑：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">   【 内核设备驱动模型“三驾马车”关系 】</span><br><span class="line"></span><br><span class="line">        struct bus_type  (总线类型：如 Platform / I2C / USB)</span><br><span class="line">         /            \</span><br><span class="line">        /              \  管理链表</span><br><span class="line"> 设备链表 /                \</span><br><span class="line">        /                  \</span><br><span class="line">struct device  &lt;=======&gt; struct device_driver</span><br><span class="line">(具体硬件描述)  Match &amp; Bind  (控制硬件的软件逻辑)</span><br></pre></td></tr></table></figure>
+
+<h4 id="1-struct-bus-type-总线抽象"><a href="#1-struct-bus-type-总线抽象" class="headerlink" title="1. struct bus_type (总线抽象)"></a>1. <code>struct bus_type</code> (总线抽象)</h4><p>总线是连接设备与驱动的通道。每个总线类型都由一个 <code>bus_type</code> 结构体来定义，其核心是实现<strong>设备与驱动的配对（Match）</strong>。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">bus_type</span> &#123;</span></span><br><span class="line">    <span class="type">const</span> <span class="type">char</span>      *name;        <span class="comment">// 总线名称，显示在 /sys/bus/ 目录下</span></span><br><span class="line">    <span class="type">const</span> <span class="type">char</span>      *dev_name;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">device</span>   *<span class="title">dev_root</span>;</span></span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 💡 属性组，用于在 sysfs 中导出各种控制选项</span></span><br><span class="line">    <span class="type">const</span> <span class="class"><span class="keyword">struct</span> <span class="title">attribute_group</span> **<span class="title">bus_groups</span>;</span></span><br><span class="line">    <span class="type">const</span> <span class="class"><span class="keyword">struct</span> <span class="title">attribute_group</span> **<span class="title">dev_groups</span>;</span></span><br><span class="line">    <span class="type">const</span> <span class="class"><span class="keyword">struct</span> <span class="title">attribute_group</span> **<span class="title">drv_groups</span>;</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// 🔑 核心匹配函数：用于判定特定驱动是否能控制特定的设备</span></span><br><span class="line">    <span class="type">int</span> (*match)(<span class="keyword">struct</span> device *dev, <span class="keyword">struct</span> device_driver *drv);</span><br><span class="line">    </span><br><span class="line">    <span class="type">int</span> (*uevent)(<span class="keyword">struct</span> device *dev, <span class="keyword">struct</span> kobj_uevent_env *env);</span><br><span class="line">    <span class="type">int</span> (*probe)(<span class="keyword">struct</span> device *dev); <span class="comment">// 当总线级 probe 触发时调用</span></span><br><span class="line">    <span class="type">int</span> (*remove)(<span class="keyword">struct</span> device *dev);</span><br><span class="line">    <span class="type">void</span> (*shutdown)(<span class="keyword">struct</span> device *dev);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 电源管理操作集</span></span><br><span class="line">    <span class="type">const</span> <span class="class"><span class="keyword">struct</span> <span class="title">dev_pm_ops</span> *<span class="title">pm</span>;</span></span><br><span class="line"></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">subsys_private</span> *<span class="title">p</span>;</span> <span class="comment">// 指向总线私有数据，内含设备与驱动的双向链表</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h4 id="2-struct-device-硬件实体抽象"><a href="#2-struct-device-硬件实体抽象" class="headerlink" title="2. struct device (硬件实体抽象)"></a>2. <code>struct device</code> (硬件实体抽象)</h4><p>代表挂载在某种总线上的具体物理硬件或虚拟设备。每个设备在 sysfs 中都有一个唯一的对应目录。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">device</span> &#123;</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">device</span>       *<span class="title">parent</span>;</span>       <span class="comment">// 指向父设备，构建设备树状层级</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">kobject</span>      <span class="title">kobj</span>;</span>          <span class="comment">// 内嵌基类 kobject，负责引用计数与 sysfs 呈现</span></span><br><span class="line">    <span class="type">const</span> <span class="type">char</span>          *init_name;    <span class="comment">// 设备的初始名称</span></span><br><span class="line">    </span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">bus_type</span>     *<span class="title">bus</span>;</span>          <span class="comment">// 💡 指向该设备挂载的总线类型</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">device_driver</span> *<span class="title">driver</span>;</span>      <span class="comment">// 💡 指向已经成功匹配并绑定的驱动程序</span></span><br><span class="line">    </span><br><span class="line">    <span class="type">void</span>                *platform_data;<span class="comment">// 平台特有的传统私有配置数据</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">device_node</span>  *<span class="title">of_node</span>;</span>      <span class="comment">// 💡 指向设备树 (DTS) 节点，用于现代设备解析</span></span><br><span class="line">    <span class="type">dev_t</span>               devt;          <span class="comment">// 字符/块设备的设备号</span></span><br><span class="line">    </span><br><span class="line">    <span class="type">void</span> (*release)(<span class="keyword">struct</span> device *dev); <span class="comment">// 释放回调，当引用计数归零时被触发</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h4 id="3-struct-device-driver-驱动程序抽象"><a href="#3-struct-device-driver-驱动程序抽象" class="headerlink" title="3. struct device_driver (驱动程序抽象)"></a>3. <code>struct device_driver</code> (驱动程序抽象)</h4><p>代表控制某种设备的软件逻辑代码。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">device_driver</span> &#123;</span></span><br><span class="line">    <span class="type">const</span> <span class="type">char</span>      *name;        <span class="comment">// 驱动名称，与设备匹配的关键依据之一</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">bus_type</span> *<span class="title">bus</span>;</span>         <span class="comment">// 指向该驱动归属的总线</span></span><br><span class="line"></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">module</span>   *<span class="title">owner</span>;</span></span><br><span class="line">    <span class="type">const</span> <span class="class"><span class="keyword">struct</span> <span class="title">of_device_id</span> *<span class="title">of_match_table</span>;</span> <span class="comment">// 💡 设备树匹配表 (对应 DTS 中的 compatible)</span></span><br><span class="line"></span><br><span class="line">    <span class="type">int</span> (*probe) (<span class="keyword">struct</span> device *dev);  <span class="comment">// 🔑 硬件与软件匹配成功后，执行的第一步初始化函数</span></span><br><span class="line">    <span class="type">int</span> (*remove) (<span class="keyword">struct</span> device *dev); <span class="comment">// 设备移除或驱动注销时的清理函数</span></span><br><span class="line">    <span class="type">void</span> (*shutdown) (<span class="keyword">struct</span> device *dev);</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="1-2-设备与驱动的注册与匹配总线工作流"><a href="#1-2-设备与驱动的注册与匹配总线工作流" class="headerlink" title="1.2 设备与驱动的注册与匹配总线工作流"></a>1.2 设备与驱动的注册与匹配总线工作流</h3><p>在 Linux 系统运行期间，我们可以随时通过 <code>insmod</code> 加载驱动，或者随时通过插拔硬件（如 USB）引入新设备。那么，它们是如何自动匹配并绑定工作的？</p>
+<h4 id="🔑-设备与驱动匹配的四种核心逻辑："><a href="#🔑-设备与驱动匹配的四种核心逻辑：" class="headerlink" title="🔑 设备与驱动匹配的四种核心逻辑："></a>🔑 设备与驱动匹配的四种核心逻辑：</h4><ol>
+<li>**设备树匹配 (OF Match)**：现代 ARM&#x2F;ARM64 系统的首选。比较 <code>device_driver-&gt;of_match_table</code> 中的 <code>compatible</code> 字符串与设备树节点的 <code>compatible</code> 属性。</li>
+<li><strong>ACPI 匹配</strong>：主要用于 x86 架构服务器，匹配设备与驱动的 ACPI 描述符。</li>
+<li><strong>ID 匹配表</strong>：驱动程序提供一个支持的设备 ID 列表，总线核对设备的 ID 是否在列表中（常见于 PCI, USB 驱动）。</li>
+<li><strong>名称匹配</strong>：最传统的方式，比较 <code>device-&gt;init_name</code>（或 <code>kobject_name</code>）与 <code>device_driver-&gt;name</code> 字符串是否完全相等（常用于 Platform 虚拟平台总线）。</li>
+</ol>
+<h4 id="📊-匹配绑定流程图："><a href="#📊-匹配绑定流程图：" class="headerlink" title="📊 匹配绑定流程图："></a>📊 匹配绑定流程图：</h4><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">【 驱动加载与设备匹配执行流 】</span><br><span class="line"></span><br><span class="line">1. insmod xxx_driver.ko </span><br><span class="line">      │</span><br><span class="line">      ▼</span><br><span class="line">2. driver_register(drv)</span><br><span class="line">      │</span><br><span class="line">      ▼</span><br><span class="line">3. bus_add_driver(bus, drv) -&gt; 挂入总线的驱动链表</span><br><span class="line">      │</span><br><span class="line">      ▼</span><br><span class="line">4. driver_attach(drv) </span><br><span class="line">      │</span><br><span class="line">      └─► 遍历总线上尚未绑定的设备链表 (Device List)</span><br><span class="line">            │</span><br><span class="line">            ├─► 5. 调用 bus-&gt;match(dev, drv)</span><br><span class="line">            │      │</span><br><span class="line">            │      ├─── [ 匹配不成功 ] ──► 继续遍历下一个 dev</span><br><span class="line">            │      │</span><br><span class="line">            │      └─── [ 匹配成功 ] </span><br><span class="line">            │             │</span><br><span class="line">            │             ▼</span><br><span class="line">            │       6. dev-&gt;driver = drv (绑定指针)</span><br><span class="line">            │       7. 调用 drv-&gt;probe(dev) ──► 初始化硬件，生成 /dev/ 节点</span><br><span class="line">            ▼</span><br><span class="line">        [ 驱动就绪，等待外设中断或用户调用 ]</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="1-3-基类底座：kobject、kset-与-sysfs-映射关系"><a href="#1-3-基类底座：kobject、kset-与-sysfs-映射关系" class="headerlink" title="1.3 基类底座：kobject、kset 与 sysfs 映射关系"></a>1.3 基类底座：<code>kobject</code>、<code>kset</code> 与 <code>sysfs</code> 映射关系</h3><p>Linux 内核设备模型并不是无中生有的，它底层的面向对象体系全靠 <code>kobject</code> 和 <code>kset</code> 两个基类数据结构来构建：</p>
+<ul>
+<li>**<code>struct kobject</code>**：内核中最基础的“基类”。每个 <code>kobject</code> 都对应 <code>/sys</code> 目录下的一个具体子目录。它负责：<ul>
+<li><strong>引用计数</strong>：利用 <code>kref</code> 实现动态对象的生命周期安全管辖（<code>kobject_get()</code> &#x2F; <code>kobject_put()</code>）。</li>
+<li><strong>父子层级关系</strong>：通过 <code>parent</code> 指针，将目录嵌套结构直接呈现在文件系统上。</li>
+</ul>
+</li>
+<li>**<code>struct kset</code>**：<code>kobject</code> 的集合容器。它包含一个 <code>kobject</code> 链表，并且内嵌了一个自己的 <code>kobject</code> 作为父目录。此外，<code>kset</code> 还包含 <code>kset_hotplug_ops</code>，当发生热插拔时，由 <code>kset</code> 统一包装环境变量，通过 Netlink 套接字向用户空间的 <code>udevd</code> 发送 <strong>uevent</strong> 广播消息。</li>
+</ul>
+<hr>
+<h3 id="1-4-sysfs-属性节点与属性文件读写接口"><a href="#1-4-sysfs-属性节点与属性文件读写接口" class="headerlink" title="1.4 sysfs 属性节点与属性文件读写接口"></a>1.4 sysfs 属性节点与属性文件读写接口</h3><p>驱动程序开发中，我们需要一种简单直观的方式从用户空间（比如 shell 脚本）读取或修改设备的寄存器参数。内核通过在 sysfs 下创建<strong>属性文件（Attribute Files）</strong>完美满足了这一痛点：</p>
+<ul>
+<li>**核心宏 <code>DEVICE_ATTR_RW()</code>**：<br>用来定义一个设备属性，它会自动生成一个 <code>struct device_attribute</code> 结构，并绑定对应的读取（show）和写入（store）回调函数。</li>
+<li><strong>回调函数签名</strong>：<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 💡 读取属性：当用户 cat /sys/devices/.../my_value 时触发</span></span><br><span class="line"><span class="type">static</span> <span class="type">ssize_t</span> <span class="title function_">my_value_show</span><span class="params">(<span class="keyword">struct</span> device *dev, <span class="keyword">struct</span> device_attribute *attr, <span class="type">char</span> *buf)</span></span><br><span class="line">&#123;</span><br><span class="line">    <span class="type">int</span> value = get_hardware_register();</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">sprintf</span>(buf, <span class="string">&quot;%d\n&quot;</span>, value); <span class="comment">// 格式化写入 buf，最大支持一页 (4KB)</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 💡 写入属性：当用户 echo &quot;1&quot; &gt; /sys/devices/.../my_value 时触发</span></span><br><span class="line"><span class="type">static</span> <span class="type">ssize_t</span> <span class="title function_">my_value_store</span><span class="params">(<span class="keyword">struct</span> device *dev, <span class="keyword">struct</span> device_attribute *attr, <span class="type">const</span> <span class="type">char</span> *buf, <span class="type">size_t</span> count)</span></span><br><span class="line">&#123;</span><br><span class="line">    <span class="type">int</span> value = simple_strtol(buf, <span class="literal">NULL</span>, <span class="number">10</span>);</span><br><span class="line">    set_hardware_register(value);</span><br><span class="line">    <span class="keyword">return</span> count; <span class="comment">// 返回解析处理的字节数</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 🔑 声明一个读写属性节点，名字为 my_value，权限为 0644 (用户可读写，小组只读)</span></span><br><span class="line"><span class="type">static</span> <span class="title function_">DEVICE_ATTR_RW</span><span class="params">(my_value)</span>;</span><br></pre></td></tr></table></figure></li>
+<li><strong>文件创建</strong>：在驱动的 <code>probe</code> 函数中调用 <code>device_create_file(dev, &amp;dev_attr_my_value)</code> 即可将该控制文件安全实例化。</li>
+</ul>
+<hr>
+<h2 id="第二部分：D-Bus-软件消息总线架构-User-Space-Bus"><a href="#第二部分：D-Bus-软件消息总线架构-User-Space-Bus" class="headerlink" title="第二部分：D-Bus 软件消息总线架构 (User Space Bus)"></a>第二部分：D-Bus 软件消息总线架构 (User Space Bus)</h2><p>D-Bus 是 Linux 用户空间中统治级的进程间通信（IPC）框架。与传统的 Pipe、FIFO、Socket 相比，D-Bus 不仅仅是字节流通道，它是一个面向对象、带安全审计与总线守护路由的<strong>分布式服务框架</strong>。</p>
+<h3 id="2-1-D-Bus-三层架构解析"><a href="#2-1-D-Bus-三层架构解析" class="headerlink" title="2.1 D-Bus 三层架构解析"></a>2.1 D-Bus 三层架构解析</h3><p>D-Bus 的设计被分为清晰的三层，从而既保证了底层的极速解析，又兼顾了应用开发的高易用性：</p>
+<ol>
+<li>**函数库 <code>libdbus</code>**：最底层的 C 语言接口，负责底层的二进制协议序列化、连接建立以及报文的收发包装。该 API 非常低级且繁琐，官方推荐仅作为 Wrapper（捆绑层）的后端。</li>
+<li>**消息总线守护进程 <code>dbus-daemon</code>**：核心路由中心。每个应用程序与 dbus-daemon 建立一个 Unix Domain Socket 点对点连接。当 A 向 B 发送消息时，A 将消息丢给 dbus-daemon，由守护进程解析头部，安全审计后路由转发给 B。</li>
+<li>**高层封装绑定库 (Wrapper Bindings)**：如 <code>GDBus</code> (Glib)、<code>QtDBus</code> (Qt)、<code>pydbus</code> (Python)。开发者在实际业务中直接使用这些面向对象的 API，将本地对象直接映射为总线远程对象。</li>
+</ol>
+<hr>
+<h3 id="2-2-系统总线-System-Bus-与-会话总线-Session-Bus"><a href="#2-2-系统总线-System-Bus-与-会话总线-Session-Bus" class="headerlink" title="2.2 系统总线 (System Bus) 与 会话总线 (Session Bus)"></a>2.2 系统总线 (System Bus) 与 会话总线 (Session Bus)</h3><p>在一台运行的 Linux 机器上，通常并行跑着两类完全独立的 D-Bus 实例：</p>
+<ul>
+<li>**系统总线 (System Bus)**：<ul>
+<li><strong>生命周期</strong>：系统引导时随 <code>dbus-daemon</code> 自动运行。整个系统仅此一个实例。</li>
+<li><strong>用途</strong>：用于操作系统内核、系统守护进程（如 NetworkManager, udev, systemd）与用户界面之间的通信。</li>
+<li><strong>安全性</strong>：权限极其严格。防止普通用户程序伪造系统硬件热插拔或关闭网络等系统事件。</li>
+</ul>
+</li>
+<li>**会话总线 (Session Bus)**：<ul>
+<li><strong>生命周期</strong>：用户登录桌面会话后启动，随会话关闭而销毁。每个登录用户独立拥有一个实例。</li>
+<li><strong>用途</strong>：用于该用户会话下的桌面软件（如 Chrome、音乐播放器、文档管理器）之间交互，实现桌面整体的集成和联动。</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h3 id="2-3-面向对象核心概念大字典"><a href="#2-3-面向对象核心概念大字典" class="headerlink" title="2.3 面向对象核心概念大字典"></a>2.3 面向对象核心概念大字典</h3><p>为了理解 D-Bus 通信，必须掌握以下逻辑概念的映射：</p>
+<ul>
+<li>**对象路径 (Object Path)**：类似于文件系统的绝对路径，用于定位具体实例。例如 <code>/org/freedesktop/NetworkManager/Devices/0</code> 代表第一张网卡对象。</li>
+<li>**接口 (Interface)**：一组方法与信号的声明，类似于 C++ 中的纯虚类或 Java 的 Interface。命名通常为反向域名，如 <code>org.freedesktop.NetworkManager.Device</code>。</li>
+<li>**总线名字 (Bus Name)**：<ul>
+<li>**唯一连接名 (Unique Connection Name)**：以冒号 <code>:</code> 开头的临时名字（如 <code>:1.42</code>），在 dbus-daemon 生命周期内唯一，类似于 Socket 连接的临时端口。</li>
+<li>**周知名字 (Well-known Name)**：易读的域名式名字（如 <code>org.freedesktop.NetworkManager</code>），应用程序启动后向 daemon 申请占用，用于对外提供稳定接口。</li>
+</ul>
+</li>
+<li>**代理 (Proxy)**：客户端在本地建立的一个桩对象（Stub），调用代理的方法会在底层自动转化为 D-Bus 的 <code>METHOD_CALL</code> 二进制报文发送出去，使远程调用如同本地调用一般直观。</li>
+</ul>
+<hr>
+<h3 id="2-4-D-Bus-四种报文类型-Message-Types"><a href="#2-4-D-Bus-四种报文类型-Message-Types" class="headerlink" title="2.4 D-Bus 四种报文类型 (Message Types)"></a>2.4 D-Bus 四种报文类型 (Message Types)</h3><p>D-Bus 协议在底层通过 4 类不同的二进制包进行流控和业务交换：</p>
+<ol>
+<li>**<code>METHOD_CALL</code> (方法调用)**：客户端发送给服务端，请求调用某个远程对象的函数。包含输入参数。</li>
+<li>**<code>METHOD_RETURN</code> (方法返回)**：服务端响应给客户端，返回函数执行的结果数据。</li>
+<li><strong><code>SIGNAL</code> (信号广播)<strong>：发布-订阅模型。服务端广播出来的信息，不指明特定的接收者，所有注册了匹配规则的客户端都可以监听该信号。</strong>没有返回值</strong>。</li>
+<li>**<code>ERROR</code> (错误反馈)**：方法调用失败时，服务端返回的异常信息包，内含错误名称和错误字符串描述。</li>
+</ol>
+<hr>
+<h3 id="2-5-D-Bus-自省机制-Introspection-与-XML-接口声明"><a href="#2-5-D-Bus-自省机制-Introspection-与-XML-接口声明" class="headerlink" title="2.5 D-Bus 自省机制 (Introspection) 与 XML 接口声明"></a>2.5 D-Bus 自省机制 (Introspection) 与 XML 接口声明</h3><p>D-Bus 最酷的特性之一就是具备<strong>自省（Introspection）</strong>能力。这意味着客户端可以在完全不了解远程对象的情况下，动态查询其支持的接口、方法和参数列表。<br>当客户端向任何远程对象发起一个标准方法调用：</p>
+<ul>
+<li><strong>调用接口</strong>：<code>org.freedesktop.Introspectable</code></li>
+<li><strong>调用方法</strong>：<code>Introspect</code></li>
+<li><strong>返回数据</strong>：一段格式规范的 XML 文档。</li>
+</ul>
+<h4 id="📊-典型自省-XML-描述符示范："><a href="#📊-典型自省-XML-描述符示范：" class="headerlink" title="📊 典型自省 XML 描述符示范："></a>📊 典型自省 XML 描述符示范：</h4><figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&lt;!DOCTYPE <span class="keyword">node</span> <span class="keyword">PUBLIC</span> <span class="string">&quot;-//freedesktop//DTD D-BUS Object Introspection 1.0//EN&quot;</span></span></span><br><span class="line"><span class="meta"> <span class="string">&quot;http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd&quot;</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;<span class="name">node</span>&gt;</span></span><br><span class="line">  <span class="comment">&lt;!-- 💡 声明一个包含业务方法的接口 --&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">interface</span> <span class="attr">name</span>=<span class="string">&quot;test.method.Type&quot;</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">method</span> <span class="attr">name</span>=<span class="string">&quot;Method&quot;</span>&gt;</span></span><br><span class="line">      <span class="comment">&lt;!-- 定义输入参数 (direction=&quot;in&quot;)，类型为 string (s) --&gt;</span></span><br><span class="line">      <span class="tag">&lt;<span class="name">arg</span> <span class="attr">name</span>=<span class="string">&quot;input_param&quot;</span> <span class="attr">type</span>=<span class="string">&quot;s&quot;</span> <span class="attr">direction</span>=<span class="string">&quot;in&quot;</span>/&gt;</span></span><br><span class="line">      <span class="comment">&lt;!-- 定义输出返回参数 (direction=&quot;out&quot;)，类型为 string (s) --&gt;</span></span><br><span class="line">      <span class="tag">&lt;<span class="name">arg</span> <span class="attr">name</span>=<span class="string">&quot;output_result&quot;</span> <span class="attr">type</span>=<span class="string">&quot;s&quot;</span> <span class="attr">direction</span>=<span class="string">&quot;out&quot;</span>/&gt;</span></span><br><span class="line">    <span class="tag">&lt;/<span class="name">method</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;/<span class="name">interface</span>&gt;</span></span><br><span class="line"></span><br><span class="line">  <span class="comment">&lt;!-- 💡 声明一个标准自省接口 --&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">interface</span> <span class="attr">name</span>=<span class="string">&quot;org.freedesktop.Introspectable&quot;</span>&gt;</span></span><br><span class="line">    <span class="tag">&lt;<span class="name">method</span> <span class="attr">name</span>=<span class="string">&quot;Introspect&quot;</span>&gt;</span></span><br><span class="line">      <span class="tag">&lt;<span class="name">arg</span> <span class="attr">name</span>=<span class="string">&quot;xml_data&quot;</span> <span class="attr">type</span>=<span class="string">&quot;s&quot;</span> <span class="attr">direction</span>=<span class="string">&quot;out&quot;</span>/&gt;</span></span><br><span class="line">    <span class="tag">&lt;/<span class="name">method</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;/<span class="name">interface</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">node</span>&gt;</span></span><br></pre></td></tr></table></figure>
+<p>借助这一 XML 描述，高级绑定库（如 QtDBus）可以动态解析并自动在客户端内存中生成可直接调用的 C++ 虚函数。</p>
+<hr>
+<h2 id="第三部分：D-Bus-低级-C-语言-API-实战编程"><a href="#第三部分：D-Bus-低级-C-语言-API-实战编程" class="headerlink" title="第三部分：D-Bus 低级 C 语言 API 实战编程"></a>第三部分：D-Bus 低级 C 语言 API 实战编程</h2><p>以下提供一组完整的、无排版垃圾的 <code>libdbus</code> 低级 C 代码实战。我们将编写一个服务端接收信号&#x2F;方法，以及一个客户端发起远程调用。</p>
+<h3 id="3-1-服务端代码-dbus-server-c"><a href="#3-1-服务端代码-dbus-server-c" class="headerlink" title="3.1 服务端代码 (dbus_server.c)"></a>3.1 服务端代码 (dbus_server.c)</h3><p>该服务端连接到 Session 总线，申请 <code>test.method.target</code> 周知名字，并循环接收客户端发来的方法调用与信号。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;unistd.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;dbus/dbus.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">reply_to_method</span><span class="params">(DBusConnection *conn, DBusMessage *msg)</span></span><br><span class="line">&#123;</span><br><span class="line">    DBusMessage *reply;</span><br><span class="line">    DBusMessageIter args;</span><br><span class="line">    <span class="type">dbus_uint32_t</span> serial = <span class="number">0</span>;</span><br><span class="line">    <span class="type">char</span> *param_str = <span class="literal">NULL</span>;</span><br><span class="line">    <span class="type">char</span> reply_str[<span class="number">128</span>];</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 初始化读取方法调用的输入参数</span></span><br><span class="line">    <span class="keyword">if</span> (!dbus_message_iter_init(msg, &amp;args)) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 方法调用无参数!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (dbus_message_iter_get_arg_type(&amp;args) != DBUS_TYPE_STRING) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 参数格式错误，必须为 String!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        dbus_message_iter_get_basic(&amp;args, &amp;param_str);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;[*] 收到 Method Call! 参数为: %s\n&quot;</span>, param_str);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 构造返回给客户端的 reply 报文</span></span><br><span class="line">    <span class="built_in">snprintf</span>(reply_str, <span class="keyword">sizeof</span>(reply_str), <span class="string">&quot;Hello, client! You sent: %s&quot;</span>, param_str);</span><br><span class="line">    reply = dbus_message_new_method_return(msg);</span><br><span class="line">    dbus_message_iter_init_append(reply, &amp;args);</span><br><span class="line">    </span><br><span class="line">    <span class="type">char</span> *ptr = reply_str;</span><br><span class="line">    <span class="keyword">if</span> (!dbus_message_iter_append_basic(&amp;args, DBUS_TYPE_STRING, &amp;ptr)) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 内存溢出，无法附加返回参数!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 将方法返回包送入总线发送队列</span></span><br><span class="line">    <span class="keyword">if</span> (!dbus_connection_send(conn, reply, &amp;serial)) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 发送应答失败!\n&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    dbus_connection_flush(conn);</span><br><span class="line">    dbus_message_unref(reply);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line">    DBusError err;</span><br><span class="line">    DBusConnection *conn;</span><br><span class="line">    <span class="type">int</span> ret;</span><br><span class="line"></span><br><span class="line">    dbus_error_init(&amp;err);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 1. 连接到会话总线 (Session Bus)</span></span><br><span class="line">    conn = dbus_bus_get(DBUS_BUS_SESSION, &amp;err);</span><br><span class="line">    <span class="keyword">if</span> (dbus_error_is_set(&amp;err)) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 连接 D-Bus 错误: %s\n&quot;</span>, err.message);</span><br><span class="line">        dbus_error_free(&amp;err);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (conn == <span class="literal">NULL</span>) <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 申请独占周知名称 test.method.target</span></span><br><span class="line">    ret = dbus_bus_request_name(conn, <span class="string">&quot;test.method.target&quot;</span>, DBUS_NAME_FLAG_REPLACE_EXISTING, &amp;err);</span><br><span class="line">    <span class="keyword">if</span> (dbus_error_is_set(&amp;err)) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 申请服务名称错误: %s\n&quot;</span>, err.message);</span><br><span class="line">        dbus_error_free(&amp;err);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (ret != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 无法获取周知名称所有权!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;[+] 服务端就绪，周知名字: test.method.target 已注册成功。\n&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. 阻塞监听方法请求</span></span><br><span class="line">    <span class="keyword">while</span> (<span class="number">1</span>) &#123;</span><br><span class="line">        dbus_connection_read_write(conn, <span class="number">0</span>); <span class="comment">// 读取总线上的未处理字节流</span></span><br><span class="line">        DBusMessage *msg = dbus_connection_pop_message(conn);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (msg == <span class="literal">NULL</span>) &#123;</span><br><span class="line">            usleep(<span class="number">10000</span>); <span class="comment">// 暂无数据，休眠 10ms 降低 CPU 占用</span></span><br><span class="line">            <span class="keyword">continue</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// 判断消息类型是否是 test.method.target 接口下的 MethodCall 方法</span></span><br><span class="line">        <span class="keyword">if</span> (dbus_message_is_method_call(msg, <span class="string">&quot;test.method.Type&quot;</span>, <span class="string">&quot;Method&quot;</span>)) &#123;</span><br><span class="line">            reply_to_method(conn, msg);</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        dbus_message_unref(msg);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="3-2-客户端代码-dbus-client-c"><a href="#3-2-客户端代码-dbus-client-c" class="headerlink" title="3.2 客户端代码 (dbus_client.c)"></a>3.2 客户端代码 (dbus_client.c)</h3><p>该客户端连上 Session 总线，向 <code>test.method.target</code> 服务的 <code>/test/object/Path</code> 对象，发送包含一个字符串参数的方法调用请求，并同步等待返回结果。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;dbus/dbus.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line">    DBusError err;</span><br><span class="line">    DBusConnection *conn;</span><br><span class="line">    DBusMessage *msg;</span><br><span class="line">    DBusMessageIter args;</span><br><span class="line">    DBusPendingCall *pending;</span><br><span class="line">    <span class="type">char</span> *param = <span class="string">&quot;Hello Server, this is Geek!&quot;</span>;</span><br><span class="line">    <span class="type">char</span> *result_str = <span class="literal">NULL</span>;</span><br><span class="line"></span><br><span class="line">    dbus_error_init(&amp;err);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 1. 建立 Session 总线物理链接</span></span><br><span class="line">    conn = dbus_bus_get(DBUS_BUS_SESSION, &amp;err);</span><br><span class="line">    <span class="keyword">if</span> (dbus_error_is_set(&amp;err)) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 客户端连接错误: %s\n&quot;</span>, err.message);</span><br><span class="line">        dbus_error_free(&amp;err);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 创建一个方法调用报文 METHOD_CALL</span></span><br><span class="line">    msg = dbus_message_new_method_call(</span><br><span class="line">        <span class="string">&quot;test.method.target&quot;</span>,    <span class="comment">// 目的周知名字 (Well-known Name)</span></span><br><span class="line">        <span class="string">&quot;/test/object/Path&quot;</span>,     <span class="comment">// 目的对象路径 (Object Path)</span></span><br><span class="line">        <span class="string">&quot;test.method.Type&quot;</span>,      <span class="comment">// 接口名 (Interface)</span></span><br><span class="line">        <span class="string">&quot;Method&quot;</span>                 <span class="comment">// 方法名 (Method Name)</span></span><br><span class="line">    );</span><br><span class="line">    <span class="keyword">if</span> (msg == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 方法调用消息分配失败!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. 附加参数到发送包中</span></span><br><span class="line">    dbus_message_iter_init_append(msg, &amp;args);</span><br><span class="line">    <span class="keyword">if</span> (!dbus_message_iter_append_basic(&amp;args, DBUS_TYPE_STRING, &amp;param)) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 附加参数失败，内存不足!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 4. 同步发送并挂起，等待服务端应答</span></span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;[*] 正在发送方法请求到 /test/object/Path...\n&quot;</span>);</span><br><span class="line">    <span class="keyword">if</span> (!dbus_connection_send_with_reply(conn, msg, &amp;pending, <span class="number">-1</span>)) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 发送消息失败!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (pending == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 挂起调用失败，连接断开!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    dbus_connection_flush(conn);</span><br><span class="line">    dbus_message_unref(msg);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 5. 阻塞等待完成</span></span><br><span class="line">    dbus_pending_call_block(pending);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 6. 获取并解析应答消息</span></span><br><span class="line">    msg = dbus_pending_call_steal_reply(pending);</span><br><span class="line">    <span class="keyword">if</span> (msg == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 获取回复错误!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    dbus_pending_call_unref(pending);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (!dbus_message_iter_init(msg, &amp;args)) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 回复数据包无参数!\n&quot;</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (dbus_message_iter_get_arg_type(&amp;args) != DBUS_TYPE_STRING) &#123;</span><br><span class="line">        <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;[-] 回复参数不是字符串类型!\n&quot;</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        dbus_message_iter_get_basic(&amp;args, &amp;result_str);</span><br><span class="line">        <span class="built_in">printf</span>(<span class="string">&quot;[+] 成功收到服务端应答: %s\n&quot;</span>, result_str);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    dbus_message_unref(msg);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="3-3-D-Bus-通信性能开销与上下文切换-Context-Switch-深度剖析"><a href="#3-3-D-Bus-通信性能开销与上下文切换-Context-Switch-深度剖析" class="headerlink" title="3.3 D-Bus 通信性能开销与上下文切换 (Context Switch) 深度剖析"></a>3.3 D-Bus 通信性能开销与上下文切换 (Context Switch) 深度剖析</h3><p>在高性能进程间通信的架构选型中，我们必须认识到：<strong>D-Bus 并非为海量数据高频传输设计的</strong>。如果我们尝试使用 D-Bus 发送超大块图像数据或高频音视频流，系统 CPU 会瞬间过载，通信效率低下。<br>这背后的根本原因在于其<strong>多次上下文切换与内存拷贝的架构开销</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"> 【 D-Bus 点对点通信上下文切换链路 】</span><br><span class="line"></span><br><span class="line">  [ 用户空间 ]                   [ 内核空间 ]</span><br><span class="line"></span><br><span class="line">+--------------+               +-------------+</span><br><span class="line">| 1. Client App| ──► write() ─►| Socket Buf  | ──┐ (第 1 次切换)</span><br><span class="line">+--------------+               +-------------+   │</span><br><span class="line">                                                 ▼</span><br><span class="line">+--------------+               +-------------+ ┌─┴──────────┐</span><br><span class="line">| 2.dbus-daemon| ◄─── read() ◄─| Socket Buf  | | Context    | (第 2 次切换)</span><br><span class="line">|  (消息路由)   | ──► write() ─►| Socket Buf  | | Switch     | (第 3 次切换)</span><br><span class="line">+--------------+               +-------------+ └─┬──────────┘</span><br><span class="line">                                                 ▼</span><br><span class="line">+--------------+               +-------------+ ┌─┴──────────┐</span><br><span class="line">| 3. Server App| ◄─── read() ◄─| Socket Buf  | | Context    | (第 4 次切换)</span><br><span class="line">+--------------+               +-------------+ └────────────┘</span><br></pre></td></tr></table></figure>
+
+<h4 id="📊-性能开销细化对照表："><a href="#📊-性能开销细化对照表：" class="headerlink" title="📊 性能开销细化对照表："></a>📊 性能开销细化对照表：</h4><table>
+<thead>
+<tr>
+<th align="left">性能考核指标</th>
+<th align="left">D-Bus (libdbus) 通信机制</th>
+<th align="left">共享内存 (Shared Memory) 机制</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>单次通信上下文切换次数</strong></td>
+<td align="left"><strong>4 次</strong>：<br>Client -&gt; Kernel -&gt; dbus-daemon -&gt; Kernel -&gt; Server</td>
+<td align="left"><strong>0 次</strong>（只在初始映射时有映射切换，后续无上下文切换）</td>
+</tr>
+<tr>
+<td align="left"><strong>内存拷贝次数</strong></td>
+<td align="left"><strong>至少 2 次</strong>（从 Client 用户缓存拷贝至内核 socket 缓存，再从内核拷贝至 dbus-daemon 缓存，路由后重复此流程）</td>
+<td align="left"><strong>0 次</strong>（双方直接通过虚拟页表指针操作同一块物理内存）</td>
+</tr>
+<tr>
+<td align="left"><strong>消息寻址与安全性</strong></td>
+<td align="left">极强：自带 dbus-daemon 路径名解析与 SELinux 策略审计</td>
+<td align="left">弱：需要用户自定义加锁（如信号量&#x2F;互斥量）并管理地址指针</td>
+</tr>
+<tr>
+<td align="left"><strong>数据通信吞吐率</strong></td>
+<td align="left">较低，常用于控制信道及生命周期通知</td>
+<td align="left">极高，常用于万兆网卡数据包、视频帧等大规模数据面通信</td>
+</tr>
+</tbody></table>
+<hr>
+<h3 id="💡-Linux-总线模型与-D-Bus-通信架构-Debug-避坑-Checklist"><a href="#💡-Linux-总线模型与-D-Bus-通信架构-Debug-避坑-Checklist" class="headerlink" title="💡 Linux 总线模型与 D-Bus 通信架构 Debug 避坑 Checklist"></a>💡 Linux 总线模型与 D-Bus 通信架构 Debug 避坑 Checklist</h3><p>在进行相关模块设计与代码联调前，请确认完成以下排查确认：</p>
+<ul>
+<li><input disabled="" type="checkbox"> <strong>兼容名一致性</strong>：确认设备树节点的 <code>compatible</code> 属性与驱动中的 <code>of_match_table</code> 完全一致，否则 <code>probe</code> 无法被触发。</li>
+<li><input disabled="" type="checkbox"> <strong>引用计数回收</strong>：使用 <code>kobject_put</code> 回收节点，并确保已实现 <code>device-&gt;release</code> 回调，否则会出现严重的内核内存泄漏。</li>
+<li><input disabled="" type="checkbox"> <strong>周知名称注册</strong>：确认 D-Bus 客户端调用的周知名称已在服务端注册成功，可使用 <code>dbus-send --session --dest=org.freedesktop.DBus --print-reply /org/freedesktop/DBus org.freedesktop.DBus.ListNames</code> 进行命令扫描。</li>
+<li><input disabled="" type="checkbox"> <strong>阻塞与异步分流</strong>：由于 D-Bus 是单线程处理，切忌在方法处理回调（如 <code>reply_to_method</code>）中执行长耗时的 IO 阻塞操作，否则会挂死整个消息循环。</li>
+</ul>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>License</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">Newer</div><a href="/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E6%80%BB%E7%BA%BF-1-%E5%BE%AE%E6%9C%BA%E4%B8%89%E5%A4%A7%E6%80%BB%E7%BA%BF%E3%80%81%E7%BB%8F%E5%85%B8%E4%B8%B2%E8%A1%8C%E5%8D%8F%E8%AE%AE-UART-SPI-I2C-CAN-%E4%B8%8E%E4%BB%A5%E5%A4%AA%E7%BD%91MII%E6%8E%A5%E5%8F%A3%E7%A1%AC%E4%BB%B6%E6%8C%87%E5%8D%97/">微机三大总线、经典串行协议(UART/SPI/I2C/CAN)与以太网MII接口硬件指南</a></div><div class="item" id="next"><div class="note">Older</div><a href="/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E6%80%BB%E7%BA%BF-3-PCIe%E9%AB%98%E9%80%9F%E4%B8%B2%E8%A1%8C%E6%80%BB%E7%BA%BF%E4%B8%8E%E5%86%85%E6%A0%B8DMA%E4%BC%A0%E8%BE%93%E6%9C%BA%E5%88%B6%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/">PCIe高速串行总线与内核DMA传输机制深度指南</a></div></section></div>
+
+
+
+
+  <div class="related-wrap md-text" id="comments">
+    <section class='header cmt-title cap theme'>
+      <p>快来参与讨论吧~</p>
+
+    </section>
+    <section class='body cmt-body utterances'>
+      
+
+<svg class="loading" style="vertical-align:middle;fill:currentColor;overflow:hidden;" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2709"><path d="M832 512c0-176-144-320-320-320V128c211.2 0 384 172.8 384 384h-64zM192 512c0 176 144 320 320 320v64C300.8 896 128 723.2 128 512h64z" p-id="2710"></path></svg>
+
+<div id="utterances" repo="luhuaCyan/luhuaCyan.github.io" issue-term="title" theme="preferred-color-scheme" label="comment"></div>
+
+    </section>
+  </div>
+
+
+
+<footer class="page-footer footnote"><hr><div class="sitemap" style="column-count:4;"><div class="sitemap-group"><span class="fs15">博客</span><a href="/">近期发布</a><a href="/blog/categories/">分类</a><a href="/blog/tags/">标签</a><a href="/blog/archives/">归档</a></div><div class="sitemap-group"><span class="fs15">项目</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">社交</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">关于</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div></div><div class="text"><p>本站为个人学习笔记记录和整理，所有内容仅用于个人知识梳理、复习回顾及学习交流。<br>声明：本站所有资源收集整理于网络,本站不参与制作,用于互联网爱好者学习和研究,如不慎侵犯了您的权利,请及时联系站长处理删除。敬请谅解！</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">On This Page</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#Linux%E8%AE%BE%E5%A4%87%E9%A9%B1%E5%8A%A8%E6%A8%A1%E5%9E%8B%E4%B8%8ED-Bus%E8%BD%AF%E4%BB%B6%E6%B6%88%E6%81%AF%E6%80%BB%E7%BA%BF%E5%BA%95%E5%B1%82%E6%9E%B6%E6%9E%84%E6%8C%87%E5%8D%97"><span class="toc-text">Linux设备驱动模型与D-Bus软件消息总线底层架构指南</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%B8%80%E9%83%A8%E5%88%86%EF%BC%9ALinux-%E7%BB%9F%E4%B8%80%E8%AE%BE%E5%A4%87%E9%A9%B1%E5%8A%A8%E6%A8%A1%E5%9E%8B-Kernel-Space-Bus"><span class="toc-text">第一部分：Linux 统一设备驱动模型 (Kernel Space Bus)</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-1-%E6%A0%B8%E5%BF%83%E4%B8%89%E9%A9%BE%E9%A9%AC%E8%BD%A6%EF%BC%9ABus-Device-Driver"><span class="toc-text">1.1 核心三驾马车：Bus, Device, Driver</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#1-struct-bus-type-%E6%80%BB%E7%BA%BF%E6%8A%BD%E8%B1%A1"><span class="toc-text">1. struct bus_type (总线抽象)</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-struct-device-%E7%A1%AC%E4%BB%B6%E5%AE%9E%E4%BD%93%E6%8A%BD%E8%B1%A1"><span class="toc-text">2. struct device (硬件实体抽象)</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#3-struct-device-driver-%E9%A9%B1%E5%8A%A8%E7%A8%8B%E5%BA%8F%E6%8A%BD%E8%B1%A1"><span class="toc-text">3. struct device_driver (驱动程序抽象)</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-2-%E8%AE%BE%E5%A4%87%E4%B8%8E%E9%A9%B1%E5%8A%A8%E7%9A%84%E6%B3%A8%E5%86%8C%E4%B8%8E%E5%8C%B9%E9%85%8D%E6%80%BB%E7%BA%BF%E5%B7%A5%E4%BD%9C%E6%B5%81"><span class="toc-text">1.2 设备与驱动的注册与匹配总线工作流</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%94%91-%E8%AE%BE%E5%A4%87%E4%B8%8E%E9%A9%B1%E5%8A%A8%E5%8C%B9%E9%85%8D%E7%9A%84%E5%9B%9B%E7%A7%8D%E6%A0%B8%E5%BF%83%E9%80%BB%E8%BE%91%EF%BC%9A"><span class="toc-text">🔑 设备与驱动匹配的四种核心逻辑：</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%93%8A-%E5%8C%B9%E9%85%8D%E7%BB%91%E5%AE%9A%E6%B5%81%E7%A8%8B%E5%9B%BE%EF%BC%9A"><span class="toc-text">📊 匹配绑定流程图：</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-3-%E5%9F%BA%E7%B1%BB%E5%BA%95%E5%BA%A7%EF%BC%9Akobject%E3%80%81kset-%E4%B8%8E-sysfs-%E6%98%A0%E5%B0%84%E5%85%B3%E7%B3%BB"><span class="toc-text">1.3 基类底座：kobject、kset 与 sysfs 映射关系</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-4-sysfs-%E5%B1%9E%E6%80%A7%E8%8A%82%E7%82%B9%E4%B8%8E%E5%B1%9E%E6%80%A7%E6%96%87%E4%BB%B6%E8%AF%BB%E5%86%99%E6%8E%A5%E5%8F%A3"><span class="toc-text">1.4 sysfs 属性节点与属性文件读写接口</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%BA%8C%E9%83%A8%E5%88%86%EF%BC%9AD-Bus-%E8%BD%AF%E4%BB%B6%E6%B6%88%E6%81%AF%E6%80%BB%E7%BA%BF%E6%9E%B6%E6%9E%84-User-Space-Bus"><span class="toc-text">第二部分：D-Bus 软件消息总线架构 (User Space Bus)</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#2-1-D-Bus-%E4%B8%89%E5%B1%82%E6%9E%B6%E6%9E%84%E8%A7%A3%E6%9E%90"><span class="toc-text">2.1 D-Bus 三层架构解析</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-2-%E7%B3%BB%E7%BB%9F%E6%80%BB%E7%BA%BF-System-Bus-%E4%B8%8E-%E4%BC%9A%E8%AF%9D%E6%80%BB%E7%BA%BF-Session-Bus"><span class="toc-text">2.2 系统总线 (System Bus) 与 会话总线 (Session Bus)</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-3-%E9%9D%A2%E5%90%91%E5%AF%B9%E8%B1%A1%E6%A0%B8%E5%BF%83%E6%A6%82%E5%BF%B5%E5%A4%A7%E5%AD%97%E5%85%B8"><span class="toc-text">2.3 面向对象核心概念大字典</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-4-D-Bus-%E5%9B%9B%E7%A7%8D%E6%8A%A5%E6%96%87%E7%B1%BB%E5%9E%8B-Message-Types"><span class="toc-text">2.4 D-Bus 四种报文类型 (Message Types)</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-5-D-Bus-%E8%87%AA%E7%9C%81%E6%9C%BA%E5%88%B6-Introspection-%E4%B8%8E-XML-%E6%8E%A5%E5%8F%A3%E5%A3%B0%E6%98%8E"><span class="toc-text">2.5 D-Bus 自省机制 (Introspection) 与 XML 接口声明</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%93%8A-%E5%85%B8%E5%9E%8B%E8%87%AA%E7%9C%81-XML-%E6%8F%8F%E8%BF%B0%E7%AC%A6%E7%A4%BA%E8%8C%83%EF%BC%9A"><span class="toc-text">📊 典型自省 XML 描述符示范：</span></a></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%B8%89%E9%83%A8%E5%88%86%EF%BC%9AD-Bus-%E4%BD%8E%E7%BA%A7-C-%E8%AF%AD%E8%A8%80-API-%E5%AE%9E%E6%88%98%E7%BC%96%E7%A8%8B"><span class="toc-text">第三部分：D-Bus 低级 C 语言 API 实战编程</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#3-1-%E6%9C%8D%E5%8A%A1%E7%AB%AF%E4%BB%A3%E7%A0%81-dbus-server-c"><span class="toc-text">3.1 服务端代码 (dbus_server.c)</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-2-%E5%AE%A2%E6%88%B7%E7%AB%AF%E4%BB%A3%E7%A0%81-dbus-client-c"><span class="toc-text">3.2 客户端代码 (dbus_client.c)</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-3-D-Bus-%E9%80%9A%E4%BF%A1%E6%80%A7%E8%83%BD%E5%BC%80%E9%94%80%E4%B8%8E%E4%B8%8A%E4%B8%8B%E6%96%87%E5%88%87%E6%8D%A2-Context-Switch-%E6%B7%B1%E5%BA%A6%E5%89%96%E6%9E%90"><span class="toc-text">3.3 D-Bus 通信性能开销与上下文切换 (Context Switch) 深度剖析</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%93%8A-%E6%80%A7%E8%83%BD%E5%BC%80%E9%94%80%E7%BB%86%E5%8C%96%E5%AF%B9%E7%85%A7%E8%A1%A8%EF%BC%9A"><span class="toc-text">📊 性能开销细化对照表：</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%F0%9F%92%A1-Linux-%E6%80%BB%E7%BA%BF%E6%A8%A1%E5%9E%8B%E4%B8%8E-D-Bus-%E9%80%9A%E4%BF%A1%E6%9E%B6%E6%9E%84-Debug-%E9%81%BF%E5%9D%91-Checklist"><span class="toc-text">💡 Linux 总线模型与 D-Bus 通信架构 Debug 避坑 Checklist</span></a></li></ol></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>Scroll to Top</span></a><a class="buttom" onclick="util.scrollComment()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M8 10.5h8M8 14h5.5M17 3.338A9.95 9.95 0 0 0 12 2C6.477 2 2 6.477 2 12c0 1.6.376 3.112 1.043 4.453c.178.356.237.763.134 1.148l-.595 2.226a1.3 1.3 0 0 0 1.591 1.592l2.226-.596a1.63 1.63 0 0 1 1.149.133A9.96 9.96 0 0 0 12 22c5.523 0 10-4.477 10-10c0-1.821-.487-3.53-1.338-5"/></svg><span>Join Discussion</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  window.canonical["param"] = {"permalink":"https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E6%80%BB%E7%BA%BF-2-Linux%E8%AE%BE%E5%A4%87%E9%A9%B1%E5%8A%A8%E6%A8%A1%E5%9E%8B%E4%B8%8ED-Bus%E8%BD%AF%E4%BB%B6%E6%B6%88%E6%81%AF%E6%80%BB%E7%BA%BF%E5%BA%95%E5%B1%82%E6%9E%B6%E6%9E%84%E6%8C%87%E5%8D%97/","checklink":"/js/plugins/video.js"};
+  const ctx = {
+    date_suffix: {
+      just: `Just`,
+      min: `minutes ago`,
+      hour: `hours ago`,
+      day: `days ago`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        if ($(el).find('.loading-wrap').length == 0){
+          $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+        }
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `Switched to Light Mode`,
+      dark: `Switched to Dark Mode`,
+      auto: `Switched to Auto Mode`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+  <script type="module">
+  const el = document.querySelector("#comments #utterances");
+  util.viewportLazyload(el, load_utterances, true);
+
+  function load_utterances() {
+    if (!el) return;
+    try {
+      el.innerHTML = '';
+    } catch (error) {
+      console.error(error);
+    }
+    const script = document.createElement('script');
+    script.src = 'https://utteranc.es/client.js';
+    script.async = true;
+    for (const key of Object.keys(el.attributes)) {
+      const attr = el.attributes[key];
+      if (['class', 'id'].includes(attr.name) === false) {
+        script.setAttribute(attr.name, attr.value);
+      }
+    }
+    el.appendChild(script);
+  }
+</script>
+
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.chat-file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

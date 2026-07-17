@@ -1,0 +1,1110 @@
+
+<!DOCTYPE html><html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 7.3.0">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>Linux 内核模块编译属性差异与二进制逆向修改深度指南 - LemonCyan</title>
+
+  
+    <meta name="description" content="本文深度解析了不同内核源码&#x2F;配置编译生成的内核模块（.ko）文件之间的底层二进制区别。通过 readelf、objdump 以及 hexedit 工具逆向剖析 ELF 的段表、重定位表及 .gnu.linkonce.this_module 结构；详细阐述了 vermagic 版本魔数与 CONFIG_MODVERSIONS 符号 CRC 校验防御机制；并最终演示了如何通过手动修改二进制重定位表偏移">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Linux 内核模块编译属性差异与二进制逆向修改深度指南">
+<meta property="og:url" content="https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E5%86%85%E6%A0%B8-3-Linux%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%BC%96%E8%AF%91%E5%B1%9E%E6%80%A7%E5%B7%AE%E5%BC%82%E4%B8%8E%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%80%86%E5%90%91%E4%BF%AE%E6%94%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/">
+<meta property="og:site_name" content="LemonCyan">
+<meta property="og:description" content="本文深度解析了不同内核源码&#x2F;配置编译生成的内核模块（.ko）文件之间的底层二进制区别。通过 readelf、objdump 以及 hexedit 工具逆向剖析 ELF 的段表、重定位表及 .gnu.linkonce.this_module 结构；详细阐述了 vermagic 版本魔数与 CONFIG_MODVERSIONS 符号 CRC 校验防御机制；并最终演示了如何通过手动修改二进制重定位表偏移">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+<meta property="article:published_time" content="2026-07-17T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-07-17T03:19:06.520Z">
+<meta property="article:author" content="liuluhua">
+<meta property="article:tag" content="Linux内核">
+<meta property="article:tag" content="内核模块">
+<meta property="article:tag" content="ELF结构">
+<meta property="article:tag" content="二进制逆向">
+<meta property="article:tag" content="符号校验">
+<meta property="article:tag" content="跨内核加载">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+  
+  
+  
+  <meta name="keywords" content="Linux内核,内核模块,ELF结构,二进制逆向,符号校验,跨内核加载">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"},"dateCreated":"2026-07-17T00:00:00+00:00","dateModified":"2026-07-17T03:19:06+00:00","datePublished":"2026-07-17T00:00:00+00:00","description":"","headline":"Linux 内核模块编译属性差异与二进制逆向修改深度指南","mainEntityOfPage":{"@type":"WebPage","@id":"https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E5%86%85%E6%A0%B8-3-Linux%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%BC%96%E8%AF%91%E5%B1%9E%E6%80%A7%E5%B7%AE%E5%BC%82%E4%B8%8E%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%80%86%E5%90%91%E4%BF%AE%E6%94%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/"},"publisher":{"@type":"Organization","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png","logo":{"@type":"ImageObject","url":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"}},"url":"https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E5%86%85%E6%A0%B8-3-Linux%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%BC%96%E8%AF%91%E5%B1%9E%E6%80%A7%E5%B7%AE%E5%BC%82%E4%B8%8E%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%80%86%E5%90%91%E4%BF%AE%E6%94%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/","keywords":"Linux内核, 内核模块, ELF结构, 二进制逆向, 符号校验, 跨内核加载","image":[]}</script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css" />
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="config.avatar" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">LemonCyan</div><div class="sub cap">LemonCyan`s Charging</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"><a class="nav-item active" title="博客" href="/" style="color:#1BCDFC"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M5.879 2.879C5 3.757 5 5.172 5 8v8c0 2.828 0 4.243.879 5.121C6.757 22 8.172 22 11 22h2c2.828 0 4.243 0 5.121-.879C19 20.243 19 18.828 19 16V8c0-2.828 0-4.243-.879-5.121C17.243 2 15.828 2 13 2h-2c-2.828 0-4.243 0-5.121.879M8.25 17a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75M9 12.25a.75.75 0 0 0 0 1.5h6a.75.75 0 0 0 0-1.5zM8.25 9A.75.75 0 0 1 9 8.25h6a.75.75 0 0 1 0 1.5H9A.75.75 0 0 1 8.25 9" clip-rule="evenodd"/><path fill="currentColor" d="M5.235 4.058C5 4.941 5 6.177 5 8v8c0 1.823 0 3.058.235 3.942L5 19.924c-.975-.096-1.631-.313-2.121-.803C2 18.243 2 16.828 2 14v-4c0-2.829 0-4.243.879-5.121c.49-.49 1.146-.707 2.121-.803zm13.53 15.884C19 19.058 19 17.822 19 16V8c0-1.823 0-3.059-.235-3.942l.235.018c.975.096 1.631.313 2.121.803C22 5.757 22 7.17 22 9.999v4c0 2.83 0 4.243-.879 5.122c-.49.49-1.146.707-2.121.803z" opacity=".5"/></svg></a><a class="nav-item" title="文档" href="/wiki/" style="color:#3DC550"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M14.25 4.48v3.057c0 .111 0 .27.02.406a.936.936 0 0 0 .445.683a.96.96 0 0 0 .783.072c.13-.04.272-.108.378-.159L17 8.005l1.124.534c.106.05.248.119.378.16a.958.958 0 0 0 .783-.073a.936.936 0 0 0 .444-.683c.021-.136.021-.295.021-.406V3.031c.113-.005.224-.01.332-.013C21.154 2.98 22 3.86 22 4.933v11.21c0 1.112-.906 2.01-2.015 2.08c-.97.06-2.108.179-2.985.41c-1.082.286-1.99 1.068-3.373 1.436c-.626.167-1.324.257-1.627.323V5.174c.32-.079 1.382-.203 1.674-.371c.184-.107.377-.216.576-.323m5.478 8.338a.75.75 0 0 1-.546.91l-4 1a.75.75 0 0 1-.364-1.456l4-1a.75.75 0 0 1 .91.546" clip-rule="evenodd"/><path fill="currentColor" d="M18.25 3.151c-.62.073-1.23.18-1.75.336a8.2 8.2 0 0 0-.75.27v3.182l.75-.356l.008-.005a1.13 1.13 0 0 1 .492-.13c.047 0 .094.004.138.01c.175.029.315.1.354.12l.009.005l.749.356V3.647z"/><path fill="currentColor" d="M12 5.214c-.334-.064-1.057-.161-1.718-.339C8.938 4.515 8.05 3.765 7 3.487c-.887-.234-2.041-.352-3.018-.412C2.886 3.007 2 3.9 2 4.998v11.146c0 1.11.906 2.01 2.015 2.079c.97.06 2.108.179 2.985.41c.486.129 1.216.431 1.873.726c1.005.451 2.052.797 3.127 1.034z" opacity=".5"/><path fill="currentColor" d="M4.273 12.818a.75.75 0 0 1 .91-.545l4 1a.75.75 0 1 1-.365 1.455l-4-1a.75.75 0 0 1-.545-.91m.909-4.545a.75.75 0 1 0-.364 1.455l4 1a.75.75 0 0 0 .364-1.455z"/></svg></a><a class="nav-item" title="探索" href="/explore/" style="color:#FA6400"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M20 12a8 8 0 1 1-16 0a8 8 0 0 1 16 0" opacity=".5"/><path fill="currentColor" d="M17.712 5.453c1.047-.193 2.006-.259 2.797-.152c.77.103 1.536.393 1.956 1.064c.446.714.312 1.542-.012 2.258c-.33.728-.918 1.499-1.672 2.268c-1.516 1.547-3.836 3.226-6.597 4.697c-2.763 1.472-5.495 2.484-7.694 2.92c-1.095.217-2.098.299-2.923.201c-.8-.095-1.6-.383-2.032-1.075c-.47-.752-.296-1.63.07-2.379c.375-.768 1.032-1.586 1.872-2.403L4 12.416c0 .219.083.71.168 1.146c.045.23.09.444.123.596c-.652.666-1.098 1.263-1.339 1.756c-.277.567-.208.825-.145.925c.072.116.305.305.937.38c.609.073 1.44.018 2.455-.183c2.02-.4 4.613-1.351 7.28-2.772c2.667-1.42 4.85-3.015 6.23-4.423c.694-.707 1.15-1.334 1.377-1.836c.233-.515.167-.75.107-.844c-.07-.112-.289-.294-.883-.374c-.542-.072-1.272-.041-2.163.112L16.87 5.656c.338-.101.658-.17.842-.203"/></svg></a><a class="nav-item" title="社交" href="/friends/" style="color:#F44336"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="m13.629 20.472l-.542.916c-.483.816-1.69.816-2.174 0l-.542-.916c-.42-.71-.63-1.066-.968-1.262c-.338-.197-.763-.204-1.613-.219c-1.256-.021-2.043-.098-2.703-.372a5 5 0 0 1-2.706-2.706C2 14.995 2 13.83 2 11.5v-1c0-3.273 0-4.91.737-6.112a5 5 0 0 1 1.65-1.651C5.59 2 7.228 2 10.5 2h3c3.273 0 4.91 0 6.113.737a5 5 0 0 1 1.65 1.65C22 5.59 22 7.228 22 10.5v1c0 2.33 0 3.495-.38 4.413a5 5 0 0 1-2.707 2.706c-.66.274-1.447.35-2.703.372c-.85.015-1.275.022-1.613.219c-.338.196-.548.551-.968 1.262" opacity=".5"/><path fill="currentColor" d="M10.99 14.308c-1.327-.978-3.49-2.84-3.49-4.593c0-2.677 2.475-3.677 4.5-1.609c2.025-2.068 4.5-1.068 4.5 1.609c0 1.752-2.163 3.615-3.49 4.593c-.454.335-.681.502-1.01.502c-.329 0-.556-.167-1.01-.502"/></svg></a></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="Search"></form><div id="search-result"></div><div class="search-no-result">No Results!</div></div>
+
+
+
+<widget class="widget-wrapper recent post-list"><div class="widget-header dis-select"><span class="name">Recent Update</span></div><div class="widget-body fs14"><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-9-%E5%B5%8C%E5%85%A5%E5%BC%8FLinux%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98%E6%8C%87%E5%8D%97/"><span class="title">嵌入式 Linux 启动性能优化与工具链/应用程序调优指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-6-Linux%E5%85%B1%E4%BA%AB%E5%BA%93%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%E5%AF%BB%E5%9D%80%E6%9C%BA%E5%88%B6%E5%8F%8A%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8/"><span class="title">Linux 共享库动态加载与运行时链接器寻址机制及进阶应用</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-7-%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%B5%8C%E5%85%A5%E5%BC%8F%E4%BA%A4%E5%8F%89%E5%B7%A5%E5%85%B7%E9%93%BE%E6%9E%84%E5%BB%BAcrosstool-ng%E6%B7%B1%E5%BA%A6%E5%AE%9E%E6%88%98/"><span class="title">交叉编译与嵌入式交叉工具链构建 crosstool-ng 深度实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-8-%E7%8E%B0%E4%BB%A3%E6%9E%84%E5%BB%BA%E7%B3%BB%E7%BB%9FMeson-Ninja%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%BC%80%E6%BA%90%E5%BA%93%E7%A7%BB%E6%A4%8D%E5%AE%9E%E6%88%98/"><span class="title">现代构建系统 Meson + Ninja 交叉编译与开源库移植实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-3-%E9%99%88%E7%9A%93%E3%80%8A%E8%B7%9F%E6%88%91%E5%AD%A6Makefile%E3%80%8B%E7%B2%BE%E7%BC%96%E4%B8%8E%E5%AE%9E%E6%88%98%E8%BF%9B%E9%98%B6%E6%8C%87%E5%8D%97/"><span class="title">陈皓《跟我学Makefile》精编与实战进阶指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-4-%E5%A4%8D%E6%9D%82C-C-%E9%A1%B9%E7%9B%AE%E7%9A%84%E5%A4%9A%E6%96%87%E4%BB%B6%E5%A4%B9Makefile%E8%AE%BE%E8%AE%A1%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%8C%96%E7%BC%96%E8%AF%91%E6%9E%B6%E6%9E%84/"><span class="title">复杂 C/C++ 项目的多文件夹 Makefile 设计与自动化编译架构</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-5-%E9%9D%99%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E4%B8%8E%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E6%A0%B8%E5%BF%83%E6%9C%BA%E5%88%B6%E4%B8%8E%E5%BC%80%E5%8F%91%E5%AE%9E%E6%88%98/"><span class="title">静态链接库与动态链接库核心机制与开发实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-1-GCC-G-%E7%BC%96%E8%AF%91%E5%99%A8%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E4%B8%8E%E5%91%BD%E4%BB%A4%E8%A1%8C%E9%80%89%E9%A1%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/"><span class="title">GCC/G++ 编译器工作原理与命令行选项深度指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-10-Linux%E6%AE%B5%E9%94%99%E8%AF%AF%E6%8E%92%E6%9F%A5%E4%B8%8EGDB%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%E8%B0%83%E8%AF%95%E5%AE%9E%E6%88%98/"><span class="title">Linux 段错误排查与 GDB 核心转储调试实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-2-GNU-Make%E4%B8%8EMakefile%E6%9E%84%E5%BB%BA%E5%9F%BA%E7%A1%80%E5%85%A5%E9%97%A8%E6%89%8B%E5%86%8C/"><span class="title">GNU Make 与 Makefile 构建基础入门手册</span></a></div></widget>
+</div>
+<footer class="footer dis-select"><div class="social-wrap"><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/08a41b181ce68.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3845874.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3616429.svg"/></a><a class="social" href="/about/#comments" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/942ebbf1a4b91.svg"/></a></div></footer>
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">Home</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">Blog</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">Posted on: <time datetime="2026-07-17T00:00:00.000Z">2026-07-17</time></span><span class="sep updated"></span><span class="text updated">Updated on: <time datetime="2026-07-17T03:19:06.520Z">2026-07-17</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>Linux 内核模块编译属性差异与二进制逆向修改深度指南</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h1 id="Linux-内核模块编译属性差异与二进制逆向修改深度指南"><a href="#Linux-内核模块编译属性差异与二进制逆向修改深度指南" class="headerlink" title="Linux 内核模块编译属性差异与二进制逆向修改深度指南"></a>Linux 内核模块编译属性差异与二进制逆向修改深度指南</h1><p>在 Linux 内核开发和逆向工程中，我们经常会遇到这样一个极具挑战性的痛点：<br>你编译了一个设备驱动 <code>.ko</code> 模块，但由于目标机器运行的是厂商固化好的、没有提供源码或对应编译配置的内核，当你在目标板上执行 <code>insmod hello.ko</code> 时，系统会无情地报错：<br><code>insmod: error inserting &#39;hello.ko&#39;: -1 Invalid module format</code><br>而在 <code>dmesg</code> 日志中，则会显示：<br><code>hello: version magic &#39;3.6.33-fake SMP preempt mod_unload ARMv4&#39; should be &#39;3.6.33-now SMP preempt mod_unload ARMv5&#39;</code></p>
+<p>通常，业界公认的铁律是：“内核模块必须与运行的内核同源编译”。然而，在实际的工业逆向或应急维护中，我们根本拿不到目标机的内核源码和 <code>.config</code> 配置文件。<br>本指南将带你穿透 Linux 内核模块加载的底层校验迷雾，通过深入剖析 <code>.ko</code> 文件的 ELF 二进制结构，解析 <code>vermagic</code> 校验与内核符号版本（CRC）机制，最终演示如何通过手动修改二进制文件，强行实现跨内核版本和配置装载自定义 <code>.ko</code> 模块的逆向“黑魔法”。</p>
+<hr>
+<h2 id="第一部分：Linux-内核模块（LKM）加载与运行原理解析"><a href="#第一部分：Linux-内核模块（LKM）加载与运行原理解析" class="headerlink" title="第一部分：Linux 内核模块（LKM）加载与运行原理解析"></a>第一部分：Linux 内核模块（LKM）加载与运行原理解析</h2><p>为了搞清楚为什么内核会拒绝非同源编译的模块，我们首先需要还原内核在执行加载时的完整执行流。</p>
+<p>当用户在用户态执行 <code>insmod my_driver.ko</code> 时，用户态工具会将模块文件的二进制流读入内存，然后发起系统调用。在 Linux 现代内核中，对应的内核入口通常为 <code>sys_finit_module()</code> 或 <code>sys_init_module()</code>（定义在 <code>kernel/module.c</code> 中）。</p>
+<h3 id="1-1-内核态加载流程拓扑图"><a href="#1-1-内核态加载流程拓扑图" class="headerlink" title="1.1 内核态加载流程拓扑图"></a>1.1 内核态加载流程拓扑图</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line">      用户空间 (insmod hello.ko)</span><br><span class="line">          │</span><br><span class="line">          ▼ [系统调用: sys_init_module]</span><br><span class="line">┌────────────────────────────────────────────────────────┐</span><br><span class="line">│ 内核空间 (kernel/module.c)                              │</span><br><span class="line">│                                                        │</span><br><span class="line">│  1. 权限校验 (capable(CAP_SYS_MODULE))                 │</span><br><span class="line">│      │                                                 │</span><br><span class="line">│      ▼                                                 │</span><br><span class="line">│  2. 拷贝二进制流 (copy_from_user)                      │</span><br><span class="line">│      │                                                 │</span><br><span class="line">│      ▼                                                 │</span><br><span class="line">│  3. ELF 格式完整性校验 (load_module)                    │</span><br><span class="line">│      ├─ 检查 ELF Header Magic (&#x27;\x7fELF&#x27;)              │</span><br><span class="line">│      ├─ 读取 Section Headers 段表                      │</span><br><span class="line">│      └─ 寻找核心段: .modinfo, __versions               │</span><br><span class="line">│          │                                             │</span><br><span class="line">│          ▼                                             │</span><br><span class="line">│  4. 💡 安全合规校验 (check_modstruct_version)         │</span><br><span class="line">│      ├─ vermagic 魔数一致性匹配                        │</span><br><span class="line">│      └─ 导出符号版本 (CRC) 校验                        │</span><br><span class="line">│          │                                             │</span><br><span class="line">│          ▼                                             │</span><br><span class="line">│  5. 内存分配与重定位 (layout_and_allocate)              │</span><br><span class="line">│      ├─ vmalloc 分配内核态常驻地址空间                 │</span><br><span class="line">│      └─ 根据 .rel.text 等重定位段修正代码符号偏移      │</span><br><span class="line">│          │                                             │</span><br><span class="line">│          ▼                                             │</span><br><span class="line">│  6. 💡 执行模块初始化                                  │</span><br><span class="line">│      └─ 调用 module_init 注册的 init() 函数            │</span><br><span class="line">└────────────────────────────────────────────────────────┘</span><br></pre></td></tr></table></figure>
+
+<p>从上述流程可以看出，在内核真正执行模块的初始化函数之前，会经过几道极其严苛的“安检”机制。如果其中任何一项未通过，内核会立即中止加载，并在 <code>/var/log/messages</code> 或 <code>dmesg</code> 中抛出致命错误，同时返回 <code>-ENOEXEC</code>。</p>
+<hr>
+<h3 id="1-2-load-module-源码级深度追踪剖析"><a href="#1-2-load-module-源码级深度追踪剖析" class="headerlink" title="1.2 load_module 源码级深度追踪剖析"></a>1.2 <code>load_module</code> 源码级深度追踪剖析</h3><p>我们深入到内核 <code>kernel/module.c</code> 的核心静态函数 <code>load_module()</code> 中，追踪其校验逻辑：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">load_module</span><span class="params">(<span class="keyword">struct</span> load_info *info, <span class="type">const</span> <span class="type">char</span> __user *uargs, <span class="type">int</span> flags)</span></span><br><span class="line">&#123;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">module</span> *<span class="title">mod</span>;</span></span><br><span class="line">    <span class="type">long</span> err = <span class="number">0</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 💡 1. 基础 ELF 格式与头部字长校验</span></span><br><span class="line">    err = elf_header_check(info);</span><br><span class="line">    <span class="keyword">if</span> (err)</span><br><span class="line">        <span class="keyword">goto</span> free_copy;</span><br><span class="line">        </span><br><span class="line">    <span class="comment">// 💡 2. 解析 Section Headers，映射各个段的内核地址描述</span></span><br><span class="line">    err = setup_load_info(info, flags);</span><br><span class="line">    <span class="keyword">if</span> (err)</span><br><span class="line">        <span class="keyword">goto</span> free_copy;</span><br><span class="line">        </span><br><span class="line">    <span class="comment">// 💡 3. 寻找并校验最为致命的 .modinfo 段，检查 vermagic</span></span><br><span class="line">    err = check_modinfo(info-&gt;mod, info, flags);</span><br><span class="line">    <span class="keyword">if</span> (err)</span><br><span class="line">        <span class="keyword">goto</span> free_unload;</span><br><span class="line">        </span><br><span class="line">    <span class="comment">// 💡 4. 计算模块运行空间大小，调用 layout_and_allocate 动态分配内核执行内存</span></span><br><span class="line">    mod = layout_and_allocate(info, flags);</span><br><span class="line">    <span class="keyword">if</span> (IS_ERR(mod)) &#123;</span><br><span class="line">        err = PTR_ERR(mod);</span><br><span class="line">        <span class="keyword">goto</span> free_unload;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 💡 5. 执行最重要的符号重定位：更新物理跳转地址</span></span><br><span class="line">    <span class="meta">#<span class="keyword">ifdef</span> CONFIG_MODULE_UNLOAD</span></span><br><span class="line">    <span class="comment">// 针对不同 CPU 架构调用 apply_relocate 或者是 apply_relocate_add</span></span><br><span class="line">    err = apply_relocate_add(info-&gt;sechdrs, info-&gt;secstrings, info-&gt;symindex, info-&gt;dstindex, mod);</span><br><span class="line">    <span class="keyword">if</span> (err &lt; <span class="number">0</span>)</span><br><span class="line">        <span class="keyword">goto</span> free_mod;</span><br><span class="line">    <span class="meta">#<span class="keyword">endif</span></span></span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 💡 6. 校验各个导出符号的 CRC 版本是否与当前内核完全一致</span></span><br><span class="line">    err = check_version(info-&gt;sechdrs, info-&gt;symindex, <span class="string">&quot;printk&quot;</span>, mod, info-&gt;versions);</span><br><span class="line">    <span class="keyword">if</span> (err)</span><br><span class="line">        <span class="keyword">goto</span> free_mod;</span><br><span class="line">        </span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    <span class="keyword">return</span> do_init_module(mod); <span class="comment">// 正式跳转进入 module_init 入口</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="第二部分：内核模块加载时的三大防御校验机制"><a href="#第二部分：内核模块加载时的三大防御校验机制" class="headerlink" title="第二部分：内核模块加载时的三大防御校验机制"></a>第二部分：内核模块加载时的三大防御校验机制</h2><p>内核设置这些“安检门”的目的，是为了防止一个为老版本或者不同硬件平台编译的驱动程序，因为非法访问了不存在的内核函数或寄存器偏移，直接导致整机 CPU 触发 <code>Kernel Panic</code> 崩溃。这三大核心校验机制如下：</p>
+<h3 id="2-1-机制一：Version-Magic（版本魔数校验）"><a href="#2-1-机制一：Version-Magic（版本魔数校验）" class="headerlink" title="2.1 机制一：Version Magic（版本魔数校验）"></a>2.1 机制一：Version Magic（版本魔数校验）</h3><p>当内核模块被编译时，内核构造系统会自动生成一个特殊的 <code>vermagic</code> 字符串，并将其写入生成的 <code>.ko</code> 二进制文件的一个名为 <code>.modinfo</code> 的特定段中。</p>
+<ul>
+<li><strong>字符串构成</strong>：它包含了编译此模块时的内核发布版本、SMP（对称多处理器支持）、PREEMPT（内核抢占支持）、以及编译器 GCC 支持的体系结构级别（如 <code>ARMv4</code> 或 <code>ARMv5</code>）。</li>
+<li><strong>校验逻辑</strong>：内核在加载时，会将模块中的该字符串与运行内核自身的 <code>vermagic</code>进行逐字比对。<br>若运行内核开启了 <code>SMP</code>，而模块没有开启，或者内核版本相差一个补丁号，内核便会判定结构体偏移可能不一致，拒绝加载。</li>
+</ul>
+<hr>
+<h3 id="2-2-机制二：CONFIG-MODVERSIONS（符号版本-CRC-校验）"><a href="#2-2-机制二：CONFIG-MODVERSIONS（符号版本-CRC-校验）" class="headerlink" title="2.2 机制二：CONFIG_MODVERSIONS（符号版本 CRC 校验）"></a>2.2 机制二：CONFIG_MODVERSIONS（符号版本 CRC 校验）</h3><p>即使模块的 <code>vermagic</code> 勉强过关，如果运行内核开启了 <code>CONFIG_MODVERSIONS</code>（模块版本化），系统还会启动更为严苛的 <strong>符号 CRC 验证</strong>：</p>
+<ul>
+<li><strong>原理</strong>：在内核编译时，Genksyms 工具会提取所有用 <code>EXPORT_SYMBOL</code> 导出的函数（如 <code>printk</code>）的参数和返回值类型，并计算出一个 32 位的 CRC 校验码（哈希值）。</li>
+<li><strong>编译注入</strong>：当模块引用了 <code>printk</code> 时，编译器会在 <code>.ko</code> 文件的 <code>__versions</code> 段中写入 <code>printk</code> 的名字以及预期的 CRC 校验值。</li>
+<li><strong>动态对比</strong>：在 insmod 时，内核会在自身的全局符号表中查找 <code>printk</code> 对应的内核实际 CRC 值，并与模块中记录的预期值进行匹配。如果匹配失败，内核会报：<br><code>hello: disagrees about version of symbol printk</code><br>这说明运行内核中该函数的接口定义（结构体大小或参数）与模块编译时发生了改变。</li>
+</ul>
+<hr>
+<h3 id="2-3-机制三：CPU-架构指令集匹配"><a href="#2-3-机制三：CPU-架构指令集匹配" class="headerlink" title="2.3 机制三：CPU 架构指令集匹配"></a>2.3 机制三：CPU 架构指令集匹配</h3><p>在 ELF Header 的 <code>e_machine</code> 字段中，声明了此二进制文件能够执行的硬件架构。如果是为 x86_64 编译的 KO 强行在 ARM64 板子上装载，CPU 硬件在解析 ELF 头时便会直接报错拒绝。</p>
+<hr>
+<h2 id="第三部分：内核模块-ELF-结构深度剖析"><a href="#第三部分：内核模块-ELF-结构深度剖析" class="headerlink" title="第三部分：内核模块 ELF 结构深度剖析"></a>第三部分：内核模块 ELF 结构深度剖析</h2><p>内核模块 <code>.ko</code> 本质上是一个标准的 <strong>ELF 可重定位目标文件（Relocatable File，同 <code>.o</code> 文件）</strong>。它不包含绝对物理地址，所有的符号跳转和变量访问均通过重定位项（Relocation Entries）在加载期进行动态修正。</p>
+<h3 id="3-1-ELF-头部结构体-Elf32-Ehdr-核心成员定义"><a href="#3-1-ELF-头部结构体-Elf32-Ehdr-核心成员定义" class="headerlink" title="3.1 ELF 头部结构体 Elf32_Ehdr 核心成员定义"></a>3.1 ELF 头部结构体 <code>Elf32_Ehdr</code> 核心成员定义</h3><p>为了彻底读懂 ELF 二进制头文件，下表列出了 32 位 ELF 头部的关键成员变量及其作用：</p>
+<table>
+<thead>
+<tr>
+<th align="left">结构体成员字段</th>
+<th align="left">物理类型</th>
+<th align="left">字段作用及在逆向中的匹配逻辑说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong><code>e_ident[]</code></strong></td>
+<td align="left">unsigned char</td>
+<td align="left"><strong>ELF魔数标识</strong>。前 4 字节固定为 <code>0x7F &#39;E&#39; &#39;L&#39; &#39;F&#39;</code>。第 5 字节声明 Class（1&#x3D;32位，2&#x3D;64位），第 6 字节声明大小端。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>e_type</code></strong></td>
+<td align="left">Elf32_Half</td>
+<td align="left"><strong>文件类型</strong>。对于内核 <code>.ko</code> 目标文件，其值必须为 <code>1</code>，代表 <code>ET_REL</code>（可重定位目标文件）。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>e_machine</code></strong></td>
+<td align="left">Elf32_Half</td>
+<td align="left"><strong>硬件目标架构</strong>。取值如 <code>40</code> (EM_ARM) 代表 ARM，<code>62</code> (EM_X86_64) 代表 Intel&#x2F;AMD 64位。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>e_shoff</code></strong></td>
+<td align="left">Elf32_Off</td>
+<td align="left"><strong>段表物理偏移</strong>。记录了 Section Header Table 在该文件中的起始字节偏移量。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>e_shnum</code></strong></td>
+<td align="left">Elf32_Half</td>
+<td align="left"><strong>段表项总数</strong>。指示该文件一共被划分成了多少个独立的二进制 Section。</td>
+</tr>
+</tbody></table>
+<hr>
+<h3 id="3-2-模块的核心段结构表"><a href="#3-2-模块的核心段结构表" class="headerlink" title="3.2 模块的核心段结构表"></a>3.2 模块的核心段结构表</h3><p>为了在二进制层面进行修改，我们必须掌握 <code>.ko</code> 文件的核心 Section 结构：</p>
+<table>
+<thead>
+<tr>
+<th align="left">段名称</th>
+<th align="left">段属性类型</th>
+<th align="left">段核心作用与包含的数据内容说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong><code>.text</code></strong></td>
+<td align="left">PROGBITS</td>
+<td align="left">存放驱动程序编译后的 CPU 机器指令（函数二进制代码）。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>.modinfo</code></strong></td>
+<td align="left">PROGBITS</td>
+<td align="left">💡 存放模块描述元数据，如 <code>author</code>, <code>license</code>, 以及致命的 <code>vermagic</code> 版本魔数。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>__versions</code></strong></td>
+<td align="left">PROGBITS</td>
+<td align="left">💡 符号版本控制区。存放了模块导入的所有内核函数的名称及其 32 位 CRC 校验码结构体数组。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>.gnu.linkonce.this_module</code></strong></td>
+<td align="left">PROGBITS</td>
+<td align="left">💡 <strong>模块控制块段</strong>。存放了 <code>struct module</code> 的实例。该实例包含了模块名称、指向 <code>init()</code> 和 <code>exit()</code> 的指针，在加载成功后会被内核挂入全局模块双向链表。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>.rel.gnu.linkonce.this_module</code></strong></td>
+<td align="left">REL</td>
+<td align="left">💡 <strong>重定位表段</strong>。记录了上述模块控制块在被内核加载到具体内存后，需要被动态修正的符号（如 <code>init</code> 函数）的偏移量和链接关系。</td>
+</tr>
+</tbody></table>
+<p>为了方便在 16 进制视窗中精确定位这些段的头描述信息，下表列出了段表项结构体 <code>Elf32_Shdr</code> 的核心布局参数：</p>
+<table>
+<thead>
+<tr>
+<th align="left">字段成员名称</th>
+<th align="left">数据物理类型</th>
+<th align="left">实际参数作用说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong><code>sh_name</code></strong></td>
+<td align="left">Elf32_Word</td>
+<td align="left"><strong>段名称偏移</strong>。指向字符表段（.shstrtab）中对应字符串的偏移索引。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>sh_type</code></strong></td>
+<td align="left">Elf32_Word</td>
+<td align="left"><strong>段类型</strong>。例如 <code>SHT_PROGBITS</code>（代码或数据）、<code>SHT_REL</code>（重定位项）。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>sh_offset</code></strong></td>
+<td align="left">Elf32_Off</td>
+<td align="left"><strong>段的文件内起始偏移</strong>。该段数据在 <code>.ko</code> 硬盘文件中的绝对字节偏移量。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>sh_size</code></strong></td>
+<td align="left">Elf32_Word</td>
+<td align="left"><strong>段的总大小</strong>。在文件中占用的物理字节大小。</td>
+</tr>
+</tbody></table>
+<hr>
+<h3 id="3-3-ELF-Relocation-段二进制重定位表原理"><a href="#3-3-ELF-Relocation-段二进制重定位表原理" class="headerlink" title="3.3 ELF Relocation 段二进制重定位表原理"></a>3.3 ELF Relocation 段二进制重定位表原理</h3><p>在 relocatable 文件中，因为编译器不知道模块最终会被 vmalloc 分配到哪段物理内存，所以编译器会将所有外部引用或全局变量的地址留空。<br>然后，在对应的 <code>.rel</code> 段中写入一行指示：<br>“<em>当加载到内存 $A$ 时，请将物理地址 $A + \text{offset}$ 处的数据，修改为符号 $X$ 的实际物理地址。</em>”</p>
+<p>对于 <code>.rel.gnu.linkonce.this_module</code> 段，它重点负责修正 <code>struct module</code> 的 <code>init</code> 成员和 <code>cleanup</code> 成员。<br>如果该重定位段的偏移（Offset）与内核期望的不一致，内核读取到的 <code>init()</code> 入口地址就会错位，导致 CPU 直接执行非法指令产生 Panic 崩溃。</p>
+<hr>
+<h2 id="第四部分：跨内核加载失败实验复现"><a href="#第四部分：跨内核加载失败实验复现" class="headerlink" title="第四部分：跨内核加载失败实验复现"></a>第四部分：跨内核加载失败实验复现</h2><p>我们准备两个内核编译输出目录，以模拟非同源编译环境：</p>
+<ul>
+<li><strong>Now Kernel</strong>：运行在 ARM Cortex-A9 开发板上的正规内核，编译参数开启了 <code>CONFIG_PREEMPT</code>，版本为 <code>3.6.33-now</code>。</li>
+<li><strong>Fake Kernel</strong>：在宿主机另一个无关目录，修改了配置菜单（关闭了 <code>CONFIG_PREEMPT</code> 抢占）后编译出的同版本内核，其 vermagic 会被标记为 <code>3.6.33-fake</code>。</li>
+</ul>
+<h3 id="4-1-编译模块并尝试装载"><a href="#4-1-编译模块并尝试装载" class="headerlink" title="4.1 编译模块并尝试装载"></a>4.1 编译模块并尝试装载</h3><p>我们在 <strong>Fake Kernel</strong> 环境下编写并编译了一个最简单的 <code>hello.c</code> 驱动模块：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;linux/module.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;linux/kernel.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;linux/init.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">int</span> __init <span class="title function_">hello_init</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    printk(KERN_EMERG <span class="string">&quot;[Geek-LKM]: Hello world loaded!\n&quot;</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> __exit <span class="title function_">hello_exit</span><span class="params">(<span class="type">void</span>)</span> &#123;</span><br><span class="line">    printk(KERN_EMERG <span class="string">&quot;[Geek-LKM]: Goodbye world!\n&quot;</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">module_init(hello_init);</span><br><span class="line">module_exit(hello_exit);</span><br><span class="line">MODULE_LICENSE(<span class="string">&quot;GPL&quot;</span>);</span><br></pre></td></tr></table></figure>
+<p>将生成的 <code>hello.ko</code> 拷贝到板卡中。执行装载：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">insmod hello.ko</span><br></pre></td></tr></table></figure>
+<p><strong>结果</strong>：报错 <code>insmod: error inserting &#39;hello.ko&#39;: -1 Invalid module format</code>。<br>执行 <code>dmesg | tail</code> 打印内核报错：<br><code>hello: version magic &#39;3.6.33-fake SMP preempt mod_unload ARMv5&#39; should be &#39;3.6.33-now SMP preempt mod_unload ARMv5&#39;</code><br>由于 <code>vermagic</code> 魔数校验阻断，我们甚至无法执行到 <code>hello_init()</code> 的第一行。</p>
+<hr>
+<h2 id="第五部分：二进制逆向修改与跨内核装载黑魔法"><a href="#第五部分：二进制逆向修改与跨内核装载黑魔法" class="headerlink" title="第五部分：二进制逆向修改与跨内核装载黑魔法"></a>第五部分：二进制逆向修改与跨内核装载黑魔法</h2><p>既然我们知道了校验失败的原因是由于 <code>.modinfo</code> 中的 <code>vermagic</code> 字段不匹配，那么我们只需要利用二进制编辑器，将 Fake 编译出的 <code>.ko</code> 二进制文件直接改写即可！</p>
+<h3 id="5-1-第一步：使用-readelf-定位-modinfo-段偏移"><a href="#5-1-第一步：使用-readelf-定位-modinfo-段偏移" class="headerlink" title="5.1 第一步：使用 readelf 定位 .modinfo 段偏移"></a>5.1 第一步：使用 readelf 定位 .modinfo 段偏移</h3><p>在宿主机开发机上，使用 GNU 工具 <code>readelf</code> 读取 <code>hello.ko</code> 的 Section Headers（段表）：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">arm-linux-readelf -S hello.ko</span><br></pre></td></tr></table></figure>
+<p>终端会输出类似如下段信息：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">Section Headers:</span><br><span class="line">  [Nr] Name              Type            Addr     Off    Size   ES Flg Lk Inf Al</span><br><span class="line">  [ 0]                   NULL            00000000 000000 000000 00      0   0  0</span><br><span class="line">  [ 1] .text             PROGBITS        00000000 000034 000028 00  AX  0   0  4</span><br><span class="line">  [ 2] .modinfo          PROGBITS        00000000 000060 0000a4 00   A  0   0  4</span><br><span class="line">  [ 3] .gnu.linkonce.thi PROGBITS        00000000 000108 000180 00  WA  0   0  4</span><br><span class="line">  [ 4] .rel.gnu.linkonce REL             00000000 000854 000018 08      14  3  4</span><br><span class="line">  [ 5] __versions        PROGBITS        00000000 000288 000080 00   A  0   0  4</span><br></pre></td></tr></table></figure>
+<ul>
+<li><strong>分析发现</strong>：<code>.modinfo</code> 段在文件中的物理偏移量为 <code>Off = 0x000060</code>，其大小为 <code>Size = 0x0000a4</code>。</li>
+</ul>
+<hr>
+<h3 id="5-2-第二步：使用-Hex-工具修改-vermagic-字符串"><a href="#5-2-第二步：使用-Hex-工具修改-vermagic-字符串" class="headerlink" title="5.2 第二步：使用 Hex 工具修改 vermagic 字符串"></a>5.2 第二步：使用 Hex 工具修改 vermagic 字符串</h3><p>我们使用二进制文本编辑器（例如宿主机上的 <code>hexedit</code> 或者是 Windows 下的 <code>UltraEdit</code> &#x2F; <code>HxD</code>）打开 <code>hello.ko</code>：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">hexedit hello.ko</span><br></pre></td></tr></table></figure>
+<p>汇编寻址到 <code>0x000060</code> 处。我们可以直接在 ASCII 视窗中看到一串连续的以 <code>\0</code> 结尾的字符串信息：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">00000060  6c 69 63 65 6e 73 65 3d  47 50 4c 00 76 65 72 6d  |license=GPL.verm|</span><br><span class="line">00000070  61 67 69 63 3d 33 2e 36  2e 33 33 2d 66 61 6b 65  |agic=3.6.33-fake|</span><br><span class="line">00000080  20 53 4d 50 20 70 72 65  65 6d 70 74 20 6d 6f 64  | SMP preempt mod|</span><br></pre></td></tr></table></figure>
+<ul>
+<li><strong>修改动作</strong>：我们直接将 <code>3.6.33-fake</code> 改写为 <code>3.6.33-now</code>。</li>
+<li><strong>💡 注意事项</strong>：由于 ELF 文件对各段大小和偏移地址有着极严苛的对齐限制，<strong>绝对不能增加或减少文件的总字节数</strong>。如果新写入的字符串比原来短，后面必须用 <code>0x00</code> (NUL) 进行填充；如果比原来长，则会溢出覆盖后面的其他属性定义。本例中 <code>now</code> 长度比 <code>fake</code> 短了一个字符，我们写入 <code>now</code> 后，将多余的一个字符位置写入 <code>0x00</code> 截断即可。</li>
+</ul>
+<p>修改完成后存盘退出。</p>
+<hr>
+<h3 id="5-3-第三步：逆向破解重定位偏移不一致故障"><a href="#5-3-第三步：逆向破解重定位偏移不一致故障" class="headerlink" title="5.3 第三步：逆向破解重定位偏移不一致故障"></a>5.3 第三步：逆向破解重定位偏移不一致故障</h3><p>当我们将修改后的 <code>hello.ko</code> 再次在板卡中 insmod 时，发现系统没有报 vermagic 错误，但系统抛出如下段错误并直接内核死锁崩溃：<br><code>Unable to handle kernel paging request at virtual address 0x33f2a8b0</code></p>
+<ul>
+<li><p><strong>技术分析</strong>：<br>这是跨内核二进制移植中最经典、最具深度的“深水区”故障。由于 <strong>Now Kernel</strong> 与 <strong>Fake Kernel</strong> 编译时的配置菜单不同，导致内核的 <code>struct module</code>（定义在 <code>include/linux/module.h</code> 中）结构体成员定义发生了变化！</p>
+<ul>
+<li>例如：在 <code>CONFIG_PREEMPT</code> 开启时，<code>struct module</code> 结构体中间会插入一个 <code>unsigned int preempt_count;</code> 字段，从而导致该字段后面的所有成员（包括 <code>int (*init)(void);</code> 函数指针）的内存偏移量（Offset）往后整体错位了 4 个字节。</li>
+<li>此时，虽然 <code>.ko</code> 加载了，但内核按照 <strong>Now Kernel</strong> 的错位结构体去读取 <code>init</code> 指针时，实际上读到的是一段垃圾数据或不可写地址，跳转执行直接触发 CPU 错误导致 Panic 崩溃。</li>
+</ul>
+</li>
+<li><p><strong>逆向破局：手动修正重定位偏移表</strong>：<br>我们通过反汇编 <code>hello.ko</code> 的重定位项，来找出 <code>init</code> 函数指针的重定位偏移：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">arm-linux-objdump -r hello.ko</span><br></pre></td></tr></table></figure>
+<p>输出重定位关系显示：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">RELOCATION RECORDS FOR [.gnu.linkonce.this_module]:</span><br><span class="line">OFFSET   TYPE              VALUE</span><br><span class="line">00000058 R_ARM_ABS32       init</span><br><span class="line">000000e4 R_ARM_ABS32       cleanup</span><br></pre></td></tr></table></figure>
+<p>这说明编译器在 <code>.gnu.linkonce.this_module</code> 偏移 <code>0x000058</code> 处填入了 <code>init</code> 的地址。<br>但在开发板运行的 <strong>Now Kernel</strong> 中，由于去除了某些调试字段或增加了抢占计数器，<code>init</code> 成员在 <code>struct module</code> 中的实际偏移值可能在 <code>0x00005C</code>。</p>
+<ul>
+<li><strong>修改方案</strong>：<ol>
+<li>使用 <code>hexedit</code> 寻址到 <code>.rel.gnu.linkonce.this_module</code> 段对应的文件偏移量 <code>0x000854</code>。</li>
+<li>找到 OFFSET 项，将二进制数据中表示 <code>0x00000058</code> 的 4 字节数据直接修改为 <code>0x0000005C</code>（对应小端格式：<code>5C 00 00 00</code>）。</li>
+<li>保存文件。</li>
+</ol>
+</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h3 id="5-4-汇编指令重定位：内核-apply-relocate-底层修改机制"><a href="#5-4-汇编指令重定位：内核-apply-relocate-底层修改机制" class="headerlink" title="5.4 汇编指令重定位：内核 apply_relocate 底层修改机制"></a>5.4 汇编指令重定位：内核 apply_relocate 底层修改机制</h3><p>在执行重定位修改时，内核在体系结构适配层 <code>arch/arm/kernel/module.c</code> 中会对重定位段类型（如 <code>R_ARM_ABS32</code> 绝对 32 位地址，或 <code>R_ARM_CALL</code> &#x2F; <code>R_ARM_THM_CALL</code> 汇编跳转指令）进行实时解析：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">apply_relocate</span><span class="params">(Elf32_Shdr *sechdrs, <span class="type">const</span> <span class="type">char</span> *strtab, <span class="type">unsigned</span> <span class="type">int</span> symindex,</span></span><br><span class="line"><span class="params">                   <span class="type">unsigned</span> <span class="type">int</span> relsec, <span class="keyword">struct</span> module *module)</span></span><br><span class="line">&#123;</span><br><span class="line">    Elf32_Rel *rel = (<span class="type">void</span> *)sechdrs[relsec].sh_addr;</span><br><span class="line">    <span class="type">unsigned</span> <span class="type">int</span> i;</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; sechdrs[relsec].sh_size / <span class="keyword">sizeof</span>(*rel); i++) &#123;</span><br><span class="line">        <span class="type">unsigned</span> <span class="type">long</span> loc = rel[i].r_offset + sechdrs[sechdrs[relsec].sh_info].sh_addr;</span><br><span class="line">        Elf32_Sym *sym = ((Elf32_Sym *)sechdrs[symindex].sh_addr) + ELF32_R_SYM(rel[i].r_info);</span><br><span class="line">        <span class="type">unsigned</span> <span class="type">long</span> val = sym-&gt;st_value; <span class="comment">// 获取引用的外部内核符号的真实运行物理地址</span></span><br><span class="line">        </span><br><span class="line">        <span class="keyword">switch</span> (ELF32_R_TYPE(rel[i].r_info)) &#123;</span><br><span class="line">        <span class="keyword">case</span> R_ARM_ABS32:</span><br><span class="line">            <span class="comment">// 💡 直接将 loc 处内存中的 4 字节数据，加上符号的真实值并写回</span></span><br><span class="line">            *(u32 *)loc += val;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        <span class="keyword">case</span> R_ARM_PC24:</span><br><span class="line">        <span class="keyword">case</span> R_ARM_CALL:</span><br><span class="line">            <span class="comment">// 💡 针对 B 或 BL 跳转指令重定位，需计算 PC 相对偏移，屏蔽原指令的高 8 位条件码，拼入新偏移并刷写</span></span><br><span class="line">            <span class="type">unsigned</span> <span class="type">long</span> offset = (val - loc - <span class="number">8</span>) &gt;&gt; <span class="number">2</span>;</span><br><span class="line">            *(u32 *)loc = (*(u32 *)loc &amp; <span class="number">0xff000000</span>) | (offset &amp; <span class="number">0x00ffffff</span>);</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 💡 必须手动刷新硬件 CPU I-Cache，防止 CPU 仍从高速缓存中读取修改前的过时机器指令运行！</span></span><br><span class="line">    flush_icache_range(module-&gt;module_core, module-&gt;module_core + module-&gt;core_size);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="5-5-实战自动化：Python-实现-vermagic-二进制修改脚本"><a href="#5-5-实战自动化：Python-实现-vermagic-二进制修改脚本" class="headerlink" title="5.5 实战自动化：Python 实现 vermagic 二进制修改脚本"></a>5.5 实战自动化：Python 实现 vermagic 二进制修改脚本</h3><p>为了避免手动编辑 16 进制带来的低级失误，我们手写一个自动化的 Python 脚本，以安全地搜索并改写任意 <code>.ko</code> 文件中的 <code>vermagic</code> 魔数：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"><span class="keyword">import</span> sys</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">patch_vermagic</span>(<span class="params">ko_path, new_vermagic</span>):</span><br><span class="line">    <span class="comment"># 读取原始 KO 二进制文件</span></span><br><span class="line">    <span class="keyword">with</span> <span class="built_in">open</span>(ko_path, <span class="string">&#x27;rb&#x27;</span>) <span class="keyword">as</span> f:</span><br><span class="line">        data = <span class="built_in">bytearray</span>(f.read())</span><br><span class="line">    </span><br><span class="line">    <span class="comment"># 💡 寻找 vermagic= 标识</span></span><br><span class="line">    magic_prefix = <span class="string">b&#x27;vermagic=&#x27;</span></span><br><span class="line">    idx = data.find(magic_prefix)</span><br><span class="line">    <span class="keyword">if</span> idx == -<span class="number">1</span>:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;[-] 错误: 未能在二进制中寻寻找 vermagic 段！&quot;</span>)</span><br><span class="line">        sys.exit(<span class="number">1</span>)</span><br><span class="line">        </span><br><span class="line">    start_pos = idx + <span class="built_in">len</span>(magic_prefix)</span><br><span class="line">    </span><br><span class="line">    <span class="comment"># 💡 寻找原 vermagic 字符串的 Null 结束符位</span></span><br><span class="line">    end_pos = data.find(<span class="string">b&#x27;\x00&#x27;</span>, start_pos)</span><br><span class="line">    <span class="keyword">if</span> end_pos == -<span class="number">1</span>:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;[-] 错误: 损坏的 ELF 文件，找不到字符串结尾！&quot;</span>)</span><br><span class="line">        sys.exit(<span class="number">1</span>)</span><br><span class="line">        </span><br><span class="line">    old_len = end_pos - start_pos</span><br><span class="line">    new_bytes = new_vermagic.encode(<span class="string">&#x27;ascii&#x27;</span>)</span><br><span class="line">    new_len = <span class="built_in">len</span>(new_bytes)</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">if</span> new_len &gt; old_len:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;[-] 错误: 新魔数长度 (<span class="subst">&#123;new_len&#125;</span>) 大于原魔数长度 (<span class="subst">&#123;old_len&#125;</span>)，修改将破坏文件结构！&quot;</span>)</span><br><span class="line">        sys.exit(<span class="number">1</span>)</span><br><span class="line">        </span><br><span class="line">    <span class="comment"># 用新魔数覆盖原有区域，余下位置用 0x00 填充以防越界</span></span><br><span class="line">    data[start_pos:start_pos+new_len] = new_bytes</span><br><span class="line">    <span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(start_pos + new_len, end_pos):</span><br><span class="line">        data[i] = <span class="number">0x00</span></span><br><span class="line">        </span><br><span class="line">    <span class="comment"># 写入新文件</span></span><br><span class="line">    patched_path = ko_path.replace(<span class="string">&#x27;.ko&#x27;</span>, <span class="string">&#x27;_patched.ko&#x27;</span>)</span><br><span class="line">    <span class="keyword">with</span> <span class="built_in">open</span>(patched_path, <span class="string">&#x27;wb&#x27;</span>) <span class="keyword">as</span> f:</span><br><span class="line">        f.write(data)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;[+] 成功: 魔数已修正！输出文件为: <span class="subst">&#123;patched_path&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(sys.argv) &lt; <span class="number">3</span>:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;用法: python patch_ko.py &lt;xxx.ko&gt; &lt;new_vermagic_string&gt;&quot;</span>)</span><br><span class="line">        sys.exit(<span class="number">1</span>)</span><br><span class="line">    patch_vermagic(sys.argv[<span class="number">1</span>], sys.argv[<span class="number">2</span>])</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="5-6-第五步：验证与成功加载"><a href="#5-6-第五步：验证与成功加载" class="headerlink" title="5.6 第五步：验证与成功加载"></a>5.6 第五步：验证与成功加载</h3><p>重新将修改完重定位偏移和 vermagic 的 <code>hello.ko</code> 拷贝到板卡上。<br>执行装载：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">insmod hello.ko</span><br></pre></td></tr></table></figure>
+<p><strong>现象</strong>：这次没有任何报错！<br>查看内核控制台日志：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">dmesg | <span class="built_in">tail</span> -n 2</span><br></pre></td></tr></table></figure>
+<p>屏幕上赫然打印出：<br><code>[Geek-LKM]: Hello world loaded!</code></p>
+<p>通过逆向分析与二进制直接改写重定位表，我们成功绕过了编译器和内核版本阻碍，实现了在不重新编译内核的情况下强行载入运行自定义内核模块的终极黑魔法！</p>
+<hr>
+<h2 id="第六部分：应急处理：Bypass-EXPORT-SYMBOL-CRC-校验机制"><a href="#第六部分：应急处理：Bypass-EXPORT-SYMBOL-CRC-校验机制" class="headerlink" title="第六部分：应急处理：Bypass EXPORT_SYMBOL CRC 校验机制"></a>第六部分：应急处理：Bypass EXPORT_SYMBOL CRC 校验机制</h2><p>如果在加载时，你遭遇了 <code>disagrees about version of symbol printk</code> 错误，说明模块内的 printk CRC 校验哈希与内核不符。我们有两种应急绕过手段：</p>
+<ol>
+<li><strong>在模块源码中关闭模块版本化</strong>：<br>如果能重新编译模块，但不能重新编译内核，请在模块的 Makefile 或头文件首行中，确保<strong>不定义</strong> <code>CONFIG_MODVERSIONS</code>，即可直接规避此校验门槛。</li>
+<li>**动态二进制补丁 CRC 校验值 (Python 实现)**：<br>如果无法重新编译模块，我们需要定位到 KO 二进制中的 <code>__versions</code> 段。该段包含了一个结构体数组，每个元素由“<code>4 字节 CRC + 符号名字</code>”组成。<br>以下 Python 脚本可自动将 <code>.ko</code> 目标引用符号的旧 CRC 改写为板卡内核中正在运行的实际 CRC：</li>
+</ol>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#!/usr/bin/env python3</span></span><br><span class="line"><span class="keyword">import</span> struct</span><br><span class="line"><span class="keyword">import</span> sys</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">patch_symbol_crc</span>(<span class="params">ko_path, sym_name, new_crc_hex</span>):</span><br><span class="line">    <span class="comment"># 解析新 CRC 为 4 字节无符号整形（小端）</span></span><br><span class="line">    new_crc = <span class="built_in">int</span>(new_crc_hex, <span class="number">16</span>)</span><br><span class="line">    new_crc_bytes = struct.pack(<span class="string">&#x27;&lt;I&#x27;</span>, new_crc)</span><br><span class="line">    </span><br><span class="line">    <span class="keyword">with</span> <span class="built_in">open</span>(ko_path, <span class="string">&#x27;rb&#x27;</span>) <span class="keyword">as</span> f:</span><br><span class="line">        data = <span class="built_in">bytearray</span>(f.read())</span><br><span class="line">        </span><br><span class="line">    <span class="comment"># 💡 寻找导入的符号名称（例如 printk\x00）</span></span><br><span class="line">    sym_bytes = sym_name.encode(<span class="string">&#x27;ascii&#x27;</span>) + <span class="string">b&#x27;\x00&#x27;</span></span><br><span class="line">    sym_idx = data.find(sym_bytes)</span><br><span class="line">    <span class="keyword">if</span> sym_idx == -<span class="number">1</span>:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">f&quot;[-] 错误: 未能在模块中找到导入的符号 &#x27;<span class="subst">&#123;sym_name&#125;</span>&#x27;&quot;</span>)</span><br><span class="line">        sys.exit(<span class="number">1</span>)</span><br><span class="line">        </span><br><span class="line">    <span class="comment"># 💡 根据 ELF 规范，在 __versions 段中，CRC 大多存放在符号名偏移前面的 4 字节（或 8 字节）处</span></span><br><span class="line">    <span class="comment"># 我们向前搜索 4 字节进行匹配替换</span></span><br><span class="line">    crc_pos = sym_idx - <span class="number">4</span></span><br><span class="line">    <span class="keyword">if</span> crc_pos &lt; <span class="number">0</span>:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;[-] 错误: 二进制结构体边界溢出&quot;</span>)</span><br><span class="line">        sys.exit(<span class="number">1</span>)</span><br><span class="line">        </span><br><span class="line">    old_crc = struct.unpack(<span class="string">&#x27;&lt;I&#x27;</span>, data[crc_pos:sym_idx])[<span class="number">0</span>]</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;[*] 提示: 找到旧的 CRC 值: <span class="subst">&#123;<span class="built_in">hex</span>(old_crc)&#125;</span>&quot;</span>)</span><br><span class="line">    </span><br><span class="line">    <span class="comment"># 覆写新的正确 CRC</span></span><br><span class="line">    data[crc_pos:sym_idx] = new_crc_bytes</span><br><span class="line">    </span><br><span class="line">    patched_path = ko_path.replace(<span class="string">&#x27;.ko&#x27;</span>, <span class="string">&#x27;_crc_patched.ko&#x27;</span>)</span><br><span class="line">    <span class="keyword">with</span> <span class="built_in">open</span>(patched_path, <span class="string">&#x27;wb&#x27;</span>) <span class="keyword">as</span> f:</span><br><span class="line">        f.write(data)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&quot;[+] 成功: 符号 &#x27;<span class="subst">&#123;sym_name&#125;</span>&#x27; 的 CRC 已成功修正为 &#x27;<span class="subst">&#123;new_crc_hex&#125;</span>&#x27;！新文件为: <span class="subst">&#123;patched_path&#125;</span>&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">if</span> __name__ == <span class="string">&#x27;__main__&#x27;</span>:</span><br><span class="line">    <span class="keyword">if</span> <span class="built_in">len</span>(sys.argv) &lt; <span class="number">4</span>:</span><br><span class="line">        <span class="built_in">print</span>(<span class="string">&quot;用法: python patch_crc.py &lt;xxx.ko&gt; &lt;symbol_name&gt; &lt;new_crc_hex_string&gt;&quot;</span>)</span><br><span class="line">        sys.exit(<span class="number">1</span>)</span><br><span class="line">    patch_symbol_crc(sys.argv[<span class="number">1</span>], sys.argv[<span class="number">2</span>], sys.argv[<span class="number">3</span>])</span><br></pre></td></tr></table></figure>
+<p>通过上述高级逃逸脚本，我们能够强行矫正所有外部导入符号，使之成功通过目标机内核的版本审计，保障调试模块在危机时刻顺利装载。</p>
+<hr>
+<h3 id="6-3-二进制固化加固：剥离调试符号-Strip"><a href="#6-3-二进制固化加固：剥离调试符号-Strip" class="headerlink" title="6.3 二进制固化加固：剥离调试符号 (Strip)"></a>6.3 二进制固化加固：剥离调试符号 (Strip)</h3><p>完成二进制修改并加载成功后，如果出于缩小体积或者防止第三方反编译等安全原因，建议对生成的 <code>.ko</code> 镜像执行符号剥离：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">arm-linux-strip -g hello_patched.ko</span><br></pre></td></tr></table></figure>
+<ul>
+<li><strong>机制分析</strong>：<br><code>strip -g</code> 会剔除 ELF 文件中所有的调试信息段（如 <code>.debug_info</code>、<code>.debug_line</code> 等），但会保留内核重定位所需的符号表（<code>.symtab</code>）与重定位条目。<br>剥离后，模块的体积通常能骤降一半以上，且在不损害任何加载运行功能的前提下，能极大提升防逆向分析的安全强度。</li>
+</ul>
+<hr>
+<h3 id="💡-逆向逃逸最终-Checklist"><a href="#💡-逆向逃逸最终-Checklist" class="headerlink" title="💡 逆向逃逸最终 Checklist"></a>💡 逆向逃逸最终 Checklist</h3><p>在尝试跨内核装载前，请务必确认已完成以下排查：</p>
+<ul>
+<li><input disabled="" type="checkbox"> <strong>备份原版模块</strong>：在进行任何二进制覆写修改操作前，请备份原版编译生成的 <code>hello.ko</code> 文件，以防出现误操作可随时进行物理回滚。</li>
+<li><input disabled="" type="checkbox"> <strong>体系结构校验</strong>：确认目标开发板 CPU 架构与模块二进制格式严格一致（例如同为 ELF32-ARM LSB relocatable）。</li>
+<li><input disabled="" type="checkbox"> <strong>魔数比对修改</strong>：修正 <code>.modinfo</code> 段中的 <code>vermagic</code> 字段，保持与 <code>uname -r</code> 串口内核输出一致，多余位数以 <code>0x00</code> 占位对齐。</li>
+<li><input disabled="" type="checkbox"> <strong>重定位偏移调整</strong>：检查 <code>.rel.gnu.linkonce.this_module</code> 中 <code>init</code> 与 <code>cleanup</code> 的 OFFSET 是否与运行内核的 <code>struct module</code> 完全对接。</li>
+<li><input disabled="" type="checkbox"> <strong>符号版本（CRC）对齐</strong>：核对 <code>__versions</code> 段中的核心导出符号 CRC 值，必要时通过脚本写入 actual 校验哈希。</li>
+<li><input disabled="" type="checkbox"> <strong>测试模块卸载</strong>：测试完毕后，执行 <code>rmmod hello_patched</code> 核验 exit 成员函数是否被成功调用并释放物理缓存，防止内存泄漏。</li>
+<li><input disabled="" type="checkbox"> <strong>清理测试缓存</strong>：卸载完成后，删除目标板临时目录下的 <code>hello_patched.ko</code> 模块文件，以保持存储空间的纯净。</li>
+<li><input disabled="" type="checkbox"> <strong>剥离调试加固</strong>：执行 <code>strip -g</code>，删除调试节点，缩小体积以提高安全审计防护率。</li>
+</ul>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>License</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">Newer</div><a href="/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E5%86%85%E6%A0%B8-2-%E5%B5%8C%E5%85%A5%E5%BC%8FLinux%E7%B3%BB%E7%BB%9F%E7%A7%BB%E6%A4%8D%E3%80%81%E5%86%85%E6%A0%B8%E7%BC%96%E8%AF%91%E4%B8%8E%E5%89%AA%E8%A3%81%E4%BC%98%E5%8C%96%E5%AE%9E%E6%88%98%E6%8C%87%E5%8D%97/">嵌入式 Linux 系统移植、内核编译与剪裁优化实战指南</a></div><div class="item" id="next"><div class="note">Older</div><a href="/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E5%86%85%E6%A0%B8-4-Linux%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%BC%96%E8%AF%91%E3%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E5%86%85%E6%A0%B8%E6%80%81%E8%B0%83%E8%AF%95%E8%BF%BD%E8%B8%AA%E6%8A%80%E6%9C%AF%E6%8C%87%E5%8D%97/">Linux内核模块编译、加载与内核态调试追踪技术指南</a></div></section></div>
+
+
+
+
+  <div class="related-wrap md-text" id="comments">
+    <section class='header cmt-title cap theme'>
+      <p>快来参与讨论吧~</p>
+
+    </section>
+    <section class='body cmt-body utterances'>
+      
+
+<svg class="loading" style="vertical-align:middle;fill:currentColor;overflow:hidden;" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2709"><path d="M832 512c0-176-144-320-320-320V128c211.2 0 384 172.8 384 384h-64zM192 512c0 176 144 320 320 320v64C300.8 896 128 723.2 128 512h64z" p-id="2710"></path></svg>
+
+<div id="utterances" repo="luhuaCyan/luhuaCyan.github.io" issue-term="title" theme="preferred-color-scheme" label="comment"></div>
+
+    </section>
+  </div>
+
+
+
+<footer class="page-footer footnote"><hr><div class="sitemap" style="column-count:4;"><div class="sitemap-group"><span class="fs15">博客</span><a href="/">近期发布</a><a href="/blog/categories/">分类</a><a href="/blog/tags/">标签</a><a href="/blog/archives/">归档</a></div><div class="sitemap-group"><span class="fs15">项目</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">社交</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">关于</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div></div><div class="text"><p>本站为个人学习笔记记录和整理，所有内容仅用于个人知识梳理、复习回顾及学习交流。<br>声明：本站所有资源收集整理于网络,本站不参与制作,用于互联网爱好者学习和研究,如不慎侵犯了您的权利,请及时联系站长处理删除。敬请谅解！</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">On This Page</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#Linux-%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%BC%96%E8%AF%91%E5%B1%9E%E6%80%A7%E5%B7%AE%E5%BC%82%E4%B8%8E%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%80%86%E5%90%91%E4%BF%AE%E6%94%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97"><span class="toc-text">Linux 内核模块编译属性差异与二进制逆向修改深度指南</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%B8%80%E9%83%A8%E5%88%86%EF%BC%9ALinux-%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%EF%BC%88LKM%EF%BC%89%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90"><span class="toc-text">第一部分：Linux 内核模块（LKM）加载与运行原理解析</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-1-%E5%86%85%E6%A0%B8%E6%80%81%E5%8A%A0%E8%BD%BD%E6%B5%81%E7%A8%8B%E6%8B%93%E6%89%91%E5%9B%BE"><span class="toc-text">1.1 内核态加载流程拓扑图</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-2-load-module-%E6%BA%90%E7%A0%81%E7%BA%A7%E6%B7%B1%E5%BA%A6%E8%BF%BD%E8%B8%AA%E5%89%96%E6%9E%90"><span class="toc-text">1.2 load_module 源码级深度追踪剖析</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%BA%8C%E9%83%A8%E5%88%86%EF%BC%9A%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E5%8A%A0%E8%BD%BD%E6%97%B6%E7%9A%84%E4%B8%89%E5%A4%A7%E9%98%B2%E5%BE%A1%E6%A0%A1%E9%AA%8C%E6%9C%BA%E5%88%B6"><span class="toc-text">第二部分：内核模块加载时的三大防御校验机制</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#2-1-%E6%9C%BA%E5%88%B6%E4%B8%80%EF%BC%9AVersion-Magic%EF%BC%88%E7%89%88%E6%9C%AC%E9%AD%94%E6%95%B0%E6%A0%A1%E9%AA%8C%EF%BC%89"><span class="toc-text">2.1 机制一：Version Magic（版本魔数校验）</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-2-%E6%9C%BA%E5%88%B6%E4%BA%8C%EF%BC%9ACONFIG-MODVERSIONS%EF%BC%88%E7%AC%A6%E5%8F%B7%E7%89%88%E6%9C%AC-CRC-%E6%A0%A1%E9%AA%8C%EF%BC%89"><span class="toc-text">2.2 机制二：CONFIG_MODVERSIONS（符号版本 CRC 校验）</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-3-%E6%9C%BA%E5%88%B6%E4%B8%89%EF%BC%9ACPU-%E6%9E%B6%E6%9E%84%E6%8C%87%E4%BB%A4%E9%9B%86%E5%8C%B9%E9%85%8D"><span class="toc-text">2.3 机制三：CPU 架构指令集匹配</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%B8%89%E9%83%A8%E5%88%86%EF%BC%9A%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97-ELF-%E7%BB%93%E6%9E%84%E6%B7%B1%E5%BA%A6%E5%89%96%E6%9E%90"><span class="toc-text">第三部分：内核模块 ELF 结构深度剖析</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#3-1-ELF-%E5%A4%B4%E9%83%A8%E7%BB%93%E6%9E%84%E4%BD%93-Elf32-Ehdr-%E6%A0%B8%E5%BF%83%E6%88%90%E5%91%98%E5%AE%9A%E4%B9%89"><span class="toc-text">3.1 ELF 头部结构体 Elf32_Ehdr 核心成员定义</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-2-%E6%A8%A1%E5%9D%97%E7%9A%84%E6%A0%B8%E5%BF%83%E6%AE%B5%E7%BB%93%E6%9E%84%E8%A1%A8"><span class="toc-text">3.2 模块的核心段结构表</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-3-ELF-Relocation-%E6%AE%B5%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%87%8D%E5%AE%9A%E4%BD%8D%E8%A1%A8%E5%8E%9F%E7%90%86"><span class="toc-text">3.3 ELF Relocation 段二进制重定位表原理</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E5%9B%9B%E9%83%A8%E5%88%86%EF%BC%9A%E8%B7%A8%E5%86%85%E6%A0%B8%E5%8A%A0%E8%BD%BD%E5%A4%B1%E8%B4%A5%E5%AE%9E%E9%AA%8C%E5%A4%8D%E7%8E%B0"><span class="toc-text">第四部分：跨内核加载失败实验复现</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#4-1-%E7%BC%96%E8%AF%91%E6%A8%A1%E5%9D%97%E5%B9%B6%E5%B0%9D%E8%AF%95%E8%A3%85%E8%BD%BD"><span class="toc-text">4.1 编译模块并尝试装载</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%BA%94%E9%83%A8%E5%88%86%EF%BC%9A%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%80%86%E5%90%91%E4%BF%AE%E6%94%B9%E4%B8%8E%E8%B7%A8%E5%86%85%E6%A0%B8%E8%A3%85%E8%BD%BD%E9%BB%91%E9%AD%94%E6%B3%95"><span class="toc-text">第五部分：二进制逆向修改与跨内核装载黑魔法</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#5-1-%E7%AC%AC%E4%B8%80%E6%AD%A5%EF%BC%9A%E4%BD%BF%E7%94%A8-readelf-%E5%AE%9A%E4%BD%8D-modinfo-%E6%AE%B5%E5%81%8F%E7%A7%BB"><span class="toc-text">5.1 第一步：使用 readelf 定位 .modinfo 段偏移</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#5-2-%E7%AC%AC%E4%BA%8C%E6%AD%A5%EF%BC%9A%E4%BD%BF%E7%94%A8-Hex-%E5%B7%A5%E5%85%B7%E4%BF%AE%E6%94%B9-vermagic-%E5%AD%97%E7%AC%A6%E4%B8%B2"><span class="toc-text">5.2 第二步：使用 Hex 工具修改 vermagic 字符串</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#5-3-%E7%AC%AC%E4%B8%89%E6%AD%A5%EF%BC%9A%E9%80%86%E5%90%91%E7%A0%B4%E8%A7%A3%E9%87%8D%E5%AE%9A%E4%BD%8D%E5%81%8F%E7%A7%BB%E4%B8%8D%E4%B8%80%E8%87%B4%E6%95%85%E9%9A%9C"><span class="toc-text">5.3 第三步：逆向破解重定位偏移不一致故障</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#5-4-%E6%B1%87%E7%BC%96%E6%8C%87%E4%BB%A4%E9%87%8D%E5%AE%9A%E4%BD%8D%EF%BC%9A%E5%86%85%E6%A0%B8-apply-relocate-%E5%BA%95%E5%B1%82%E4%BF%AE%E6%94%B9%E6%9C%BA%E5%88%B6"><span class="toc-text">5.4 汇编指令重定位：内核 apply_relocate 底层修改机制</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#5-5-%E5%AE%9E%E6%88%98%E8%87%AA%E5%8A%A8%E5%8C%96%EF%BC%9APython-%E5%AE%9E%E7%8E%B0-vermagic-%E4%BA%8C%E8%BF%9B%E5%88%B6%E4%BF%AE%E6%94%B9%E8%84%9A%E6%9C%AC"><span class="toc-text">5.5 实战自动化：Python 实现 vermagic 二进制修改脚本</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#5-6-%E7%AC%AC%E4%BA%94%E6%AD%A5%EF%BC%9A%E9%AA%8C%E8%AF%81%E4%B8%8E%E6%88%90%E5%8A%9F%E5%8A%A0%E8%BD%BD"><span class="toc-text">5.6 第五步：验证与成功加载</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E5%85%AD%E9%83%A8%E5%88%86%EF%BC%9A%E5%BA%94%E6%80%A5%E5%A4%84%E7%90%86%EF%BC%9ABypass-EXPORT-SYMBOL-CRC-%E6%A0%A1%E9%AA%8C%E6%9C%BA%E5%88%B6"><span class="toc-text">第六部分：应急处理：Bypass EXPORT_SYMBOL CRC 校验机制</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#6-3-%E4%BA%8C%E8%BF%9B%E5%88%B6%E5%9B%BA%E5%8C%96%E5%8A%A0%E5%9B%BA%EF%BC%9A%E5%89%A5%E7%A6%BB%E8%B0%83%E8%AF%95%E7%AC%A6%E5%8F%B7-Strip"><span class="toc-text">6.3 二进制固化加固：剥离调试符号 (Strip)</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%F0%9F%92%A1-%E9%80%86%E5%90%91%E9%80%83%E9%80%B8%E6%9C%80%E7%BB%88-Checklist"><span class="toc-text">💡 逆向逃逸最终 Checklist</span></a></li></ol></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>Scroll to Top</span></a><a class="buttom" onclick="util.scrollComment()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M8 10.5h8M8 14h5.5M17 3.338A9.95 9.95 0 0 0 12 2C6.477 2 2 6.477 2 12c0 1.6.376 3.112 1.043 4.453c.178.356.237.763.134 1.148l-.595 2.226a1.3 1.3 0 0 0 1.591 1.592l2.226-.596a1.63 1.63 0 0 1 1.149.133A9.96 9.96 0 0 0 12 22c5.523 0 10-4.477 10-10c0-1.821-.487-3.53-1.338-5"/></svg><span>Join Discussion</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  window.canonical["param"] = {"permalink":"https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E5%86%85%E6%A0%B8-3-Linux%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%BC%96%E8%AF%91%E5%B1%9E%E6%80%A7%E5%B7%AE%E5%BC%82%E4%B8%8E%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%80%86%E5%90%91%E4%BF%AE%E6%94%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/","checklink":"/js/plugins/video.js"};
+  const ctx = {
+    date_suffix: {
+      just: `Just`,
+      min: `minutes ago`,
+      hour: `hours ago`,
+      day: `days ago`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        if ($(el).find('.loading-wrap').length == 0){
+          $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+        }
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `Switched to Light Mode`,
+      dark: `Switched to Dark Mode`,
+      auto: `Switched to Auto Mode`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+  <script type="module">
+  const el = document.querySelector("#comments #utterances");
+  util.viewportLazyload(el, load_utterances, true);
+
+  function load_utterances() {
+    if (!el) return;
+    try {
+      el.innerHTML = '';
+    } catch (error) {
+      console.error(error);
+    }
+    const script = document.createElement('script');
+    script.src = 'https://utteranc.es/client.js';
+    script.async = true;
+    for (const key of Object.keys(el.attributes)) {
+      const attr = el.attributes[key];
+      if (['class', 'id'].includes(attr.name) === false) {
+        script.setAttribute(attr.name, attr.value);
+      }
+    }
+    el.appendChild(script);
+  }
+</script>
+
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.chat-file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

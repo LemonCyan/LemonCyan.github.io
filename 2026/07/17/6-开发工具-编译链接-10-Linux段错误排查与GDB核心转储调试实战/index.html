@@ -1,0 +1,1097 @@
+
+<!DOCTYPE html><html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 7.3.0">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>Linux 段错误排查与 GDB 核心转储调试实战 - LemonCyan</title>
+
+  
+    <meta name="description" content="系统级解析 Linux 操作系统下段错误（Segmentation Fault &#x2F; SIGSEGV）的物理与内核运行机制。详尽论述 ulimit 资源配置、&#x2F;proc 核心转储样式配置及持久化方案；提供通过 sigaction 捕获信号并利用 backtrace 打印调用栈的实战代码；提供基于 GDB 载入 Core Dump 文件的分析案例，包括堆栈回溯、变量打印及 CPU 寄存器汇编指令排查；">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Linux 段错误排查与 GDB 核心转储调试实战">
+<meta property="og:url" content="https://lemoncyan.github.io/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-10-Linux%E6%AE%B5%E9%94%99%E8%AF%AF%E6%8E%92%E6%9F%A5%E4%B8%8EGDB%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%E8%B0%83%E8%AF%95%E5%AE%9E%E6%88%98/">
+<meta property="og:site_name" content="LemonCyan">
+<meta property="og:description" content="系统级解析 Linux 操作系统下段错误（Segmentation Fault &#x2F; SIGSEGV）的物理与内核运行机制。详尽论述 ulimit 资源配置、&#x2F;proc 核心转储样式配置及持久化方案；提供通过 sigaction 捕获信号并利用 backtrace 打印调用栈的实战代码；提供基于 GDB 载入 Core Dump 文件的分析案例，包括堆栈回溯、变量打印及 CPU 寄存器汇编指令排查；">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+<meta property="article:published_time" content="2026-07-17T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-07-17T03:19:27.454Z">
+<meta property="article:author" content="liuluhua">
+<meta property="article:tag" content="段错误">
+<meta property="article:tag" content="GDB">
+<meta property="article:tag" content="Core Dump">
+<meta property="article:tag" content="ulimit">
+<meta property="article:tag" content="内核调试">
+<meta property="article:tag" content="内存调试">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+  
+  
+  
+  <meta name="keywords" content="段错误,GDB,Core Dump,ulimit,内核调试,内存调试">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"},"dateCreated":"2026-07-17T00:00:00+00:00","dateModified":"2026-07-17T03:19:27+00:00","datePublished":"2026-07-17T00:00:00+00:00","description":"","headline":"Linux 段错误排查与 GDB 核心转储调试实战","mainEntityOfPage":{"@type":"WebPage","@id":"https://lemoncyan.github.io/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-10-Linux%E6%AE%B5%E9%94%99%E8%AF%AF%E6%8E%92%E6%9F%A5%E4%B8%8EGDB%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%E8%B0%83%E8%AF%95%E5%AE%9E%E6%88%98/"},"publisher":{"@type":"Organization","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png","logo":{"@type":"ImageObject","url":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"}},"url":"https://lemoncyan.github.io/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-10-Linux%E6%AE%B5%E9%94%99%E8%AF%AF%E6%8E%92%E6%9F%A5%E4%B8%8EGDB%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%E8%B0%83%E8%AF%95%E5%AE%9E%E6%88%98/","keywords":"段错误, GDB, Core Dump, ulimit, 内核调试, 内存调试","image":[]}</script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css" />
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="config.avatar" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">LemonCyan</div><div class="sub cap">LemonCyan`s Charging</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"><a class="nav-item active" title="博客" href="/" style="color:#1BCDFC"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M5.879 2.879C5 3.757 5 5.172 5 8v8c0 2.828 0 4.243.879 5.121C6.757 22 8.172 22 11 22h2c2.828 0 4.243 0 5.121-.879C19 20.243 19 18.828 19 16V8c0-2.828 0-4.243-.879-5.121C17.243 2 15.828 2 13 2h-2c-2.828 0-4.243 0-5.121.879M8.25 17a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75M9 12.25a.75.75 0 0 0 0 1.5h6a.75.75 0 0 0 0-1.5zM8.25 9A.75.75 0 0 1 9 8.25h6a.75.75 0 0 1 0 1.5H9A.75.75 0 0 1 8.25 9" clip-rule="evenodd"/><path fill="currentColor" d="M5.235 4.058C5 4.941 5 6.177 5 8v8c0 1.823 0 3.058.235 3.942L5 19.924c-.975-.096-1.631-.313-2.121-.803C2 18.243 2 16.828 2 14v-4c0-2.829 0-4.243.879-5.121c.49-.49 1.146-.707 2.121-.803zm13.53 15.884C19 19.058 19 17.822 19 16V8c0-1.823 0-3.059-.235-3.942l.235.018c.975.096 1.631.313 2.121.803C22 5.757 22 7.17 22 9.999v4c0 2.83 0 4.243-.879 5.122c-.49.49-1.146.707-2.121.803z" opacity=".5"/></svg></a><a class="nav-item" title="文档" href="/wiki/" style="color:#3DC550"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M14.25 4.48v3.057c0 .111 0 .27.02.406a.936.936 0 0 0 .445.683a.96.96 0 0 0 .783.072c.13-.04.272-.108.378-.159L17 8.005l1.124.534c.106.05.248.119.378.16a.958.958 0 0 0 .783-.073a.936.936 0 0 0 .444-.683c.021-.136.021-.295.021-.406V3.031c.113-.005.224-.01.332-.013C21.154 2.98 22 3.86 22 4.933v11.21c0 1.112-.906 2.01-2.015 2.08c-.97.06-2.108.179-2.985.41c-1.082.286-1.99 1.068-3.373 1.436c-.626.167-1.324.257-1.627.323V5.174c.32-.079 1.382-.203 1.674-.371c.184-.107.377-.216.576-.323m5.478 8.338a.75.75 0 0 1-.546.91l-4 1a.75.75 0 0 1-.364-1.456l4-1a.75.75 0 0 1 .91.546" clip-rule="evenodd"/><path fill="currentColor" d="M18.25 3.151c-.62.073-1.23.18-1.75.336a8.2 8.2 0 0 0-.75.27v3.182l.75-.356l.008-.005a1.13 1.13 0 0 1 .492-.13c.047 0 .094.004.138.01c.175.029.315.1.354.12l.009.005l.749.356V3.647z"/><path fill="currentColor" d="M12 5.214c-.334-.064-1.057-.161-1.718-.339C8.938 4.515 8.05 3.765 7 3.487c-.887-.234-2.041-.352-3.018-.412C2.886 3.007 2 3.9 2 4.998v11.146c0 1.11.906 2.01 2.015 2.079c.97.06 2.108.179 2.985.41c.486.129 1.216.431 1.873.726c1.005.451 2.052.797 3.127 1.034z" opacity=".5"/><path fill="currentColor" d="M4.273 12.818a.75.75 0 0 1 .91-.545l4 1a.75.75 0 1 1-.365 1.455l-4-1a.75.75 0 0 1-.545-.91m.909-4.545a.75.75 0 1 0-.364 1.455l4 1a.75.75 0 0 0 .364-1.455z"/></svg></a><a class="nav-item" title="探索" href="/explore/" style="color:#FA6400"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M20 12a8 8 0 1 1-16 0a8 8 0 0 1 16 0" opacity=".5"/><path fill="currentColor" d="M17.712 5.453c1.047-.193 2.006-.259 2.797-.152c.77.103 1.536.393 1.956 1.064c.446.714.312 1.542-.012 2.258c-.33.728-.918 1.499-1.672 2.268c-1.516 1.547-3.836 3.226-6.597 4.697c-2.763 1.472-5.495 2.484-7.694 2.92c-1.095.217-2.098.299-2.923.201c-.8-.095-1.6-.383-2.032-1.075c-.47-.752-.296-1.63.07-2.379c.375-.768 1.032-1.586 1.872-2.403L4 12.416c0 .219.083.71.168 1.146c.045.23.09.444.123.596c-.652.666-1.098 1.263-1.339 1.756c-.277.567-.208.825-.145.925c.072.116.305.305.937.38c.609.073 1.44.018 2.455-.183c2.02-.4 4.613-1.351 7.28-2.772c2.667-1.42 4.85-3.015 6.23-4.423c.694-.707 1.15-1.334 1.377-1.836c.233-.515.167-.75.107-.844c-.07-.112-.289-.294-.883-.374c-.542-.072-1.272-.041-2.163.112L16.87 5.656c.338-.101.658-.17.842-.203"/></svg></a><a class="nav-item" title="社交" href="/friends/" style="color:#F44336"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="m13.629 20.472l-.542.916c-.483.816-1.69.816-2.174 0l-.542-.916c-.42-.71-.63-1.066-.968-1.262c-.338-.197-.763-.204-1.613-.219c-1.256-.021-2.043-.098-2.703-.372a5 5 0 0 1-2.706-2.706C2 14.995 2 13.83 2 11.5v-1c0-3.273 0-4.91.737-6.112a5 5 0 0 1 1.65-1.651C5.59 2 7.228 2 10.5 2h3c3.273 0 4.91 0 6.113.737a5 5 0 0 1 1.65 1.65C22 5.59 22 7.228 22 10.5v1c0 2.33 0 3.495-.38 4.413a5 5 0 0 1-2.707 2.706c-.66.274-1.447.35-2.703.372c-.85.015-1.275.022-1.613.219c-.338.196-.548.551-.968 1.262" opacity=".5"/><path fill="currentColor" d="M10.99 14.308c-1.327-.978-3.49-2.84-3.49-4.593c0-2.677 2.475-3.677 4.5-1.609c2.025-2.068 4.5-1.068 4.5 1.609c0 1.752-2.163 3.615-3.49 4.593c-.454.335-.681.502-1.01.502c-.329 0-.556-.167-1.01-.502"/></svg></a></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="Search"></form><div id="search-result"></div><div class="search-no-result">No Results!</div></div>
+
+
+
+<widget class="widget-wrapper recent post-list"><div class="widget-header dis-select"><span class="name">Recent Update</span></div><div class="widget-body fs14"><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-9-%E5%B5%8C%E5%85%A5%E5%BC%8FLinux%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98%E6%8C%87%E5%8D%97/"><span class="title">嵌入式 Linux 启动性能优化与工具链/应用程序调优指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-6-Linux%E5%85%B1%E4%BA%AB%E5%BA%93%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%E5%AF%BB%E5%9D%80%E6%9C%BA%E5%88%B6%E5%8F%8A%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8/"><span class="title">Linux 共享库动态加载与运行时链接器寻址机制及进阶应用</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-7-%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%B5%8C%E5%85%A5%E5%BC%8F%E4%BA%A4%E5%8F%89%E5%B7%A5%E5%85%B7%E9%93%BE%E6%9E%84%E5%BB%BAcrosstool-ng%E6%B7%B1%E5%BA%A6%E5%AE%9E%E6%88%98/"><span class="title">交叉编译与嵌入式交叉工具链构建 crosstool-ng 深度实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-8-%E7%8E%B0%E4%BB%A3%E6%9E%84%E5%BB%BA%E7%B3%BB%E7%BB%9FMeson-Ninja%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%BC%80%E6%BA%90%E5%BA%93%E7%A7%BB%E6%A4%8D%E5%AE%9E%E6%88%98/"><span class="title">现代构建系统 Meson + Ninja 交叉编译与开源库移植实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-3-%E9%99%88%E7%9A%93%E3%80%8A%E8%B7%9F%E6%88%91%E5%AD%A6Makefile%E3%80%8B%E7%B2%BE%E7%BC%96%E4%B8%8E%E5%AE%9E%E6%88%98%E8%BF%9B%E9%98%B6%E6%8C%87%E5%8D%97/"><span class="title">陈皓《跟我学Makefile》精编与实战进阶指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-4-%E5%A4%8D%E6%9D%82C-C-%E9%A1%B9%E7%9B%AE%E7%9A%84%E5%A4%9A%E6%96%87%E4%BB%B6%E5%A4%B9Makefile%E8%AE%BE%E8%AE%A1%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%8C%96%E7%BC%96%E8%AF%91%E6%9E%B6%E6%9E%84/"><span class="title">复杂 C/C++ 项目的多文件夹 Makefile 设计与自动化编译架构</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-5-%E9%9D%99%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E4%B8%8E%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E6%A0%B8%E5%BF%83%E6%9C%BA%E5%88%B6%E4%B8%8E%E5%BC%80%E5%8F%91%E5%AE%9E%E6%88%98/"><span class="title">静态链接库与动态链接库核心机制与开发实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-1-GCC-G-%E7%BC%96%E8%AF%91%E5%99%A8%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E4%B8%8E%E5%91%BD%E4%BB%A4%E8%A1%8C%E9%80%89%E9%A1%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/"><span class="title">GCC/G++ 编译器工作原理与命令行选项深度指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-10-Linux%E6%AE%B5%E9%94%99%E8%AF%AF%E6%8E%92%E6%9F%A5%E4%B8%8EGDB%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%E8%B0%83%E8%AF%95%E5%AE%9E%E6%88%98/"><span class="title">Linux 段错误排查与 GDB 核心转储调试实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-2-GNU-Make%E4%B8%8EMakefile%E6%9E%84%E5%BB%BA%E5%9F%BA%E7%A1%80%E5%85%A5%E9%97%A8%E6%89%8B%E5%86%8C/"><span class="title">GNU Make 与 Makefile 构建基础入门手册</span></a></div></widget>
+</div>
+<footer class="footer dis-select"><div class="social-wrap"><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/08a41b181ce68.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3845874.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3616429.svg"/></a><a class="social" href="/about/#comments" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/942ebbf1a4b91.svg"/></a></div></footer>
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">Home</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">Blog</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/">6.开发工具</a> <span class="sep"></span> <a class="cap breadcrumb-link" href="/categories/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5/">编译链接</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">Posted on: <time datetime="2026-07-17T00:00:00.000Z">2026-07-17</time></span><span class="sep updated"></span><span class="text updated">Updated on: <time datetime="2026-07-17T03:19:27.454Z">2026-07-17</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>Linux 段错误排查与 GDB 核心转储调试实战</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h1 id="Linux-段错误排查与-GDB-核心转储调试实战"><a href="#Linux-段错误排查与-GDB-核心转储调试实战" class="headerlink" title="Linux 段错误排查与 GDB 核心转储调试实战"></a>Linux 段错误排查与 GDB 核心转储调试实战</h1><p>在 C&#x2F;C++ 开发中，<br><strong>段错误（Segmentation Fault）</strong>是令所有开发者头疼的致命崩溃故障。<br>程序突然异常终止，<br>控制台只留下一句冰冷的 <code>Segmentation fault</code>。</p>
+<p>段错误的本质是程序违反了操作系统的内存管理规则。<br>通常是硬件 MMU 触发异常，<br>并由内核向进程发送 <code>SIGSEGV</code> 信号。<br>本指南将带你从段错误的底层物理机制出发，<br>深度解析如何启用和配置 Linux 核心转储（Core Dump）。<br>演示如何通过代码捕获信号自动打印崩溃调用栈。<br>并以实战代码演示如何利用 GDB 抓出引发崩溃的幕后黑手，<br>同时针对嵌入式系统提供跨平台的交叉 GDB 符号调试方案。</p>
+<hr>
+<h2 id="1-深入理解段错误（SIGSEGV）的成因"><a href="#1-深入理解段错误（SIGSEGV）的成因" class="headerlink" title="1. 深入理解段错误（SIGSEGV）的成因"></a>1. 深入理解段错误（SIGSEGV）的成因</h2><p>段错误通常是指进程尝试访问其虚拟地址空间之外的物理内存，<br>或者尝试以非法方式访问合法内存（例如写入只读区域）。</p>
+<h3 id="1-1-常见的段错误根源"><a href="#1-1-常见的段错误根源" class="headerlink" title="1.1 常见的段错误根源"></a>1.1 常见的段错误根源</h3><ol>
+<li><strong>空指针解引用（Null Pointer Dereference）</strong>：<br>试图读取或写入地址为 <code>0x0</code>（NULL）的内存空间。<br>这是最典型的段错误原因。</li>
+<li><strong>野指针&#x2F;悬空指针访问（Wild&#x2F;Dangling Pointer）</strong>：<br>访问未初始化或已被 <code>free</code>&#x2F;<code>delete</code> 释放的内存区域。</li>
+<li><strong>缓冲区溢出（Buffer Overflow）</strong>：<br>数组越界或指针加减失控，<br>导致读写操作覆盖了进程未分配 of 虚拟页面或破坏了函数调用栈（Stack Corruption）。</li>
+<li><strong>内存写入权限冲突</strong>：<br>试图修改只读内存段。<br>例如修改常量字符串：<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">char</span> *str = <span class="string">&quot;Hello World&quot;</span>; <span class="comment">// &quot;Hello World&quot; 储存在 ELF 的只读数据段 (.rodata)</span></span><br><span class="line">str[<span class="number">0</span>] = <span class="string">&#x27;h&#x27;</span>;             <span class="comment">// 触发段错误</span></span><br></pre></td></tr></table></figure></li>
+<li><strong>栈溢出（Stack Overflow）</strong>：<br>深度递归或在栈上分配了过大空间的局部变量，<br>超出了系统分配给该线程的栈容量空间限制。</li>
+</ol>
+<h3 id="1-2-异常内存访问相关系统信号对照表"><a href="#1-2-异常内存访问相关系统信号对照表" class="headerlink" title="1.2 异常内存访问相关系统信号对照表"></a>1.2 异常内存访问相关系统信号对照表</h3><table>
+<thead>
+<tr>
+<th align="left">信号名称</th>
+<th align="left">信号值</th>
+<th align="left">触发原因</th>
+<th align="left">典型场景</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong><code>SIGSEGV</code></strong></td>
+<td align="left">11</td>
+<td align="left">段错误 (Segmentation Violation)</td>
+<td align="left">空指针解引用、越界读写未分配的物理页、修改只读内存。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>SIGBUS</code></strong></td>
+<td align="left">7</td>
+<td align="left">总线错误 (Bus Error)</td>
+<td align="left">物理内存对齐错误（Alignment Error）、非法的物理地址访问。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>SIGILL</code></strong></td>
+<td align="left">4</td>
+<td align="left">非法指令 (Illegal Instruction)</td>
+<td align="left">执行了损坏的机器指令、栈破坏导致跳转到了无效的数据区。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>SIGFPE</code></strong></td>
+<td align="left">8</td>
+<td align="left">浮点异常 (Floating Point Exception)</td>
+<td align="left">除以零错误、溢出、浮点计算溢出。</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="2-核心转储（Core-Dump）机制与系统环境配置"><a href="#2-核心转储（Core-Dump）机制与系统环境配置" class="headerlink" title="2. 核心转储（Core Dump）机制与系统环境配置"></a>2. 核心转储（Core Dump）机制与系统环境配置</h2><p>当进程由于未捕获的严重信号（如 <code>SIGSEGV</code>,<br><code>SIGFPE</code>,<br><code>SIGABRT</code> 等）异常终止时，<br>操作系统可以将该进程当时的内存映像、CPU 寄存器状态以及系统调用堆栈等信息完整地转储（Dump）保存到一个文件中，<br>这个文件被称为 <strong>Core Dump（核心转储）</strong> 文件。</p>
+<h3 id="2-1-利用-ulimit-开启-Core-Dump-功能"><a href="#2-1-利用-ulimit-开启-Core-Dump-功能" class="headerlink" title="2.1 利用 ulimit 开启 Core Dump 功能"></a>2.1 利用 <code>ulimit</code> 开启 Core Dump 功能</h3><p>在大多数主流 Linux 发行版中，<br>为了防止突发崩溃占满磁盘空间，<br>系统默认将 Core 文件的最大限制设置为 0（即禁用转储）。</p>
+<h4 id="2-1-1-ulimit-命令行工具详解"><a href="#2-1-1-ulimit-命令行工具详解" class="headerlink" title="2.1.1 ulimit 命令行工具详解"></a>2.1.1 <code>ulimit</code> 命令行工具详解</h4><p><code>ulimit</code> 命令用于控制 Shell 启动的进程所占用的各种系统资源上限：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看当前 Shell 的所有资源配置上限</span></span><br><span class="line"><span class="built_in">ulimit</span> -a</span><br></pre></td></tr></table></figure>
+<p>其常见选项如下：</p>
+<ul>
+<li><code>-H</code>：设定或显示硬性资源限制（只有 root 可以调大）。</li>
+<li><code>-S</code>：设定或显示弹性资源限制（不能超过硬性限制）。</li>
+<li><code>-c</code>：设置 Core 文件的最大容量限制（单位：512 字节的数据块 blocks）。</li>
+<li><code>-s</code>：设置线程最大栈空间（单位：Kbytes）。</li>
+<li><code>-n</code>：设置单个进程可开启的文件描述符最大数量。</li>
+</ul>
+<h4 id="2-1-2-临时启用"><a href="#2-1-2-临时启用" class="headerlink" title="2.1.2 临时启用"></a>2.1.2 临时启用</h4><p>在当前 Shell 终端下执行以下命令即可临时开启 Core Dump：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 将限制设置为无限制</span></span><br><span class="line"><span class="built_in">ulimit</span> -c unlimited</span><br><span class="line"></span><br><span class="line"><span class="comment"># 再次确认配置是否生效</span></span><br><span class="line"><span class="built_in">ulimit</span> -a | grep core</span><br><span class="line"><span class="comment"># 输出：core file size          (blocks, -c) unlimited</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="2-1-3-永久生效配置"><a href="#2-1-3-永久生效配置" class="headerlink" title="2.1.3 永久生效配置"></a>2.1.3 永久生效配置</h4><p>为了保证系统重启后依然有效，<br>可选择以下方案进行配置持久化：</p>
+<ul>
+<li><strong>方案 A</strong>：编辑 <code>/etc/security/limits.conf</code> 文件，加入以下配置：<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"># 指定所有用户（*）在软限制（soft）与硬限制（hard）下 core 文件均为 unlimited</span><br><span class="line">*               soft    core            unlimited</span><br><span class="line">*               hard    core            unlimited</span><br></pre></td></tr></table></figure></li>
+<li><strong>方案 B</strong>：对于系统级守护进程，在启动脚本（如 systemd 的 <code>.service</code> 文件）中显式指定限制：<figure class="highlight ini"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="section">[Service]</span></span><br><span class="line"><span class="attr">LimitCORE</span>=infinity</span><br></pre></td></tr></table></figure></li>
+</ul>
+<h3 id="2-2-配置-Core-文件的保存路径与命名规则"><a href="#2-2-配置-Core-文件的保存路径与命名规则" class="headerlink" title="2.2 配置 Core 文件的保存路径与命名规则"></a>2.2 配置 Core 文件的保存路径与命名规则</h3><p>默认情况下，<br>生成的 Core 文件可能命名为 <code>core</code> 并生成在程序运行的当前工作目录中，<br>极易引起重名覆盖且散落各处。</p>
+<p>我们可以通过修改内核参数 <code>/proc/sys/kernel/core_pattern</code> 来统一规范其存放目录和命名规则：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 临时配置：将 core 文件统一存放至 /tmp/cores 目录下，并以“程序名-进程PID-时间戳”命名</span></span><br><span class="line">sudo sysctl -w kernel.core_pattern=<span class="string">&quot;/tmp/cores/core-%e-%p-%t&quot;</span></span><br></pre></td></tr></table></figure>
+
+<h4 id="core-pattern-支持的命名格式化占位符："><a href="#core-pattern-支持的命名格式化占位符：" class="headerlink" title="core_pattern 支持的命名格式化占位符："></a><code>core_pattern</code> 支持的命名格式化占位符：</h4><table>
+<thead>
+<tr>
+<th align="left">占位符</th>
+<th align="left">描述说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong><code>%e</code></strong></td>
+<td align="left">触发崩溃的可执行文件名。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>%p</code></strong></td>
+<td align="left">发生崩溃的目标进程 PID。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>%t</code></strong></td>
+<td align="left">发生崩溃时的 UNIX 时间戳。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>%u</code></strong></td>
+<td align="left">发生崩溃进程的实际用户 ID (UID)。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>%g</code></strong></td>
+<td align="left">发生崩溃进程的实际组 ID (GID)。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>%s</code></strong></td>
+<td align="left">导致崩溃的系统信号值（例如 SIGSEGV 是 11）。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>%h</code></strong></td>
+<td align="left">主机名（Hostname）。</td>
+</tr>
+</tbody></table>
+<p>若要永久保存此配置，<br>可修改 <code>/etc/sysctl.conf</code> 文件，<br>添加如下行：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">kernel.core_pattern = /var/log/cores/core-%e-%p-%t</span><br></pre></td></tr></table></figure>
+<p>保存后执行 <code>sudo sysctl -p</code> 重新加载配置生效。<br><em>注意：必须提前手动创建好指定的存储目录（如 <code>/var/log/cores</code>），并确保进程对该目录具有写入权限。</em></p>
+<hr>
+<h2 id="3-实战-1：代码层面主动捕获-SIGSEGV-并自动输出堆栈"><a href="#3-实战-1：代码层面主动捕获-SIGSEGV-并自动输出堆栈" class="headerlink" title="3. 实战 1：代码层面主动捕获 SIGSEGV 并自动输出堆栈"></a>3. 实战 1：代码层面主动捕获 SIGSEGV 并自动输出堆栈</h2><p>在某些生产环境中，<br>由于磁盘只读或安全限制，<br>我们可能无法获取 Core 文件。<br>此时，<br>可以在代码中挂载信号处理器（Signal Handler）。<br>在崩溃瞬间调用 glibc 的 <code>&lt;execinfo.h&gt;</code> 库反向解析当前线程的堆栈信息，<br>直接打印到日志中。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;signal.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;execinfo.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;unistd.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 崩溃信号处理回调函数</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">crash_signal_handler</span><span class="params">(<span class="type">int</span> sig)</span> &#123;</span><br><span class="line">    <span class="type">void</span> *<span class="built_in">array</span>[<span class="number">30</span>];</span><br><span class="line">    <span class="type">size_t</span> size;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 获取当前线程挂起的堆栈地址帧</span></span><br><span class="line">    size = backtrace(<span class="built_in">array</span>, <span class="number">30</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 在标准错误中打印堆栈跟踪</span></span><br><span class="line">    <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;</span></span><br><span class="line"><span class="string">=== SYSTEM CRASH DETECTED ===</span></span><br><span class="line"><span class="string">&quot;</span>);</span><br><span class="line">    <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;Received Fatal Signal: %d</span></span><br><span class="line"><span class="string">&quot;</span>, sig);</span><br><span class="line">    <span class="built_in">fprintf</span>(<span class="built_in">stderr</span>, <span class="string">&quot;Stack Trace:</span></span><br><span class="line"><span class="string">&quot;</span>);</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 反向解析符号信息并输出到标准错误输出</span></span><br><span class="line">    backtrace_symbols_fd(<span class="built_in">array</span>, size, STDERR_FILENO);</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 恢复默认信号处理函数并重新抛出，确保生成 Core</span></span><br><span class="line">    signal(sig, SIG_DFL);</span><br><span class="line">    kill(getpid(), sig);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">register_crash_handlers</span><span class="params">()</span> &#123;</span><br><span class="line">    <span class="comment">// 注册我们感兴趣的内存崩溃相关信号</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">sigaction</span> <span class="title">sa</span>;</span></span><br><span class="line">    sa.sa_handler = crash_signal_handler;</span><br><span class="line">    sigemptyset(&amp;sa.sa_mask);</span><br><span class="line">    sa.sa_flags = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    sigaction(SIGSEGV, &amp;sa, <span class="literal">NULL</span>);</span><br><span class="line">    sigaction(SIGBUS,  &amp;sa, <span class="literal">NULL</span>);</span><br><span class="line">    sigaction(SIGILL,  &amp;sa, <span class="literal">NULL</span>);</span><br><span class="line">    sigaction(SIGFPE,  &amp;sa, <span class="literal">NULL</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><em>注意：编译时需要加入 <code>-rdynamic</code> 选项，否则 <code>backtrace_symbols</code> 只能打印函数内存地址，无法映射为具体的函数名称。</em></p>
+<hr>
+<h2 id="4-实战-2：模拟典型的内存崩溃崩溃用例"><a href="#4-实战-2：模拟典型的内存崩溃崩溃用例" class="headerlink" title="4. 实战 2：模拟典型的内存崩溃崩溃用例"></a>4. 实战 2：模拟典型的内存崩溃崩溃用例</h2><p>除了普通的空指针访问之外，<br>堆栈溢出和堆破坏也是极其常见的故障模式。</p>
+<h3 id="4-1-栈帧溢出模拟（无限递归）"><a href="#4-1-栈帧溢出模拟（无限递归）" class="headerlink" title="4.1 栈帧溢出模拟（无限递归）"></a>4.1 栈帧溢出模拟（无限递归）</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 递归函数，故意没有退出基准，导致不断入栈直到溢出</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">stack_overflow_func</span><span class="params">(<span class="type">int</span> counter)</span> &#123;</span><br><span class="line">    <span class="type">char</span> large_buffer[<span class="number">4096</span>] = &#123;<span class="number">0</span>&#125;; <span class="comment">// 每次压栈分配 4KB</span></span><br><span class="line">    large_buffer[<span class="number">0</span>] = (<span class="type">char</span>)counter;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;[Stack] Depth level: %d</span></span><br><span class="line"><span class="string">&quot;</span>, counter);</span><br><span class="line">    stack_overflow_func(counter + <span class="number">1</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">test_stack_overflow</span><span class="params">()</span> &#123;</span><br><span class="line">    stack_overflow_func(<span class="number">1</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>当此函数运行后，<br>内核发现进程尝试越过当前线程所能达到的极限栈边界，<br>便会发出 <code>SIGSEGV</code>。</p>
+<h3 id="4-2-堆内存破坏（Double-Free-Heap-Corruption）"><a href="#4-2-堆内存破坏（Double-Free-Heap-Corruption）" class="headerlink" title="4.2 堆内存破坏（Double Free &#x2F; Heap Corruption）"></a>4.2 堆内存破坏（Double Free &#x2F; Heap Corruption）</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">test_heap_corruption</span><span class="params">()</span> &#123;</span><br><span class="line">    <span class="type">char</span>* ptr = (<span class="type">char</span>*)<span class="built_in">malloc</span>(<span class="number">10</span>);</span><br><span class="line">    <span class="built_in">strcpy</span>(ptr, <span class="string">&quot;12345678901234567890&quot;</span>); <span class="comment">// 写入 20 字节，严重越界破坏了 malloc 内存控制块结构</span></span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 故意进行双重释放</span></span><br><span class="line">    <span class="built_in">free</span>(ptr);</span><br><span class="line">    <span class="built_in">free</span>(ptr); <span class="comment">// 此时会引发 glibc 内部检测并发出 SIGABRT 信号</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="5-实战-3：编译与运行"><a href="#5-实战-3：编译与运行" class="headerlink" title="5. 实战 3：编译与运行"></a>5. 实战 3：编译与运行</h2><p>我们编写一个有缺陷的 C 程序 <code>segfault_demo.c</code>：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">trigger_crash</span><span class="params">(<span class="type">const</span> <span class="type">char</span>* data)</span> &#123;</span><br><span class="line">    <span class="type">char</span> buffer[<span class="number">10</span>];</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;[Internal] Copying data...</span></span><br><span class="line"><span class="string">&quot;</span>);</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 故意引入 NULL 指针解引用逻辑</span></span><br><span class="line">    <span class="type">char</span>* null_ptr = <span class="literal">NULL</span>;</span><br><span class="line">    *null_ptr = <span class="string">&#x27;X&#x27;</span>; </span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">func_b</span><span class="params">(<span class="type">const</span> <span class="type">char</span>* data)</span> &#123;</span><br><span class="line">    trigger_crash(data);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">func_a</span><span class="params">(<span class="type">const</span> <span class="type">char</span>* data)</span> &#123;</span><br><span class="line">    func_b(data);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">(<span class="type">int</span> argc, <span class="type">char</span>* argv[])</span> &#123;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;[Main] System initialized. Calling functions...</span></span><br><span class="line"><span class="string">&quot;</span>);</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span>* payload = <span class="string">&quot;This is a very long text&quot;</span>;</span><br><span class="line">    func_a(payload);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;[Main] System terminated normally.</span></span><br><span class="line"><span class="string">&quot;</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>使用 <code>-g</code> 编译选项，<br>指示 GCC 在可执行二进制中嵌入完整的 DWARF 调试符号信息：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ gcc -g segfault_demo.c -o segfault_demo</span><br></pre></td></tr></table></figure>
+<p>确保 <code>ulimit -c unlimited</code> 已设置，<br>然后运行程序：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ ./segfault_demo</span><br><span class="line">[Main] System initialized. Calling <span class="built_in">functions</span>...</span><br><span class="line">[Internal] Copying data...</span><br><span class="line">Segmentation fault (core dumped)</span><br></pre></td></tr></table></figure>
+<p>终端显示 <code>(core dumped)</code>，<br>表示核心转储成功生成。<br>我们去前面配置好的目录或当前目录下寻找，<br>发现生成了 <code>core-segfault_demo-28564-1689587421</code>。</p>
+<hr>
+<h2 id="6-GDB-载入-Core-文件交互式排障"><a href="#6-GDB-载入-Core-文件交互式排障" class="headerlink" title="6. GDB 载入 Core 文件交互式排障"></a>6. GDB 载入 Core 文件交互式排障</h2><p>使用 GDB 加载可执行程序与对应的 Core 文件进行联合调试。<br>其命令格式为：<code>gdb [可执行文件路径] [Core 文件路径]</code></p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ gdb ./segfault_demo /tmp/cores/core-segfault_demo-28564-1689587421</span><br></pre></td></tr></table></figure>
+
+<p>GDB 启动后，<br>会自动读取 Core 文件内的状态数据，<br>定位崩溃瞬间的寄存器状态，<br>并给出最终报错行定位：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">Core was generated by `./segfault_demo&#x27;.</span><br><span class="line">Program terminated with signal SIGSEGV, Segmentation fault.</span><br><span class="line">#0  0x00000000004005aa in trigger_crash (data=0x4006c0 &quot;...&quot;) at segfault_demo.c:9</span><br><span class="line">9	    *null_ptr = &#x27;X&#x27;;</span><br><span class="line">(gdb) </span><br></pre></td></tr></table></figure>
+
+<h3 id="6-1-必备的-GDB-调试诊断命令"><a href="#6-1-必备的-GDB-调试诊断命令" class="headerlink" title="6.1 必备的 GDB 调试诊断命令"></a>6.1 必备的 GDB 调试诊断命令</h3><p>此时，<br>我们已经进入 GDB 的交互控制台。<br>利用以下指令进行全方位现场勘查：</p>
+<h4 id="1-查看调用堆栈：backtrace-或-bt"><a href="#1-查看调用堆栈：backtrace-或-bt" class="headerlink" title="1. 查看调用堆栈：backtrace 或 bt"></a>1. 查看调用堆栈：<code>backtrace</code> 或 <code>bt</code></h4><p>这是诊断的首要动作。<br>它以层级列出程序崩溃时的函数嵌套调用路径：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">(gdb) bt</span><br><span class="line">#0  0x00000000004005aa in trigger_crash (data=0x4006c0 &quot;...&quot;) at segfault_demo.c:9</span><br><span class="line">#1  0x00000000004005cf in func_b (data=0x4006c0 &quot;...&quot;) at segfault_demo.c:15</span><br><span class="line">#2  0x00000000004005df in func_a (data=0x4006c0 &quot;...&quot;) at segfault_demo.c:19</span><br><span class="line">#3  0x0000000000400605 in main (argc=1, argv=0x7ffe178a9c48) at segfault_demo.c:25</span><br></pre></td></tr></table></figure>
+<p>调用链清晰地显示了从 <code>main</code> -&gt; <code>func_a</code> -&gt; <code>func_b</code> -&gt; <code>trigger_crash</code> 的崩溃链路。</p>
+<h4 id="2-切换当前函数上下文栈帧：frame"><a href="#2-切换当前函数上下文栈帧：frame" class="headerlink" title="2. 切换当前函数上下文栈帧：frame &lt;N&gt;"></a>2. 切换当前函数上下文栈帧：<code>frame &lt;N&gt;</code></h4><p>如果要检查父函数的内部变量，<br>可以切换栈帧：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"># 切换到 func_b 栈帧</span><br><span class="line">(gdb) frame 1</span><br><span class="line">#1  0x00000000004005cf in func_b (data=0x4006c0 &quot;...&quot;) at segfault_demo.c:15</span><br><span class="line">15	    trigger_crash(data);</span><br></pre></td></tr></table></figure>
+
+<h4 id="3-列出代码上下文：list-或-l"><a href="#3-列出代码上下文：list-或-l" class="headerlink" title="3. 列出代码上下文：list 或 l"></a>3. 列出代码上下文：<code>list</code> 或 <code>l</code></h4><p>列出发生段错误前后的代码片段：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">(gdb) list</span><br><span class="line">4	void trigger_crash(const char* data) &#123;</span><br><span class="line">5	    char buffer[10];</span><br><span class="line">6	    printf(&quot;[Internal] Copying data...</span><br><span class="line">&quot;);</span><br><span class="line">7	    </span><br><span class="line">8	    char* null_ptr = NULL;</span><br><span class="line">9	    *null_ptr = &#x27;X&#x27;; </span><br><span class="line">10	&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="4-打印变量值：print-或-p"><a href="#4-打印变量值：print-或-p" class="headerlink" title="4. 打印变量值：print &lt;var_name&gt; 或 p &lt;var_name&gt;"></a>4. 打印变量值：<code>print &lt;var_name&gt;</code> 或 <code>p &lt;var_name&gt;</code></h4><p>检查引发崩溃的指针或变量值：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">(gdb) print null_ptr</span><br><span class="line">$1 = (char *) 0x0</span><br></pre></td></tr></table></figure>
+<p>证实 <code>null_ptr</code> 确实是 <code>0x0</code>（空指针），<br>对其进行写入操作显然会触发段错误。</p>
+<h4 id="5-检查寄存器状态与汇编指令（进阶应用）"><a href="#5-检查寄存器状态与汇编指令（进阶应用）" class="headerlink" title="5. 检查寄存器状态与汇编指令（进阶应用）"></a>5. 检查寄存器状态与汇编指令（进阶应用）</h4><p>当代码经过链接器重度优化（如开启 <code>-O3</code> 导致调试符号行号对应错乱时），<br>我们需要 GDB 深入汇编底层：</p>
+<ul>
+<li>**<code>rip</code> (Instruction Pointer)**：存储当前执行的指令地址。</li>
+<li>**<code>rsp</code> (Stack Pointer)**：指向当前栈顶。</li>
+<li>**<code>rbp</code> (Frame Pointer)**：指向当前函数栈基址。</li>
+</ul>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"># 查看所有 CPU 寄存器的值</span><br><span class="line">(gdb) info registers</span><br><span class="line">rax            0x0	0</span><br><span class="line">rbx            0x400620	4195872</span><br><span class="line">rcx            0x0	0</span><br><span class="line">rdx            0x7ffe178a9940	140729290070336</span><br><span class="line">rsi            0x0	0</span><br><span class="line">rdi            0x7ffe178a9960	140729290070368</span><br><span class="line">rbp            0x7ffe178a9c00	0x7ffe178a9c00</span><br><span class="line">rsp            0x7ffe178a9be0	0x7ffe178a9be0</span><br><span class="line">rip            0x4005aa	0x4005aa &lt;trigger_crash+38&gt;</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+<p>我们发现指令指针寄存器 <code>rip</code> 指向的地址为 <code>0x4005aa</code>。<br>反汇编当前函数：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">(gdb) disassemble trigger_crash</span><br><span class="line">Dump of assembler code for function trigger_crash:</span><br><span class="line">   0x0000000000400584 &lt;+0&gt;:	push   %rbp</span><br><span class="line">   ...</span><br><span class="line">   0x00000000004005a3 &lt;+31&gt;:	movq   $0x0,-0x8(%rbp)</span><br><span class="line">=&gt; 0x00000000004005aa &lt;+38&gt;:	mov    -0x8(%rbp),%rax</span><br><span class="line">   0x00000000004005ae &lt;+42&gt;:	movb   $0x58,(%rax)</span><br></pre></td></tr></table></figure>
+<p>汇编代码清晰地表明，<br>程序先将 <code>0x0</code>（即指针）送入 <code>%rbp - 8</code> 的内存。<br>接着在 <code>0x4005aa</code> 处将该值（<code>0</code>）装载进寄存器 <code>%rax</code>。<br>下一条指令尝试将字符 <code>&#39;X&#39;</code>（ASCII 码即 <code>0x58</code>）写入 <code>%rax</code> 所指向的地址（<code>0</code>）。<br>从而触发硬件缺页异常并报段错误。</p>
+<hr>
+<h2 id="7-嵌入式跨平台交叉-Core-Dump-符号解析实战"><a href="#7-嵌入式跨平台交叉-Core-Dump-符号解析实战" class="headerlink" title="7. 嵌入式跨平台交叉 Core Dump 符号解析实战"></a>7. 嵌入式跨平台交叉 Core Dump 符号解析实战</h2><p>在嵌入式开发中，<br>目标板（如 ARM 板）由于磁盘空间小且主频低，<br>通常无法直接运行 GDB 进行本地解析。<br>此时，<br>我们需要在宿主机上使用<strong>交叉调试器</strong>来还原崩溃堆栈。</p>
+<h3 id="7-1-交叉调试三大必备要素"><a href="#7-1-交叉调试三大必备要素" class="headerlink" title="7.1 交叉调试三大必备要素"></a>7.1 交叉调试三大必备要素</h3><ol>
+<li><strong>板端生成的 Core 文件</strong>：压缩并拷贝回宿主机。</li>
+<li><strong>带调试符号的未剥离（unstripped）可执行二进制文件</strong>：通常在编译输出目录中保存，<br>不要拷贝被 strip 后的生产固件。</li>
+<li><strong>带调试符号的共享库集合路径（Sysroot）</strong>：板子依赖的所有 <code>.so</code> 库的未剥离符号集合。</li>
+</ol>
+<h3 id="7-2-宿主机交叉-GDB-启动配置"><a href="#7-2-宿主机交叉-GDB-启动配置" class="headerlink" title="7.2 宿主机交叉 GDB 启动配置"></a>7.2 宿主机交叉 GDB 启动配置</h3><p>在宿主机上启动针对目标板架构 of GDB 工具（以 aarch64 为例）：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ aarch64-linux-gnu-gdb ./segfault_demo_unstripped /home/dev/core-segfault-arm64</span><br></pre></td></tr></table></figure>
+<p>由于 GDB 默认会去宿主机本地的 <code>/lib</code> 路径寻找共享库符号，<br>我们将看到大量符号文件无法加载的警告。</p>
+<h4 id="在交叉-GDB-控制台内设定符号映射路径："><a href="#在交叉-GDB-控制台内设定符号映射路径：" class="headerlink" title="在交叉 GDB 控制台内设定符号映射路径："></a>在交叉 GDB 控制台内设定符号映射路径：</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"># 1. 设定 sysroot，使其指向与目标板 glibc 匹配 of 未剥离系统库目录</span><br><span class="line">(gdb) set sysroot /home/dev/toolchain/sysroot</span><br><span class="line"></span><br><span class="line"># 2. 设定共享库（其他自己编写的so）的额外搜索目录</span><br><span class="line">(gdb) set solib-search-path /home/dev/project/libs</span><br><span class="line"></span><br><span class="line"># 3. 强制要求 GDB 重新加载共享库符号</span><br><span class="line">(gdb) sharedlibrary</span><br></pre></td></tr></table></figure>
+<p>经过这一设置，<br>GDB 将重新建立符号索引。<br>堆栈回溯中原本显示为 <code>??</code> 的动态库符号将能全部精确呈现出来。<br>从而实现与本地调试完全一致的秒级定位体验。</p>
+<hr>
+<h2 id="8-内存崩溃排查进阶：AddressSanitizer-ASan-诊断利器"><a href="#8-内存崩溃排查进阶：AddressSanitizer-ASan-诊断利器" class="headerlink" title="8. 内存崩溃排查进阶：AddressSanitizer (ASan) 诊断利器"></a>8. 内存崩溃排查进阶：AddressSanitizer (ASan) 诊断利器</h2><h3 id="8-1-什么是-AddressSanitizer？"><a href="#8-1-什么是-AddressSanitizer？" class="headerlink" title="8.1 什么是 AddressSanitizer？"></a>8.1 什么是 AddressSanitizer？</h3><p>虽然 GDB + Core Dump 非常强大，<br>但对于一些隐蔽的内存损坏（如越界读写、Use-After-Free），<br>Core Dump 可能发生在错误发生的很久以后，<br>甚至由于内存刚好合法而没有触发段错误，<br>导致难以定位根因。<br>AddressSanitizer (ASan) 是由 Google 开发的一款快速内存错误检测工具，<br>已经集成在 GCC (4.8+) 和 Clang 中。<br>它在编译期对代码进行插桩，<br>在运行期监控内存访问，<br>能在发生非法访问的瞬间立刻中断程序并打印极其详细的报告。</p>
+<h3 id="8-2-开启-ASan-的编译选项"><a href="#8-2-开启-ASan-的编译选项" class="headerlink" title="8.2 开启 ASan 的编译选项"></a>8.2 开启 ASan 的编译选项</h3><p>在编译时，<br>向编译器和链接器同时传入 <code>-fsanitize=address</code> 选项，<br>并加入 <code>-fno-omit-frame-pointer</code> 以保证调用栈的完整性：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ gcc -fsanitize=address -fno-omit-frame-pointer -g segfault_demo.c -o segfault_asan</span><br></pre></td></tr></table></figure>
+
+<h3 id="8-3-运行并解读-ASan-报告"><a href="#8-3-运行并解读-ASan-报告" class="headerlink" title="8.3 运行并解读 ASan 报告"></a>8.3 运行并解读 ASan 报告</h3><p>运行编译好的二进制文件，<br>无需 ulimit 配合，<br>它会自动检测崩溃：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">=================================================================</span><br><span class="line">==31245==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x60200000011a at pc 0x000000400c2a bp 0x7ffd58c29db0 sp 0x7ffd58c29da8</span><br><span class="line">WRITE of size 1 at 0x60200000011a thread T0</span><br><span class="line">    #0 0x400c29 in test_heap_corruption() segfault_demo.c:16</span><br><span class="line">    #1 0x400da2 in main segfault_demo.c:26</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+<p>ASan 报告不仅指出了错误类型（heap-buffer-overflow，<br>堆溢出），<br>还指出了越界写入的具体发生行数（segfault_demo.c:16），<br>甚至打印出该内存块是在哪里申请的。</p>
+<hr>
+<h2 id="9-段错误调试故障排查-FAQ"><a href="#9-段错误调试故障排查-FAQ" class="headerlink" title="9. 段错误调试故障排查 FAQ"></a>9. 段错误调试故障排查 FAQ</h2><h3 id="Q1-GDB-加载-Core-文件后显示-“No-debugging-symbols-found”-怎么办？"><a href="#Q1-GDB-加载-Core-文件后显示-“No-debugging-symbols-found”-怎么办？" class="headerlink" title="Q1: GDB 加载 Core 文件后显示 “No debugging symbols found” 怎么办？"></a>Q1: GDB 加载 Core 文件后显示 “No debugging symbols found” 怎么办？</h3><ul>
+<li><strong>原因</strong>：当前加载的可执行二进制文件被去除了符号（stripped）。</li>
+<li><strong>解决</strong>：在调试时，必须让 GDB 载入包含符号的未剥离版本（编译产物里的原始二进制），而不是拷贝到生产环境下的 stripped 版本。</li>
+</ul>
+<h3 id="Q2-崩溃发生后，没有生成-Core-文件，ulimit-c-已经设置-unlimited-了？"><a href="#Q2-崩溃发生后，没有生成-Core-文件，ulimit-c-已经设置-unlimited-了？" class="headerlink" title="Q2: 崩溃发生后，没有生成 Core 文件，ulimit -c 已经设置 unlimited 了？"></a>Q2: 崩溃发生后，没有生成 Core 文件，ulimit -c 已经设置 unlimited 了？</h3><ul>
+<li><strong>原因 1</strong>：磁盘空间不足或当前目录对当前运行用户无写入权限。</li>
+<li><strong>原因 2</strong>：程序在崩溃前自己捕获了信号并且调用了 <code>exit()</code>，没有以异常终止方式结束。</li>
+<li><strong>原因 3</strong>：系统使用了 Systemd 的 coredumpd 机制，core 文件被自动收集到了 <code>/var/lib/systemd/coredump</code> 或 <code>journalctl</code> 中。可以通过 <code>coredumpctl list</code> 命令查看。</li>
+</ul>
+<h3 id="Q3-Core-文件大小被截断-Truncated-core-file-怎么办？"><a href="#Q3-Core-文件大小被截断-Truncated-core-file-怎么办？" class="headerlink" title="Q3: Core 文件大小被截断 (Truncated core file) 怎么办？"></a>Q3: Core 文件大小被截断 (Truncated core file) 怎么办？</h3><ul>
+<li><strong>原因</strong>：尽管设置了 ulimit，但可写磁盘剩余空间小于 Core 文件大小，或者程序被强行终止导致写入未完成。</li>
+<li><strong>解决</strong>：检查磁盘可用空间，或通过配置 <code>core_pattern</code> 将 Core 文件输出到内存文件系统（如 <code>/dev/shm</code> 或 <code>/tmp</code>）。</li>
+</ul>
+<h3 id="Q4-如何在没有-GDB-的开发板上运行远程调试？"><a href="#Q4-如何在没有-GDB-的开发板上运行远程调试？" class="headerlink" title="Q4: 如何在没有 GDB 的开发板上运行远程调试？"></a>Q4: 如何在没有 GDB 的开发板上运行远程调试？</h3><ul>
+<li><strong>解法</strong>：在开发板上运行轻量级的 <code>gdbserver</code>，指定端口并附着到进程上；在宿主机上运行交叉调试器（如 <code>aarch64-linux-gnu-gdb</code>），执行 <code>target remote &lt;IP&gt;:&lt;PORT&gt;</code> 进行远程联调。</li>
+</ul>
+<hr>
+<h2 id="10-内存错误检测利器：Valgrind-动态分析"><a href="#10-内存错误检测利器：Valgrind-动态分析" class="headerlink" title="10. 内存错误检测利器：Valgrind 动态分析"></a>10. 内存错误检测利器：Valgrind 动态分析</h2><h3 id="10-1-什么是-Valgrind？"><a href="#10-1-什么是-Valgrind？" class="headerlink" title="10.1 什么是 Valgrind？"></a>10.1 什么是 Valgrind？</h3><p>Valgrind 是 Linux 下非常强大的动态二进制分析工具。<br>它包含一组工具，<br>其中最常用的是 Memcheck，<br>用于检测 C&#x2F;C++ 程序中的各种内存错误：</p>
+<ul>
+<li>使用未初始化的内存</li>
+<li>内存泄露（malloc 申请后未释放）</li>
+<li>读写已释放的内存</li>
+<li>越界读写内存（堆&#x2F;栈溢出）</li>
+<li>重复释放内存（Double Free）</li>
+</ul>
+<h3 id="10-2-Valgrind-的基本用法"><a href="#10-2-Valgrind-的基本用法" class="headerlink" title="10.2 Valgrind 的基本用法"></a>10.2 Valgrind 的基本用法</h3><p>使用 Valgrind 不需要重新编译程序，<br>可以直接分析二进制文件。<br>但为了看到具体出错的函数名和代码行号，<br>建议在编译时加上 <code>-g</code> 选项。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ valgrind --tool=memcheck --leak-check=full ./segfault_demo</span><br></pre></td></tr></table></figure>
+
+<h3 id="10-3-解析-Valgrind-错误报告"><a href="#10-3-解析-Valgrind-错误报告" class="headerlink" title="10.3 解析 Valgrind 错误报告"></a>10.3 解析 Valgrind 错误报告</h3><p>运行后，<br>Valgrind 会输出详细的诊断报告。<br>下面是一个典型的内存泄露和非法访问的报告：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">==12345== Memcheck, a memory error detector</span><br><span class="line">==12345== Copyright (C) 2002-2017, and GNU GPL&#x27;d, by Julian Seward et al.</span><br><span class="line">==12345== Using Valgrind-3.15.0 and LibVEX; rerun with -h for info</span><br><span class="line">==12345== Command: ./segfault_demo</span><br><span class="line">==12345== </span><br><span class="line">==12345== Invalid write of size 1</span><br><span class="line">==12345==    at 0x4005AA: trigger_crash (segfault_demo.c:9)</span><br><span class="line">==12345==    by 0x4005CF: func_b (segfault_demo.c:15)</span><br><span class="line">==12345==    by 0x4005DF: func_a (segfault_demo.c:19)</span><br><span class="line">==12345==    by 0x400605: main (segfault_demo.c:25)</span><br><span class="line">==12345==  Address 0x0 is not stack&#x27;d, malloc&#x27;d or (recently) free&#x27;d</span><br><span class="line">==12345== </span><br><span class="line">==12345== Heap Summary:</span><br><span class="line">==12345==    in use at exit: 20 bytes in 1 blocks</span><br><span class="line">==12345==    total heap usage: 1 allocs, 0 frees, 20 bytes allocated</span><br><span class="line">==12345== </span><br><span class="line">==12345== LEAK SUMMARY:</span><br><span class="line">==12345==    definitely lost: 20 bytes in 1 blocks</span><br><span class="line">==12345==    indirectly lost: 0 bytes in 0 blocks</span><br><span class="line">==12345==      possibly lost: 0 bytes in 0 blocks</span><br><span class="line">==12345==    still reachable: 0 bytes in 0 blocks</span><br><span class="line">==12345==         suppressed: 0 bytes in 0 blocks</span><br></pre></td></tr></table></figure>
+
+<p>报告清晰指出：</p>
+<ol>
+<li><code>Invalid write of size 1</code>：在第 9 行发生非法写入，<br>写入长度为 1 字节。</li>
+<li><code>Address 0x0 is not stack&#39;d, malloc&#39;d or (recently) free&#39;d</code>：访问的地址为 <code>0x0</code>，<br>它不属于栈、堆或已被释放的内存，<br>明显是空指针访问。</li>
+<li><code>LEAK SUMMARY</code>：程序退出时有 20 字节的数据发生泄漏，<br>该内存块是在 main 函数中申请但未释放。<br>通过使用 Valgrind，<br>我们可以在程序尚未崩溃时就诊断并消灭隐藏的内存溢出问题。</li>
+</ol>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>License</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">Newer</div><a href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-1-GCC-G-%E7%BC%96%E8%AF%91%E5%99%A8%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E4%B8%8E%E5%91%BD%E4%BB%A4%E8%A1%8C%E9%80%89%E9%A1%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/">GCC/G++ 编译器工作原理与命令行选项深度指南</a></div><div class="item" id="next"><div class="note">Older</div><a href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-2-GNU-Make%E4%B8%8EMakefile%E6%9E%84%E5%BB%BA%E5%9F%BA%E7%A1%80%E5%85%A5%E9%97%A8%E6%89%8B%E5%86%8C/">GNU Make 与 Makefile 构建基础入门手册</a></div></section></div>
+
+
+
+
+  <div class="related-wrap md-text" id="comments">
+    <section class='header cmt-title cap theme'>
+      <p>快来参与讨论吧~</p>
+
+    </section>
+    <section class='body cmt-body utterances'>
+      
+
+<svg class="loading" style="vertical-align:middle;fill:currentColor;overflow:hidden;" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2709"><path d="M832 512c0-176-144-320-320-320V128c211.2 0 384 172.8 384 384h-64zM192 512c0 176 144 320 320 320v64C300.8 896 128 723.2 128 512h64z" p-id="2710"></path></svg>
+
+<div id="utterances" repo="luhuaCyan/luhuaCyan.github.io" issue-term="title" theme="preferred-color-scheme" label="comment"></div>
+
+    </section>
+  </div>
+
+
+
+<footer class="page-footer footnote"><hr><div class="sitemap" style="column-count:4;"><div class="sitemap-group"><span class="fs15">博客</span><a href="/">近期发布</a><a href="/blog/categories/">分类</a><a href="/blog/tags/">标签</a><a href="/blog/archives/">归档</a></div><div class="sitemap-group"><span class="fs15">项目</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">社交</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">关于</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div></div><div class="text"><p>本站为个人学习笔记记录和整理，所有内容仅用于个人知识梳理、复习回顾及学习交流。<br>声明：本站所有资源收集整理于网络,本站不参与制作,用于互联网爱好者学习和研究,如不慎侵犯了您的权利,请及时联系站长处理删除。敬请谅解！</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">On This Page</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#Linux-%E6%AE%B5%E9%94%99%E8%AF%AF%E6%8E%92%E6%9F%A5%E4%B8%8E-GDB-%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%E8%B0%83%E8%AF%95%E5%AE%9E%E6%88%98"><span class="toc-text">Linux 段错误排查与 GDB 核心转储调试实战</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#1-%E6%B7%B1%E5%85%A5%E7%90%86%E8%A7%A3%E6%AE%B5%E9%94%99%E8%AF%AF%EF%BC%88SIGSEGV%EF%BC%89%E7%9A%84%E6%88%90%E5%9B%A0"><span class="toc-text">1. 深入理解段错误（SIGSEGV）的成因</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-1-%E5%B8%B8%E8%A7%81%E7%9A%84%E6%AE%B5%E9%94%99%E8%AF%AF%E6%A0%B9%E6%BA%90"><span class="toc-text">1.1 常见的段错误根源</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-2-%E5%BC%82%E5%B8%B8%E5%86%85%E5%AD%98%E8%AE%BF%E9%97%AE%E7%9B%B8%E5%85%B3%E7%B3%BB%E7%BB%9F%E4%BF%A1%E5%8F%B7%E5%AF%B9%E7%85%A7%E8%A1%A8"><span class="toc-text">1.2 异常内存访问相关系统信号对照表</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%EF%BC%88Core-Dump%EF%BC%89%E6%9C%BA%E5%88%B6%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%8E%AF%E5%A2%83%E9%85%8D%E7%BD%AE"><span class="toc-text">2. 核心转储（Core Dump）机制与系统环境配置</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#2-1-%E5%88%A9%E7%94%A8-ulimit-%E5%BC%80%E5%90%AF-Core-Dump-%E5%8A%9F%E8%83%BD"><span class="toc-text">2.1 利用 ulimit 开启 Core Dump 功能</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#2-1-1-ulimit-%E5%91%BD%E4%BB%A4%E8%A1%8C%E5%B7%A5%E5%85%B7%E8%AF%A6%E8%A7%A3"><span class="toc-text">2.1.1 ulimit 命令行工具详解</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-1-2-%E4%B8%B4%E6%97%B6%E5%90%AF%E7%94%A8"><span class="toc-text">2.1.2 临时启用</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-1-3-%E6%B0%B8%E4%B9%85%E7%94%9F%E6%95%88%E9%85%8D%E7%BD%AE"><span class="toc-text">2.1.3 永久生效配置</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-2-%E9%85%8D%E7%BD%AE-Core-%E6%96%87%E4%BB%B6%E7%9A%84%E4%BF%9D%E5%AD%98%E8%B7%AF%E5%BE%84%E4%B8%8E%E5%91%BD%E5%90%8D%E8%A7%84%E5%88%99"><span class="toc-text">2.2 配置 Core 文件的保存路径与命名规则</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#core-pattern-%E6%94%AF%E6%8C%81%E7%9A%84%E5%91%BD%E5%90%8D%E6%A0%BC%E5%BC%8F%E5%8C%96%E5%8D%A0%E4%BD%8D%E7%AC%A6%EF%BC%9A"><span class="toc-text">core_pattern 支持的命名格式化占位符：</span></a></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-%E5%AE%9E%E6%88%98-1%EF%BC%9A%E4%BB%A3%E7%A0%81%E5%B1%82%E9%9D%A2%E4%B8%BB%E5%8A%A8%E6%8D%95%E8%8E%B7-SIGSEGV-%E5%B9%B6%E8%87%AA%E5%8A%A8%E8%BE%93%E5%87%BA%E5%A0%86%E6%A0%88"><span class="toc-text">3. 实战 1：代码层面主动捕获 SIGSEGV 并自动输出堆栈</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#4-%E5%AE%9E%E6%88%98-2%EF%BC%9A%E6%A8%A1%E6%8B%9F%E5%85%B8%E5%9E%8B%E7%9A%84%E5%86%85%E5%AD%98%E5%B4%A9%E6%BA%83%E5%B4%A9%E6%BA%83%E7%94%A8%E4%BE%8B"><span class="toc-text">4. 实战 2：模拟典型的内存崩溃崩溃用例</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#4-1-%E6%A0%88%E5%B8%A7%E6%BA%A2%E5%87%BA%E6%A8%A1%E6%8B%9F%EF%BC%88%E6%97%A0%E9%99%90%E9%80%92%E5%BD%92%EF%BC%89"><span class="toc-text">4.1 栈帧溢出模拟（无限递归）</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-2-%E5%A0%86%E5%86%85%E5%AD%98%E7%A0%B4%E5%9D%8F%EF%BC%88Double-Free-Heap-Corruption%EF%BC%89"><span class="toc-text">4.2 堆内存破坏（Double Free &#x2F; Heap Corruption）</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#5-%E5%AE%9E%E6%88%98-3%EF%BC%9A%E7%BC%96%E8%AF%91%E4%B8%8E%E8%BF%90%E8%A1%8C"><span class="toc-text">5. 实战 3：编译与运行</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#6-GDB-%E8%BD%BD%E5%85%A5-Core-%E6%96%87%E4%BB%B6%E4%BA%A4%E4%BA%92%E5%BC%8F%E6%8E%92%E9%9A%9C"><span class="toc-text">6. GDB 载入 Core 文件交互式排障</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#6-1-%E5%BF%85%E5%A4%87%E7%9A%84-GDB-%E8%B0%83%E8%AF%95%E8%AF%8A%E6%96%AD%E5%91%BD%E4%BB%A4"><span class="toc-text">6.1 必备的 GDB 调试诊断命令</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#1-%E6%9F%A5%E7%9C%8B%E8%B0%83%E7%94%A8%E5%A0%86%E6%A0%88%EF%BC%9Abacktrace-%E6%88%96-bt"><span class="toc-text">1. 查看调用堆栈：backtrace 或 bt</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-%E5%88%87%E6%8D%A2%E5%BD%93%E5%89%8D%E5%87%BD%E6%95%B0%E4%B8%8A%E4%B8%8B%E6%96%87%E6%A0%88%E5%B8%A7%EF%BC%9Aframe"><span class="toc-text">2. 切换当前函数上下文栈帧：frame &lt;N&gt;</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#3-%E5%88%97%E5%87%BA%E4%BB%A3%E7%A0%81%E4%B8%8A%E4%B8%8B%E6%96%87%EF%BC%9Alist-%E6%88%96-l"><span class="toc-text">3. 列出代码上下文：list 或 l</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#4-%E6%89%93%E5%8D%B0%E5%8F%98%E9%87%8F%E5%80%BC%EF%BC%9Aprint-%E6%88%96-p"><span class="toc-text">4. 打印变量值：print &lt;var_name&gt; 或 p &lt;var_name&gt;</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#5-%E6%A3%80%E6%9F%A5%E5%AF%84%E5%AD%98%E5%99%A8%E7%8A%B6%E6%80%81%E4%B8%8E%E6%B1%87%E7%BC%96%E6%8C%87%E4%BB%A4%EF%BC%88%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8%EF%BC%89"><span class="toc-text">5. 检查寄存器状态与汇编指令（进阶应用）</span></a></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#7-%E5%B5%8C%E5%85%A5%E5%BC%8F%E8%B7%A8%E5%B9%B3%E5%8F%B0%E4%BA%A4%E5%8F%89-Core-Dump-%E7%AC%A6%E5%8F%B7%E8%A7%A3%E6%9E%90%E5%AE%9E%E6%88%98"><span class="toc-text">7. 嵌入式跨平台交叉 Core Dump 符号解析实战</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#7-1-%E4%BA%A4%E5%8F%89%E8%B0%83%E8%AF%95%E4%B8%89%E5%A4%A7%E5%BF%85%E5%A4%87%E8%A6%81%E7%B4%A0"><span class="toc-text">7.1 交叉调试三大必备要素</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#7-2-%E5%AE%BF%E4%B8%BB%E6%9C%BA%E4%BA%A4%E5%8F%89-GDB-%E5%90%AF%E5%8A%A8%E9%85%8D%E7%BD%AE"><span class="toc-text">7.2 宿主机交叉 GDB 启动配置</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%E5%9C%A8%E4%BA%A4%E5%8F%89-GDB-%E6%8E%A7%E5%88%B6%E5%8F%B0%E5%86%85%E8%AE%BE%E5%AE%9A%E7%AC%A6%E5%8F%B7%E6%98%A0%E5%B0%84%E8%B7%AF%E5%BE%84%EF%BC%9A"><span class="toc-text">在交叉 GDB 控制台内设定符号映射路径：</span></a></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#8-%E5%86%85%E5%AD%98%E5%B4%A9%E6%BA%83%E6%8E%92%E6%9F%A5%E8%BF%9B%E9%98%B6%EF%BC%9AAddressSanitizer-ASan-%E8%AF%8A%E6%96%AD%E5%88%A9%E5%99%A8"><span class="toc-text">8. 内存崩溃排查进阶：AddressSanitizer (ASan) 诊断利器</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#8-1-%E4%BB%80%E4%B9%88%E6%98%AF-AddressSanitizer%EF%BC%9F"><span class="toc-text">8.1 什么是 AddressSanitizer？</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#8-2-%E5%BC%80%E5%90%AF-ASan-%E7%9A%84%E7%BC%96%E8%AF%91%E9%80%89%E9%A1%B9"><span class="toc-text">8.2 开启 ASan 的编译选项</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#8-3-%E8%BF%90%E8%A1%8C%E5%B9%B6%E8%A7%A3%E8%AF%BB-ASan-%E6%8A%A5%E5%91%8A"><span class="toc-text">8.3 运行并解读 ASan 报告</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#9-%E6%AE%B5%E9%94%99%E8%AF%AF%E8%B0%83%E8%AF%95%E6%95%85%E9%9A%9C%E6%8E%92%E6%9F%A5-FAQ"><span class="toc-text">9. 段错误调试故障排查 FAQ</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#Q1-GDB-%E5%8A%A0%E8%BD%BD-Core-%E6%96%87%E4%BB%B6%E5%90%8E%E6%98%BE%E7%A4%BA-%E2%80%9CNo-debugging-symbols-found%E2%80%9D-%E6%80%8E%E4%B9%88%E5%8A%9E%EF%BC%9F"><span class="toc-text">Q1: GDB 加载 Core 文件后显示 “No debugging symbols found” 怎么办？</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Q2-%E5%B4%A9%E6%BA%83%E5%8F%91%E7%94%9F%E5%90%8E%EF%BC%8C%E6%B2%A1%E6%9C%89%E7%94%9F%E6%88%90-Core-%E6%96%87%E4%BB%B6%EF%BC%8Culimit-c-%E5%B7%B2%E7%BB%8F%E8%AE%BE%E7%BD%AE-unlimited-%E4%BA%86%EF%BC%9F"><span class="toc-text">Q2: 崩溃发生后，没有生成 Core 文件，ulimit -c 已经设置 unlimited 了？</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Q3-Core-%E6%96%87%E4%BB%B6%E5%A4%A7%E5%B0%8F%E8%A2%AB%E6%88%AA%E6%96%AD-Truncated-core-file-%E6%80%8E%E4%B9%88%E5%8A%9E%EF%BC%9F"><span class="toc-text">Q3: Core 文件大小被截断 (Truncated core file) 怎么办？</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Q4-%E5%A6%82%E4%BD%95%E5%9C%A8%E6%B2%A1%E6%9C%89-GDB-%E7%9A%84%E5%BC%80%E5%8F%91%E6%9D%BF%E4%B8%8A%E8%BF%90%E8%A1%8C%E8%BF%9C%E7%A8%8B%E8%B0%83%E8%AF%95%EF%BC%9F"><span class="toc-text">Q4: 如何在没有 GDB 的开发板上运行远程调试？</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#10-%E5%86%85%E5%AD%98%E9%94%99%E8%AF%AF%E6%A3%80%E6%B5%8B%E5%88%A9%E5%99%A8%EF%BC%9AValgrind-%E5%8A%A8%E6%80%81%E5%88%86%E6%9E%90"><span class="toc-text">10. 内存错误检测利器：Valgrind 动态分析</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#10-1-%E4%BB%80%E4%B9%88%E6%98%AF-Valgrind%EF%BC%9F"><span class="toc-text">10.1 什么是 Valgrind？</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#10-2-Valgrind-%E7%9A%84%E5%9F%BA%E6%9C%AC%E7%94%A8%E6%B3%95"><span class="toc-text">10.2 Valgrind 的基本用法</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#10-3-%E8%A7%A3%E6%9E%90-Valgrind-%E9%94%99%E8%AF%AF%E6%8A%A5%E5%91%8A"><span class="toc-text">10.3 解析 Valgrind 错误报告</span></a></li></ol></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>Scroll to Top</span></a><a class="buttom" onclick="util.scrollComment()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M8 10.5h8M8 14h5.5M17 3.338A9.95 9.95 0 0 0 12 2C6.477 2 2 6.477 2 12c0 1.6.376 3.112 1.043 4.453c.178.356.237.763.134 1.148l-.595 2.226a1.3 1.3 0 0 0 1.591 1.592l2.226-.596a1.63 1.63 0 0 1 1.149.133A9.96 9.96 0 0 0 12 22c5.523 0 10-4.477 10-10c0-1.821-.487-3.53-1.338-5"/></svg><span>Join Discussion</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  window.canonical["param"] = {"permalink":"https://lemoncyan.github.io/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-10-Linux%E6%AE%B5%E9%94%99%E8%AF%AF%E6%8E%92%E6%9F%A5%E4%B8%8EGDB%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%E8%B0%83%E8%AF%95%E5%AE%9E%E6%88%98/","checklink":"/js/plugins/video.js"};
+  const ctx = {
+    date_suffix: {
+      just: `Just`,
+      min: `minutes ago`,
+      hour: `hours ago`,
+      day: `days ago`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        if ($(el).find('.loading-wrap').length == 0){
+          $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+        }
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `Switched to Light Mode`,
+      dark: `Switched to Dark Mode`,
+      auto: `Switched to Auto Mode`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+  <script type="module">
+  const el = document.querySelector("#comments #utterances");
+  util.viewportLazyload(el, load_utterances, true);
+
+  function load_utterances() {
+    if (!el) return;
+    try {
+      el.innerHTML = '';
+    } catch (error) {
+      console.error(error);
+    }
+    const script = document.createElement('script');
+    script.src = 'https://utteranc.es/client.js';
+    script.async = true;
+    for (const key of Object.keys(el.attributes)) {
+      const attr = el.attributes[key];
+      if (['class', 'id'].includes(attr.name) === false) {
+        script.setAttribute(attr.name, attr.value);
+      }
+    }
+    el.appendChild(script);
+  }
+</script>
+
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.chat-file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

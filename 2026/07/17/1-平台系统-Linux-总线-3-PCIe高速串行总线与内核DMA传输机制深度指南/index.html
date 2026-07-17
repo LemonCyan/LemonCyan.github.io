@@ -1,0 +1,1205 @@
+
+<!DOCTYPE html><html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 7.3.0">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>PCIe高速串行总线与内核DMA传输机制深度指南 - LemonCyan</title>
+
+  
+    <meta name="description" content="深度剖析 PCIe 高速差分串行总线的物理层电气设计与三层协议栈架构，拆解内核 DMA 传输的 4 阶段与 3 类硬件协调模式。详细阐述 Linux 下一致性 DMA 映射与流式 DMA 映射的 API 使用、内核缓存（Cache）一致性管理及 S3C2410 驱动实战。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="PCIe高速串行总线与内核DMA传输机制深度指南">
+<meta property="og:url" content="https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E6%80%BB%E7%BA%BF-3-PCIe%E9%AB%98%E9%80%9F%E4%B8%B2%E8%A1%8C%E6%80%BB%E7%BA%BF%E4%B8%8E%E5%86%85%E6%A0%B8DMA%E4%BC%A0%E8%BE%93%E6%9C%BA%E5%88%B6%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/">
+<meta property="og:site_name" content="LemonCyan">
+<meta property="og:description" content="深度剖析 PCIe 高速差分串行总线的物理层电气设计与三层协议栈架构，拆解内核 DMA 传输的 4 阶段与 3 类硬件协调模式。详细阐述 Linux 下一致性 DMA 映射与流式 DMA 映射的 API 使用、内核缓存（Cache）一致性管理及 S3C2410 驱动实战。">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+<meta property="article:published_time" content="2026-07-17T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-07-17T03:19:06.522Z">
+<meta property="article:author" content="liuluhua">
+<meta property="article:tag" content="PCIe">
+<meta property="article:tag" content="DMA">
+<meta property="article:tag" content="差分信号">
+<meta property="article:tag" content="缓存一致性">
+<meta property="article:tag" content="Linux驱动">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+  
+  
+  
+  <meta name="keywords" content="PCIe,DMA,差分信号,缓存一致性,Linux驱动">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"},"dateCreated":"2026-07-17T00:00:00+00:00","dateModified":"2026-07-17T03:19:06+00:00","datePublished":"2026-07-17T00:00:00+00:00","description":"","headline":"PCIe高速串行总线与内核DMA传输机制深度指南","mainEntityOfPage":{"@type":"WebPage","@id":"https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E6%80%BB%E7%BA%BF-3-PCIe%E9%AB%98%E9%80%9F%E4%B8%B2%E8%A1%8C%E6%80%BB%E7%BA%BF%E4%B8%8E%E5%86%85%E6%A0%B8DMA%E4%BC%A0%E8%BE%93%E6%9C%BA%E5%88%B6%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/"},"publisher":{"@type":"Organization","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png","logo":{"@type":"ImageObject","url":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"}},"url":"https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E6%80%BB%E7%BA%BF-3-PCIe%E9%AB%98%E9%80%9F%E4%B8%B2%E8%A1%8C%E6%80%BB%E7%BA%BF%E4%B8%8E%E5%86%85%E6%A0%B8DMA%E4%BC%A0%E8%BE%93%E6%9C%BA%E5%88%B6%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/","keywords":"PCIe, DMA, 差分信号, 缓存一致性, Linux驱动","image":[]}</script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css" />
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="config.avatar" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">LemonCyan</div><div class="sub cap">LemonCyan`s Charging</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"><a class="nav-item active" title="博客" href="/" style="color:#1BCDFC"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M5.879 2.879C5 3.757 5 5.172 5 8v8c0 2.828 0 4.243.879 5.121C6.757 22 8.172 22 11 22h2c2.828 0 4.243 0 5.121-.879C19 20.243 19 18.828 19 16V8c0-2.828 0-4.243-.879-5.121C17.243 2 15.828 2 13 2h-2c-2.828 0-4.243 0-5.121.879M8.25 17a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75M9 12.25a.75.75 0 0 0 0 1.5h6a.75.75 0 0 0 0-1.5zM8.25 9A.75.75 0 0 1 9 8.25h6a.75.75 0 0 1 0 1.5H9A.75.75 0 0 1 8.25 9" clip-rule="evenodd"/><path fill="currentColor" d="M5.235 4.058C5 4.941 5 6.177 5 8v8c0 1.823 0 3.058.235 3.942L5 19.924c-.975-.096-1.631-.313-2.121-.803C2 18.243 2 16.828 2 14v-4c0-2.829 0-4.243.879-5.121c.49-.49 1.146-.707 2.121-.803zm13.53 15.884C19 19.058 19 17.822 19 16V8c0-1.823 0-3.059-.235-3.942l.235.018c.975.096 1.631.313 2.121.803C22 5.757 22 7.17 22 9.999v4c0 2.83 0 4.243-.879 5.122c-.49.49-1.146.707-2.121.803z" opacity=".5"/></svg></a><a class="nav-item" title="文档" href="/wiki/" style="color:#3DC550"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M14.25 4.48v3.057c0 .111 0 .27.02.406a.936.936 0 0 0 .445.683a.96.96 0 0 0 .783.072c.13-.04.272-.108.378-.159L17 8.005l1.124.534c.106.05.248.119.378.16a.958.958 0 0 0 .783-.073a.936.936 0 0 0 .444-.683c.021-.136.021-.295.021-.406V3.031c.113-.005.224-.01.332-.013C21.154 2.98 22 3.86 22 4.933v11.21c0 1.112-.906 2.01-2.015 2.08c-.97.06-2.108.179-2.985.41c-1.082.286-1.99 1.068-3.373 1.436c-.626.167-1.324.257-1.627.323V5.174c.32-.079 1.382-.203 1.674-.371c.184-.107.377-.216.576-.323m5.478 8.338a.75.75 0 0 1-.546.91l-4 1a.75.75 0 0 1-.364-1.456l4-1a.75.75 0 0 1 .91.546" clip-rule="evenodd"/><path fill="currentColor" d="M18.25 3.151c-.62.073-1.23.18-1.75.336a8.2 8.2 0 0 0-.75.27v3.182l.75-.356l.008-.005a1.13 1.13 0 0 1 .492-.13c.047 0 .094.004.138.01c.175.029.315.1.354.12l.009.005l.749.356V3.647z"/><path fill="currentColor" d="M12 5.214c-.334-.064-1.057-.161-1.718-.339C8.938 4.515 8.05 3.765 7 3.487c-.887-.234-2.041-.352-3.018-.412C2.886 3.007 2 3.9 2 4.998v11.146c0 1.11.906 2.01 2.015 2.079c.97.06 2.108.179 2.985.41c.486.129 1.216.431 1.873.726c1.005.451 2.052.797 3.127 1.034z" opacity=".5"/><path fill="currentColor" d="M4.273 12.818a.75.75 0 0 1 .91-.545l4 1a.75.75 0 1 1-.365 1.455l-4-1a.75.75 0 0 1-.545-.91m.909-4.545a.75.75 0 1 0-.364 1.455l4 1a.75.75 0 0 0 .364-1.455z"/></svg></a><a class="nav-item" title="探索" href="/explore/" style="color:#FA6400"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M20 12a8 8 0 1 1-16 0a8 8 0 0 1 16 0" opacity=".5"/><path fill="currentColor" d="M17.712 5.453c1.047-.193 2.006-.259 2.797-.152c.77.103 1.536.393 1.956 1.064c.446.714.312 1.542-.012 2.258c-.33.728-.918 1.499-1.672 2.268c-1.516 1.547-3.836 3.226-6.597 4.697c-2.763 1.472-5.495 2.484-7.694 2.92c-1.095.217-2.098.299-2.923.201c-.8-.095-1.6-.383-2.032-1.075c-.47-.752-.296-1.63.07-2.379c.375-.768 1.032-1.586 1.872-2.403L4 12.416c0 .219.083.71.168 1.146c.045.23.09.444.123.596c-.652.666-1.098 1.263-1.339 1.756c-.277.567-.208.825-.145.925c.072.116.305.305.937.38c.609.073 1.44.018 2.455-.183c2.02-.4 4.613-1.351 7.28-2.772c2.667-1.42 4.85-3.015 6.23-4.423c.694-.707 1.15-1.334 1.377-1.836c.233-.515.167-.75.107-.844c-.07-.112-.289-.294-.883-.374c-.542-.072-1.272-.041-2.163.112L16.87 5.656c.338-.101.658-.17.842-.203"/></svg></a><a class="nav-item" title="社交" href="/friends/" style="color:#F44336"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="m13.629 20.472l-.542.916c-.483.816-1.69.816-2.174 0l-.542-.916c-.42-.71-.63-1.066-.968-1.262c-.338-.197-.763-.204-1.613-.219c-1.256-.021-2.043-.098-2.703-.372a5 5 0 0 1-2.706-2.706C2 14.995 2 13.83 2 11.5v-1c0-3.273 0-4.91.737-6.112a5 5 0 0 1 1.65-1.651C5.59 2 7.228 2 10.5 2h3c3.273 0 4.91 0 6.113.737a5 5 0 0 1 1.65 1.65C22 5.59 22 7.228 22 10.5v1c0 2.33 0 3.495-.38 4.413a5 5 0 0 1-2.707 2.706c-.66.274-1.447.35-2.703.372c-.85.015-1.275.022-1.613.219c-.338.196-.548.551-.968 1.262" opacity=".5"/><path fill="currentColor" d="M10.99 14.308c-1.327-.978-3.49-2.84-3.49-4.593c0-2.677 2.475-3.677 4.5-1.609c2.025-2.068 4.5-1.068 4.5 1.609c0 1.752-2.163 3.615-3.49 4.593c-.454.335-.681.502-1.01.502c-.329 0-.556-.167-1.01-.502"/></svg></a></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="Search"></form><div id="search-result"></div><div class="search-no-result">No Results!</div></div>
+
+
+
+<widget class="widget-wrapper recent post-list"><div class="widget-header dis-select"><span class="name">Recent Update</span></div><div class="widget-body fs14"><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-9-%E5%B5%8C%E5%85%A5%E5%BC%8FLinux%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98%E6%8C%87%E5%8D%97/"><span class="title">嵌入式 Linux 启动性能优化与工具链/应用程序调优指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-6-Linux%E5%85%B1%E4%BA%AB%E5%BA%93%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%E5%AF%BB%E5%9D%80%E6%9C%BA%E5%88%B6%E5%8F%8A%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8/"><span class="title">Linux 共享库动态加载与运行时链接器寻址机制及进阶应用</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-7-%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%B5%8C%E5%85%A5%E5%BC%8F%E4%BA%A4%E5%8F%89%E5%B7%A5%E5%85%B7%E9%93%BE%E6%9E%84%E5%BB%BAcrosstool-ng%E6%B7%B1%E5%BA%A6%E5%AE%9E%E6%88%98/"><span class="title">交叉编译与嵌入式交叉工具链构建 crosstool-ng 深度实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-8-%E7%8E%B0%E4%BB%A3%E6%9E%84%E5%BB%BA%E7%B3%BB%E7%BB%9FMeson-Ninja%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%BC%80%E6%BA%90%E5%BA%93%E7%A7%BB%E6%A4%8D%E5%AE%9E%E6%88%98/"><span class="title">现代构建系统 Meson + Ninja 交叉编译与开源库移植实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-3-%E9%99%88%E7%9A%93%E3%80%8A%E8%B7%9F%E6%88%91%E5%AD%A6Makefile%E3%80%8B%E7%B2%BE%E7%BC%96%E4%B8%8E%E5%AE%9E%E6%88%98%E8%BF%9B%E9%98%B6%E6%8C%87%E5%8D%97/"><span class="title">陈皓《跟我学Makefile》精编与实战进阶指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-4-%E5%A4%8D%E6%9D%82C-C-%E9%A1%B9%E7%9B%AE%E7%9A%84%E5%A4%9A%E6%96%87%E4%BB%B6%E5%A4%B9Makefile%E8%AE%BE%E8%AE%A1%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%8C%96%E7%BC%96%E8%AF%91%E6%9E%B6%E6%9E%84/"><span class="title">复杂 C/C++ 项目的多文件夹 Makefile 设计与自动化编译架构</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-5-%E9%9D%99%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E4%B8%8E%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E6%A0%B8%E5%BF%83%E6%9C%BA%E5%88%B6%E4%B8%8E%E5%BC%80%E5%8F%91%E5%AE%9E%E6%88%98/"><span class="title">静态链接库与动态链接库核心机制与开发实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-1-GCC-G-%E7%BC%96%E8%AF%91%E5%99%A8%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E4%B8%8E%E5%91%BD%E4%BB%A4%E8%A1%8C%E9%80%89%E9%A1%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/"><span class="title">GCC/G++ 编译器工作原理与命令行选项深度指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-10-Linux%E6%AE%B5%E9%94%99%E8%AF%AF%E6%8E%92%E6%9F%A5%E4%B8%8EGDB%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%E8%B0%83%E8%AF%95%E5%AE%9E%E6%88%98/"><span class="title">Linux 段错误排查与 GDB 核心转储调试实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-2-GNU-Make%E4%B8%8EMakefile%E6%9E%84%E5%BB%BA%E5%9F%BA%E7%A1%80%E5%85%A5%E9%97%A8%E6%89%8B%E5%86%8C/"><span class="title">GNU Make 与 Makefile 构建基础入门手册</span></a></div></widget>
+</div>
+<footer class="footer dis-select"><div class="social-wrap"><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/08a41b181ce68.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3845874.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3616429.svg"/></a><a class="social" href="/about/#comments" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/942ebbf1a4b91.svg"/></a></div></footer>
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">Home</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">Blog</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">Posted on: <time datetime="2026-07-17T00:00:00.000Z">2026-07-17</time></span><span class="sep updated"></span><span class="text updated">Updated on: <time datetime="2026-07-17T03:19:06.522Z">2026-07-17</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>PCIe高速串行总线与内核DMA传输机制深度指南</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h1 id="PCIe高速串行总线与内核DMA传输机制深度指南"><a href="#PCIe高速串行总线与内核DMA传输机制深度指南" class="headerlink" title="PCIe高速串行总线与内核DMA传输机制深度指南"></a>PCIe高速串行总线与内核DMA传输机制深度指南</h1><p>随着现代处理器主频的飙升与多核架构的普及，传统的板级并行总线在数据吞吐率与物理布线上面临着难以克服的“物理瓶颈”。为了打破这一瓶颈，高速差分串行总线 <strong>PCIe (PCI Express)</strong> 与免 CPU 负载的 <strong>DMA (Direct Memory Access)</strong> 直接内存访问技术，共同构成了现代计算机与嵌入式系统进行海量数据交互的两大核心支柱。</p>
+<p>作为一名深入内核与硬件边界的极客，理解 PCIe 的差分电气层、三层协议栈与 DMA 的内存寻址、Cache 一致性管理，是手搓高性能网卡、固态硬盘（NVMe）或 GPU 加速卡驱动的必经之路。本指南将带你从最底层的差分电平物理线出发，一路上升到 Linux 内核的 DMA 驱动编程实战，深度剖析这两大技术的底层机理。</p>
+<hr>
+<h2 id="第一部分：PCIe-高速串行差分总线机制"><a href="#第一部分：PCIe-高速串行差分总线机制" class="headerlink" title="第一部分：PCIe 高速串行差分总线机制"></a>第一部分：PCIe 高速串行差分总线机制</h2><p>PCIe 是一种高带宽、低延迟、端到端（Point-to-Point）的同步串行差分总线。它彻底颠覆了传统 PCI 共享总线的拓扑结构，采用类似于交换式以太网的路由点对点传输。</p>
+<h3 id="1-1-物理层：高速差分信号与端到端拓扑"><a href="#1-1-物理层：高速差分信号与端到端拓扑" class="headerlink" title="1.1 物理层：高速差分信号与端到端拓扑"></a>1.1 物理层：高速差分信号与端到端拓扑</h3><p>在每一条 PCIe 物理链路中，只能连接两个设备：一个发送端（TX）和一个接收端（RX）。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">        【 PCIe 物理单通道 (Lane) 差分物理走线 】</span><br><span class="line"></span><br><span class="line">+------------------+                    +------------------+</span><br><span class="line">|  发送端 (TX 器件)|                    |  接收端 (RX 器件)|</span><br><span class="line">|      [驱动器]    |                    |     [比较器]     |</span><br><span class="line">|       (D+)  ○────┼───||─── 差分线 ────┼────►○            |</span><br><span class="line">|                  |    AC 耦合电容     |   比较器求差     |</span><br><span class="line">|       (D-)  ○────┼───||─── 差分线 ────┼────►○            |</span><br><span class="line">+------------------+                    +------------------+</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li><strong>物理组成</strong>：一个通道（Lane）由两向共 $4$ 根差分信号线组成。发送端 TX 的正负极通过一组差分线连接接收端 RX，反之亦然。为了消除直流偏移并保护输入电路，电气规范要求发送端串接 <strong>AC 耦合电容</strong>。</li>
+<li><strong>差分信号的物理优势</strong>：<ul>
+<li><strong>抗共模干扰</strong>：接收端通过比较 $D_+$ 与 $D_-$ 的电压差来判定逻辑值（差值为正代表 1，差值为负代表 0）。任何外部电磁噪声都会<strong>同时且同值</strong>加载到两根线上，求差后被完美抵消。</li>
+<li><strong>电磁辐射（EMI）阻断</strong>：由于两根线距离极近且电流大小相等、方向相反，它们产生的电磁场在物理空间中近乎完全抵消，对外的辐射极小。这使得 PCIe 的工作频率能轻松飙升到数 GHz。</li>
+</ul>
+</li>
+<li><strong>多通道宽度（Lanes）</strong>：<br>PCIe 链路支持 x1, x2, x4, x8, x12, x16, x32 多种宽度组合。CPU 的主板芯片组（如 ICH&#x2F;PCH）通常引出多个 x1 通道用于挂载低速外设，而将 x16 通道专用于显卡（GPU）或高速网卡。</li>
+</ol>
+<hr>
+<h3 id="1-2-PCIe-版本迭代与带宽计算大字典"><a href="#1-2-PCIe-版本迭代与带宽计算大字典" class="headerlink" title="1.2 PCIe 版本迭代与带宽计算大字典"></a>1.2 PCIe 版本迭代与带宽计算大字典</h3><p>不同的 PCIe 总线规范定义的物理频率与数据编码效率有着天壤之别。下表详细列出了各代 PCIe 单通道（Lane）的核心参数：</p>
+<table>
+<thead>
+<tr>
+<th align="left">PCIe 规范版本</th>
+<th align="left">时钟主频 (GHz)</th>
+<th align="left">链路传输率 (GT&#x2F;s)</th>
+<th align="left">物理层数据编码方式</th>
+<th align="left">单 Lane 理论单向有效带宽</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>PCIe 1.x</strong></td>
+<td align="left">$1.25$</td>
+<td align="left">$2.5$</td>
+<td align="left">8b&#x2F;10b 编码 ($20%$ 开销)</td>
+<td align="left">$250\text{ MB&#x2F;s}$</td>
+</tr>
+<tr>
+<td align="left"><strong>PCIe 2.x</strong></td>
+<td align="left">$2.5$</td>
+<td align="left">$5.0$</td>
+<td align="left">8b&#x2F;10b 编码 ($20%$ 开销)</td>
+<td align="left">$500\text{ MB&#x2F;s}$</td>
+</tr>
+<tr>
+<td align="left"><strong>PCIe 3.0</strong></td>
+<td align="left">$4.0$</td>
+<td align="left">$8.0$</td>
+<td align="left">128b&#x2F;130b 编码 ($1.5%$ 开销)</td>
+<td align="left">$985\text{ MB&#x2F;s}$</td>
+</tr>
+<tr>
+<td align="left"><strong>PCIe 4.0</strong></td>
+<td align="left">$8.0$</td>
+<td align="left">$16.0$</td>
+<td align="left">128b&#x2F;130b 编码 ($1.5%$ 开销)</td>
+<td align="left">$1.97\text{ GB&#x2F;s}$</td>
+</tr>
+<tr>
+<td align="left"><strong>PCIe 5.0</strong></td>
+<td align="left">$16.0$</td>
+<td align="left">$32.0$</td>
+<td align="left">128b&#x2F;130b 编码 ($1.5%$ 开销)</td>
+<td align="left">$3.94\text{ GB&#x2F;s}$</td>
+</tr>
+</tbody></table>
+<h4 id="🔑-为什么-PCIe-3-0-频率仅为-2-0-的-1-6-倍，但带宽却翻倍？"><a href="#🔑-为什么-PCIe-3-0-频率仅为-2-0-的-1-6-倍，但带宽却翻倍？" class="headerlink" title="🔑 为什么 PCIe 3.0 频率仅为 2.0 的 1.6 倍，但带宽却翻倍？"></a>🔑 为什么 PCIe 3.0 频率仅为 2.0 的 1.6 倍，但带宽却翻倍？</h4><ul>
+<li><strong>8b&#x2F;10b 编码</strong>：为了在没有时钟线的串行流中恢复出时钟，1.x 和 2.0 版本使用 8b&#x2F;10b 编码（每发 8 位有效数据要夹带 2 位多余同步码），白白浪费了 <strong>$20%$</strong> 的总带宽。</li>
+<li><strong>128b&#x2F;130b 编码</strong>：3.0 版本改用极其先进的分组打散乱序（Scrambling）和 128b&#x2F;130b 编码，额外开销骤降至 **$1.5%$**，几乎实现了无损发送，从而在 $8\text{ GT&#x2F;s}$ 下实现了近乎翻倍的实际有效吞吐量。</li>
+</ul>
+<hr>
+<h3 id="1-3-核心辅助信号线作用"><a href="#1-3-核心辅助信号线作用" class="headerlink" title="1.3 核心辅助信号线作用"></a>1.3 核心辅助信号线作用</h3><p>在一个标准的 PCIe 插槽上，除了差分收发线外，还有几根至关重要的辅助引脚：</p>
+<ol>
+<li>**<code>PERST#</code> (PCIe Reset)**：全局冷复位信号，低电平有效。当主机电源稳定时，拉高此信号，释放外设进行内部状态机复位。</li>
+<li>**<code>REFCLK+</code> &#x2F; <code>REFCLK-</code>**：$100\text{ MHz}$ 差分参考时钟对。用于确保挂接在插槽上的外设卡与 CPU 主板的时钟同相，减少锁相环（PLL）抖动。</li>
+<li>**<code>Vaux</code> (Auxiliary Power)**：$3.3\text{V}$ 辅助供电电源线。用于系统休眠后（Vcc 被切断）继续维持外设卡上的电源管理寄存器（Sticky Registers）状态，支持低功耗网络唤醒（Wake-on-LAN）。</li>
+</ol>
+<hr>
+<h3 id="1-4-PCIe-三层协议栈解析"><a href="#1-4-PCIe-三层协议栈解析" class="headerlink" title="1.4 PCIe 三层协议栈解析"></a>1.4 PCIe 三层协议栈解析</h3><p>PCIe 的数据流向与 TCP&#x2F;IP 网络协议栈的设计理念异曲同工，被清晰地分为了三层结构：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">           【 PCIe 三层协议栈数据流 】</span><br><span class="line"></span><br><span class="line">+------------------+                   +------------------+</span><br><span class="line">|   事务层 (TLP)   | ◄─── 剥离/组装 ──►|   事务层 (TLP)   | </span><br><span class="line">+--------▲---------+                   +--------▲---------+</span><br><span class="line">         │                                      │</span><br><span class="line">+--------▼---------+                   +--------▼---------+</span><br><span class="line">| 数据链路层 (DLLP)| ◄─── CRC校验/ACK ─►| 数据链路层 (DLLP)|</span><br><span class="line">+--------▲---------+                   +--------▲---------+</span><br><span class="line">         │                                      │</span><br><span class="line">+--------▼---------+                   +--------▼---------+</span><br><span class="line">|   物理层 (PLP)   | ◄── 8b10b/并串转换 ─►|   物理层 (PLP)   |</span><br><span class="line">+--------▲---------+                   +--------▲---------+</span><br><span class="line">         │                                      │</span><br><span class="line">=========┴─────────── 物理差分走线 ─────────────┴==========</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li>**事务层 (Transaction Layer)<strong>：顶层。负责组装和解析</strong>事务层数据包 (TLP - Transaction Layer Packet)**。它负责处理内存读写（Memory Read&#x2F;Write）、配置读写、I&#x2F;O 读写等请求，并进行端到端路由和流控信用（Flow Control Credits）管理。</li>
+<li>**数据链路层 (Data Link Layer)**：中层。负责保证数据在相邻两个端口间的绝对可靠传输。它会自动在 TLP 包外围挂上序列号和 LCRC 校验码，并通过 <strong>ACK&#x2F;NAK</strong> 应答机制处理超时重传，防止报文在物理线上丢包。</li>
+<li>**物理层 (Physical Layer)**：底层。负责处理最棘手的模拟电气物理传输。包括将并行字节打散、通过 8b&#x2F;10b 或 128b&#x2F;130b 进行线编码、进行串行化（Serializer），并最终通过 CDR（时钟恢复）技术将时钟锁死在差分数据流里输出。</li>
+</ol>
+<hr>
+<h3 id="1-5-PCIe-配置空间与地址-MMIO-映射机制"><a href="#1-5-PCIe-配置空间与地址-MMIO-映射机制" class="headerlink" title="1.5 PCIe 配置空间与地址 MMIO 映射机制"></a>1.5 PCIe 配置空间与地址 MMIO 映射机制</h3><p>为了实现设备的自动识别与即插即用（PnP），每个 PCIe 设备都提供了一块<strong>配置空间（Configuration Space）</strong>：</p>
+<ol>
+<li><strong>空间大小演进</strong>：传统 PCI 仅有 $256$ 字节配置空间。PCIe 将其强行扩展到了 **$4\text{ KB}$**。<ul>
+<li>前 $256$ 字节：与 PCI 2.3 规范严格兼容的首部，包含厂商 ID（Vendor ID）、设备 ID（Device ID）以及核心的 <strong>BAR (Base Address Register) 寄存器</strong>。</li>
+<li>后 $3840$ 字节：PCIe 扩展配置空间，用于挂接 MSI&#x2F;MSI-X 中断配置、电源管理状态、链路控制状态以及高级错误报告（AER）寄存器。</li>
+</ul>
+</li>
+<li><strong>ECAM (增强配置访问机制) 寻址</strong>：<br>x86 架构和现代 ARM 服务器将整个 PCIe 的配置空间以内存映射 I&#x2F;O（MMIO）的方式映射到了 CPU 的物理地址空间。CPU 访问某个外设的配置寄存器，只需像读写普通内存指针一样操作对应地址。其物理地址计算公式如下：<br>$$\text{MMIO地址} &#x3D; \text{ECAM基地址} + (\text{总线号} \ll 20) + (\text{设备号} \ll 15) + (\text{功能号} \ll 12) + \text{寄存器偏移}$$</li>
+<li><strong>BAR (基地址寄存器) 硬件协商</strong>：<br>设备上电时，BAR 寄存器中存有设备自己申请的内存空间大小和类型（例如 128MB 的物理显存）。系统 BIOS&#x2F;内核在枚举设备时，会读取 BAR，获知其空间需求，并在主存中为该设备分配一段空闲物理 MMIO 范围写入 BAR 中。此后，CPU 对该段 MMIO 地址的访问就会被主板北桥硬件重定向到该 PCIe 外设内部。</li>
+</ol>
+<hr>
+<h3 id="1-6-PCIe-独立主控-DMA-通道-Bus-Mastering"><a href="#1-6-PCIe-独立主控-DMA-通道-Bus-Mastering" class="headerlink" title="1.6 PCIe 独立主控 DMA 通道 (Bus Mastering)"></a>1.6 PCIe 独立主控 DMA 通道 (Bus Mastering)</h3><p>在现代高性能 PCIe 总线设计中，主板上并没有一个统一的中央 DMA 控制器（DMAC）来指挥所有设备的数据读写。相反，每个 PCIe 节点设备（如千兆网卡、M.2 固态硬盘）内部都集成了一个或多个专属的<strong>独立 DMA 主控引擎</strong>，这被称为 <strong>Bus Mastering（总线主控模式）</strong>：</p>
+<ul>
+<li><strong>工作逻辑</strong>：<ol>
+<li><strong>准备阶段</strong>：运行在 CPU 上的 Linux 驱动程序在物理内存（RAM）中分配一块缓冲区，并写入数据传输描述符（例如“将物理地址 0x4000 处的 2048 字节数据写回 RAM”）。</li>
+<li><strong>触发阶段</strong>：CPU 通过 MMIO 写操作，直接修改外设 PCIe 卡内部的门铃寄存器（Doorbell Register），通知外设 DMA 引擎有新的工作任务。</li>
+<li><strong>设备主导传输</strong>：外设卡内部的 DMA 引擎直接接管控制器，向 PCIe 总线主动发起内存读写（Memory Read&#x2F;Write）类型的 <strong>TLP 事务包</strong>。外设主控扮演了总线 Master，主动往系统 RAM 吐数据或拉数据，而无需 CPU 进行任何地址运算。</li>
+<li><strong>通知阶段</strong>：数据传输完毕后，外设通过 PCIe 中断机制（如 MSI-X 报文写事务）向 CPU 核心发送中断，驱动程序收尾。</li>
+</ol>
+</li>
+</ul>
+<hr>
+<h3 id="1-7-带宽加速利器：PCIe-带内中断机制-MSI-MSI-X"><a href="#1-7-带宽加速利器：PCIe-带内中断机制-MSI-MSI-X" class="headerlink" title="1.7 带宽加速利器：PCIe 带内中断机制 (MSI &#x2F; MSI-X)"></a>1.7 带宽加速利器：PCIe 带内中断机制 (MSI &#x2F; MSI-X)</h3><p>在传统并行总线中，中断是通过专用的硬中断物理引脚（如 <code>INTA# ~ INTD#</code>）进行“带外（Out-of-band）”传输的。这种结构在高频千兆网卡下有着致命缺陷：所有外设卡共享极少的中断线，CPU 需要高频查询寄存器以判明中断源，产生巨大的延迟。<br>为了消除这几根脆弱的物理线，PCIe 引入了<strong>带内（In-band）消息中断</strong>机制：</p>
+<ul>
+<li>**MSI (Message Signaled Interrupts)**：<br>外设向主板发送一个写内存 TLP 报文。报文中写入指定的物理地址（目标为 APIC 中断控制器映射区）和特定的数据 payload。CPU 收到此写事件后，硬件自动将其翻译为对应的软中断。</li>
+<li>**MSI-X (扩展消息中断)**：<br>MSI 的升级版，支持多达 <strong>$2048$</strong> 个独立的中断向量（MSI 仅支持 32 个），且每一个向量在物理上都拥有独立的寻址和负载。每个接收队列（RX Queue）都绑定一个专属的 MSI-X 中断向量，并分别绑定到不同的 CPU 核心上（Interrupt Affinity）。当某队列 DMA 传输完成，它发送专属 MSI-X，仅打断该 CPU 核心执行任务，实现了多核并行的超高并发网络处理吞吐量。</li>
+</ul>
+<hr>
+<h3 id="1-8-高级错误报告-AER-与内核恢复机制"><a href="#1-8-高级错误报告-AER-与内核恢复机制" class="headerlink" title="1.8 高级错误报告 (AER) 与内核恢复机制"></a>1.8 高级错误报告 (AER) 与内核恢复机制</h3><p>在高可靠性的 PCIe 通信系统（如金融级服务器、车载控制总线）中，总线在运行期间难免会因为高频反射或温度漂移产生物理传输错误。为了防止系统在检测到总线抖动时直接死机，PCIe 定义了 <strong>AER (Advanced Error Reporting)</strong> 高级错误报告机制。</p>
+<ol>
+<li><strong>错误分类</strong>：<ul>
+<li>**可纠正错误 (Correctable Errors)**：如接收端 TLP&#x2F;DLLP 帧的 LCRC 校验错、输入缓冲区瞬时溢出等。物理层或数据链路层会利用自动重发（Retry）机制在硬件上自行消化，不需要软件干预。</li>
+<li>**不可纠正错误 (Uncorrectable Errors)**：如投毒 TLP（Poisoned TLP）、目的地址不存在的非致命错误（Non-fatal）、以及物理链路彻底断开的致命错误（Fatal）。</li>
+</ul>
+</li>
+<li><strong>Linux 内核 AER 驱动回调机制</strong>：<br>当系统检测到不可纠正非致命错误时，内核 AER 服务守护进程会阻断总线事务，并调用绑定在该 PCIe 卡上的驱动程序的错误处理回调集：<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 💡 定义在 pci_driver 结构体中的异常恢复回调函数指针</span></span><br><span class="line"><span class="type">static</span> <span class="type">pci_ers_result_t</span> <span class="title function_">my_pcie_error_detected</span><span class="params">(<span class="keyword">struct</span> pci_dev *pdev, <span class="type">pci_channel_state_t</span> state)</span></span><br><span class="line">&#123;</span><br><span class="line">    printk(<span class="string">&quot;[-] 检测到 PCIe 链路故障! 正在冻结驱动的 IO 数据通路...\n&quot;</span>);</span><br><span class="line">    disable_device_io(pdev); <span class="comment">// 停止数据传输，阻断 DMA</span></span><br><span class="line">    <span class="keyword">return</span> PCI_ERS_RESULT_NEED_RESET; <span class="comment">// 反馈内核：需要插槽重置</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">pci_ers_result_t</span> <span class="title function_">my_pcie_slot_reset</span><span class="params">(<span class="keyword">struct</span> pci_dev *pdev)</span></span><br><span class="line">&#123;</span><br><span class="line">    printk(<span class="string">&quot;[*] PCIe 插槽已被内核硬件复位，正在重新初始化设备寄存器...\n&quot;</span>);</span><br><span class="line">    pci_restore_state(pdev); <span class="comment">// 恢复出厂 PCI 配置空间</span></span><br><span class="line">    reinit_device_registers(pdev);</span><br><span class="line">    <span class="keyword">return</span> PCI_ERS_RESULT_RECOVERED; <span class="comment">// 反馈内核：已成功恢复</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">my_pcie_resume</span><span class="params">(<span class="keyword">struct</span> pci_dev *pdev)</span></span><br><span class="line">&#123;</span><br><span class="line">    printk(<span class="string">&quot;[+] PCIe 链路已彻底康复，正在唤醒驱动队列...\n&quot;</span>);</span><br><span class="line">    enable_device_io(pdev); <span class="comment">// 恢复正常 DMA 数据收发</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 🔑 绑定回调到 pci_driver 结构中</span></span><br><span class="line"><span class="type">static</span> <span class="type">const</span> <span class="class"><span class="keyword">struct</span> <span class="title">pci_error_handlers</span> <span class="title">my_err_handlers</span> =</span> &#123;</span><br><span class="line">    .error_detected = my_pcie_error_detected,</span><br><span class="line">    .slot_reset     = my_pcie_slot_reset,</span><br><span class="line">    .resume         = my_pcie_resume,</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure></li>
+</ol>
+<hr>
+<h2 id="第二部分：内核-DMA-直接存储器访问机制"><a href="#第二部分：内核-DMA-直接存储器访问机制" class="headerlink" title="第二部分：内核 DMA 直接存储器访问机制"></a>第二部分：内核 DMA 直接存储器访问机制</h2><p>DMA 是一种无需 CPU 的参与就可以让外设和系统内存之间进行双向数据传输的硬件机制。在进行网卡、声卡或大容量存储开发时，DMA 是绝对的主角。</p>
+<h3 id="2-1-完整的-DMA-传输-4-阶段"><a href="#2-1-完整的-DMA-传输-4-阶段" class="headerlink" title="2.1 完整的 DMA 传输 4 阶段"></a>2.1 完整的 DMA 传输 4 阶段</h3><p>一次闭环的 DMA 数据传输，在底层硬件逻辑上会经历以下 4 个阶段：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">                    【 DMA 4阶段时序与控制权转移 】</span><br><span class="line">                    </span><br><span class="line">       1. 初始化 (CPU -&gt; DMA)</span><br><span class="line">           │</span><br><span class="line">           ▼</span><br><span class="line">外设 ──► 2. DMA 请求 (DRQ) ──► DMA 控制器 (DMAC)</span><br><span class="line">                                   │</span><br><span class="line">                                   ▼ 3. 总线申请 (HOLD)</span><br><span class="line">                                  CPU (释放总线)</span><br><span class="line">                                   │</span><br><span class="line">                                   ▼ 4. 响应与传输 (HLDA)</span><br><span class="line">外设 ◄================== DMA 传输 ==================► RAM</span><br><span class="line">                                   │</span><br><span class="line">                                   ▼ 5. 传输结束产生中断 (TC)</span><br><span class="line">                                  CPU (执行检查代码)</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li>**DMA 请求 (DRQ)**：外设准备好数据（例如网卡接收到以太网帧），向 DMA 控制器（DMAC）发出物理请求信号。</li>
+<li><strong>DMA 响应</strong>：DMAC 判定通道优先级后，向 CPU 的控制端发出总线请求（<code>HOLD</code>）。CPU 执行完当前周期后，释放数据和地址总线为高阻态，并送回总线响应信号（<code>HLDA</code>），总线控制权正式交接给 DMAC。</li>
+<li><strong>DMA 传输</strong>：DMAC 驱动总线，输出读写控制电平，直接将数据从外设的 FIFO 寄存器挪到系统 RAM 内存中，在此期间 CPU 不参与任何工作，通常挂起或仅在 Cache 内部执行无关指令。</li>
+<li><strong>DMA 结束</strong>：当传输计数器减至 0（传输完成），DMAC 释放总线控制权，并向 CPU 发出一个硬中断。CPU 唤醒并执行中断服务程序（ISR），验证数据完整性，清除中断源并让主程序读取内存。</li>
+</ol>
+<hr>
+<h3 id="2-2-三类内存访问分时调度模式对比"><a href="#2-2-三类内存访问分时调度模式对比" class="headerlink" title="2.2 三类内存访问分时调度模式对比"></a>2.2 三类内存访问分时调度模式对比</h3><p>为了不让 DMA 传输独占内存总线导致 CPU 完全停工，硬件工程师设计了三类不同的总线使用权分配算法：</p>
+<h4 id="1-停止-CPU-访问内存-Burst-Transfer"><a href="#1-停止-CPU-访问内存-Burst-Transfer" class="headerlink" title="1. 停止 CPU 访问内存 (Burst Transfer)"></a>1. 停止 CPU 访问内存 (Burst Transfer)</h4><p>当外设发起 DMA 时，CPU 完全被剥夺访内权，直至整批数据（如一个 512 字节的扇区）全部传输完毕。</p>
+<ul>
+<li><strong>优点</strong>：控制逻辑极其简单，适合高速数据成组极速搬运。</li>
+<li><strong>缺点</strong>：在 DMA 搬运期间 CPU 完全处于闲置状态，造成严重的算力浪费，且内存的工作周期没有被充分利用（因为外设发送数据的间隔通常大于内存写入速度）。</li>
+</ul>
+<h4 id="2-周期挪用-周期窃取-Cycle-Stealing"><a href="#2-周期挪用-周期窃取-Cycle-Stealing" class="headerlink" title="2. 周期挪用 &#x2F; 周期窃取 (Cycle Stealing)"></a>2. 周期挪用 &#x2F; 周期窃取 (Cycle Stealing)</h4><p>一旦外设有 DMA 请求，它会抢占一到两个内存的存取周期。如果此时 CPU 正在执行不需要访内的指令（如乘法、寄存器移位），则挪用对 CPU 零影响；如果 CPU 此时也想访内，则<strong>外设优先</strong>，CPU 的访内指令被延缓一个时钟周期。</p>
+<ul>
+<li><strong>分析</strong>：这是目前微处理器中最广泛采用的模式。虽然每个周期的挪用都有申请与归还控制权的逻辑开销，但它做到了 CPU 与 DMA 的分时并行。</li>
+</ul>
+<h4 id="3-交替-透明访问模式-Interleaved-Access"><a href="#3-交替-透明访问模式-Interleaved-Access" class="headerlink" title="3. 交替&#x2F;透明访问模式 (Interleaved Access)"></a>3. 交替&#x2F;透明访问模式 (Interleaved Access)</h4><p>如果 CPU 的工作周期（例如 1.2us）比内存的存取周期（小于 0.6us）长得多，则可以将一个 CPU 周期切为 $C_1$ 和 $C_2$ 两部分：$C_1$ 专供 DMA 访内，$C_2$ 专供 CPU 访内。</p>
+<ul>
+<li><strong>分析</strong>：又称“透明的 DMA 方式”。总线使用权通过硬件分时器死死绑定，CPU 不需要申请和交还总线，对 DMA 的运作毫无察觉（如同透明玻璃）。效率极高，但对系统硬件的逻辑设计要求极其苛刻。</li>
+</ul>
+<hr>
+<h2 id="第三部分：Linux-内核-DMA-驱动开发实战"><a href="#第三部分：Linux-内核-DMA-驱动开发实战" class="headerlink" title="第三部分：Linux 内核 DMA 驱动开发实战"></a>第三部分：Linux 内核 DMA 驱动开发实战</h2><p>在 Linux 驱动开发中，涉及 DMA 的代码必须解决两大核心问题：<strong>物理地址连续性</strong>与<strong>内核 Cache（缓存）一致性</strong>。</p>
+<h3 id="3-1-一致性-DMA-映射与流式-DMA-映射深度比对"><a href="#3-1-一致性-DMA-映射与流式-DMA-映射深度比对" class="headerlink" title="3.1 一致性 DMA 映射与流式 DMA 映射深度比对"></a>3.1 一致性 DMA 映射与流式 DMA 映射深度比对</h3><p>由于 CPU 读取内存是通过 Cache 进行加速的，而 DMA 设备是绕过 CPU 直接读写 RAM。这就导致了严重的<strong>Cache 一致性冲突</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">             【 内核 Cache 一致性冲突模型 】</span><br><span class="line">               </span><br><span class="line">              ┌──────────────────┐</span><br><span class="line">              │     CPU 内核      │</span><br><span class="line">              └────────┬─────────┘</span><br><span class="line">                       ▼▲</span><br><span class="line">              ┌──────────────────┐</span><br><span class="line">              │   Cache 缓存     │ ◄─── ❌ CPU 写入的新数据在此处未下刷</span><br><span class="line">              └────────┬─────────┘</span><br><span class="line">                       ▼▲</span><br><span class="line">┌──────────┐  DMA 写   ┌──────────┐</span><br><span class="line">│ DMA 设备 ├──────────►│ RAM 内存 │ ◄─── ❌ 设备直接写入物理内存，Cache 变脏</span><br><span class="line">└──────────┘           └──────────┘</span><br></pre></td></tr></table></figure>
+
+<p>为了解决这一冲突，Linux 提供了两套 DMA 映射机制，驱动开发人员必须根据场景做出正确抉择：</p>
+<h4 id="1-一致性-DMA-映射-Coherent-DMA-Mapping"><a href="#1-一致性-DMA-映射-Coherent-DMA-Mapping" class="headerlink" title="1. 一致性 DMA 映射 (Coherent DMA Mapping)"></a>1. 一致性 DMA 映射 (Coherent DMA Mapping)</h4><ul>
+<li><strong>工作机制</strong>：由内核分配一块在物理上完全连续的页面，并且<strong>自动关闭这块内存的 Cache 缓存功能</strong>。CPU 和外设对这块内存的读写都会直接落到 RAM 芯片中。</li>
+<li><strong>适用场景</strong>：生命周期较长、频繁交互的内存块。例如网卡的环形发送&#x2F;接收描述符缓冲区（Ring Buffers）或驱动的控制结构体。</li>
+<li><strong>API 使用</strong>：<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 💡 分配一致性 DMA 缓冲区</span></span><br><span class="line"><span class="type">void</span> *<span class="title function_">dma_alloc_coherent</span><span class="params">(<span class="keyword">struct</span> device *dev, <span class="type">size_t</span> size, <span class="type">dma_addr_t</span> *dma_handle, <span class="type">gfp_t</span> flag)</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 💡 释放一致性 DMA 缓冲区</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">dma_free_coherent</span><span class="params">(<span class="keyword">struct</span> device *dev, <span class="type">size_t</span> size, <span class="type">void</span> *cpu_addr, <span class="type">dma_addr_t</span> dma_handle)</span>;</span><br></pre></td></tr></table></figure></li>
+</ul>
+<h4 id="2-流式-DMA-映射-Streaming-DMA-Mapping"><a href="#2-流式-DMA-映射-Streaming-DMA-Mapping" class="headerlink" title="2. 流式 DMA 映射 (Streaming DMA Mapping)"></a>2. 流式 DMA 映射 (Streaming DMA Mapping)</h4><ul>
+<li><strong>工作机制</strong>：映射的物理内存通常是驱动程序之外临时产生的。这块内存默认是开启 Cache 缓存的。我们在发送&#x2F;接收前，必须手动调用 API 将这块内存映射给 DMA；传输结束后再手动解映射。</li>
+<li><strong>Cache 同步</strong>：在映射时，内核会根据我们指定的传输方向，<strong>手动下刷（Flush&#x2F;Clean）或使失效（Invalidate）Cache</strong>，从而确保数据的强一致性。<ul>
+<li><code>DMA_TO_DEVICE</code>：发送方向。内核在映射前，将 Cache 中的脏数据强制下刷（Writeback）到 RAM，防止外设读取到内存中的陈旧数据。</li>
+<li><code>DMA_FROM_DEVICE</code>：接收方向。外设完成写 RAM 后，内核在解映射前，将 Cache 中对应的缓存块强制设置为失效（Invalidate）。下次 CPU 读取该内存时，必须强制从 RAM 重新加载。</li>
+</ul>
+</li>
+<li><strong>API 使用</strong>：<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 💡 映射流式 DMA 缓冲区</span></span><br><span class="line"><span class="type">dma_addr_t</span> <span class="title function_">dma_map_single</span><span class="params">(<span class="keyword">struct</span> device *dev, <span class="type">void</span> *ptr, <span class="type">size_t</span> size, <span class="keyword">enum</span> dma_data_direction direction)</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 💡 解映射流式 DMA 缓冲区</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">dma_unmap_single</span><span class="params">(<span class="keyword">struct</span> device *dev, <span class="type">dma_addr_t</span> dma_handle, <span class="type">size_t</span> size, <span class="keyword">enum</span> dma_data_direction direction)</span>;</span><br></pre></td></tr></table></figure></li>
+</ul>
+<hr>
+<h3 id="3-2-硬件层底座：MESI-缓存一致性协议与硬件监听-Cache-Snooping"><a href="#3-2-硬件层底座：MESI-缓存一致性协议与硬件监听-Cache-Snooping" class="headerlink" title="3.2 硬件层底座：MESI 缓存一致性协议与硬件监听 (Cache Snooping)"></a>3.2 硬件层底座：MESI 缓存一致性协议与硬件监听 (Cache Snooping)</h3><p>除了依靠内核驱动软件显式进行 Cache 下刷外，现代多核 CPU（如 x86 和高阶 ARM 架构）在硬件层面上提供了 <strong>Cache Snooping（缓存监听）</strong> 功能：</p>
+<ol>
+<li><strong>MESI 协议状态</strong>：<br>多核处理器的 Cache 块处于以下四种状态之一：<ul>
+<li>**M (Modified, 已修改)**：Cache 块是脏的，仅存在于本地核心，且与 RAM 数据不一致。</li>
+<li>**E (Exclusive, 独占)**：数据与 RAM 一致，且只存在于当前核心的 Cache 中。</li>
+<li>**S (Shared, 共享)**：数据与 RAM 一致，存在于多个核心的 Cache 中。</li>
+<li>**I (Invalid, 失效)**：当前 Cache 块数据已失效，需要重新从 RAM 加载。</li>
+</ul>
+</li>
+<li><strong>Snooping 监听机制</strong>：<br>当一个支持 DMA 传输的 PCIe 设备发起一次内存写入事务（Write Transaction）并抵达系统内存控制器（Coherent Interconnect）时：<ul>
+<li><strong>监听广播</strong>：内存控制器会向所有 CPU 核心 L1&#x2F;L2 Cache 发送监听请求（Snoop Request）。</li>
+<li><strong>失效处理</strong>：各个 CPU 核心通过监听总线匹配该物理地址。如果发现自己正处于 <code>Shared</code> 或 <code>Exclusive</code> 状态缓存该数据，硬件会**立刻将其状态强制重置为 <code>Invalid (I)</code>**。</li>
+<li><strong>下刷冲突</strong>：如果核心发现数据处于 <code>Modified</code> 状态（说明 CPU 写了数据但还没下刷到内存），硬件会拦截 DMA 写操作，迫使该 CPU 核心先把 Modified 数据下刷回内存，再由外设执行 DMA 写入。</li>
+</ul>
+</li>
+</ol>
+<ul>
+<li><em>局限性</em>：并非所有嵌入式微处理器（如低阶 Cortex-M、MIPS 或一些低成本的 ARM 芯片）都有完备的硬件 Snooping Interconnect。在这些非一致性（Non-coherent）平台上，我们<strong>必须严格且显式地在驱动中手动调用 Linux DMA 同步 API</strong>。</li>
+</ul>
+<hr>
+<h3 id="3-3-Linux-内核流式-DMA-复用与同步-API-指南"><a href="#3-3-Linux-内核流式-DMA-复用与同步-API-指南" class="headerlink" title="3.3 Linux 内核流式 DMA 复用与同步 API 指南"></a>3.3 Linux 内核流式 DMA 复用与同步 API 指南</h3><p>当我们在驱动中分配了一个固定的缓冲区（例如循环复用的物理 DMA Buffer），如果不想频繁调用开销极大的 <code>dma_map_single</code> 和 <code>dma_unmap_single</code> 进行重复映射，可以利用 Linux 提供的<strong>流式 DMA 同步 API</strong> 进行原地数据刷新：</p>
+<h4 id="📝-Linux-内核流式-DMA-同步-API-清单："><a href="#📝-Linux-内核流式-DMA-同步-API-清单：" class="headerlink" title="📝 Linux 内核流式 DMA 同步 API 清单："></a>📝 Linux 内核流式 DMA 同步 API 清单：</h4><table>
+<thead>
+<tr>
+<th align="left">核心 API 函数名称</th>
+<th align="left">数据传输流向</th>
+<th align="left">适用调试步骤与 Cache 操作逻辑</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong><code>dma_set_mask_and_coherent()</code></strong></td>
+<td align="left">输入&#x2F;输出控制</td>
+<td align="left">告知内核该设备支持的物理寻址范围（如 32-bit 或 64-bit 物理地址掩码）。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>dma_mapping_error()</code></strong></td>
+<td align="left">诊断校验</td>
+<td align="left">🔑 必须在每次 <code>dma_map_single</code> 后执行，用于校验映射地址是否有效。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>dma_sync_single_for_cpu()</code></strong></td>
+<td align="left">设备 —&gt; CPU</td>
+<td align="left">💡 <strong>CPU 读前调用</strong>：将 CPU Cache 置为失效（Invalidate），强制让 CPU 读到外设写入 RAM 的最新数据。</td>
+</tr>
+<tr>
+<td align="left"><strong><code>dma_sync_single_for_device()</code></strong></td>
+<td align="left">CPU —&gt; 设备</td>
+<td align="left">💡 <strong>外设发前调用</strong>：将 CPU Cache 中的脏数据强制下刷（Flush&#x2F;Clean）到 RAM，供外设读取。</td>
+</tr>
+</tbody></table>
+<h4 id="💻-实战代码：在-Linux-驱动中安全复用和同步流式-DMA-缓冲区的典型范式："><a href="#💻-实战代码：在-Linux-驱动中安全复用和同步流式-DMA-缓冲区的典型范式：" class="headerlink" title="💻 实战代码：在 Linux 驱动中安全复用和同步流式 DMA 缓冲区的典型范式："></a>💻 实战代码：在 Linux 驱动中安全复用和同步流式 DMA 缓冲区的典型范式：</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;linux/dma-mapping.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">my_driver_dma_xfer_loop</span><span class="params">(<span class="keyword">struct</span> device *dev, <span class="type">void</span> *kernel_buf, <span class="type">size_t</span> size)</span></span><br><span class="line">&#123;</span><br><span class="line">    <span class="type">dma_addr_t</span> dma_handle;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 1. 一次性映射流式 DMA，设置流向为双向交互</span></span><br><span class="line">    dma_handle = dma_map_single(dev, kernel_buf, size, DMA_BIDIRECTIONAL);</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 2. 🔑 必须进行地址异常校验，严禁略过此步骤</span></span><br><span class="line">    <span class="keyword">if</span> (dma_mapping_error(dev, dma_handle)) &#123;</span><br><span class="line">        dev_err(dev, <span class="string">&quot;[-] DMA 映射物理地址失败!\n&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">/* ------------------- 💡 场景 1：外设发送数据到 RAM 后，CPU 需要读取 ------------------- */</span></span><br><span class="line">    <span class="comment">// A. 传输开始前，将内存所有权划归给“设备”，由设备驱动 DMA 写入 RAM</span></span><br><span class="line">    dma_sync_single_for_device(dev, dma_handle, size, DMA_FROM_DEVICE);</span><br><span class="line">    </span><br><span class="line">    trigger_hardware_dma_receive(dma_handle); <span class="comment">// 启动外设硬件接收</span></span><br><span class="line">    wait_for_dma_completion();                <span class="comment">// 等待硬件中断通知完成</span></span><br><span class="line">    </span><br><span class="line">    <span class="comment">// B. CPU 读前同步：将所有权收回“CPU”，此时内核强制将 CPU Cache 块置为无效</span></span><br><span class="line">    dma_sync_single_for_cpu(dev, dma_handle, size, DMA_FROM_DEVICE);</span><br><span class="line">    </span><br><span class="line">    process_received_data(kernel_buf);        <span class="comment">// 💡 此时 CPU 可以绝对安全地读取 kernel_buf 缓存了</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">/* ------------------- 💡 场景 2：CPU 修改了数据，需要外设读取发送 ------------------- */</span></span><br><span class="line">    modify_transmit_data(kernel_buf);         <span class="comment">// CPU 在内核空间修改了缓存区内容</span></span><br><span class="line">    </span><br><span class="line">    <span class="comment">// C. 外设读前同步：将所有权重新交给“设备”，内核强制将 CPU 修改的脏 Cache 下刷到 RAM</span></span><br><span class="line">    dma_sync_single_for_device(dev, dma_handle, size, DMA_TO_DEVICE);</span><br><span class="line">    </span><br><span class="line">    trigger_hardware_dma_send(dma_handle);    <span class="comment">// 启动外设硬件发送</span></span><br><span class="line">    wait_for_dma_completion();</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 3. 通信退出，彻底解映射，释放系统资源</span></span><br><span class="line">    dma_unmap_single(dev, dma_handle, size, DMA_BIDIRECTIONAL);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="3-5-分散-聚集-DMA-Scatter-Gather-DMA"><a href="#3-5-分散-聚集-DMA-Scatter-Gather-DMA" class="headerlink" title="3.5 分散-聚集 DMA (Scatter-Gather DMA)"></a>3.5 分散-聚集 DMA (Scatter-Gather DMA)</h3><p>在实际的操作系统中，由 kmalloc 或用户空间分配的内存，虽然在虚拟地址空间中是连续的，但在<strong>物理主存上常常是支离破碎、散布在各个页面的</strong>。</p>
+<ul>
+<li><strong>单缓冲区 DMA 的困境</strong>：如果使用常规 DMA，CPU 必须为每一页物理内存分别建立一次映射、启动一次 DMA、并在结束后处理一次中断，开销极其高昂。</li>
+<li><strong>Scatter-Gather 机制</strong>：SG DMA 允许硬件读取一个<strong>链式描述符表</strong>（Descriptor List）。每个描述符包含一个物理子缓冲区地址和长度。DMA 引擎传输完第一个物理分片后，会自动从描述符表中读取下一页的地址继续传输，而无需任何 CPU 干预。</li>
+</ul>
+<h4 id="💻-实战代码：在内核驱动中构建、映射并使用-Scatter-Gather-表传输："><a href="#💻-实战代码：在内核驱动中构建、映射并使用-Scatter-Gather-表传输：" class="headerlink" title="💻 实战代码：在内核驱动中构建、映射并使用 Scatter-Gather 表传输："></a>💻 实战代码：在内核驱动中构建、映射并使用 Scatter-Gather 表传输：</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;linux/scatterlist.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;linux/dma-mapping.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">my_sg_dma_transfer</span><span class="params">(<span class="keyword">struct</span> device *dev, <span class="keyword">struct</span> page **pages, <span class="type">int</span> page_count)</span></span><br><span class="line">&#123;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">scatterlist</span> *<span class="title">sg</span>;</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">scatterlist</span> *<span class="title">s</span>;</span></span><br><span class="line">    <span class="type">int</span> sg_len;</span><br><span class="line">    <span class="type">int</span> i;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 1. 分配并初始化散列表管理表项</span></span><br><span class="line">    sg = kmalloc_array(page_count, <span class="keyword">sizeof</span>(*sg), GFP_KERNEL);</span><br><span class="line">    <span class="keyword">if</span> (!sg) <span class="keyword">return</span>;</span><br><span class="line">    </span><br><span class="line">    sg_init_table(sg, page_count);</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 2. 依次把物理页面挂接到每一个散列槽位上</span></span><br><span class="line">    <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; page_count; i++) &#123;</span><br><span class="line">        sg_set_page(&amp;sg[i], pages[i], PAGE_SIZE, <span class="number">0</span>); <span class="comment">// 绑定物理页面与分片大小</span></span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 3. 一次性映射整个 Scatterlist</span></span><br><span class="line">    sg_len = dma_map_sg(dev, sg, page_count, DMA_TO_DEVICE);</span><br><span class="line">    <span class="keyword">if</span> (sg_len &lt;= <span class="number">0</span>) &#123;</span><br><span class="line">        kfree(sg);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 4. 遍历物理连续子页的 DMA 总线地址，将地址填写入外设寄存器链表</span></span><br><span class="line">    for_each_sg(sg, s, sg_len, i) &#123;</span><br><span class="line">        <span class="type">dma_addr_t</span> bus_addr = sg_dma_address(s); <span class="comment">// 获取当前映射页的总线地址</span></span><br><span class="line">        <span class="type">unsigned</span> <span class="type">int</span> len = sg_dma_len(s);        <span class="comment">// 获取该分片物理大小</span></span><br><span class="line">        </span><br><span class="line">        load_descriptor_to_pcie_device(bus_addr, len);</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 5. 触发传输并等待结束，执行解映射</span></span><br><span class="line">    trigger_dma_hardware_sg();</span><br><span class="line">    wait_for_dma_done();</span><br><span class="line">    </span><br><span class="line">    dma_unmap_sg(dev, sg, page_count, DMA_TO_DEVICE);</span><br><span class="line">    kfree(sg);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="3-6-核心调试武器：内核-DMA-API-校验-CONFIG-DMA-API-DEBUG"><a href="#3-6-核心调试武器：内核-DMA-API-校验-CONFIG-DMA-API-DEBUG" class="headerlink" title="3.6 核心调试武器：内核 DMA-API 校验 (CONFIG_DMA_API_DEBUG)"></a>3.6 核心调试武器：内核 DMA-API 校验 (CONFIG_DMA_API_DEBUG)</h3><p>在复杂的驱动调试中，DMA 地雷往往非常隐蔽（例如在栈内存上做 DMA 映射导致栈损毁，或者忘记 unmap 导致物理页泄露）。为此，Linux 提供了专门的内核调试宏选项：</p>
+<ul>
+<li>**<code>CONFIG_DMA_API_DEBUG</code>**：<br>一旦在内核配置中使能此选项，内核会建立一个哈希表记录所有的 DMA 映射生命周期。它能实时拦截并报警：<ul>
+<li>尝试将非内核安全区（如 vmalloc 分配的内存）进行 DMA 映射；</li>
+<li>方向标志与实际读写行为不匹配；</li>
+<li>解映射时传入的长度与映射时不符；</li>
+<li>模块卸载前仍有未解映射的残留 DMA 缓冲区。</li>
+</ul>
+</li>
+<li>结合 <code>/sys/kernel/debug/dma-api/</code> 下的 debugfs 节点数据，能让我们在一秒钟之内定位所有的 DMA 泄露逻辑。</li>
+</ul>
+<hr>
+<h3 id="3-7-实战：基于-S3C2410-平台内核-DMA-驱动框架编写"><a href="#3-7-实战：基于-S3C2410-平台内核-DMA-驱动框架编写" class="headerlink" title="3.7 实战：基于 S3C2410 平台内核 DMA 驱动框架编写"></a>3.7 实战：基于 S3C2410 平台内核 DMA 驱动框架编写</h3><p>以下是一个基于早期 ARM 架构 S3C2410 控制器的底层 DMA 驱动调用流程，展示了通道申请、缓冲区队列挂载和传输流启动的核心 C 源码实现。</p>
+<pre><code class="c">#include &lt;linux/module.h&gt;
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/fs.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/dma-mapping.h&gt;
+#include &lt;mach/dma.h&gt; // S3C2410 DMA 相关硬件定义
+
+#define MY_DMA_BUF_SIZE  (4096)
+static int my_dma_channel = 0;
+static void *cpu_buffer_addr = NULL;
+static dma_addr_t dma_buffer_phys = 0;
+
+// 🔑 DMA 传输完成中断回调函数
+static void my_dma_callback(struct s3c2410_dma_chan *chan, void *buf_id, int size, int result)
+&#123;
+    if (result == S3C2410_RES_OK) &#123;
+        printk(&quot;[+] DMA 传输成功! 搬运数据字节数: %d\n&quot;, size);
+    &#125; else &#123;
+        printk(&quot;[-] DMA 传输失败，发生物理异常!\n&quot;);
+    &#125;
+&#125;
+
+static int __init my_dma_driver_init(void)
+&#123;
+    int ret;
+
+    // 1. 申请系统 DMA 通道资源，绑定读写回调
+    // S3C2410_DMA_FILO 代表文件和内存通道选择
+    ret = s3c2410_request_dma(&quot;my_dma_device&quot;, S3C2410_DMAC_CH0, my_dma_callback, NULL);
+    if (ret &lt; 0) &#123;
+        printk(&quot;[-] 申请 DMA 通道 0 失败!\n&quot;);
+        return ret;
+    &#125;
+    my_dma_channel = S3C2410_DMAC_CH0;
+
+    // 2. 分配一致性 DMA 缓冲区，避免 Cache 一致性地雷
+    cpu_buffer_addr = dma_alloc_coherent(NULL, MY_DMA_BUF_SIZE, &amp;dma_buffer_phys, GFP_KERNEL);
+    if (!cpu_buffer_addr) &#123;
+        printk(&quot;[-] 一致性 DMA 内存分配失败!\n&quot;);
+        s3c2410_free_dma(my_dma_channel);
+        return -ENOMEM;
+    &#125;
+
+    printk(&quot;[+] DMA 驱动初始化就绪。物理地址: %pad, 虚拟地址: %p\n&quot;, &amp;dma_buffer_phys, cpu_buffer_addr);
+
+    // 3. 模拟数据写入并挂队启动传输
+    memset(cpu_buffer_addr, 0xA5, MY_DMA_BUF_SIZE); // 填充测试数据
+    
+    // 💡 将缓冲区插入 DMA 硬件等待队列，设置源地址、目的地址及大小
+    // s3c2410_dma_config 设置寄存器，s3c2410_dma_enqueue 启动硬件
+    s3c2410_dma_config(my_dma_channel, 1, 16); // 1 字节宽度，16 字节 Burst 传输
+    s3c2410_dma_enqueue(my_dma_channel, (void *)0x1234, dma_buffer_phys, MY_DMA_BUF_SIZE);
+    
+    // 4. 触发启动 DMA 硬件引擎
+    s3c2410_dma_ctrl(my_dma_channel, S3C2410_DMAOP_START);
+
+    return 0;
+&#125;
+
+static void __exit my_dma_driver_exit(void)
+&#123;
+    // 1. 停止并冲刷 DMA 通道上的未决请求
+    s3c2410_dma_ctrl(my_dma_channel, S3C2410_DMAOP_STOP);
+    s3c2410_dma_ctrl(my_dma_channel, S3C2410_DMAOP_FLUSH);
+
+    // 2. 释放一致性 DMA 缓冲区
+    if (cpu_buffer_addr) &#123;
+        dma_free_coherent(NULL, MY_DMA_BUF_SIZE, cpu_buffer_addr, dma_buffer_phys);
+    &#125;
+
+    // 3. 释放内核 DMA 物理通道占用
+    s3c2410_free_dma(my_dma_channel);
+    printk(&quot;[+] DMA 驱动成功注销。\n&quot;);
+&#125;
+
+module_init(my_dma_driver_init);
+module_exit(my_dma_driver_exit);
+
+MODULE_LICENSE(&quot;GPL&quot;);
+MODULE_AUTHOR(&quot;极客实战派&quot;);
+MODULE_DESCRIPTION(&quot;S3C2410 DMA Platform Driver Example&quot;);
+</code></pre>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>License</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">Newer</div><a href="/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E6%80%BB%E7%BA%BF-2-Linux%E8%AE%BE%E5%A4%87%E9%A9%B1%E5%8A%A8%E6%A8%A1%E5%9E%8B%E4%B8%8ED-Bus%E8%BD%AF%E4%BB%B6%E6%B6%88%E6%81%AF%E6%80%BB%E7%BA%BF%E5%BA%95%E5%B1%82%E6%9E%B6%E6%9E%84%E6%8C%87%E5%8D%97/">Linux设备驱动模型与D-Bus软件消息总线底层架构指南</a></div><div class="item" id="next"><div class="note">Older</div><a href="/2026/03/25/3-%E5%BC%80%E5%8F%91%E6%A1%86%E6%9E%B6-Qt-Publish-Qt%E4%B8%8EAI%E5%B7%A5%E7%A8%8B%E5%8C%96%E7%BB%93%E5%90%88%E6%8C%87%E5%8D%97/">Qt 与 AI 的工程化结合：从 IDE 提效到本地大模型推理</a></div></section></div>
+
+
+
+
+  <div class="related-wrap md-text" id="comments">
+    <section class='header cmt-title cap theme'>
+      <p>快来参与讨论吧~</p>
+
+    </section>
+    <section class='body cmt-body utterances'>
+      
+
+<svg class="loading" style="vertical-align:middle;fill:currentColor;overflow:hidden;" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2709"><path d="M832 512c0-176-144-320-320-320V128c211.2 0 384 172.8 384 384h-64zM192 512c0 176 144 320 320 320v64C300.8 896 128 723.2 128 512h64z" p-id="2710"></path></svg>
+
+<div id="utterances" repo="luhuaCyan/luhuaCyan.github.io" issue-term="title" theme="preferred-color-scheme" label="comment"></div>
+
+    </section>
+  </div>
+
+
+
+<footer class="page-footer footnote"><hr><div class="sitemap" style="column-count:4;"><div class="sitemap-group"><span class="fs15">博客</span><a href="/">近期发布</a><a href="/blog/categories/">分类</a><a href="/blog/tags/">标签</a><a href="/blog/archives/">归档</a></div><div class="sitemap-group"><span class="fs15">项目</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">社交</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">关于</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div></div><div class="text"><p>本站为个人学习笔记记录和整理，所有内容仅用于个人知识梳理、复习回顾及学习交流。<br>声明：本站所有资源收集整理于网络,本站不参与制作,用于互联网爱好者学习和研究,如不慎侵犯了您的权利,请及时联系站长处理删除。敬请谅解！</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">On This Page</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#PCIe%E9%AB%98%E9%80%9F%E4%B8%B2%E8%A1%8C%E6%80%BB%E7%BA%BF%E4%B8%8E%E5%86%85%E6%A0%B8DMA%E4%BC%A0%E8%BE%93%E6%9C%BA%E5%88%B6%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97"><span class="toc-text">PCIe高速串行总线与内核DMA传输机制深度指南</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%B8%80%E9%83%A8%E5%88%86%EF%BC%9APCIe-%E9%AB%98%E9%80%9F%E4%B8%B2%E8%A1%8C%E5%B7%AE%E5%88%86%E6%80%BB%E7%BA%BF%E6%9C%BA%E5%88%B6"><span class="toc-text">第一部分：PCIe 高速串行差分总线机制</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-1-%E7%89%A9%E7%90%86%E5%B1%82%EF%BC%9A%E9%AB%98%E9%80%9F%E5%B7%AE%E5%88%86%E4%BF%A1%E5%8F%B7%E4%B8%8E%E7%AB%AF%E5%88%B0%E7%AB%AF%E6%8B%93%E6%89%91"><span class="toc-text">1.1 物理层：高速差分信号与端到端拓扑</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-2-PCIe-%E7%89%88%E6%9C%AC%E8%BF%AD%E4%BB%A3%E4%B8%8E%E5%B8%A6%E5%AE%BD%E8%AE%A1%E7%AE%97%E5%A4%A7%E5%AD%97%E5%85%B8"><span class="toc-text">1.2 PCIe 版本迭代与带宽计算大字典</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%94%91-%E4%B8%BA%E4%BB%80%E4%B9%88-PCIe-3-0-%E9%A2%91%E7%8E%87%E4%BB%85%E4%B8%BA-2-0-%E7%9A%84-1-6-%E5%80%8D%EF%BC%8C%E4%BD%86%E5%B8%A6%E5%AE%BD%E5%8D%B4%E7%BF%BB%E5%80%8D%EF%BC%9F"><span class="toc-text">🔑 为什么 PCIe 3.0 频率仅为 2.0 的 1.6 倍，但带宽却翻倍？</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-3-%E6%A0%B8%E5%BF%83%E8%BE%85%E5%8A%A9%E4%BF%A1%E5%8F%B7%E7%BA%BF%E4%BD%9C%E7%94%A8"><span class="toc-text">1.3 核心辅助信号线作用</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-4-PCIe-%E4%B8%89%E5%B1%82%E5%8D%8F%E8%AE%AE%E6%A0%88%E8%A7%A3%E6%9E%90"><span class="toc-text">1.4 PCIe 三层协议栈解析</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-5-PCIe-%E9%85%8D%E7%BD%AE%E7%A9%BA%E9%97%B4%E4%B8%8E%E5%9C%B0%E5%9D%80-MMIO-%E6%98%A0%E5%B0%84%E6%9C%BA%E5%88%B6"><span class="toc-text">1.5 PCIe 配置空间与地址 MMIO 映射机制</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-6-PCIe-%E7%8B%AC%E7%AB%8B%E4%B8%BB%E6%8E%A7-DMA-%E9%80%9A%E9%81%93-Bus-Mastering"><span class="toc-text">1.6 PCIe 独立主控 DMA 通道 (Bus Mastering)</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-7-%E5%B8%A6%E5%AE%BD%E5%8A%A0%E9%80%9F%E5%88%A9%E5%99%A8%EF%BC%9APCIe-%E5%B8%A6%E5%86%85%E4%B8%AD%E6%96%AD%E6%9C%BA%E5%88%B6-MSI-MSI-X"><span class="toc-text">1.7 带宽加速利器：PCIe 带内中断机制 (MSI &#x2F; MSI-X)</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-8-%E9%AB%98%E7%BA%A7%E9%94%99%E8%AF%AF%E6%8A%A5%E5%91%8A-AER-%E4%B8%8E%E5%86%85%E6%A0%B8%E6%81%A2%E5%A4%8D%E6%9C%BA%E5%88%B6"><span class="toc-text">1.8 高级错误报告 (AER) 与内核恢复机制</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%BA%8C%E9%83%A8%E5%88%86%EF%BC%9A%E5%86%85%E6%A0%B8-DMA-%E7%9B%B4%E6%8E%A5%E5%AD%98%E5%82%A8%E5%99%A8%E8%AE%BF%E9%97%AE%E6%9C%BA%E5%88%B6"><span class="toc-text">第二部分：内核 DMA 直接存储器访问机制</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#2-1-%E5%AE%8C%E6%95%B4%E7%9A%84-DMA-%E4%BC%A0%E8%BE%93-4-%E9%98%B6%E6%AE%B5"><span class="toc-text">2.1 完整的 DMA 传输 4 阶段</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-2-%E4%B8%89%E7%B1%BB%E5%86%85%E5%AD%98%E8%AE%BF%E9%97%AE%E5%88%86%E6%97%B6%E8%B0%83%E5%BA%A6%E6%A8%A1%E5%BC%8F%E5%AF%B9%E6%AF%94"><span class="toc-text">2.2 三类内存访问分时调度模式对比</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#1-%E5%81%9C%E6%AD%A2-CPU-%E8%AE%BF%E9%97%AE%E5%86%85%E5%AD%98-Burst-Transfer"><span class="toc-text">1. 停止 CPU 访问内存 (Burst Transfer)</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-%E5%91%A8%E6%9C%9F%E6%8C%AA%E7%94%A8-%E5%91%A8%E6%9C%9F%E7%AA%83%E5%8F%96-Cycle-Stealing"><span class="toc-text">2. 周期挪用 &#x2F; 周期窃取 (Cycle Stealing)</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#3-%E4%BA%A4%E6%9B%BF-%E9%80%8F%E6%98%8E%E8%AE%BF%E9%97%AE%E6%A8%A1%E5%BC%8F-Interleaved-Access"><span class="toc-text">3. 交替&#x2F;透明访问模式 (Interleaved Access)</span></a></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%B8%89%E9%83%A8%E5%88%86%EF%BC%9ALinux-%E5%86%85%E6%A0%B8-DMA-%E9%A9%B1%E5%8A%A8%E5%BC%80%E5%8F%91%E5%AE%9E%E6%88%98"><span class="toc-text">第三部分：Linux 内核 DMA 驱动开发实战</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#3-1-%E4%B8%80%E8%87%B4%E6%80%A7-DMA-%E6%98%A0%E5%B0%84%E4%B8%8E%E6%B5%81%E5%BC%8F-DMA-%E6%98%A0%E5%B0%84%E6%B7%B1%E5%BA%A6%E6%AF%94%E5%AF%B9"><span class="toc-text">3.1 一致性 DMA 映射与流式 DMA 映射深度比对</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#1-%E4%B8%80%E8%87%B4%E6%80%A7-DMA-%E6%98%A0%E5%B0%84-Coherent-DMA-Mapping"><span class="toc-text">1. 一致性 DMA 映射 (Coherent DMA Mapping)</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-%E6%B5%81%E5%BC%8F-DMA-%E6%98%A0%E5%B0%84-Streaming-DMA-Mapping"><span class="toc-text">2. 流式 DMA 映射 (Streaming DMA Mapping)</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-2-%E7%A1%AC%E4%BB%B6%E5%B1%82%E5%BA%95%E5%BA%A7%EF%BC%9AMESI-%E7%BC%93%E5%AD%98%E4%B8%80%E8%87%B4%E6%80%A7%E5%8D%8F%E8%AE%AE%E4%B8%8E%E7%A1%AC%E4%BB%B6%E7%9B%91%E5%90%AC-Cache-Snooping"><span class="toc-text">3.2 硬件层底座：MESI 缓存一致性协议与硬件监听 (Cache Snooping)</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-3-Linux-%E5%86%85%E6%A0%B8%E6%B5%81%E5%BC%8F-DMA-%E5%A4%8D%E7%94%A8%E4%B8%8E%E5%90%8C%E6%AD%A5-API-%E6%8C%87%E5%8D%97"><span class="toc-text">3.3 Linux 内核流式 DMA 复用与同步 API 指南</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%93%9D-Linux-%E5%86%85%E6%A0%B8%E6%B5%81%E5%BC%8F-DMA-%E5%90%8C%E6%AD%A5-API-%E6%B8%85%E5%8D%95%EF%BC%9A"><span class="toc-text">📝 Linux 内核流式 DMA 同步 API 清单：</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%92%BB-%E5%AE%9E%E6%88%98%E4%BB%A3%E7%A0%81%EF%BC%9A%E5%9C%A8-Linux-%E9%A9%B1%E5%8A%A8%E4%B8%AD%E5%AE%89%E5%85%A8%E5%A4%8D%E7%94%A8%E5%92%8C%E5%90%8C%E6%AD%A5%E6%B5%81%E5%BC%8F-DMA-%E7%BC%93%E5%86%B2%E5%8C%BA%E7%9A%84%E5%85%B8%E5%9E%8B%E8%8C%83%E5%BC%8F%EF%BC%9A"><span class="toc-text">💻 实战代码：在 Linux 驱动中安全复用和同步流式 DMA 缓冲区的典型范式：</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-5-%E5%88%86%E6%95%A3-%E8%81%9A%E9%9B%86-DMA-Scatter-Gather-DMA"><span class="toc-text">3.5 分散-聚集 DMA (Scatter-Gather DMA)</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%92%BB-%E5%AE%9E%E6%88%98%E4%BB%A3%E7%A0%81%EF%BC%9A%E5%9C%A8%E5%86%85%E6%A0%B8%E9%A9%B1%E5%8A%A8%E4%B8%AD%E6%9E%84%E5%BB%BA%E3%80%81%E6%98%A0%E5%B0%84%E5%B9%B6%E4%BD%BF%E7%94%A8-Scatter-Gather-%E8%A1%A8%E4%BC%A0%E8%BE%93%EF%BC%9A"><span class="toc-text">💻 实战代码：在内核驱动中构建、映射并使用 Scatter-Gather 表传输：</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-6-%E6%A0%B8%E5%BF%83%E8%B0%83%E8%AF%95%E6%AD%A6%E5%99%A8%EF%BC%9A%E5%86%85%E6%A0%B8-DMA-API-%E6%A0%A1%E9%AA%8C-CONFIG-DMA-API-DEBUG"><span class="toc-text">3.6 核心调试武器：内核 DMA-API 校验 (CONFIG_DMA_API_DEBUG)</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-7-%E5%AE%9E%E6%88%98%EF%BC%9A%E5%9F%BA%E4%BA%8E-S3C2410-%E5%B9%B3%E5%8F%B0%E5%86%85%E6%A0%B8-DMA-%E9%A9%B1%E5%8A%A8%E6%A1%86%E6%9E%B6%E7%BC%96%E5%86%99"><span class="toc-text">3.7 实战：基于 S3C2410 平台内核 DMA 驱动框架编写</span></a></li></ol></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>Scroll to Top</span></a><a class="buttom" onclick="util.scrollComment()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M8 10.5h8M8 14h5.5M17 3.338A9.95 9.95 0 0 0 12 2C6.477 2 2 6.477 2 12c0 1.6.376 3.112 1.043 4.453c.178.356.237.763.134 1.148l-.595 2.226a1.3 1.3 0 0 0 1.591 1.592l2.226-.596a1.63 1.63 0 0 1 1.149.133A9.96 9.96 0 0 0 12 22c5.523 0 10-4.477 10-10c0-1.821-.487-3.53-1.338-5"/></svg><span>Join Discussion</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  window.canonical["param"] = {"permalink":"https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E6%80%BB%E7%BA%BF-3-PCIe%E9%AB%98%E9%80%9F%E4%B8%B2%E8%A1%8C%E6%80%BB%E7%BA%BF%E4%B8%8E%E5%86%85%E6%A0%B8DMA%E4%BC%A0%E8%BE%93%E6%9C%BA%E5%88%B6%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/","checklink":"/js/plugins/video.js"};
+  const ctx = {
+    date_suffix: {
+      just: `Just`,
+      min: `minutes ago`,
+      hour: `hours ago`,
+      day: `days ago`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        if ($(el).find('.loading-wrap').length == 0){
+          $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+        }
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `Switched to Light Mode`,
+      dark: `Switched to Dark Mode`,
+      auto: `Switched to Auto Mode`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+  <script type="module">
+  const el = document.querySelector("#comments #utterances");
+  util.viewportLazyload(el, load_utterances, true);
+
+  function load_utterances() {
+    if (!el) return;
+    try {
+      el.innerHTML = '';
+    } catch (error) {
+      console.error(error);
+    }
+    const script = document.createElement('script');
+    script.src = 'https://utteranc.es/client.js';
+    script.async = true;
+    for (const key of Object.keys(el.attributes)) {
+      const attr = el.attributes[key];
+      if (['class', 'id'].includes(attr.name) === false) {
+        script.setAttribute(attr.name, attr.value);
+      }
+    }
+    el.appendChild(script);
+  }
+</script>
+
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.chat-file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

@@ -1,0 +1,1083 @@
+
+<!DOCTYPE html><html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 7.3.0">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>Linux 共享库动态加载与运行时链接器寻址机制及进阶应用 - LemonCyan</title>
+
+  
+    <meta name="description" content="深度剖析 Linux 动态链接器 ld.so 的运行期寻址与加载机制。系统解析 RPATH、RUNPATH、LD_LIBRARY_PATH、&#x2F;etc&#x2F;ld.so.cache 的搜索优先级与决策逻辑；提供 dlopen、dlsym 显式动态加载 API 的完整 C 语言及 C++ 类工厂模式实战代码；详解 GOT&#x2F;PLT 延迟绑定技术；指导 ldd, nm, readelf 与 objdump 符号">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Linux 共享库动态加载与运行时链接器寻址机制及进阶应用">
+<meta property="og:url" content="https://lemoncyan.github.io/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-6-Linux%E5%85%B1%E4%BA%AB%E5%BA%93%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%E5%AF%BB%E5%9D%80%E6%9C%BA%E5%88%B6%E5%8F%8A%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8/">
+<meta property="og:site_name" content="LemonCyan">
+<meta property="og:description" content="深度剖析 Linux 动态链接器 ld.so 的运行期寻址与加载机制。系统解析 RPATH、RUNPATH、LD_LIBRARY_PATH、&#x2F;etc&#x2F;ld.so.cache 的搜索优先级与决策逻辑；提供 dlopen、dlsym 显式动态加载 API 的完整 C 语言及 C++ 类工厂模式实战代码；详解 GOT&#x2F;PLT 延迟绑定技术；指导 ldd, nm, readelf 与 objdump 符号">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+<meta property="article:published_time" content="2026-07-17T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-07-17T03:19:27.456Z">
+<meta property="article:author" content="liuluhua">
+<meta property="article:tag" content="共享库">
+<meta property="article:tag" content="动态加载">
+<meta property="article:tag" content="ld.so">
+<meta property="article:tag" content="RPATH">
+<meta property="article:tag" content="dlopen">
+<meta property="article:tag" content="寻址机制">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+  
+  
+  
+  <meta name="keywords" content="共享库,动态加载,ld.so,RPATH,dlopen,寻址机制">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"},"dateCreated":"2026-07-17T00:00:00+00:00","dateModified":"2026-07-17T03:19:27+00:00","datePublished":"2026-07-17T00:00:00+00:00","description":"","headline":"Linux 共享库动态加载与运行时链接器寻址机制及进阶应用","mainEntityOfPage":{"@type":"WebPage","@id":"https://lemoncyan.github.io/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-6-Linux%E5%85%B1%E4%BA%AB%E5%BA%93%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%E5%AF%BB%E5%9D%80%E6%9C%BA%E5%88%B6%E5%8F%8A%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8/"},"publisher":{"@type":"Organization","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png","logo":{"@type":"ImageObject","url":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"}},"url":"https://lemoncyan.github.io/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-6-Linux%E5%85%B1%E4%BA%AB%E5%BA%93%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%E5%AF%BB%E5%9D%80%E6%9C%BA%E5%88%B6%E5%8F%8A%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8/","keywords":"共享库, 动态加载, ld.so, RPATH, dlopen, 寻址机制","image":[]}</script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css" />
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="config.avatar" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">LemonCyan</div><div class="sub cap">LemonCyan`s Charging</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"><a class="nav-item active" title="博客" href="/" style="color:#1BCDFC"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M5.879 2.879C5 3.757 5 5.172 5 8v8c0 2.828 0 4.243.879 5.121C6.757 22 8.172 22 11 22h2c2.828 0 4.243 0 5.121-.879C19 20.243 19 18.828 19 16V8c0-2.828 0-4.243-.879-5.121C17.243 2 15.828 2 13 2h-2c-2.828 0-4.243 0-5.121.879M8.25 17a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75M9 12.25a.75.75 0 0 0 0 1.5h6a.75.75 0 0 0 0-1.5zM8.25 9A.75.75 0 0 1 9 8.25h6a.75.75 0 0 1 0 1.5H9A.75.75 0 0 1 8.25 9" clip-rule="evenodd"/><path fill="currentColor" d="M5.235 4.058C5 4.941 5 6.177 5 8v8c0 1.823 0 3.058.235 3.942L5 19.924c-.975-.096-1.631-.313-2.121-.803C2 18.243 2 16.828 2 14v-4c0-2.829 0-4.243.879-5.121c.49-.49 1.146-.707 2.121-.803zm13.53 15.884C19 19.058 19 17.822 19 16V8c0-1.823 0-3.059-.235-3.942l.235.018c.975.096 1.631.313 2.121.803C22 5.757 22 7.17 22 9.999v4c0 2.83 0 4.243-.879 5.122c-.49.49-1.146.707-2.121.803z" opacity=".5"/></svg></a><a class="nav-item" title="文档" href="/wiki/" style="color:#3DC550"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M14.25 4.48v3.057c0 .111 0 .27.02.406a.936.936 0 0 0 .445.683a.96.96 0 0 0 .783.072c.13-.04.272-.108.378-.159L17 8.005l1.124.534c.106.05.248.119.378.16a.958.958 0 0 0 .783-.073a.936.936 0 0 0 .444-.683c.021-.136.021-.295.021-.406V3.031c.113-.005.224-.01.332-.013C21.154 2.98 22 3.86 22 4.933v11.21c0 1.112-.906 2.01-2.015 2.08c-.97.06-2.108.179-2.985.41c-1.082.286-1.99 1.068-3.373 1.436c-.626.167-1.324.257-1.627.323V5.174c.32-.079 1.382-.203 1.674-.371c.184-.107.377-.216.576-.323m5.478 8.338a.75.75 0 0 1-.546.91l-4 1a.75.75 0 0 1-.364-1.456l4-1a.75.75 0 0 1 .91.546" clip-rule="evenodd"/><path fill="currentColor" d="M18.25 3.151c-.62.073-1.23.18-1.75.336a8.2 8.2 0 0 0-.75.27v3.182l.75-.356l.008-.005a1.13 1.13 0 0 1 .492-.13c.047 0 .094.004.138.01c.175.029.315.1.354.12l.009.005l.749.356V3.647z"/><path fill="currentColor" d="M12 5.214c-.334-.064-1.057-.161-1.718-.339C8.938 4.515 8.05 3.765 7 3.487c-.887-.234-2.041-.352-3.018-.412C2.886 3.007 2 3.9 2 4.998v11.146c0 1.11.906 2.01 2.015 2.079c.97.06 2.108.179 2.985.41c.486.129 1.216.431 1.873.726c1.005.451 2.052.797 3.127 1.034z" opacity=".5"/><path fill="currentColor" d="M4.273 12.818a.75.75 0 0 1 .91-.545l4 1a.75.75 0 1 1-.365 1.455l-4-1a.75.75 0 0 1-.545-.91m.909-4.545a.75.75 0 1 0-.364 1.455l4 1a.75.75 0 0 0 .364-1.455z"/></svg></a><a class="nav-item" title="探索" href="/explore/" style="color:#FA6400"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M20 12a8 8 0 1 1-16 0a8 8 0 0 1 16 0" opacity=".5"/><path fill="currentColor" d="M17.712 5.453c1.047-.193 2.006-.259 2.797-.152c.77.103 1.536.393 1.956 1.064c.446.714.312 1.542-.012 2.258c-.33.728-.918 1.499-1.672 2.268c-1.516 1.547-3.836 3.226-6.597 4.697c-2.763 1.472-5.495 2.484-7.694 2.92c-1.095.217-2.098.299-2.923.201c-.8-.095-1.6-.383-2.032-1.075c-.47-.752-.296-1.63.07-2.379c.375-.768 1.032-1.586 1.872-2.403L4 12.416c0 .219.083.71.168 1.146c.045.23.09.444.123.596c-.652.666-1.098 1.263-1.339 1.756c-.277.567-.208.825-.145.925c.072.116.305.305.937.38c.609.073 1.44.018 2.455-.183c2.02-.4 4.613-1.351 7.28-2.772c2.667-1.42 4.85-3.015 6.23-4.423c.694-.707 1.15-1.334 1.377-1.836c.233-.515.167-.75.107-.844c-.07-.112-.289-.294-.883-.374c-.542-.072-1.272-.041-2.163.112L16.87 5.656c.338-.101.658-.17.842-.203"/></svg></a><a class="nav-item" title="社交" href="/friends/" style="color:#F44336"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="m13.629 20.472l-.542.916c-.483.816-1.69.816-2.174 0l-.542-.916c-.42-.71-.63-1.066-.968-1.262c-.338-.197-.763-.204-1.613-.219c-1.256-.021-2.043-.098-2.703-.372a5 5 0 0 1-2.706-2.706C2 14.995 2 13.83 2 11.5v-1c0-3.273 0-4.91.737-6.112a5 5 0 0 1 1.65-1.651C5.59 2 7.228 2 10.5 2h3c3.273 0 4.91 0 6.113.737a5 5 0 0 1 1.65 1.65C22 5.59 22 7.228 22 10.5v1c0 2.33 0 3.495-.38 4.413a5 5 0 0 1-2.707 2.706c-.66.274-1.447.35-2.703.372c-.85.015-1.275.022-1.613.219c-.338.196-.548.551-.968 1.262" opacity=".5"/><path fill="currentColor" d="M10.99 14.308c-1.327-.978-3.49-2.84-3.49-4.593c0-2.677 2.475-3.677 4.5-1.609c2.025-2.068 4.5-1.068 4.5 1.609c0 1.752-2.163 3.615-3.49 4.593c-.454.335-.681.502-1.01.502c-.329 0-.556-.167-1.01-.502"/></svg></a></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="Search"></form><div id="search-result"></div><div class="search-no-result">No Results!</div></div>
+
+
+
+<widget class="widget-wrapper recent post-list"><div class="widget-header dis-select"><span class="name">Recent Update</span></div><div class="widget-body fs14"><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-9-%E5%B5%8C%E5%85%A5%E5%BC%8FLinux%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98%E6%8C%87%E5%8D%97/"><span class="title">嵌入式 Linux 启动性能优化与工具链/应用程序调优指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-6-Linux%E5%85%B1%E4%BA%AB%E5%BA%93%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%E5%AF%BB%E5%9D%80%E6%9C%BA%E5%88%B6%E5%8F%8A%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8/"><span class="title">Linux 共享库动态加载与运行时链接器寻址机制及进阶应用</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-7-%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%B5%8C%E5%85%A5%E5%BC%8F%E4%BA%A4%E5%8F%89%E5%B7%A5%E5%85%B7%E9%93%BE%E6%9E%84%E5%BB%BAcrosstool-ng%E6%B7%B1%E5%BA%A6%E5%AE%9E%E6%88%98/"><span class="title">交叉编译与嵌入式交叉工具链构建 crosstool-ng 深度实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-8-%E7%8E%B0%E4%BB%A3%E6%9E%84%E5%BB%BA%E7%B3%BB%E7%BB%9FMeson-Ninja%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%BC%80%E6%BA%90%E5%BA%93%E7%A7%BB%E6%A4%8D%E5%AE%9E%E6%88%98/"><span class="title">现代构建系统 Meson + Ninja 交叉编译与开源库移植实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-3-%E9%99%88%E7%9A%93%E3%80%8A%E8%B7%9F%E6%88%91%E5%AD%A6Makefile%E3%80%8B%E7%B2%BE%E7%BC%96%E4%B8%8E%E5%AE%9E%E6%88%98%E8%BF%9B%E9%98%B6%E6%8C%87%E5%8D%97/"><span class="title">陈皓《跟我学Makefile》精编与实战进阶指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-4-%E5%A4%8D%E6%9D%82C-C-%E9%A1%B9%E7%9B%AE%E7%9A%84%E5%A4%9A%E6%96%87%E4%BB%B6%E5%A4%B9Makefile%E8%AE%BE%E8%AE%A1%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%8C%96%E7%BC%96%E8%AF%91%E6%9E%B6%E6%9E%84/"><span class="title">复杂 C/C++ 项目的多文件夹 Makefile 设计与自动化编译架构</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-5-%E9%9D%99%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E4%B8%8E%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E6%A0%B8%E5%BF%83%E6%9C%BA%E5%88%B6%E4%B8%8E%E5%BC%80%E5%8F%91%E5%AE%9E%E6%88%98/"><span class="title">静态链接库与动态链接库核心机制与开发实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-1-GCC-G-%E7%BC%96%E8%AF%91%E5%99%A8%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E4%B8%8E%E5%91%BD%E4%BB%A4%E8%A1%8C%E9%80%89%E9%A1%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/"><span class="title">GCC/G++ 编译器工作原理与命令行选项深度指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-10-Linux%E6%AE%B5%E9%94%99%E8%AF%AF%E6%8E%92%E6%9F%A5%E4%B8%8EGDB%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%E8%B0%83%E8%AF%95%E5%AE%9E%E6%88%98/"><span class="title">Linux 段错误排查与 GDB 核心转储调试实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-2-GNU-Make%E4%B8%8EMakefile%E6%9E%84%E5%BB%BA%E5%9F%BA%E7%A1%80%E5%85%A5%E9%97%A8%E6%89%8B%E5%86%8C/"><span class="title">GNU Make 与 Makefile 构建基础入门手册</span></a></div></widget>
+</div>
+<footer class="footer dis-select"><div class="social-wrap"><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/08a41b181ce68.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3845874.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3616429.svg"/></a><a class="social" href="/about/#comments" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/942ebbf1a4b91.svg"/></a></div></footer>
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">Home</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">Blog</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/">6.开发工具</a> <span class="sep"></span> <a class="cap breadcrumb-link" href="/categories/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5/">编译链接</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">Posted on: <time datetime="2026-07-17T00:00:00.000Z">2026-07-17</time></span><span class="sep updated"></span><span class="text updated">Updated on: <time datetime="2026-07-17T03:19:27.456Z">2026-07-17</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>Linux 共享库动态加载与运行时链接器寻址机制及进阶应用</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h1 id="Linux-共享库动态加载与运行时链接器寻址机制及进阶应用"><a href="#Linux-共享库动态加载与运行时链接器寻址机制及进阶应用" class="headerlink" title="Linux 共享库动态加载与运行时链接器寻址机制及进阶应用"></a>Linux 共享库动态加载与运行时链接器寻址机制及进阶应用</h1><p>在 Linux C&#x2F;C++ 软件开发中，<br>共享库（Shared Library,<br>即 <code>.so</code> 文件）的动态链接和加载机制是系统级编程的核心。<br>无论是编译期静态指定链接库，<br>还是运行期显式动态装载，<br>Linux 的动态链接器 <code>ld.so</code> 都扮演着至关重要的角色。<br>本指南将从底层机制出发，<br>深度剖析共享库的搜索路径优先级、运行时寻址原理、显式 API 动态加载（包含 C++ 类的动态生成），<br>并提供生产级别的调试工具链实战指南。</p>
+<hr>
+<h2 id="1-动态链接与运行时链接器（ld-so）工作原理"><a href="#1-动态链接与运行时链接器（ld-so）工作原理" class="headerlink" title="1. 动态链接与运行时链接器（ld.so）工作原理"></a>1. 动态链接与运行时链接器（ld.so）工作原理</h2><h3 id="1-1-静态链接与动态链接的对比"><a href="#1-1-静态链接与动态链接的对比" class="headerlink" title="1.1 静态链接与动态链接的对比"></a>1.1 静态链接与动态链接的对比</h3><p>在编译程序时，<br>我们可以选择将库代码静态地合并进可执行文件，<br>也可以在运行时动态加载：</p>
+<ul>
+<li><strong>静态链接</strong>：链接器 <code>ld</code> 在编译期将静态库 <code>.a</code> 中的目标代码直接复制并合并进最终的可执行文件中。程序运行时不再依赖外部库文件，但导致二进制文件庞大，且库升级时必须重新编译整个程序。</li>
+<li><strong>动态链接</strong>：可执行文件中仅保留对共享库中符号的引用（如符号名称、版本要求等），而不包含具体实现代码。运行时由<strong>动态链接器</strong>（对于 ELF 格式的可执行文件，通常是 <code>/lib/ld-linux.so.2</code> 或 <code>/lib64/ld-linux-x86-64.so.2</code>）将所需的 <code>.so</code> 文件映射到进程的虚拟内存空间，并在执行前完成符号的重定位。</li>
+</ul>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">+-------------------------------------------------------------+</span><br><span class="line">|                          编译期                             |</span><br><span class="line">|  main.o   ---\                                              |</span><br><span class="line">|               +---&gt; 链接器 (ld) ---&gt; 可执行二进制 (ELF)      |</span><br><span class="line">|  libfunc.so --/    (仅记录符号引用与所需so名)               |</span><br><span class="line">+-------------------------------------------------------------+</span><br><span class="line">                               |</span><br><span class="line">                               v (运行程序时)</span><br><span class="line">+-------------------------------------------------------------+</span><br><span class="line">|                          运行期                             |</span><br><span class="line">|  1. 内核加载 ELF 头部，发现依赖动态链接器                    |</span><br><span class="line">|  2. 映射 ld-linux.so 并跳转到其入口执行                     |</span><br><span class="line">|  3. ld-linux.so 搜索并映射依赖库 (libfunc.so) 到内存         |</span><br><span class="line">|  4. 解析符号并进行重定位 (PLT/GOT 修正)                      |</span><br><span class="line">|  5. 移交控制权给 main 函数开始执行                          |</span><br><span class="line">+-------------------------------------------------------------+</span><br></pre></td></tr></table></figure>
+
+<h3 id="1-2-动态链接器的工作过程"><a href="#1-2-动态链接器的工作过程" class="headerlink" title="1.2 动态链接器的工作过程"></a>1.2 动态链接器的工作过程</h3><p>当执行一个动态链接的二进制程序时，<br>操作系统的加载器（kernel loader）首先读取该 ELF 文件的程序头表（Program Header Table），<br>找到解释器段（<code>.interp</code>），<br>其中记录了动态链接器的绝对路径：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">$ readelf -l ./my_app | grep interpreter</span><br><span class="line">      [Requesting program interpreter: /lib64/ld-linux-x86-64.so.2]</span><br></pre></td></tr></table></figure>
+<p>内核会将该解释器（即 <code>ld.so</code>）与可执行文件一起映射到进程的内存空间，<br>并将 CPU 的执行控制权转交给 <code>ld.so</code>。<br>随后，<br><code>ld.so</code> 执行以下步骤：</p>
+<ol>
+<li><strong>分析依赖项</strong>：读取 ELF 文件的 <code>.dynamic</code> 段，<br>找到所有类型为 <code>NEEDED</code> 的项，<br>这些项记录了该程序所依赖 of 共享库名称（Soname）。</li>
+<li><strong>搜索并装载</strong>：按照特定的搜索路径顺序，<br>寻找相应的 <code>.so</code> 文件，<br>并通过 <code>mmap</code> 系统调用将它们映射到进程的虚拟地址空间。</li>
+<li><strong>符号解析与重定位</strong>：解析共享库与主程序之间的符号引用，<br>填充全局偏移表（GOT,<br>Global Offset Table）和过程链接表（PLT,<br>Procedure Linkage Table），<br>将函数调用和全局变量访问绑定到正确的内存地址。</li>
+<li><strong>初始化</strong>：依次调用共享库中标记为 <code>__attribute__((constructor))</code> 的初始化函数。</li>
+<li><strong>启动主程序</strong>：将执行流控制权移交给主程序的入口点（<code>_start</code>，<br>进而调用 <code>main</code>）。</li>
+</ol>
+<hr>
+<h2 id="2-动态链接库运行时寻址寻路决策链"><a href="#2-动态链接库运行时寻址寻路决策链" class="headerlink" title="2. 动态链接库运行时寻址寻路决策链"></a>2. 动态链接库运行时寻址寻路决策链</h2><p>当 <code>ld.so</code> 需要加载一个 <code>NEEDED</code> 标记的共享库（如 <code>libmyfunc.so</code>）时，<br>如果 Soname 中不包含绝对路径，<br>它将遵循一套严格的优先级规则进行检索。<br>这也是我们排查 “cannot open shared object file: No such file or directory” 错误的关键所在。</p>
+<h3 id="2-1-寻址查找顺序优先级表"><a href="#2-1-寻址查找顺序优先级表" class="headerlink" title="2.1 寻址查找顺序优先级表"></a>2.1 寻址查找顺序优先级表</h3><p>以下是 Linux <code>ld.so</code> 查找共享库的硬核检索顺序（由高到低）：</p>
+<table>
+<thead>
+<tr>
+<th align="left">优先级</th>
+<th align="left">机制名称</th>
+<th align="left">路径来源及配置方法</th>
+<th align="left">特征与说明</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>1</strong></td>
+<td align="left"><strong>DT_RPATH</strong></td>
+<td align="left">ELF 二进制内部的 <code>.dynamic</code> 段。<br>编译期通过 <code>-Wl,-rpath</code> 写入。</td>
+<td align="left"><strong>已被弃用</strong>。若设置了 <code>DT_RUNPATH</code>，则此项会被忽略。</td>
+</tr>
+<tr>
+<td align="left"><strong>2</strong></td>
+<td align="left"><strong>LD_LIBRARY_PATH</strong></td>
+<td align="left">运行期进程的环境变量。<br>如 <code>export LD_LIBRARY_PATH=/path/to/lib</code>。</td>
+<td align="left"><strong>开发&#x2F;调试常用</strong>。对于 setuid&#x2F;setgid 的安全二进制程序，该变量会被系统忽略以防注入。</td>
+</tr>
+<tr>
+<td align="left"><strong>3</strong></td>
+<td align="left"><strong>DT_RUNPATH</strong></td>
+<td align="left">ELF 二进制内部的 <code>.dynamic</code> 段。<br>编译期通过 <code>-Wl,-rpath,--enable-new-dtags</code> 写入。</td>
+<td align="left"><strong>现代推荐做法</strong>。其优先级低于 <code>LD_LIBRARY_PATH</code>，允许用户通过环境变量覆盖。</td>
+</tr>
+<tr>
+<td align="left"><strong>4</strong></td>
+<td align="left"><strong>ld.so.cache</strong></td>
+<td align="left">系统共享库缓存文件 <code>/etc/ld.so.cache</code>。<br>由命令 <code>ldconfig</code> 扫描 <code>/etc/ld.so.conf</code> 生成。</td>
+<td align="left"><strong>系统标准路径</strong>。包含大批预先建立的符号链接和绝对路径字典，大幅提高检索效率。</td>
+</tr>
+<tr>
+<td align="left"><strong>5</strong></td>
+<td align="left"><strong>默认系统路径</strong></td>
+<td align="left">固定的系统默认目录：<br>通常为 <code>/lib</code>, <code>/usr/lib</code>, <code>/lib64</code>, <code>/usr/lib64</code> 等。</td>
+<td align="left"><strong>兜底路径</strong>。无需任何配置，系统自动检索。</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>[!WARNING]<br>与 Windows 操作系统默认会优先在当前目录（EXE 同级目录）查找 DLL 的安全缺陷机制不同，<strong>Linux 下的 <code>ld.so</code> 默认不会在当前工作目录（<code>.</code>）下搜索共享库</strong>。如果想将 <code>.so</code> 与程序放在同级目录，必须显式在编译时指定 RPATH（使用 <code>$ORIGIN</code> 占位符），或者临时通过环境变量指定。</p>
+</blockquote>
+<h3 id="2-2-RPATH-与-RUNPATH-的恩怨情仇"><a href="#2-2-RPATH-与-RUNPATH-的恩怨情仇" class="headerlink" title="2.2 RPATH 与 RUNPATH 的恩怨情仇"></a>2.2 RPATH 与 RUNPATH 的恩怨情仇</h3><p>在 GCC 编译阶段，<br>我们可以通过向链接器传递参数来指定运行时寻址路径：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 仅指定 RPATH</span></span><br><span class="line">g++ -Wl,-rpath,/data/lib -o app main.cpp -lmyfunc</span><br></pre></td></tr></table></figure>
+<p>早期版本的 GNU <code>ld</code> 默认写入为 <code>DT_RPATH</code> 标签。<br>这导致了一个顽疾：RPATH 的优先级高于环境变量 <code>LD_LIBRARY_PATH</code>，<br>导致运维和测试人员在运行期无法通过环境变量临时覆盖、切换测试版本的 <code>.so</code>。</p>
+<p>为了解决该痛点，<br>现代 ELF 标准引入了 <code>DT_RUNPATH</code>。<br>它的优先级位于 <code>LD_LIBRARY_PATH</code> 之下。<br>当编译器启用 <code>--enable-new-dtags</code> 参数时，<br>GCC 会在写入 <code>DT_RPATH</code> 的同时写入 <code>DT_RUNPATH</code>。<br>此时，<br><code>ld.so</code> 遇到 <code>DT_RUNPATH</code> 后会强制忽略 <code>DT_RPATH</code>，<br>从而优先采用 <code>LD_LIBRARY_PATH</code>。</p>
+<p>我们可以使用 <code>readelf</code> 诊断二进制文件包含的是 RPATH 还是 RUNPATH：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">$ readelf -d ./app | grep -E <span class="string">&#x27;(RPATH|RUNPATH)&#x27;</span></span><br><span class="line"> 0x000000000000000f (RPATH)              Library rpath: [/data/lib]</span><br><span class="line"><span class="comment"># 或者含有：</span></span><br><span class="line"> 0x000000000000001d (RUNPATH)            Library runpath: [/data/lib]</span><br></pre></td></tr></table></figure>
+
+<h3 id="2-3-极致实战：利用-ORIGIN-实现绿色免配置安装"><a href="#2-3-极致实战：利用-ORIGIN-实现绿色免配置安装" class="headerlink" title="2.3 极致实战：利用 $ORIGIN 实现绿色免配置安装"></a>2.3 极致实战：利用 <code>$ORIGIN</code> 实现绿色免配置安装</h3><p>如果需要将软件打包部署 to 未知路径的客户端上，<br>且不希望用户配置环境变量或修改 <code>/etc/ld.so.conf</code>，<br>可以在编译时采用相对于可执行文件自身位置的相对路径定位：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># $ORIGIN 在 Shell 下需要加单引号转义，防止被 Shell 误解析为环境变量</span></span><br><span class="line">g++ -Wl,-rpath,<span class="string">&#x27;$ORIGIN/../lib&#x27;</span> -o bin/app src/main.cpp -Llib -lmyfunc</span><br></pre></td></tr></table></figure>
+<p>这里的 <code>$ORIGIN</code> 是动态链接器的特殊内置宏，<br>表示<strong>可执行文件所在的绝对路径目录</strong>。<br>只要你的可执行文件放置在 <code>bin/</code> 目录下，<br>而依赖库放置在 <code>lib/</code> 目录下，<br>不论该软件整体部署在 <code>/opt/myapp</code> 还是 <code>/home/user/myapp</code>，<br><code>ld.so</code> 均能全自动精确定位依赖库。</p>
+<hr>
+<h2 id="3-延迟绑定原理：PLT-与-GOT-深度剖析"><a href="#3-延迟绑定原理：PLT-与-GOT-深度剖析" class="headerlink" title="3. 延迟绑定原理：PLT 与 GOT 深度剖析"></a>3. 延迟绑定原理：PLT 与 GOT 深度剖析</h2><p>为了加快程序启动时间，<br>动态链接器默认采用<strong>延迟绑定（Lazy Binding）</strong>机制。<br>这意味着，<br>只有当某个共享库函数被实际调用时，<br><code>ld.so</code> 才会去解析该函数的真实内存地址。<br>这一机制是通过<strong>过程链接表（PLT）</strong>和<strong>全局偏移表（GOT）</strong>协同实现的。</p>
+<h3 id="3-1-PLT-与-GOT-的协同模型"><a href="#3-1-PLT-与-GOT-的协同模型" class="headerlink" title="3.1 PLT 与 GOT 的协同模型"></a>3.1 PLT 与 GOT 的协同模型</h3><ul>
+<li><strong>PLT（Procedure Linkage Table）</strong>：位于代码段（<code>.plt</code>），只读。每个外部函数在 PLT 中都有一个对应条目。</li>
+<li><strong>GOT（Global Offset Table）</strong>：位于数据段（<code>.got.plt</code>），可读写。存储外部符号的绝对内存地址。</li>
+</ul>
+<p>以下是首次调用外部函数 <code>foo()</code> 时的地址解析流程：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"> 用户代码             PLT 段 (.plt)               GOT 段 (.got.plt)          动态链接器 (ld.so)</span><br><span class="line">+---------+         +------------------+         +-----------------+         +------------------+</span><br><span class="line">| call foo+--------&gt;| foo@plt:         |         | foo@got:        |         |                  |</span><br><span class="line">+---------+         |   jmp *foo@got  +---------&gt;|   指向 plt+6     |         |                  |</span><br><span class="line">                    |   push reloc_arg |&lt;--------+ (未解析时回跳)  |         |                  |</span><br><span class="line">                    |   jmp resolve    |                                     |                  |</span><br><span class="line">                    |     |            |                                     |                  |</span><br><span class="line">                    +-----|------------+                                     |                  |</span><br><span class="line">                          |                                                  |                  |</span><br><span class="line">                          v                                                  |                  |</span><br><span class="line">                    +------------------+                                     |                  |</span><br><span class="line">                    | resolve:         |                                     |                  |</span><br><span class="line">                    |   调用 ld.so   +--------------------------------------&gt;| 1. 查找 foo 地址  |</span><br><span class="line">                    +------------------+                                     | 2. 写入 foo@got  |</span><br><span class="line">                                                                             | 3. 跳转执行 foo   |</span><br><span class="line">                                                                             +------------------+</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li><strong>第一次调用</strong>：<ul>
+<li>编译器生成 <code>call foo@plt</code> 指令。</li>
+<li><code>foo@plt</code> 内部跳转到 <code>*foo@got</code> 地址。此时 <code>foo@got</code> 内部的值默认回跳到 <code>foo@plt</code> 的下一条指令（即压栈 <code>reloc_arg</code> 并调用全局解析函数 <code>resolve</code>）。</li>
+<li><code>resolve</code> 调用动态链接器的地址解析函数，在依赖的共享库中找到 <code>foo()</code> 的物理内存地址。</li>
+<li>动态链接器把解析到的真实地址写入 <code>foo@got</code> 中，并直接跳转执行 <code>foo()</code>。</li>
+</ul>
+</li>
+<li><strong>后续调用</strong>：<ul>
+<li><code>call foo@plt</code> 再次跳转到 <code>*foo@got</code>。</li>
+<li>此时 <code>foo@got</code> 已经保存了 <code>foo()</code> 的真实绝对地址，执行直接跳转，无需再次解析，开销仅为一次间接寻址。</li>
+</ul>
+</li>
+</ol>
+<h3 id="3-2-立即绑定（Immediate-Binding）"><a href="#3-2-立即绑定（Immediate-Binding）" class="headerlink" title="3.2 立即绑定（Immediate Binding）"></a>3.2 立即绑定（Immediate Binding）</h3><p>如果想在程序启动时立即解析所有符号（例如为了防止运行中解析符号带来不确定的延时），<br>可以通过设置环境变量 <code>LD_BIND_NOW</code> 强制启用立即绑定：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">LD_BIND_NOW=1 ./app</span><br></pre></td></tr></table></figure>
+<p>或者在编译链接时传入参数：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">g++ -Wl,-z,now -o app main.cpp -L. -lmyfunc</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="4-直接链接与显式动态加载（dlopen）API-详解"><a href="#4-直接链接与显式动态加载（dlopen）API-详解" class="headerlink" title="4. 直接链接与显式动态加载（dlopen）API 详解"></a>4. 直接链接与显式动态加载（dlopen）API 详解</h2><p>在 Linux 下使用动态库，<br>可以采用编译期声明式直接链接，<br>也可以采用在运行时用代码按需控制的显式动态加载（又称插件模式）。</p>
+<h3 id="4-1-声明式直接链接"><a href="#4-1-声明式直接链接" class="headerlink" title="4.1 声明式直接链接"></a>4.1 声明式直接链接</h3><p>在编译时通过 <code>-L</code> 指定库目录，<br><code>-l</code> 指定库名称：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">g++ main.cpp -L./lib -lmyfunc -o app</span><br></pre></td></tr></table></figure>
+<p>程序运行时，<br><code>ld.so</code> 会全自动把 <code>libmyfunc.so</code> 加载到进程中。<br>如果依赖库不存在，<br>程序一开始就会报错中断：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">./app: error while loading shared libraries: libmyfunc.so: cannot open shared object file: No such file or directory</span><br></pre></td></tr></table></figure>
+
+<h3 id="4-2-显式动态加载-API"><a href="#4-2-显式动态加载-API" class="headerlink" title="4.2 显式动态加载 API"></a>4.2 显式动态加载 API</h3><p>显式动态加载允许程序在运行过程中随时加载和卸载指定的 <code>.so</code> 文件。<br>其接口定义在 <code>&lt;dlfcn.h&gt;</code> 中，<br>主要由以下 4 个系统函数组成：</p>
+<ol>
+<li><p>**<code>dlopen</code>**：加载共享库。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> *<span class="title function_">dlopen</span><span class="params">(<span class="type">const</span> <span class="type">char</span> *filename, <span class="type">int</span> flag)</span>;</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>filename</code>：若传入绝对路径或带有 <code>/</code> 的路径，则仅在该路径下查找；若仅传入库名，则按照前述的寻址决策链搜索。若传入 <code>NULL</code>，则返回主程序的句柄。</li>
+<li><code>flag</code>：常用的标志位包括：<ul>
+<li><code>RTLD_LAZY</code>：暂不解析未决符号。在代码实际执行到对应的函数时，才去解析符号地址。</li>
+<li><code>RTLD_NOW</code>：立即解析共享库中的所有未决符号。如果有些符号无法解析（未实现），<code>dlopen</code> 将立即报错并返回 <code>NULL</code>。</li>
+<li><code>RTLD_GLOBAL</code>：让该共享库内输出的符号可以被后续加载的其他共享库访问。</li>
+<li><code>RTLD_LOCAL</code>：默认值。加载的共享库符号局部可见，不影响其他库。</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>**<code>dlsym</code>**：获取共享库中符号（函数或全局变量）的内存地址。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">void</span> *<span class="title function_">dlsym</span><span class="params">(<span class="type">void</span> *handle, <span class="type">const</span> <span class="type">char</span> *symbol)</span>;</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>handle</code>：<code>dlopen</code> 返回的句柄。</li>
+<li><code>symbol</code>：函数名或变量名的字符串。</li>
+</ul>
+</li>
+<li><p>**<code>dlerror</code>**：获取最近一次调用 <code>dlopen</code>,<br><code>dlsym</code>,<br>或 <code>dlclose</code> 发生的错误描述字符串。<br>如果执行成功，<br>则返回 <code>NULL</code>。</p>
+</li>
+<li><p>**<code>dlclose</code>**：卸载动态库。<br>将该库的引用计数减 1。<br>当计数归零时，<br><code>ld.so</code> 会将该库从进程虚拟空间中卸载。</p>
+</li>
+</ol>
+<hr>
+<h2 id="5-显式动态加载-C-语言函数及-C-类工厂实战"><a href="#5-显式动态加载-C-语言函数及-C-类工厂实战" class="headerlink" title="5. 显式动态加载 C 语言函数及 C++ 类工厂实战"></a>5. 显式动态加载 C 语言函数及 C++ 类工厂实战</h2><p>以下提供一个完整的动态库编写、C 函数动态加载以及 C++ 多态类工厂的实战案例。</p>
+<h3 id="5-1-编写共享库源码"><a href="#5-1-编写共享库源码" class="headerlink" title="5.1 编写共享库源码"></a>5.1 编写共享库源码</h3><p>首先创建共享库的头文件 <code>plugin.h</code>：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">ifndef</span> PLUGIN_H</span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> PLUGIN_H</span></span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 1. 声明一个普通的 C 语言导出函数</span></span><br><span class="line"><span class="keyword">extern</span> <span class="string">&quot;C&quot;</span> <span class="function"><span class="type">void</span> <span class="title">hello_c</span><span class="params">(<span class="type">const</span> <span class="type">char</span> *msg)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 2. 声明一个 C++ 抽象基类，用于演示多态动态加载</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">IShape</span> &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="keyword">virtual</span> ~<span class="built_in">IShape</span>() &#123;&#125;</span><br><span class="line">    <span class="function"><span class="keyword">virtual</span> <span class="type">void</span> <span class="title">draw</span><span class="params">()</span> </span>= <span class="number">0</span>;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 3. 声明用于生成和销毁 C++ 类实例的类工厂函数（使用 extern &quot;C&quot; 避免符号修饰）</span></span><br><span class="line"><span class="keyword">extern</span> <span class="string">&quot;C&quot;</span> <span class="function">IShape* <span class="title">create_shape</span><span class="params">()</span></span>;</span><br><span class="line"><span class="keyword">extern</span> <span class="string">&quot;C&quot;</span> <span class="function"><span class="type">void</span> <span class="title">destroy_shape</span><span class="params">(IShape* shape)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="meta">#<span class="keyword">endif</span> <span class="comment">// PLUGIN_H</span></span></span><br></pre></td></tr></table></figure>
+
+<p>接着创建共享库的实现文件 <code>plugin.cpp</code>：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;plugin.h&quot;</span></span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 普通 C 函数实现</span></span><br><span class="line"><span class="keyword">extern</span> <span class="string">&quot;C&quot;</span> <span class="function"><span class="type">void</span> <span class="title">hello_c</span><span class="params">(<span class="type">const</span> <span class="type">char</span> *msg)</span> </span>&#123;</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;[C Plugin] Message received: &quot;</span> &lt;&lt; msg &lt;&lt; std::endl;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 具体实现的 C++ 子类</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Circle</span> : <span class="keyword">public</span> IShape &#123;</span><br><span class="line"><span class="keyword">public</span>:</span><br><span class="line">    <span class="function"><span class="type">void</span> <span class="title">draw</span><span class="params">()</span> <span class="keyword">override</span> </span>&#123;</span><br><span class="line">        std::cout &lt;&lt; <span class="string">&quot;[C++ Plugin] Drawing a perfect Circle!&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 类工厂函数实现</span></span><br><span class="line"><span class="keyword">extern</span> <span class="string">&quot;C&quot;</span> <span class="function">IShape* <span class="title">create_shape</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> <span class="keyword">new</span> <span class="built_in">Circle</span>();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">extern</span> <span class="string">&quot;C&quot;</span> <span class="function"><span class="type">void</span> <span class="title">destroy_shape</span><span class="params">(IShape* shape)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">delete</span> shape;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-2-编写主程序动态加载端-main-cpp"><a href="#5-2-编写主程序动态加载端-main-cpp" class="headerlink" title="5.2 编写主程序动态加载端 main.cpp"></a>5.2 编写主程序动态加载端 <code>main.cpp</code></h3><p>主程序需要在运行时加载上面的动态库，<br>提取 C 函数和 C++ 类的工厂实例：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;dlfcn.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&quot;plugin.h&quot;</span></span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 定义 C 函数指针类型</span></span><br><span class="line"><span class="function"><span class="keyword">typedef</span> <span class="title">void</span> <span class="params">(*<span class="type">hello_c_t</span>)</span><span class="params">(<span class="type">const</span> <span class="type">char</span>*)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 定义 C++ 类工厂函数指针类型</span></span><br><span class="line"><span class="keyword">typedef</span> IShape* (*<span class="type">create_shape_t</span>)();</span><br><span class="line"><span class="function"><span class="keyword">typedef</span> <span class="title">void</span> <span class="params">(*<span class="type">destroy_shape_t</span>)</span><span class="params">(IShape*)</span></span>;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span>* plugin_path = <span class="string">&quot;./libplugin.so&quot;</span>;</span><br><span class="line"></span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;[Host] Attempting to dlopen: &quot;</span> &lt;&lt; plugin_path &lt;&lt; std::endl;</span><br><span class="line">    <span class="comment">// 1. 打开共享库，使用 RTLD_NOW 确保加载时立刻校验所有符号</span></span><br><span class="line">    <span class="type">void</span>* handle = <span class="built_in">dlopen</span>(plugin_path, RTLD_NOW);</span><br><span class="line">    <span class="keyword">if</span> (!handle) &#123;</span><br><span class="line">        std::cerr &lt;&lt; <span class="string">&quot;[Host] dlopen failed: &quot;</span> &lt;&lt; <span class="built_in">dlerror</span>() &lt;&lt; std::endl;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;[Host] Successfully loaded library.&quot;</span> &lt;&lt; std::endl;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 清除现有的错误标记</span></span><br><span class="line">    <span class="built_in">dlerror</span>();</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 2. 加载普通 C 函数</span></span><br><span class="line">    <span class="type">hello_c_t</span> hello_func = (<span class="type">hello_c_t</span>)<span class="built_in">dlsym</span>(handle, <span class="string">&quot;hello_c&quot;</span>);</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span>* err = <span class="built_in">dlerror</span>();</span><br><span class="line">    <span class="keyword">if</span> (err) &#123;</span><br><span class="line">        std::cerr &lt;&lt; <span class="string">&quot;[Host] Loading symbol &#x27;hello_c&#x27; failed: &quot;</span> &lt;&lt; err &lt;&lt; std::endl;</span><br><span class="line">        <span class="built_in">dlclose</span>(handle);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 调用 C 函数</span></span><br><span class="line">    <span class="built_in">hello_func</span>(<span class="string">&quot;Geek Realist Style!&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 3. 加载 C++ 类的工厂生成与销毁函数</span></span><br><span class="line">    <span class="type">create_shape_t</span> create_fn = (<span class="type">create_shape_t</span>)<span class="built_in">dlsym</span>(handle, <span class="string">&quot;create_shape&quot;</span>);</span><br><span class="line">    <span class="type">destroy_shape_t</span> destroy_fn = (<span class="type">destroy_shape_t</span>)<span class="built_in">dlsym</span>(handle, <span class="string">&quot;destroy_shape&quot;</span>);</span><br><span class="line">    </span><br><span class="line">    err = <span class="built_in">dlerror</span>();</span><br><span class="line">    <span class="keyword">if</span> (err) &#123;</span><br><span class="line">        std::cerr &lt;&lt; <span class="string">&quot;[Host] Loading C++ factory symbols failed: &quot;</span> &lt;&lt; err &lt;&lt; std::endl;</span><br><span class="line">        <span class="built_in">dlclose</span>(handle);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 使用类工厂实例化具体类对象，调用虚函数</span></span><br><span class="line">    IShape* shape = <span class="built_in">create_fn</span>();</span><br><span class="line">    <span class="keyword">if</span> (shape) &#123;</span><br><span class="line">        shape-&gt;<span class="built_in">draw</span>();</span><br><span class="line">        <span class="comment">// 销毁实例</span></span><br><span class="line">        <span class="built_in">destroy_fn</span>(shape);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 4. 关闭共享库句柄</span></span><br><span class="line">    <span class="built_in">dlclose</span>(handle);</span><br><span class="line">    std::cout &lt;&lt; <span class="string">&quot;[Host] Library closed. Program finished.&quot;</span> &lt;&lt; std::endl;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="5-3-编写编译与运行-Makefile-规则"><a href="#5-3-编写编译与运行-Makefile-规则" class="headerlink" title="5.3 编写编译与运行 Makefile 规则"></a>5.3 编写编译与运行 Makefile 规则</h3><p>为了方便构建，<br>我们编写一个 Makefile 文件：</p>
+<figure class="highlight makefile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">CXX = g++</span><br><span class="line">CXXFLAGS = -std=c++17 -Wall -Wextra -fPIC</span><br><span class="line"></span><br><span class="line"><span class="section">all: libplugin.so app</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 编译生成共享库，注意使用 -shared</span></span><br><span class="line"><span class="section">libplugin.so: plugin.o</span></span><br><span class="line">	<span class="variable">$(CXX)</span> -shared -o libplugin.so plugin.o</span><br><span class="line"></span><br><span class="line"><span class="section">plugin.o: plugin.cpp plugin.h</span></span><br><span class="line">	<span class="variable">$(CXX)</span> <span class="variable">$(CXXFLAGS)</span> -c plugin.cpp -o plugin.o</span><br><span class="line"></span><br><span class="line"><span class="comment"># 编译主程序，注意链接动态加载 API 库 -ldl</span></span><br><span class="line"><span class="section">app: main.cpp plugin.h</span></span><br><span class="line">	<span class="variable">$(CXX)</span> -std=c++17 -Wall -Wextra main.cpp -ldl -o app</span><br><span class="line"></span><br><span class="line"><span class="section">clean:</span></span><br><span class="line">	rm -f *.o *.so app</span><br><span class="line"></span><br><span class="line"><span class="meta"><span class="keyword">.PHONY</span>: all clean</span></span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="6-符号追踪与动态库诊断工具链实战"><a href="#6-符号追踪与动态库诊断工具链实战" class="headerlink" title="6. 符号追踪与动态库诊断工具链实战"></a>6. 符号追踪与动态库诊断工具链实战</h2><p>在多库并存、版本冲突或运行崩溃时，<br>使用底层的二进制诊断工具可以帮助我们实现秒级排障。</p>
+<h3 id="6-1-ldd-命令：列出依赖关系"><a href="#6-1-ldd-命令：列出依赖关系" class="headerlink" title="6.1 ldd 命令：列出依赖关系"></a>6.1 <code>ldd</code> 命令：列出依赖关系</h3><p><code>ldd</code> 是查看程序所依赖的共享库最快速的工具：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">$ ldd ./app</span><br><span class="line">	linux-vdso.so.1 (0x00007ffc885e3000)</span><br><span class="line">	libdl.so.2 =&gt; /lib64/libdl.so.2 (0x00007fc4bf52f000)</span><br><span class="line">	libstdc++.so.6 =&gt; /lib64/libstdc++.so.6 (0x00007fc4bf19a000)</span><br><span class="line">	libm.so.6 =&gt; /lib64/libm.so.6 (0x00007fc4bee98000)</span><br><span class="line">	libgcc_s.so.1 =&gt; /lib64/libgcc_s.so.1 (0x00007fc4bec80000)</span><br><span class="line">	libc.so.6 =&gt; /lib64/libc.so.6 (0x00007fc4be8bc000)</span><br><span class="line">	/lib64/ld-linux-x86-64.so.2 (0x00007fc4bf733000)</span><br></pre></td></tr></table></figure>
+<p>如果遇到缺少的库，<br>会打印类似如下信息：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">libplugin.so =&gt; not found</span><br></pre></td></tr></table></figure>
+
+<h3 id="6-2-readelf-命令：解析-ELF-的-dynamic-段"><a href="#6-2-readelf-命令：解析-ELF-的-dynamic-段" class="headerlink" title="6.2 readelf 命令：解析 ELF 的 .dynamic 段"></a>6.2 <code>readelf</code> 命令：解析 ELF 的 <code>.dynamic</code> 段</h3><p>我们可以使用 <code>readelf</code> 检查 ELF 文件的基本元数据，<br>这比 <code>ldd</code> 更安全，<br>因为 <code>ldd</code> 实际上会尝试执行程序来探测依赖，<br>如果程序来源可疑，<br>会有执行恶意代码的风险：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看依赖的 SONAME</span></span><br><span class="line">$ readelf -d ./app | grep NEEDED</span><br><span class="line"> 0x0000000000000001 (NEEDED)             Shared library: [libdl.so.2]</span><br><span class="line"> 0x0000000000000001 (NEEDED)             Shared library: [libstdc++.so.6]</span><br><span class="line"> ...</span><br></pre></td></tr></table></figure>
+
+<h3 id="6-3-nm-命令：提取并检查符号表"><a href="#6-3-nm-命令：提取并检查符号表" class="headerlink" title="6.3 nm 命令：提取并检查符号表"></a>6.3 <code>nm</code> 命令：提取并检查符号表</h3><p><code>nm</code> 工具可列出二进制目标文件中的所有符号。</p>
+<ul>
+<li>**<code>U</code> (Undefined)**：表示在此二进制文件中使用但未定义的外部符号，需要在链接或运行时从其他共享库引入。</li>
+<li>**<code>T</code> (Text)**：表示在此二进制文件中定义的导出函数符号。</li>
+<li>**<code>W</code> (Weak)**：弱符号，若没有其他强符号覆盖，则采用此符号。</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 过滤 Undefined 符号，了解此动态库依赖哪些外部函数</span></span><br><span class="line">$ nm -u libplugin.so</span><br><span class="line">                 w __cxa_finalize@@GLIBC_2.2.5</span><br><span class="line">                 U __cxa_bad_cast@@GLIBCXX_3.4</span><br><span class="line">                 U _ZdaPv@@GLIBCXX_3.4</span><br><span class="line">                 ...</span><br><span class="line"></span><br><span class="line"><span class="comment"># 过滤定义的 T 符号，了解导出了哪些接口</span></span><br><span class="line">$ nm -g --defined-only libplugin.so</span><br><span class="line">0000000000001189 T create_shape</span><br><span class="line">000000000000119e T destroy_shape</span><br><span class="line">0000000000001120 T hello_c</span><br></pre></td></tr></table></figure>
+
+<h3 id="6-4-objdump-命令：深度反汇编与符号结构探测"><a href="#6-4-objdump-命令：深度反汇编与符号结构探测" class="headerlink" title="6.4 objdump 命令：深度反汇编与符号结构探测"></a>6.4 <code>objdump</code> 命令：深度反汇编与符号结构探测</h3><p><code>objdump</code> 可用于查看导出函数和依赖详情，<br>也可以用 <code>-d</code> 直接将特定共享库内的机器码反汇编为汇编代码：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 查看动态链接符号表</span></span><br><span class="line">$ objdump -T libplugin.so | grep -E <span class="string">&#x27;(hello_c|create_shape)&#x27;</span></span><br><span class="line">0000000000001120 g    DF .text	0000000000000057  Base        hello_c</span><br><span class="line">0000000000001189 g    DF .text	0000000000000015  Base        create_shape</span><br></pre></td></tr></table></figure>
+
+<h3 id="6-5-LD-DEBUG-环境变量：动态链接器诊断大杀器"><a href="#6-5-LD-DEBUG-环境变量：动态链接器诊断大杀器" class="headerlink" title="6.5 LD_DEBUG 环境变量：动态链接器诊断大杀器"></a>6.5 <code>LD_DEBUG</code> 环境变量：动态链接器诊断大杀器</h3><p>当遇到运行期符号版本不匹配、符号找不到或莫名加载了错误的动态库时，<br>可以利用 <code>ld.so</code> 提供的环境变量 <code>LD_DEBUG</code> 监视整个链接过程。</p>
+<p><code>LD_DEBUG</code> 的支持选项包括：</p>
+<ul>
+<li><code>files</code>：显示加载的文件、Soname 以及检索路径信息。</li>
+<li><code>symbols</code>：显示符号解析和查找的详细轨迹。</li>
+<li><code>bindings</code>：显示符号绑定映射结果。</li>
+<li><code>versions</code>：显示版本检查信息。</li>
+<li><code>all</code>：打印所有调试信息。</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 监控可执行文件 app 执行时的文件加载过程</span></span><br><span class="line">$ LD_DEBUG=files ./app</span><br><span class="line">     21626:	find library=libdl.so.2 [0]; searching</span><br><span class="line">     21626:	 search cache=/etc/ld.so.cache</span><br><span class="line">     21626:	  trying file=/lib64/libdl.so.2</span><br><span class="line">     21626:	</span><br><span class="line">     21626:	find library=libstdc++.so.6 [0]; searching</span><br><span class="line">     21626:	 search cache=/etc/ld.so.cache</span><br><span class="line">     21626:	  trying file=/lib64/libstdc++.so.6</span><br><span class="line">     ...</span><br><span class="line">     21626:	[Host] Attempting to dlopen: ./libplugin.so</span><br><span class="line">     21626:	opening file=./libplugin.so [0]; feedback_fd=3</span><br><span class="line">     ...</span><br></pre></td></tr></table></figure>
+
+<p>通过这一层面的输出日志，<br>即使最隐蔽的动态链接问题，<br>如符号覆盖（Symbol Shadowing）和库路径污染，<br>也能迅速得以清晰揭示。</p>
+<hr>
+<h2 id="7-常见动态加载故障与秒级诊断-FAQ"><a href="#7-常见动态加载故障与秒级诊断-FAQ" class="headerlink" title="7. 常见动态加载故障与秒级诊断 FAQ"></a>7. 常见动态加载故障与秒级诊断 FAQ</h2><h3 id="Q1-运行程序时报错-“error-while-loading-shared-libraries-libxxx-so-cannot-open-shared-object-file”"><a href="#Q1-运行程序时报错-“error-while-loading-shared-libraries-libxxx-so-cannot-open-shared-object-file”" class="headerlink" title="Q1: 运行程序时报错 “error while loading shared libraries: libxxx.so: cannot open shared object file”"></a>Q1: 运行程序时报错 “error while loading shared libraries: libxxx.so: cannot open shared object file”</h3><ul>
+<li><strong>原因</strong>：动态链接器在上述 5 个默认查找路径中均未找到对应的共享库。</li>
+<li><strong>解法</strong>：</li>
+</ul>
+<ol>
+<li>临时解决：使用 <code>export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/lib</code> 引入该库目录。</li>
+<li>永久系统解决：将路径写入 <code>/etc/ld.so.conf.d/custom.conf</code>，<br>然后执行 <code>sudo ldconfig</code> 更新缓存。</li>
+<li>编译解决：如果该库与可执行程序放置在同级目录下，<br>请在编译时加入 <code>-Wl, -rpath, &#39;$ORIGIN&#39;</code> 参数。</li>
+</ol>
+<h3 id="Q2-使用-dlopen-时返回-NULL-句柄，dlerror-显示-“undefined-symbol-xxx”"><a href="#Q2-使用-dlopen-时返回-NULL-句柄，dlerror-显示-“undefined-symbol-xxx”" class="headerlink" title="Q2: 使用 dlopen 时返回 NULL 句柄，dlerror 显示 “undefined symbol: xxx”"></a>Q2: 使用 dlopen 时返回 NULL 句柄，dlerror 显示 “undefined symbol: xxx”</h3><ul>
+<li><strong>原因</strong>：所加载的 <code>.so</code> 库依赖某个外部函数 <code>xxx</code>，但该函数在主程序或当前进程加载的其他库中未被定义或未被导出。</li>
+<li><strong>解法</strong>：</li>
+</ul>
+<ol>
+<li>如果主程序实现了该符号，<br>编译主程序时必须加入 <code>-rdynamic</code> 选项，<br>将主程序的符号导出，<br>使得 <code>dlopen</code> 的插件能够反向链接主程序。</li>
+<li>如果 <code>xxx</code> 在另一个外部库中，<br>请先用 <code>dlopen</code> 加载那个依赖库（并设置 <code>RTLD_GLOBAL</code> 选项），<br>然后再加载此插件库。</li>
+</ol>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>License</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">Newer</div><a href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-5-%E9%9D%99%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E4%B8%8E%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E6%A0%B8%E5%BF%83%E6%9C%BA%E5%88%B6%E4%B8%8E%E5%BC%80%E5%8F%91%E5%AE%9E%E6%88%98/">静态链接库与动态链接库核心机制与开发实战</a></div><div class="item" id="next"><div class="note">Older</div><a href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-7-%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%B5%8C%E5%85%A5%E5%BC%8F%E4%BA%A4%E5%8F%89%E5%B7%A5%E5%85%B7%E9%93%BE%E6%9E%84%E5%BB%BAcrosstool-ng%E6%B7%B1%E5%BA%A6%E5%AE%9E%E6%88%98/">交叉编译与嵌入式交叉工具链构建 crosstool-ng 深度实战</a></div></section></div>
+
+
+
+
+  <div class="related-wrap md-text" id="comments">
+    <section class='header cmt-title cap theme'>
+      <p>快来参与讨论吧~</p>
+
+    </section>
+    <section class='body cmt-body utterances'>
+      
+
+<svg class="loading" style="vertical-align:middle;fill:currentColor;overflow:hidden;" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2709"><path d="M832 512c0-176-144-320-320-320V128c211.2 0 384 172.8 384 384h-64zM192 512c0 176 144 320 320 320v64C300.8 896 128 723.2 128 512h64z" p-id="2710"></path></svg>
+
+<div id="utterances" repo="luhuaCyan/luhuaCyan.github.io" issue-term="title" theme="preferred-color-scheme" label="comment"></div>
+
+    </section>
+  </div>
+
+
+
+<footer class="page-footer footnote"><hr><div class="sitemap" style="column-count:4;"><div class="sitemap-group"><span class="fs15">博客</span><a href="/">近期发布</a><a href="/blog/categories/">分类</a><a href="/blog/tags/">标签</a><a href="/blog/archives/">归档</a></div><div class="sitemap-group"><span class="fs15">项目</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">社交</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">关于</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div></div><div class="text"><p>本站为个人学习笔记记录和整理，所有内容仅用于个人知识梳理、复习回顾及学习交流。<br>声明：本站所有资源收集整理于网络,本站不参与制作,用于互联网爱好者学习和研究,如不慎侵犯了您的权利,请及时联系站长处理删除。敬请谅解！</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">On This Page</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#Linux-%E5%85%B1%E4%BA%AB%E5%BA%93%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%E5%AF%BB%E5%9D%80%E6%9C%BA%E5%88%B6%E5%8F%8A%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8"><span class="toc-text">Linux 共享库动态加载与运行时链接器寻址机制及进阶应用</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#1-%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%EF%BC%88ld-so%EF%BC%89%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86"><span class="toc-text">1. 动态链接与运行时链接器（ld.so）工作原理</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-1-%E9%9D%99%E6%80%81%E9%93%BE%E6%8E%A5%E4%B8%8E%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E7%9A%84%E5%AF%B9%E6%AF%94"><span class="toc-text">1.1 静态链接与动态链接的对比</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-2-%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E5%99%A8%E7%9A%84%E5%B7%A5%E4%BD%9C%E8%BF%87%E7%A8%8B"><span class="toc-text">1.2 动态链接器的工作过程</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E8%BF%90%E8%A1%8C%E6%97%B6%E5%AF%BB%E5%9D%80%E5%AF%BB%E8%B7%AF%E5%86%B3%E7%AD%96%E9%93%BE"><span class="toc-text">2. 动态链接库运行时寻址寻路决策链</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#2-1-%E5%AF%BB%E5%9D%80%E6%9F%A5%E6%89%BE%E9%A1%BA%E5%BA%8F%E4%BC%98%E5%85%88%E7%BA%A7%E8%A1%A8"><span class="toc-text">2.1 寻址查找顺序优先级表</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-2-RPATH-%E4%B8%8E-RUNPATH-%E7%9A%84%E6%81%A9%E6%80%A8%E6%83%85%E4%BB%87"><span class="toc-text">2.2 RPATH 与 RUNPATH 的恩怨情仇</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-3-%E6%9E%81%E8%87%B4%E5%AE%9E%E6%88%98%EF%BC%9A%E5%88%A9%E7%94%A8-ORIGIN-%E5%AE%9E%E7%8E%B0%E7%BB%BF%E8%89%B2%E5%85%8D%E9%85%8D%E7%BD%AE%E5%AE%89%E8%A3%85"><span class="toc-text">2.3 极致实战：利用 $ORIGIN 实现绿色免配置安装</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-%E5%BB%B6%E8%BF%9F%E7%BB%91%E5%AE%9A%E5%8E%9F%E7%90%86%EF%BC%9APLT-%E4%B8%8E-GOT-%E6%B7%B1%E5%BA%A6%E5%89%96%E6%9E%90"><span class="toc-text">3. 延迟绑定原理：PLT 与 GOT 深度剖析</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#3-1-PLT-%E4%B8%8E-GOT-%E7%9A%84%E5%8D%8F%E5%90%8C%E6%A8%A1%E5%9E%8B"><span class="toc-text">3.1 PLT 与 GOT 的协同模型</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-2-%E7%AB%8B%E5%8D%B3%E7%BB%91%E5%AE%9A%EF%BC%88Immediate-Binding%EF%BC%89"><span class="toc-text">3.2 立即绑定（Immediate Binding）</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#4-%E7%9B%B4%E6%8E%A5%E9%93%BE%E6%8E%A5%E4%B8%8E%E6%98%BE%E5%BC%8F%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%EF%BC%88dlopen%EF%BC%89API-%E8%AF%A6%E8%A7%A3"><span class="toc-text">4. 直接链接与显式动态加载（dlopen）API 详解</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#4-1-%E5%A3%B0%E6%98%8E%E5%BC%8F%E7%9B%B4%E6%8E%A5%E9%93%BE%E6%8E%A5"><span class="toc-text">4.1 声明式直接链接</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-2-%E6%98%BE%E5%BC%8F%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD-API"><span class="toc-text">4.2 显式动态加载 API</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#5-%E6%98%BE%E5%BC%8F%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD-C-%E8%AF%AD%E8%A8%80%E5%87%BD%E6%95%B0%E5%8F%8A-C-%E7%B1%BB%E5%B7%A5%E5%8E%82%E5%AE%9E%E6%88%98"><span class="toc-text">5. 显式动态加载 C 语言函数及 C++ 类工厂实战</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#5-1-%E7%BC%96%E5%86%99%E5%85%B1%E4%BA%AB%E5%BA%93%E6%BA%90%E7%A0%81"><span class="toc-text">5.1 编写共享库源码</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#5-2-%E7%BC%96%E5%86%99%E4%B8%BB%E7%A8%8B%E5%BA%8F%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E7%AB%AF-main-cpp"><span class="toc-text">5.2 编写主程序动态加载端 main.cpp</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#5-3-%E7%BC%96%E5%86%99%E7%BC%96%E8%AF%91%E4%B8%8E%E8%BF%90%E8%A1%8C-Makefile-%E8%A7%84%E5%88%99"><span class="toc-text">5.3 编写编译与运行 Makefile 规则</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#6-%E7%AC%A6%E5%8F%B7%E8%BF%BD%E8%B8%AA%E4%B8%8E%E5%8A%A8%E6%80%81%E5%BA%93%E8%AF%8A%E6%96%AD%E5%B7%A5%E5%85%B7%E9%93%BE%E5%AE%9E%E6%88%98"><span class="toc-text">6. 符号追踪与动态库诊断工具链实战</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#6-1-ldd-%E5%91%BD%E4%BB%A4%EF%BC%9A%E5%88%97%E5%87%BA%E4%BE%9D%E8%B5%96%E5%85%B3%E7%B3%BB"><span class="toc-text">6.1 ldd 命令：列出依赖关系</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-2-readelf-%E5%91%BD%E4%BB%A4%EF%BC%9A%E8%A7%A3%E6%9E%90-ELF-%E7%9A%84-dynamic-%E6%AE%B5"><span class="toc-text">6.2 readelf 命令：解析 ELF 的 .dynamic 段</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-3-nm-%E5%91%BD%E4%BB%A4%EF%BC%9A%E6%8F%90%E5%8F%96%E5%B9%B6%E6%A3%80%E6%9F%A5%E7%AC%A6%E5%8F%B7%E8%A1%A8"><span class="toc-text">6.3 nm 命令：提取并检查符号表</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-4-objdump-%E5%91%BD%E4%BB%A4%EF%BC%9A%E6%B7%B1%E5%BA%A6%E5%8F%8D%E6%B1%87%E7%BC%96%E4%B8%8E%E7%AC%A6%E5%8F%B7%E7%BB%93%E6%9E%84%E6%8E%A2%E6%B5%8B"><span class="toc-text">6.4 objdump 命令：深度反汇编与符号结构探测</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-5-LD-DEBUG-%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F%EF%BC%9A%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E5%99%A8%E8%AF%8A%E6%96%AD%E5%A4%A7%E6%9D%80%E5%99%A8"><span class="toc-text">6.5 LD_DEBUG 环境变量：动态链接器诊断大杀器</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#7-%E5%B8%B8%E8%A7%81%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E6%95%85%E9%9A%9C%E4%B8%8E%E7%A7%92%E7%BA%A7%E8%AF%8A%E6%96%AD-FAQ"><span class="toc-text">7. 常见动态加载故障与秒级诊断 FAQ</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#Q1-%E8%BF%90%E8%A1%8C%E7%A8%8B%E5%BA%8F%E6%97%B6%E6%8A%A5%E9%94%99-%E2%80%9Cerror-while-loading-shared-libraries-libxxx-so-cannot-open-shared-object-file%E2%80%9D"><span class="toc-text">Q1: 运行程序时报错 “error while loading shared libraries: libxxx.so: cannot open shared object file”</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Q2-%E4%BD%BF%E7%94%A8-dlopen-%E6%97%B6%E8%BF%94%E5%9B%9E-NULL-%E5%8F%A5%E6%9F%84%EF%BC%8Cdlerror-%E6%98%BE%E7%A4%BA-%E2%80%9Cundefined-symbol-xxx%E2%80%9D"><span class="toc-text">Q2: 使用 dlopen 时返回 NULL 句柄，dlerror 显示 “undefined symbol: xxx”</span></a></li></ol></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>Scroll to Top</span></a><a class="buttom" onclick="util.scrollComment()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M8 10.5h8M8 14h5.5M17 3.338A9.95 9.95 0 0 0 12 2C6.477 2 2 6.477 2 12c0 1.6.376 3.112 1.043 4.453c.178.356.237.763.134 1.148l-.595 2.226a1.3 1.3 0 0 0 1.591 1.592l2.226-.596a1.63 1.63 0 0 1 1.149.133A9.96 9.96 0 0 0 12 22c5.523 0 10-4.477 10-10c0-1.821-.487-3.53-1.338-5"/></svg><span>Join Discussion</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  window.canonical["param"] = {"permalink":"https://lemoncyan.github.io/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-6-Linux%E5%85%B1%E4%BA%AB%E5%BA%93%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%E5%AF%BB%E5%9D%80%E6%9C%BA%E5%88%B6%E5%8F%8A%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8/","checklink":"/js/plugins/video.js"};
+  const ctx = {
+    date_suffix: {
+      just: `Just`,
+      min: `minutes ago`,
+      hour: `hours ago`,
+      day: `days ago`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        if ($(el).find('.loading-wrap').length == 0){
+          $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+        }
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `Switched to Light Mode`,
+      dark: `Switched to Dark Mode`,
+      auto: `Switched to Auto Mode`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+  <script type="module">
+  const el = document.querySelector("#comments #utterances");
+  util.viewportLazyload(el, load_utterances, true);
+
+  function load_utterances() {
+    if (!el) return;
+    try {
+      el.innerHTML = '';
+    } catch (error) {
+      console.error(error);
+    }
+    const script = document.createElement('script');
+    script.src = 'https://utteranc.es/client.js';
+    script.async = true;
+    for (const key of Object.keys(el.attributes)) {
+      const attr = el.attributes[key];
+      if (['class', 'id'].includes(attr.name) === false) {
+        script.setAttribute(attr.name, attr.value);
+      }
+    }
+    el.appendChild(script);
+  }
+</script>
+
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.chat-file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

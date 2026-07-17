@@ -1,0 +1,1090 @@
+
+<!DOCTYPE html><html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 7.3.0">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>Linux内核模块编译、加载与内核态调试追踪技术指南 - LemonCyan</title>
+
+  
+    <meta name="description" content="系统化梳理 Linux 可加载内核模块 (LKM) 的开发、构建与内核态调试技术。深度剖析 LKM 底层初始化与退出宏的内存分配与释放原理；详解双向 Makefile Kbuild 构建引擎的工作机制；对比 insmod 与 modprobe 的依赖处理差异；详述 printk 过滤日志级别及动态调试技巧；并提供 KGDB 符号表映射调试、ftrace 函数追踪及 kprobes 动态插桩技术实战">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Linux内核模块编译、加载与内核态调试追踪技术指南">
+<meta property="og:url" content="https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E5%86%85%E6%A0%B8-4-Linux%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%BC%96%E8%AF%91%E3%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E5%86%85%E6%A0%B8%E6%80%81%E8%B0%83%E8%AF%95%E8%BF%BD%E8%B8%AA%E6%8A%80%E6%9C%AF%E6%8C%87%E5%8D%97/">
+<meta property="og:site_name" content="LemonCyan">
+<meta property="og:description" content="系统化梳理 Linux 可加载内核模块 (LKM) 的开发、构建与内核态调试技术。深度剖析 LKM 底层初始化与退出宏的内存分配与释放原理；详解双向 Makefile Kbuild 构建引擎的工作机制；对比 insmod 与 modprobe 的依赖处理差异；详述 printk 过滤日志级别及动态调试技巧；并提供 KGDB 符号表映射调试、ftrace 函数追踪及 kprobes 动态插桩技术实战">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+<meta property="article:published_time" content="2026-07-17T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-07-17T03:19:27.347Z">
+<meta property="article:author" content="liuluhua">
+<meta property="article:tag" content="Makefile">
+<meta property="article:tag" content="Linux内核">
+<meta property="article:tag" content="内核模块">
+<meta property="article:tag" content="LKM">
+<meta property="article:tag" content="printk">
+<meta property="article:tag" content="KGDB">
+<meta property="article:tag" content="ftrace">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+  
+  
+  
+  <meta name="keywords" content="Makefile,Linux内核,内核模块,LKM,printk,KGDB,ftrace">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"},"dateCreated":"2026-07-17T00:00:00+00:00","dateModified":"2026-07-17T03:19:27+00:00","datePublished":"2026-07-17T00:00:00+00:00","description":"","headline":"Linux内核模块编译、加载与内核态调试追踪技术指南","mainEntityOfPage":{"@type":"WebPage","@id":"https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E5%86%85%E6%A0%B8-4-Linux%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%BC%96%E8%AF%91%E3%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E5%86%85%E6%A0%B8%E6%80%81%E8%B0%83%E8%AF%95%E8%BF%BD%E8%B8%AA%E6%8A%80%E6%9C%AF%E6%8C%87%E5%8D%97/"},"publisher":{"@type":"Organization","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png","logo":{"@type":"ImageObject","url":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"}},"url":"https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E5%86%85%E6%A0%B8-4-Linux%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%BC%96%E8%AF%91%E3%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E5%86%85%E6%A0%B8%E6%80%81%E8%B0%83%E8%AF%95%E8%BF%BD%E8%B8%AA%E6%8A%80%E6%9C%AF%E6%8C%87%E5%8D%97/","keywords":"Makefile, Linux内核, 内核模块, LKM, printk, KGDB, ftrace","image":[]}</script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css" />
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="config.avatar" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">LemonCyan</div><div class="sub cap">LemonCyan`s Charging</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"><a class="nav-item active" title="博客" href="/" style="color:#1BCDFC"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M5.879 2.879C5 3.757 5 5.172 5 8v8c0 2.828 0 4.243.879 5.121C6.757 22 8.172 22 11 22h2c2.828 0 4.243 0 5.121-.879C19 20.243 19 18.828 19 16V8c0-2.828 0-4.243-.879-5.121C17.243 2 15.828 2 13 2h-2c-2.828 0-4.243 0-5.121.879M8.25 17a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75M9 12.25a.75.75 0 0 0 0 1.5h6a.75.75 0 0 0 0-1.5zM8.25 9A.75.75 0 0 1 9 8.25h6a.75.75 0 0 1 0 1.5H9A.75.75 0 0 1 8.25 9" clip-rule="evenodd"/><path fill="currentColor" d="M5.235 4.058C5 4.941 5 6.177 5 8v8c0 1.823 0 3.058.235 3.942L5 19.924c-.975-.096-1.631-.313-2.121-.803C2 18.243 2 16.828 2 14v-4c0-2.829 0-4.243.879-5.121c.49-.49 1.146-.707 2.121-.803zm13.53 15.884C19 19.058 19 17.822 19 16V8c0-1.823 0-3.059-.235-3.942l.235.018c.975.096 1.631.313 2.121.803C22 5.757 22 7.17 22 9.999v4c0 2.83 0 4.243-.879 5.122c-.49.49-1.146.707-2.121.803z" opacity=".5"/></svg></a><a class="nav-item" title="文档" href="/wiki/" style="color:#3DC550"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M14.25 4.48v3.057c0 .111 0 .27.02.406a.936.936 0 0 0 .445.683a.96.96 0 0 0 .783.072c.13-.04.272-.108.378-.159L17 8.005l1.124.534c.106.05.248.119.378.16a.958.958 0 0 0 .783-.073a.936.936 0 0 0 .444-.683c.021-.136.021-.295.021-.406V3.031c.113-.005.224-.01.332-.013C21.154 2.98 22 3.86 22 4.933v11.21c0 1.112-.906 2.01-2.015 2.08c-.97.06-2.108.179-2.985.41c-1.082.286-1.99 1.068-3.373 1.436c-.626.167-1.324.257-1.627.323V5.174c.32-.079 1.382-.203 1.674-.371c.184-.107.377-.216.576-.323m5.478 8.338a.75.75 0 0 1-.546.91l-4 1a.75.75 0 0 1-.364-1.456l4-1a.75.75 0 0 1 .91.546" clip-rule="evenodd"/><path fill="currentColor" d="M18.25 3.151c-.62.073-1.23.18-1.75.336a8.2 8.2 0 0 0-.75.27v3.182l.75-.356l.008-.005a1.13 1.13 0 0 1 .492-.13c.047 0 .094.004.138.01c.175.029.315.1.354.12l.009.005l.749.356V3.647z"/><path fill="currentColor" d="M12 5.214c-.334-.064-1.057-.161-1.718-.339C8.938 4.515 8.05 3.765 7 3.487c-.887-.234-2.041-.352-3.018-.412C2.886 3.007 2 3.9 2 4.998v11.146c0 1.11.906 2.01 2.015 2.079c.97.06 2.108.179 2.985.41c.486.129 1.216.431 1.873.726c1.005.451 2.052.797 3.127 1.034z" opacity=".5"/><path fill="currentColor" d="M4.273 12.818a.75.75 0 0 1 .91-.545l4 1a.75.75 0 1 1-.365 1.455l-4-1a.75.75 0 0 1-.545-.91m.909-4.545a.75.75 0 1 0-.364 1.455l4 1a.75.75 0 0 0 .364-1.455z"/></svg></a><a class="nav-item" title="探索" href="/explore/" style="color:#FA6400"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M20 12a8 8 0 1 1-16 0a8 8 0 0 1 16 0" opacity=".5"/><path fill="currentColor" d="M17.712 5.453c1.047-.193 2.006-.259 2.797-.152c.77.103 1.536.393 1.956 1.064c.446.714.312 1.542-.012 2.258c-.33.728-.918 1.499-1.672 2.268c-1.516 1.547-3.836 3.226-6.597 4.697c-2.763 1.472-5.495 2.484-7.694 2.92c-1.095.217-2.098.299-2.923.201c-.8-.095-1.6-.383-2.032-1.075c-.47-.752-.296-1.63.07-2.379c.375-.768 1.032-1.586 1.872-2.403L4 12.416c0 .219.083.71.168 1.146c.045.23.09.444.123.596c-.652.666-1.098 1.263-1.339 1.756c-.277.567-.208.825-.145.925c.072.116.305.305.937.38c.609.073 1.44.018 2.455-.183c2.02-.4 4.613-1.351 7.28-2.772c2.667-1.42 4.85-3.015 6.23-4.423c.694-.707 1.15-1.334 1.377-1.836c.233-.515.167-.75.107-.844c-.07-.112-.289-.294-.883-.374c-.542-.072-1.272-.041-2.163.112L16.87 5.656c.338-.101.658-.17.842-.203"/></svg></a><a class="nav-item" title="社交" href="/friends/" style="color:#F44336"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="m13.629 20.472l-.542.916c-.483.816-1.69.816-2.174 0l-.542-.916c-.42-.71-.63-1.066-.968-1.262c-.338-.197-.763-.204-1.613-.219c-1.256-.021-2.043-.098-2.703-.372a5 5 0 0 1-2.706-2.706C2 14.995 2 13.83 2 11.5v-1c0-3.273 0-4.91.737-6.112a5 5 0 0 1 1.65-1.651C5.59 2 7.228 2 10.5 2h3c3.273 0 4.91 0 6.113.737a5 5 0 0 1 1.65 1.65C22 5.59 22 7.228 22 10.5v1c0 2.33 0 3.495-.38 4.413a5 5 0 0 1-2.707 2.706c-.66.274-1.447.35-2.703.372c-.85.015-1.275.022-1.613.219c-.338.196-.548.551-.968 1.262" opacity=".5"/><path fill="currentColor" d="M10.99 14.308c-1.327-.978-3.49-2.84-3.49-4.593c0-2.677 2.475-3.677 4.5-1.609c2.025-2.068 4.5-1.068 4.5 1.609c0 1.752-2.163 3.615-3.49 4.593c-.454.335-.681.502-1.01.502c-.329 0-.556-.167-1.01-.502"/></svg></a></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="Search"></form><div id="search-result"></div><div class="search-no-result">No Results!</div></div>
+
+
+
+<widget class="widget-wrapper recent post-list"><div class="widget-header dis-select"><span class="name">Recent Update</span></div><div class="widget-body fs14"><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-9-%E5%B5%8C%E5%85%A5%E5%BC%8FLinux%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98%E6%8C%87%E5%8D%97/"><span class="title">嵌入式 Linux 启动性能优化与工具链/应用程序调优指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-6-Linux%E5%85%B1%E4%BA%AB%E5%BA%93%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%E5%AF%BB%E5%9D%80%E6%9C%BA%E5%88%B6%E5%8F%8A%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8/"><span class="title">Linux 共享库动态加载与运行时链接器寻址机制及进阶应用</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-7-%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%B5%8C%E5%85%A5%E5%BC%8F%E4%BA%A4%E5%8F%89%E5%B7%A5%E5%85%B7%E9%93%BE%E6%9E%84%E5%BB%BAcrosstool-ng%E6%B7%B1%E5%BA%A6%E5%AE%9E%E6%88%98/"><span class="title">交叉编译与嵌入式交叉工具链构建 crosstool-ng 深度实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-8-%E7%8E%B0%E4%BB%A3%E6%9E%84%E5%BB%BA%E7%B3%BB%E7%BB%9FMeson-Ninja%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%BC%80%E6%BA%90%E5%BA%93%E7%A7%BB%E6%A4%8D%E5%AE%9E%E6%88%98/"><span class="title">现代构建系统 Meson + Ninja 交叉编译与开源库移植实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-3-%E9%99%88%E7%9A%93%E3%80%8A%E8%B7%9F%E6%88%91%E5%AD%A6Makefile%E3%80%8B%E7%B2%BE%E7%BC%96%E4%B8%8E%E5%AE%9E%E6%88%98%E8%BF%9B%E9%98%B6%E6%8C%87%E5%8D%97/"><span class="title">陈皓《跟我学Makefile》精编与实战进阶指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-4-%E5%A4%8D%E6%9D%82C-C-%E9%A1%B9%E7%9B%AE%E7%9A%84%E5%A4%9A%E6%96%87%E4%BB%B6%E5%A4%B9Makefile%E8%AE%BE%E8%AE%A1%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%8C%96%E7%BC%96%E8%AF%91%E6%9E%B6%E6%9E%84/"><span class="title">复杂 C/C++ 项目的多文件夹 Makefile 设计与自动化编译架构</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-5-%E9%9D%99%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E4%B8%8E%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E6%A0%B8%E5%BF%83%E6%9C%BA%E5%88%B6%E4%B8%8E%E5%BC%80%E5%8F%91%E5%AE%9E%E6%88%98/"><span class="title">静态链接库与动态链接库核心机制与开发实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-1-GCC-G-%E7%BC%96%E8%AF%91%E5%99%A8%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E4%B8%8E%E5%91%BD%E4%BB%A4%E8%A1%8C%E9%80%89%E9%A1%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/"><span class="title">GCC/G++ 编译器工作原理与命令行选项深度指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-10-Linux%E6%AE%B5%E9%94%99%E8%AF%AF%E6%8E%92%E6%9F%A5%E4%B8%8EGDB%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%E8%B0%83%E8%AF%95%E5%AE%9E%E6%88%98/"><span class="title">Linux 段错误排查与 GDB 核心转储调试实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-2-GNU-Make%E4%B8%8EMakefile%E6%9E%84%E5%BB%BA%E5%9F%BA%E7%A1%80%E5%85%A5%E9%97%A8%E6%89%8B%E5%86%8C/"><span class="title">GNU Make 与 Makefile 构建基础入门手册</span></a></div></widget>
+</div>
+<footer class="footer dis-select"><div class="social-wrap"><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/08a41b181ce68.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3845874.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3616429.svg"/></a><a class="social" href="/about/#comments" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/942ebbf1a4b91.svg"/></a></div></footer>
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">Home</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">Blog</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F/">1.平台系统</a> <span class="sep"></span> <a class="cap breadcrumb-link" href="/categories/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F/Linux/">Linux</a> <span class="sep"></span> <a class="cap breadcrumb-link" href="/categories/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F/Linux/%E5%86%85%E6%A0%B8/">内核</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">Posted on: <time datetime="2026-07-17T00:00:00.000Z">2026-07-17</time></span><span class="sep updated"></span><span class="text updated">Updated on: <time datetime="2026-07-17T03:19:27.347Z">2026-07-17</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>Linux内核模块编译、加载与内核态调试追踪技术指南</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h1 id="Linux内核模块编译、加载与内核态调试追踪技术指南"><a href="#Linux内核模块编译、加载与内核态调试追踪技术指南" class="headerlink" title="Linux内核模块编译、加载与内核态调试追踪技术指南"></a>Linux内核模块编译、加载与内核态调试追踪技术指南</h1><p>在 Linux 操作系统中，内核扮演着最底层的硬件抽象与资源管辖角色。如果每次新增一个硬件驱动或调试一段协议栈都需要重新编译整个内核并重启系统，那么开发效率将会低到无法接受。为此，Linux 引入了<strong>可加载内核模块 (Loadable Kernel Module, 简称 LKM)</strong> 机制。它允许我们在不重启系统、不重新构建大内核的前提下，动态地向运行中的内核注入或卸载代码段。</p>
+<p>然而，内核空间与用户空间有着本质的区别。在内核空间中运行的代码拥有至高无上的系统权限，任何一处空指针或数组越界都会导致致命的 **Kernel Panic (内核崩溃)**。本指南将带你从零构建一个标准的 LKM 模块，深度剖析 Kbuild 编译引擎的运行逻辑，并详述如何利用 GDB&#x2F;KGDB、ftrace 及 kprobes 等内核级工具对运行中的模块进行深度追踪与调试。</p>
+<hr>
+<h2 id="第一部分：编写-LKM-驱动代码与底层宏原理解析"><a href="#第一部分：编写-LKM-驱动代码与底层宏原理解析" class="headerlink" title="第一部分：编写 LKM 驱动代码与底层宏原理解析"></a>第一部分：编写 LKM 驱动代码与底层宏原理解析</h2><p>编写内核模块代码，在语法结构上与普通 C 语言应用程序有很大的不同。内核代码没有 <code>main</code> 入口，而是通过注册<strong>初始化回调</strong>与<strong>退出清理回调</strong>来响应加载与卸载事件。</p>
+<h3 id="1-1-经典-Hello-World-内核模块源码"><a href="#1-1-经典-Hello-World-内核模块源码" class="headerlink" title="1.1 经典 Hello World 内核模块源码"></a>1.1 经典 Hello World 内核模块源码</h3><p>以下是一个标准的、无排版垃圾的 LKM 代码实现：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;linux/init.h&gt;</span>      <span class="comment">// 💡 包含 __init 和 __exit 宏定义</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;linux/module.h&gt;</span>    <span class="comment">// 💡 包含所有模块相关的结构体与宏声明</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;linux/kernel.h&gt;</span>    <span class="comment">// 💡 包含 printk 等内核级打印函数</span></span></span><br><span class="line"></span><br><span class="line"><span class="comment">// 🔑 声明该模块遵循的开源协议（必填，否则加载时内核会报 &quot;Tainted module&quot; 警告）</span></span><br><span class="line">MODULE_LICENSE(<span class="string">&quot;GPL&quot;</span>);</span><br><span class="line">MODULE_AUTHOR(<span class="string">&quot;极客实战派&quot;</span>);</span><br><span class="line">MODULE_DESCRIPTION(<span class="string">&quot;A Highly Technical Hello World LKM&quot;</span>);</span><br><span class="line">MODULE_VERSION(<span class="string">&quot;1.0.0&quot;</span>);</span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * @brief 模块初始化函数</span></span><br><span class="line"><span class="comment"> * 当使用 insmod/modprobe 加载模块时，内核会自动调用此函数。</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="type">static</span> <span class="type">int</span> __init <span class="title function_">hello_init</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line">    <span class="comment">// KERN_INFO 是内核打印的日志级别，代表普通通知消息</span></span><br><span class="line">    printk(KERN_INFO <span class="string">&quot;[+] Hello LKM: hello_init entered successfully!\n&quot;</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>; <span class="comment">// 💡 返回 0 代表加载成功，返回负数代表加载失败（内核会自动中止并释放空间）</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * @brief 模块清理与释放函数</span></span><br><span class="line"><span class="comment"> * 当使用 rmmod 卸载模块时，内核会自动调用此函数。</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> __exit <span class="title function_">hello_exit</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line">    printk(KERN_INFO <span class="string">&quot;[-] Hello LKM: hello_exit invoked, unloading module.\n&quot;</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 🔑 核心注册宏：将我们的函数指针绑定到内核的模块管理链表上</span></span><br><span class="line">module_init(hello_init);</span><br><span class="line">module_exit(hello_exit);</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="1-2-底层关键字与宏原理解密"><a href="#1-2-底层关键字与宏原理解密" class="headerlink" title="1.2 底层关键字与宏原理解密"></a>1.2 底层关键字与宏原理解密</h3><p>在上述代码中，有几个特殊的宏限定符对于理解内核内存管理至关重要：</p>
+<h4 id="1-init-宏与-init-text-段"><a href="#1-init-宏与-init-text-段" class="headerlink" title="1. __init 宏与 .init.text 段"></a>1. <code>__init</code> 宏与 <code>.init.text</code> 段</h4><ul>
+<li><strong>硬件背景</strong>：嵌入式硬件与服务器的物理内存（RAM）非常宝贵。</li>
+<li><strong>内核机制</strong>：<code>__init</code> 关键字告诉编译器将该初始化函数放置在 ELF 文件的 <code>.init.text</code> 特殊代码段中。</li>
+<li><strong>内存回收</strong>：当模块被成功加载并且其初始化函数（如 <code>hello_init</code>）执行完毕后，内核会自动调用 <code>free_initmem()</code> 释放掉 <code>.init.text</code> 段所占用的 RAM 物理内存，从而把宝贵的空间还给系统。</li>
+</ul>
+<h4 id="2-exit-宏与-exit-text-段"><a href="#2-exit-宏与-exit-text-段" class="headerlink" title="2. __exit 宏与 .exit.text 段"></a>2. <code>__exit</code> 宏与 <code>.exit.text</code> 段</h4><ul>
+<li><strong>静态编译场景</strong>：如果我们将该驱动模块直接静态链接进大内核镜像（<code>zImage</code> &#x2F; <code>uImage</code>）中，那么卸载功能是不被允许的。</li>
+<li><strong>内核机制</strong>：此时，<code>__exit</code> 关键字会让编译器直接<strong>丢弃并忽略</strong>对应的清理函数（如 <code>hello_exit</code>），从而不在最终的内核映像中保留任何无用的卸载代码，达到了极致剪裁的效果。</li>
+</ul>
+<hr>
+<h3 id="1-3-LKM-模块参数-Module-Parameters-与其-sysfs-自动呈现机制"><a href="#1-3-LKM-模块参数-Module-Parameters-与其-sysfs-自动呈现机制" class="headerlink" title="1.3 LKM 模块参数 (Module Parameters) 与其 sysfs 自动呈现机制"></a>1.3 LKM 模块参数 (Module Parameters) 与其 sysfs 自动呈现机制</h3><p>在编写模块时，我们常常需要像用户态程序解析命令行参数那样，在加载模块时动态传入配置（例如配置串口波特率、网卡物理地址等）。内核为此提供了 <strong>Module Parameters</strong> 机制：</p>
+<ul>
+<li><strong>API 与宏定义</strong>：<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> baudrate = <span class="number">9600</span>;</span><br><span class="line"><span class="type">static</span> <span class="type">char</span> *port_name = <span class="string">&quot;ttyS0&quot;</span>;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 💡 声明接收参数：参数名、类型、读写权限位</span></span><br><span class="line">module_param(baudrate, <span class="type">int</span>, <span class="number">0644</span>);</span><br><span class="line">MODULE_PARM_DESC(baudrate, <span class="string">&quot;The baudrate of target serial controller (default 9600)&quot;</span>);</span><br><span class="line"></span><br><span class="line">module_param(port_name, charp, <span class="number">0644</span>);</span><br><span class="line">MODULE_PARM_DESC(port_name, <span class="string">&quot;Target serial port device name&quot;</span>);</span><br></pre></td></tr></table></figure></li>
+<li><strong>运行期控制与加载传参</strong>：<ul>
+<li><strong>加载时传参</strong>：加载模块时直接附带赋值：<code>insmod my_serial.ko baudrate=115200 port_name=&quot;ttyS1&quot;</code></li>
+<li><strong>🔑 sysfs 动态呈现</strong>：我们在 <code>module_param</code> 中设定的权限位 <code>0644</code>。当模块成功加载后，内核会在 <code>/sys/module/&lt;module_name&gt;/parameters/</code> 目录下自动生成对应的文件节点：<br><code>/sys/module/my_serial/parameters/baudrate</code><br><code>/sys/module/my_serial/parameters/port_name</code></li>
+<li>因为权限是 <code>0644</code>（可读可写），系统管理员可以直接使用 <code>cat</code> 查询当前参数，或在运行期通过 <code>echo 9600 &gt; /sys/module/my_serial/parameters/baudrate</code> 实时更改内核驱动参数，免去了重新插拔的麻烦。</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h3 id="1-4-EXPORT-SYMBOL-与内核符号导出机制"><a href="#1-4-EXPORT-SYMBOL-与内核符号导出机制" class="headerlink" title="1.4 EXPORT_SYMBOL() 与内核符号导出机制"></a>1.4 EXPORT_SYMBOL() 与内核符号导出机制</h3><p>在开发包含多个模块的复杂驱动系统（例如一个核心总线驱动模块和多个设备子驱动模块）时，模块之间需要进行函数调用或共享全局变量。然而在内核空间中，每个模块的符号命名空间是默认隔离的：</p>
+<ul>
+<li><strong>默认隔离机制</strong>：一个模块内定义的非 static 函数，编译后虽然属于全局符号，但在被加载进内核后，其他模块也是无法直接解析调用的（会报 Unknown Symbol 编译或运行错误）。</li>
+<li><strong>🔑 显式导出宏</strong>：内核提供了符号导出宏，将指定符号加入到内核全局符号表（<code>/proc/kallsyms</code>）中：<ul>
+<li><code>EXPORT_SYMBOL(函数名或变量名)</code>：将符号导出给所有模块使用，没有任何授权限制。</li>
+<li><code>EXPORT_SYMBOL_GPL(函数名或变量名)</code>：导出的符号只能被声明了 <code>MODULE_LICENSE(&quot;GPL&quot;)</code> 或 GPL 兼容许可证的模块调用。如果一个闭源商业模块尝试链接此类 GPL 导出符号，内核在加载时会无情拒绝并报错。</li>
+</ul>
+</li>
+<li><em>编译底层原理</em>：当我们在代码中使用 <code>EXPORT_SYMBOL(my_func)</code> 后，Kbuild 编译器会在生成的 <code>.ko</code> 文件中自动生成特殊的 <code>__ksymtab</code> 和 <code>__ksymtab_strs</code> 段。加载器（load_module）在解析模块时会扫描这些段，并将符号的绝对内存地址动态填入到系统内核全局符号解析 Hash 表中，完成多模块动态连通。</li>
+</ul>
+<hr>
+<hr>
+<h2 id="第二部分：双向调用-Makefile-Kbuild-编译引擎工作机制"><a href="#第二部分：双向调用-Makefile-Kbuild-编译引擎工作机制" class="headerlink" title="第二部分：双向调用 Makefile Kbuild 编译引擎工作机制"></a>第二部分：双向调用 Makefile Kbuild 编译引擎工作机制</h2><p>要编译一个内核模块，直接在 GCC 命令行中输入文件名是无法工作的，因为内核代码高度依赖于当前内核源码树所定义的各种宏配置与编译环境。我们需要借助特殊的 <strong>Kbuild Makefile</strong> 架构。</p>
+<h3 id="2-1-标准模块-Makefile-模板"><a href="#2-1-标准模块-Makefile-模板" class="headerlink" title="2.1 标准模块 Makefile 模板"></a>2.1 标准模块 Makefile 模板</h3><figure class="highlight makefile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 💡 指明需要编译的模块对象文件名。Kbuild 会自动寻找对应的 hello.c 并生成 hello.o</span></span><br><span class="line">obj-m += hello.o</span><br><span class="line"></span><br><span class="line"><span class="comment"># 💡 动态获取当前运行操作系统的内核开发目录路径</span></span><br><span class="line">KDIR ?= /lib/modules/<span class="variable">$(<span class="built_in">shell</span> uname -r)</span>/build</span><br><span class="line">PWD  := <span class="variable">$(<span class="built_in">shell</span> pwd)</span></span><br><span class="line"></span><br><span class="line"><span class="comment"># 🔑 默认编译目标</span></span><br><span class="line"><span class="section">all:</span></span><br><span class="line">	<span class="variable">$(MAKE)</span> -C <span class="variable">$(KDIR)</span> M=<span class="variable">$(PWD)</span> modules</span><br><span class="line"></span><br><span class="line"><span class="comment"># 🔑 清理编译垃圾的目标</span></span><br><span class="line"><span class="section">clean:</span></span><br><span class="line">	<span class="variable">$(MAKE)</span> -C <span class="variable">$(KDIR)</span> M=<span class="variable">$(PWD)</span> clean</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="2-2-Kbuild-双向调用执行流程追踪"><a href="#2-2-Kbuild-双向调用执行流程追踪" class="headerlink" title="2.2 Kbuild 双向调用执行流程追踪"></a>2.2 Kbuild 双向调用执行流程追踪</h3><p>初学者常会被 Makefile 中的 <code>$(MAKE) -C $(KDIR) M=$(PWD) modules</code> 命令弄糊涂。这行代码在底层会触发一个巧妙的“双向调用”机制：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">       【 Makefile 双向调用（Kbuild）运行流程图 】</span><br><span class="line"></span><br><span class="line">1. 用户在当前目录输入 `make` </span><br><span class="line">      │</span><br><span class="line">      ▼</span><br><span class="line">2. 当前 Makefile 捕获目标 &#x27;all&#x27; ──► 执行 $(MAKE) -C $(KDIR)</span><br><span class="line">      │</span><br><span class="line">      ▼ (跳转目录)</span><br><span class="line">3. 临时切换到内核源码树目录 (如 /lib/modules/5.15.0/build/)</span><br><span class="line">      │</span><br><span class="line">      ▼ (内核 Makefile 接管)</span><br><span class="line">4. 内核的主 Makefile 初始化内核编译选项，检查内核 .config 文件</span><br><span class="line">      │</span><br><span class="line">      ▼ (反向查找)</span><br><span class="line">5. 看到 `M=$(PWD)` 标志 ──► 内核编译引擎反向回到用户的 hello 驱动目录</span><br><span class="line">      │</span><br><span class="line">      ▼ (处理 obj-m)</span><br><span class="line">6. 解析用户目录下的 Makefile 中的 `obj-m += hello.o` 定义</span><br><span class="line">      │</span><br><span class="line">      ▼</span><br><span class="line">7. 调用内核专用的交叉编译器编译生成二进制 `hello.o` 并最终链接生成 `hello.ko`</span><br></pre></td></tr></table></figure>
+
+<p>通过这一巧妙的设计，我们的自定义模块可以完美继承当前内核源码树中的所有平台架构定义（如 <code>-march=armv7</code> 等）和配置参数。</p>
+<hr>
+<h2 id="第三部分：用户空间加载命令与内核态系统调用差异"><a href="#第三部分：用户空间加载命令与内核态系统调用差异" class="headerlink" title="第三部分：用户空间加载命令与内核态系统调用差异"></a>第三部分：用户空间加载命令与内核态系统调用差异</h2><p>当模块编译生成为 <code>hello.ko</code> 后，我们可以将其分发并在用户空间中运行。用户空间和内核空间通过<strong>系统调用</strong>进行连通。</p>
+<h3 id="3-1-核心命令对比与工作细节"><a href="#3-1-核心命令对比与工作细节" class="headerlink" title="3.1 核心命令对比与工作细节"></a>3.1 核心命令对比与工作细节</h3><h4 id="1-insmod-与-modprobe-的底层较量"><a href="#1-insmod-与-modprobe-的底层较量" class="headerlink" title="1. insmod 与 modprobe 的底层较量"></a>1. <code>insmod</code> 与 <code>modprobe</code> 的底层较量</h4><p>在日常运维中，我们常用两个命令来加载模块，但它们的工作机制有着显著差异：</p>
+<ul>
+<li>**<code>insmod</code> (Insert Module)**：<ul>
+<li><strong>行为</strong>：极其直白和暴力。它只负责在内存中读取指定的单个 <code>.ko</code> 文件，并将其加载至内核。</li>
+<li><strong>缺点</strong>：如果该驱动依赖于其他内核模块（例如 <code>usbcore</code> 依赖于通用总线），且目标依赖尚未加载，<code>insmod</code> 会直接抛出“Unknown symbol”错误并宣告失败。</li>
+</ul>
+</li>
+<li>**<code>modprobe</code>**：<ul>
+<li><strong>行为</strong>：智能的包管理器。它会首先读取由 <code>depmod</code> 命令生成的 <code>/lib/modules/$(uname -r)/modules.dep</code> 依赖关系列表。</li>
+<li><strong>依赖解析深度剖析</strong>：<code>depmod</code> 究竟是如何预先计算依赖关系的？它会扫描 <code>/lib/modules/$(uname -r)/</code> 下的所有 <code>.ko</code> 二进制文件，读取其 ELF 的 <code>__ksymtab</code> 段以提取其导出的所有符号，同时读取 <code>.rel.text</code> 重定位段以提取其所引用（但自身未实现）的外部符号。通过建立“符号导出者 -&gt; 符号引用者”的映射图谱，<code>depmod</code> 能自动计算出完整的有向无环依赖图，并将其序列化到 <code>modules.dep</code> 纯文本中。</li>
+<li><strong>优点</strong>：当用户调用 <code>modprobe my_driver</code> 时，它会根据该依赖文本自动分析出底层的拓扑图，计算出一条最安全的加载路径，并<strong>按照顺序链条一次性把所有依赖模块自动全部加载</strong>，极大地降低了人工处理符号未定义报错的麻烦。</li>
+</ul>
+</li>
+</ul>
+<h4 id="2-lsmod-与-rmmod"><a href="#2-lsmod-与-rmmod" class="headerlink" title="2. lsmod 与 rmmod"></a>2. <code>lsmod</code> 与 <code>rmmod</code></h4><ul>
+<li>**<code>lsmod</code>**：读取并格式化 <code>/proc/modules</code> 伪文件系统的内容，展现当前已加载 of LKM 名字、内存占用大小、引用计数（Used by）以及引用它的其他模块。</li>
+<li>**<code>rmmod</code>**：发起卸载请求。如果发现模块的引用计数大于 0，说明有其他驱动或用户态程序正持有该模块的设备，卸载操作会被内核拒绝并返回繁忙错误（<code>-EBUSY</code>）。</li>
+</ul>
+<hr>
+<h3 id="3-2-加载过程的内核系统调用链追踪"><a href="#3-2-加载过程的内核系统调用链追踪" class="headerlink" title="3.2 加载过程的内核系统调用链追踪"></a>3.2 加载过程的内核系统调用链追踪</h3><p>从用户态命令到内核态初始化，需要经历以下一系列系统调用关卡：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">用户态: insmod hello.ko</span><br><span class="line">    │</span><br><span class="line">    ▼ [发起系统调用]</span><br><span class="line">内核态: sys_init_module() (或者现代内核的 sys_finit_module)</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">load_module() ─────────────────────────────┐</span><br><span class="line">    │                                      │</span><br><span class="line">    ├── 1. copy_from_user() 拷贝二进制流    │ [内核分配内存]</span><br><span class="line">    ├── 2. layout_and_allocate() ─────────┼──► vmalloc() 申请常驻内核内存</span><br><span class="line">    ├── 3. check_modinfo() 校验 vermagic    │</span><br><span class="line">    └── 4. simplify_symbols() 修正符号表   │</span><br><span class="line">    │                                      │</span><br><span class="line">    ▼                                      ▼</span><br><span class="line">check_modstruct_version() (符号 CRC 安全校验)</span><br><span class="line">    │</span><br><span class="line">    ▼ [校验通过]</span><br><span class="line">do_init_module()</span><br><span class="line">    │</span><br><span class="line">    ▼</span><br><span class="line">调用 hello_init() (正式执行我们编写的驱动代码)</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="第四部分：内核-printk-输出与-console-日志级别控制"><a href="#第四部分：内核-printk-输出与-console-日志级别控制" class="headerlink" title="第四部分：内核 printk 输出与 console 日志级别控制"></a>第四部分：内核 printk 输出与 console 日志级别控制</h2><p>在内核空间中运行，我们无法使用 <code>printf</code>，取而代之的是 <code>printk</code>。由于内核经常同时处理网卡中断、磁盘写回以及用户控制台输入，<code>printk</code> 必须具备一套严密的分发与过滤机制。</p>
+<h3 id="4-1-内核日志级别划分"><a href="#4-1-内核日志级别划分" class="headerlink" title="4.1 内核日志级别划分"></a>4.1 内核日志级别划分</h3><p>在 <code>linux/kern_levels.h</code> 中，内核将日志划分为 8 个级别：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">define</span> KERN_EMERG   <span class="string">&quot;&lt;0&gt;&quot;</span>  <span class="comment">/* 致命灾难，系统即将崩溃 */</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> KERN_ALERT   <span class="string">&quot;&lt;1&gt;&quot;</span>  <span class="comment">/* 必须立即采取措施纠正的故障 */</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> KERN_CRIT    <span class="string">&quot;&lt;2&gt;&quot;</span>  <span class="comment">/* 临界级硬件故障 */</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> KERN_ERR     <span class="string">&quot;&lt;3&gt;&quot;</span>  <span class="comment">/* 普通错误，影响外设工作 */</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> KERN_WARNING <span class="string">&quot;&lt;4&gt;&quot;</span>  <span class="comment">/* 警告消息 */</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> KERN_NOTICE  <span class="string">&quot;&lt;5&gt;&quot;</span>  <span class="comment">/* 普通提示信息，需引起注意 */</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> KERN_INFO    <span class="string">&quot;&lt;6&gt;&quot;</span>  <span class="comment">/* 普通通知消息，常规汇报 */</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">define</span> KERN_DEBUG   <span class="string">&quot;&lt;7&gt;&quot;</span>  <span class="comment">/* 调试级详细消息 */</span></span></span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="4-2-控制台日志拦截机制与配置"><a href="#4-2-控制台日志拦截机制与配置" class="headerlink" title="4.2 控制台日志拦截机制与配置"></a>4.2 控制台日志拦截机制与配置</h3><p>内核并非把所有的 <code>printk</code> 消息都打印到当前终端屏幕上。这由系统的 <code>/proc/sys/kernel/printk</code> 文件来拦截：</p>
+<p>我们可以通过以下命令读取该控制参数：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">cat</span> /proc/sys/kernel/printk</span><br><span class="line"><span class="comment"># 输出示例： 4    4    1    7</span></span><br></pre></td></tr></table></figure>
+
+<p>这 4 个数字在底层分别代表：</p>
+<ol>
+<li><strong>控制台日志级别 (console_loglevel)<strong>：当前只有</strong>优先级高于</strong>（数值小于）该级别的消息才会打印在屏幕终端上。</li>
+<li>**默认消息日志级别 (default_message_loglevel)**：如果编写 <code>printk</code> 时没有显式加上 <code>KERN_xxx</code> 标志，默认按照此级别处理。</li>
+<li>**最小控制台日志级别 (minimum_console_loglevel)**：控制台日志级别能被调到的最小值。</li>
+<li>**默认控制台日志级别 (default_console_loglevel)**：默认系统启动时的 console_loglevel。</li>
+</ol>
+<h4 id="🔑-动态调整调试过滤范式："><a href="#🔑-动态调整调试过滤范式：" class="headerlink" title="🔑 动态调整调试过滤范式："></a>🔑 动态调整调试过滤范式：</h4><p>如果你在写驱动时发现 <code>printk</code> 没有任何输出，可能就是被控制台日志级别过滤了。可以在 shell 中将首个数字临时调高：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">sudo sh -c <span class="string">&#x27;echo &quot;8 4 1 7&quot; &gt; /proc/sys/kernel/printk&#x27;</span></span><br><span class="line"><span class="comment"># 此时，连最底层的 KERN_DEBUG (7) 级信息也能实时呈现在终端上了</span></span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="4-3-动态调试-Dynamic-Debug-零开销拦截机制"><a href="#4-3-动态调试-Dynamic-Debug-零开销拦截机制" class="headerlink" title="4.3 动态调试 (Dynamic Debug) 零开销拦截机制"></a>4.3 动态调试 (Dynamic Debug) 零开销拦截机制</h3><p>除了依靠高低日志级别控制以外，现代 Linux 内核还内置了 <strong>动态调试 (Dynamic Debug)</strong> 控制文件系统：</p>
+<ul>
+<li><strong>零开销原理</strong>：当内核配置了 <code>CONFIG_DYNAMIC_DEBUG</code> 选项时，所有使用 <code>pr_debug()</code> 或 <code>dev_dbg()</code> 生成的打印语句都会在编译期通过 Jump Label 机制编译为无操作的跳转指令（对性能零影响）。</li>
+<li><strong>运行时激活</strong>：调试人员可以通过 <code>/sys/kernel/debug/dynamic_debug/control</code> 控制节点，在系统运行期间对指定的源文件、甚至是特定的代码行动态激活打印：<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 💡 开启内核源码中 my_driver.c 的第 120 行的 pr_debug 打印功能</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;file my_driver.c line 120 +p&quot;</span> &gt; /sys/kernel/debug/dynamic_debug/control</span><br><span class="line"></span><br><span class="line"><span class="comment"># 💡 关闭该源文件下的全部调试信息</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&quot;file my_driver.c -p&quot;</span> &gt; /sys/kernel/debug/dynamic_debug/control</span><br></pre></td></tr></table></figure></li>
+</ul>
+<hr>
+<h2 id="第五部分：KGDB-源码级内核调试与符号表重定位"><a href="#第五部分：KGDB-源码级内核调试与符号表重定位" class="headerlink" title="第五部分：KGDB 源码级内核调试与符号表重定位"></a>第五部分：KGDB 源码级内核调试与符号表重定位</h2><p>当模块遭遇隐蔽的死锁或内核指针飞越（Null Pointer Dereference）时，单纯靠 <code>printk</code> 已经无法追踪代码上下文。我们需要利用 GDB 的强大调试能力，使用 <strong>KGDB</strong> 进行远程源码级单步调试。</p>
+<h3 id="5-1-KGDB-调试拓扑模型"><a href="#5-1-KGDB-调试拓扑模型" class="headerlink" title="5.1 KGDB 调试拓扑模型"></a>5.1 KGDB 调试拓扑模型</h3><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">     【 KGDB 双机串口在线调试拓扑 】</span><br><span class="line"></span><br><span class="line">开发机 (运行 GDB)                         目标调试机 (运行被调内核)</span><br><span class="line">+------------------+                   +------------------+</span><br><span class="line">|    GDB 控制台    |                   |    Linux 内核    |</span><br><span class="line">|  (带源码与符号表) |                   |  (开启CONFIG_KGDB)|</span><br><span class="line">|                  |                   |                  |</span><br><span class="line">|    串口通信 /dev/ttyUSB0 ◄========►   内核串口 /dev/ttyS0|</span><br><span class="line">+------------------+                   +------------------+</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li><strong>准备符号文件</strong>：确保目标内核编译时开启了 <code>CONFIG_DEBUG_INFO=y</code>，并在宿主机上保留未压缩的、带调试信息的 <code>vmlinux</code> 镜像。</li>
+<li><strong>配置引导参数</strong>：在目标机引导时，修改 bootargs 附加配置：<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">console=ttyS0,115200 kgdboc=ttyS0,115200 kgdbwait</span><br></pre></td></tr></table></figure>
+<ul>
+<li><code>kgdboc</code>：指定 KGDB Over Console 的物理串口。</li>
+<li><code>kgdbwait</code>：告诉内核在启动早期就挂起等待 GDB 连接，这对于调试驱动初始化特别有用。</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h3 id="5-2-🔑-动态加载内核模块（LKM）符号表的“重定位”黑魔法"><a href="#5-2-🔑-动态加载内核模块（LKM）符号表的“重定位”黑魔法" class="headerlink" title="5.2 🔑 动态加载内核模块（LKM）符号表的“重定位”黑魔法"></a>5.2 🔑 动态加载内核模块（LKM）符号表的“重定位”黑魔法</h3><p>在调试动态模块 <code>hello.ko</code> 时，GDB 会面临一个极大的困境：<code>hello.ko</code> 内部的变量和函数符号是相对偏移（Relocatable）。当内核将其装载到内存中后，它们被 vmalloc 映射到了动态的、未知的物理地址。<br>如果不告诉 GDB 模块的各个 Section 确切的装载地址，我们将无法在模块内部的函数上打下任何断点。</p>
+<h4 id="📊-动态重定位与符号表加载实战步骤："><a href="#📊-动态重定位与符号表加载实战步骤：" class="headerlink" title="📊 动态重定位与符号表加载实战步骤："></a>📊 动态重定位与符号表加载实战步骤：</h4><ol>
+<li><strong>在目标调试机上</strong>，获取当前模块在内核空间分配的段表实际首地址：<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">cat</span> /sys/module/hello/sections/.text</span><br><span class="line"><span class="comment"># 假设输出：0xffffffffc02b1000</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">cat</span> /sys/module/hello/sections/.data</span><br><span class="line"><span class="comment"># 假设输出：0xffffffffc02b3000</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">cat</span> /sys/module/hello/sections/.bss</span><br><span class="line"><span class="comment"># 假设输出：0xffffffffc02b35a0</span></span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>[!IMPORTANT]<br><strong>在初始化加载阶段（<code>hello_init</code> 执行期间）</strong>，内核处于特殊加载状态。如果我们需要在 <code>hello_init</code> 初始化阶段的入口处下断点，由于 <code>.init.text</code> 段是一次性的（执行完即释放），必须通过以下命令获取当时分配给初始化段的真实物理基址：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">cat</span> /sys/module/hello/sections/.init.text</span><br><span class="line"><span class="comment"># 假设输出：0xffffffffc02b1b50</span></span><br></pre></td></tr></table></figure></blockquote>
+</li>
+<li><strong>在开发宿主机的 GDB 中</strong>，建立串口连接并重置符号指针，引入该临时初始化段地址：<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"># 建立与目标机串口连接</span><br><span class="line">target remote /dev/ttyUSB0</span><br><span class="line"></span><br><span class="line"># 🔑 动态加载模块符号，将相对段重定义为内核真实的动态装载首地址，并映射初始化段</span><br><span class="line">add-symbol-file /path/to/hello.ko 0xffffffffc02b1000 \</span><br><span class="line">    -s .init.text 0xffffffffc02b1b50 \</span><br><span class="line">    -s .data 0xffffffffc02b3000 \</span><br><span class="line">    -s .bss  0xffffffffc02b35a0</span><br><span class="line">    </span><br><span class="line"># 打下断点，此时 GDB 就能正确识别并单步跟踪模块函数了</span><br><span class="line">break hello_init</span><br></pre></td></tr></table></figure></li>
+</ol>
+<hr>
+<h2 id="第六部分：内核动态追踪技术：ftrace-与-kprobes-实战"><a href="#第六部分：内核动态追踪技术：ftrace-与-kprobes-实战" class="headerlink" title="第六部分：内核动态追踪技术：ftrace 与 kprobes 实战"></a>第六部分：内核动态追踪技术：ftrace 与 kprobes 实战</h2><p>现代以太网驱动或存储驱动在运行时对时延极其敏感。如果在生产环境中挂起 GDB 或频繁打 <code>printk</code> 都会导致吞吐量骤降。此时我们需要使用内核级的**动态追踪技术 (Dynamic Tracing)**。</p>
+<h3 id="6-1-ftrace-追踪系统调用函数链"><a href="#6-1-ftrace-追踪系统调用函数链" class="headerlink" title="6.1 ftrace 追踪系统调用函数链"></a>6.1 ftrace 追踪系统调用函数链</h3><p><code>ftrace</code> 是 Linux 内核的官方函数跟踪器。它利用特殊的预留引导机制（在编译时插入 <code>mcount</code> 钩子），可以在零重启的前提下实时打印出驱动函数的完整调用图谱。</p>
+<h4 id="💻-追踪自定义模块驱动的实战操作步骤："><a href="#💻-追踪自定义模块驱动的实战操作步骤：" class="headerlink" title="💻 追踪自定义模块驱动的实战操作步骤："></a>💻 追踪自定义模块驱动的实战操作步骤：</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 1. 挂载 debugfs (通常默认已挂载)</span></span><br><span class="line">sudo mount -t debugfs nodev /sys/kernel/debug</span><br><span class="line"></span><br><span class="line"><span class="comment"># 2. 切换到跟踪目录</span></span><br><span class="line"><span class="built_in">cd</span> /sys/kernel/debug/tracing</span><br><span class="line"></span><br><span class="line"><span class="comment"># 3. 设置追踪器为函数图谱追踪 (Function Graph)</span></span><br><span class="line"><span class="built_in">echo</span> function_graph &gt; current_tracer</span><br><span class="line"></span><br><span class="line"><span class="comment"># 4. 🔑 设置过滤规则：只追踪 hello 模块内部的函数</span></span><br><span class="line"><span class="built_in">echo</span> <span class="string">&#x27;:mod:hello&#x27;</span> &gt; set_ftrace_filter</span><br><span class="line"></span><br><span class="line"><span class="comment"># 5. 开启追踪开关</span></span><br><span class="line"><span class="built_in">echo</span> 1 &gt; tracing_on</span><br><span class="line"></span><br><span class="line"><span class="comment"># 6. 在另一个终端发起卸载/加载动作后，读取追踪日志</span></span><br><span class="line"><span class="built_in">cat</span> trace | <span class="built_in">head</span> -n 40</span><br></pre></td></tr></table></figure>
+
+<h4 id="📊-ftrace-捕获的函数时序图："><a href="#📊-ftrace-捕获的函数时序图：" class="headerlink" title="📊 ftrace 捕获的函数时序图："></a>📊 ftrace 捕获的函数时序图：</h4><figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">3)               |  hello_init() &#123;</span><br><span class="line">3)   0.125 us    |    /* [printk 内部底层调用] */</span><br><span class="line">3)   1.218 us    |    printk();</span><br><span class="line">3)   0.210 us    |    /* 初始化数据段 */</span><br><span class="line">3)   4.821 us    |  &#125; /* hello_init */</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="6-2-kprobes-动态插桩技术底层原理解密"><a href="#6-2-kprobes-动态插桩技术底层原理解密" class="headerlink" title="6.2 kprobes 动态插桩技术底层原理解密"></a>6.2 kprobes 动态插桩技术底层原理解密</h3><p><code>kprobes</code> 是 Linux 提供的一种无需修改代码、无需重新编译的<strong>在线动态插桩</strong>机制。它允许我们在内核几乎任何一条指令的地址上插入断点。</p>
+<h4 id="1-工作原理："><a href="#1-工作原理：" class="headerlink" title="1. 工作原理："></a>1. 工作原理：</h4><ul>
+<li><strong>拷贝替换</strong>：当用户在指定函数打下 <code>kprobe</code> 时，内核会拷贝该目标地址处的首条汇编指令，并将其强行替换为一条<strong>异常陷阱指令</strong>（如 x86 的 <code>int3</code>）。</li>
+<li><strong>陷入陷阱</strong>：当 CPU 执行到此指令时，触发 CPU 中断陷入内核异常处理器，进而执行我们预先注册的 <code>pre_handler</code> 回调函数。</li>
+<li><strong>单步执行</strong>：执行完毕后，内核单步执行刚才拷贝出来的原始指令。</li>
+<li><strong>恢复现场</strong>：最后，跳转回原指令流的下一条，并调用我们定义的 <code>post_handler</code> 完成最后的日志收集。</li>
+</ul>
+<h4 id="💻-编写一个动态挂接-kprobes-拦截内核函数的驱动范式："><a href="#💻-编写一个动态挂接-kprobes-拦截内核函数的驱动范式：" class="headerlink" title="💻 编写一个动态挂接 kprobes 拦截内核函数的驱动范式："></a>💻 编写一个动态挂接 kprobes 拦截内核函数的驱动范式：</h4><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;linux/module.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;linux/kprobes.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="class"><span class="keyword">struct</span> <span class="title">kprobe</span> <span class="title">kp</span> =</span> &#123;</span><br><span class="line">    .symbol_name = <span class="string">&quot;sys_clone&quot;</span>, <span class="comment">// 💡 我们要插桩拦截的系统调用符号</span></span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="comment">// 在目标指令执行前的拦截回调</span></span><br><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">handler_pre</span><span class="params">(<span class="keyword">struct</span> kprobe *p, <span class="keyword">struct</span> pt_regs *regs)</span></span><br><span class="line">&#123;</span><br><span class="line">    <span class="comment">// regs 寄存器结构体存放着触发时的全部硬件上下文寄存器值</span></span><br><span class="line">    printk(<span class="string">&quot;[*] kprobe: pre_handler: p-&gt;addr = %p, IP = %lx\n&quot;</span>, p-&gt;addr, regs-&gt;ip);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">int</span> __init <span class="title function_">kprobe_init</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line">    kp.pre_handler = handler_pre;</span><br><span class="line">    <span class="comment">// 🔑 注册桩点</span></span><br><span class="line">    register_kprobe(&amp;kp);</span><br><span class="line">    printk(<span class="string">&quot;[+] Kprobe 挂接成功，目标符号: %s\n&quot;</span>, kp.symbol_name);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="type">static</span> <span class="type">void</span> __exit <span class="title function_">kprobe_exit</span><span class="params">(<span class="type">void</span>)</span></span><br><span class="line">&#123;</span><br><span class="line">    unregister_kprobe(&amp;kp);</span><br><span class="line">    printk(<span class="string">&quot;[-] Kprobe 已注销。\n&quot;</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">module_init(kprobe_init);</span><br><span class="line">module_exit(kprobe_exit);</span><br><span class="line">MODULE_LICENSE(<span class="string">&quot;GPL&quot;</span>);</span><br></pre></td></tr></table></figure>
+
+<hr>
+<h3 id="6-3-LKM-与-eBPF-在线追踪-VM-技术的对比演进"><a href="#6-3-LKM-与-eBPF-在线追踪-VM-技术的对比演进" class="headerlink" title="6.3 LKM 与 eBPF 在线追踪 VM 技术的对比演进"></a>6.3 LKM 与 eBPF 在线追踪 VM 技术的对比演进</h3><p>随着 Linux 内核的演进，除了传统的 LKM 动态内核模块之外，<strong>eBPF (Extended Berkeley Packet Filter)</strong> 已经发展为内核态在线追踪和安全拦截的最前沿技术。以下是两者的底层技术比对：</p>
+<table>
+<thead>
+<tr>
+<th align="left">维度指标</th>
+<th align="left">可加载内核模块 (LKM) 机制</th>
+<th align="left">eBPF (内核扩展虚拟机) 机制</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>运行安全性</strong></td>
+<td align="left">较低。驱动中的任何越界或空指针都会导致整个 Kernel Panic，直接死机。</td>
+<td align="left">极高。内核内置了严格的静态验证器（Verifier），任何包含死循环、越界访内的代码都会被拦截拒绝加载，<strong>绝对不会死机</strong>。</td>
+</tr>
+<tr>
+<td align="left"><strong>生命周期管理</strong></td>
+<td align="left">手动加载&#x2F;卸载。异常退出时可能残留垃圾，需要开发人员极其精确的资源回收。</td>
+<td align="left">随宿主进程或挂载点生命周期自动回收，无任何资源残留和安全泄露风险。</td>
+</tr>
+<tr>
+<td align="left"><strong>内核版本依赖度</strong></td>
+<td align="left">极高。必须与当前内核 headers 保持强一致，版本魔数错误则完全无法工作。</td>
+<td align="left">较低。通过 BTF（BPF 类型格式）与 CO-RE（一次编译，到处运行）机制，能够自动适配不同内核版本的结构体偏移差异。</td>
+</tr>
+<tr>
+<td align="left"><strong>应用场景</strong></td>
+<td align="left">适合开发深度的底层物理硬件驱动（网卡驱动、磁盘控制器、物理协议栈）。</td>
+<td align="left">适合进行系统调用安全审计（seccomp）、高频网络流量统计路由（XDP）及非侵入式在线性能剖析。</td>
+</tr>
+</tbody></table>
+<hr>
+<h3 id="6-4-💡-SystemTap-动态脚本框架与-LTTng-高性能追踪器"><a href="#6-4-💡-SystemTap-动态脚本框架与-LTTng-高性能追踪器" class="headerlink" title="6.4 💡 SystemTap 动态脚本框架与 LTTng 高性能追踪器"></a>6.4 💡 SystemTap 动态脚本框架与 LTTng 高性能追踪器</h3><p>除了基础追踪器之外，在工业级生产线上，还有两大重磅追踪武器：</p>
+<ol>
+<li><strong>SystemTap</strong>：<ul>
+<li><em>工作机制</em>：一种更高级的自动化插桩工具。它定义了一种类似于 awk 的脚本语言。当我们编写一段追踪脚本并执行时，SystemTap 编译器会在宿主机自动将脚本翻译成 C 语言代码，接着调用编译器将其<strong>就地打包生成一个临时的 LKM 内核模块</strong>并加载。当追踪结束，它会自动卸载模块并导出汇总日志。</li>
+</ul>
+</li>
+<li>**LTTng (Linux Trace Toolkit Next Generation)**：<ul>
+<li><em>工作机制</em>：专为高频吞吐设计的跟踪框架。相比于 ftrace，LTTng 更加快速和轻量，它使用了极其优化的无锁环形缓冲区（Ring Buffers），哪怕是对高频的磁盘 I&#x2F;O 中断进行追踪，对内核造成的延迟增加也通常控制在微秒以内，是电信级服务器的排障首选。</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2 id="第七部分：LKM-常见编译加载故障排查-Checklist"><a href="#第七部分：LKM-常见编译加载故障排查-Checklist" class="headerlink" title="第七部分：LKM 常见编译加载故障排查 Checklist"></a>第七部分：LKM 常见编译加载故障排查 Checklist</h2><p>在实际驱动开发中，建议参考以下 Checklist 进行常见加载故障的定位：</p>
+<ul>
+<li><input disabled="" type="checkbox"> <strong>vermagic 版本报错</strong>：<ul>
+<li><em>根本原因</em>：加载时内核会提取 <code>.modinfo</code> 中的 <code>vermagic</code> 与运行内核进行 strcmp 比对。</li>
+<li><em>排除方法</em>：使用 <code>modinfo my_module.ko</code> 读取驱动魔数，并与宿主机的 <code>uname -r</code> 仔细对照。如果版本后带有 <code>-custom</code> 或其他小版本后缀，请在宿主机内核 Makefile 中修改 <code>EXTRAVERSION</code>，然后重新编译模块。</li>
+</ul>
+</li>
+<li><input disabled="" type="checkbox"> <strong>Unknown Symbol 错误</strong>：<ul>
+<li><em>根本原因</em>：模块引用了未导出的或者当前内核没有加载的符号。</li>
+<li><em>排除方法</em>：通过命令 <code>grep -w &quot;SymbolName&quot; /proc/kallsyms</code> 确认该符号是否在运行内核的全局符号表中；另外检查模块的加载依赖关系，先执行 <code>depmod -a</code> 建立映射，再使用 <code>modprobe</code> 代替 <code>insmod</code> 加载。</li>
+</ul>
+</li>
+<li><input disabled="" type="checkbox"> <strong>内核崩溃 (Oops &#x2F; Panic) 严重故障</strong>：<ul>
+<li><em>根本原因</em>：指针操作失控、死锁、或者是触发了硬中断底半部的空指针异常。</li>
+<li><em>排除方法</em>：从内核日志中抓取 Oops 信息中的 <code>PC</code> 寄存器地址或 <code>IP</code> 地址，记下例如 <code>hello_init+0x24/0x3c</code> 样式的偏移值。回到开发宿主机，执行：<br><code>gdb hello.ko</code><br><code>gdb&gt; list *(hello_init+0x24)</code><br>即可在没有硬件仿真器的情况下直接反查出错源代码行号。</li>
+</ul>
+</li>
+<li><input disabled="" type="checkbox"> <strong>LKM 内存泄露隐患</strong>：<ul>
+<li><em>根本原因</em>：退出清理回调（<code>hello_exit</code>）中漏掉了某些资源的释放逻辑。</li>
+<li><em>排除方法</em>：开启内核编译配置 <code>CONFIG_DEBUG_KMEMLEAK</code>，挂载 debugfs。在加载和卸载模块后，通过执行以下命令触发内核扫描：<br><code>echo scan &gt; /sys/kernel/debug/kmemleak</code><br><code>cat /sys/kernel/debug/kmemleak</code><br>内核会自动追踪并输出未被释放的物理页堆栈信息，帮助我们精确定位 <code>kmalloc</code> 泄漏源。</li>
+</ul>
+</li>
+</ul>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>License</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">Newer</div><a href="/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E5%86%85%E6%A0%B8-3-Linux%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%BC%96%E8%AF%91%E5%B1%9E%E6%80%A7%E5%B7%AE%E5%BC%82%E4%B8%8E%E4%BA%8C%E8%BF%9B%E5%88%B6%E9%80%86%E5%90%91%E4%BF%AE%E6%94%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/">Linux 内核模块编译属性差异与二进制逆向修改深度指南</a></div><div class="item" id="next"><div class="note">Older</div><a href="/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E5%86%85%E6%A0%B8-5-Linux%E5%86%85%E6%A0%B8%E8%A1%A5%E4%B8%81%E4%B8%8EBuildroot%E7%8E%AF%E5%A2%83%E4%B8%8B%E7%9A%84%E7%BC%96%E8%AF%91%E6%95%85%E9%9A%9C%E4%BF%AE%E5%A4%8D%E6%8C%87%E5%8D%97/">Linux内核补丁与Buildroot环境下的编译故障修复指南</a></div></section></div>
+
+
+
+
+  <div class="related-wrap md-text" id="comments">
+    <section class='header cmt-title cap theme'>
+      <p>快来参与讨论吧~</p>
+
+    </section>
+    <section class='body cmt-body utterances'>
+      
+
+<svg class="loading" style="vertical-align:middle;fill:currentColor;overflow:hidden;" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2709"><path d="M832 512c0-176-144-320-320-320V128c211.2 0 384 172.8 384 384h-64zM192 512c0 176 144 320 320 320v64C300.8 896 128 723.2 128 512h64z" p-id="2710"></path></svg>
+
+<div id="utterances" repo="luhuaCyan/luhuaCyan.github.io" issue-term="title" theme="preferred-color-scheme" label="comment"></div>
+
+    </section>
+  </div>
+
+
+
+<footer class="page-footer footnote"><hr><div class="sitemap" style="column-count:4;"><div class="sitemap-group"><span class="fs15">博客</span><a href="/">近期发布</a><a href="/blog/categories/">分类</a><a href="/blog/tags/">标签</a><a href="/blog/archives/">归档</a></div><div class="sitemap-group"><span class="fs15">项目</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">社交</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">关于</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div></div><div class="text"><p>本站为个人学习笔记记录和整理，所有内容仅用于个人知识梳理、复习回顾及学习交流。<br>声明：本站所有资源收集整理于网络,本站不参与制作,用于互联网爱好者学习和研究,如不慎侵犯了您的权利,请及时联系站长处理删除。敬请谅解！</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">On This Page</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#Linux%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%BC%96%E8%AF%91%E3%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E5%86%85%E6%A0%B8%E6%80%81%E8%B0%83%E8%AF%95%E8%BF%BD%E8%B8%AA%E6%8A%80%E6%9C%AF%E6%8C%87%E5%8D%97"><span class="toc-text">Linux内核模块编译、加载与内核态调试追踪技术指南</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%B8%80%E9%83%A8%E5%88%86%EF%BC%9A%E7%BC%96%E5%86%99-LKM-%E9%A9%B1%E5%8A%A8%E4%BB%A3%E7%A0%81%E4%B8%8E%E5%BA%95%E5%B1%82%E5%AE%8F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90"><span class="toc-text">第一部分：编写 LKM 驱动代码与底层宏原理解析</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-1-%E7%BB%8F%E5%85%B8-Hello-World-%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E6%BA%90%E7%A0%81"><span class="toc-text">1.1 经典 Hello World 内核模块源码</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-2-%E5%BA%95%E5%B1%82%E5%85%B3%E9%94%AE%E5%AD%97%E4%B8%8E%E5%AE%8F%E5%8E%9F%E7%90%86%E8%A7%A3%E5%AF%86"><span class="toc-text">1.2 底层关键字与宏原理解密</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#1-init-%E5%AE%8F%E4%B8%8E-init-text-%E6%AE%B5"><span class="toc-text">1. __init 宏与 .init.text 段</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-exit-%E5%AE%8F%E4%B8%8E-exit-text-%E6%AE%B5"><span class="toc-text">2. __exit 宏与 .exit.text 段</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-3-LKM-%E6%A8%A1%E5%9D%97%E5%8F%82%E6%95%B0-Module-Parameters-%E4%B8%8E%E5%85%B6-sysfs-%E8%87%AA%E5%8A%A8%E5%91%88%E7%8E%B0%E6%9C%BA%E5%88%B6"><span class="toc-text">1.3 LKM 模块参数 (Module Parameters) 与其 sysfs 自动呈现机制</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-4-EXPORT-SYMBOL-%E4%B8%8E%E5%86%85%E6%A0%B8%E7%AC%A6%E5%8F%B7%E5%AF%BC%E5%87%BA%E6%9C%BA%E5%88%B6"><span class="toc-text">1.4 EXPORT_SYMBOL() 与内核符号导出机制</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%BA%8C%E9%83%A8%E5%88%86%EF%BC%9A%E5%8F%8C%E5%90%91%E8%B0%83%E7%94%A8-Makefile-Kbuild-%E7%BC%96%E8%AF%91%E5%BC%95%E6%93%8E%E5%B7%A5%E4%BD%9C%E6%9C%BA%E5%88%B6"><span class="toc-text">第二部分：双向调用 Makefile Kbuild 编译引擎工作机制</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#2-1-%E6%A0%87%E5%87%86%E6%A8%A1%E5%9D%97-Makefile-%E6%A8%A1%E6%9D%BF"><span class="toc-text">2.1 标准模块 Makefile 模板</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-2-Kbuild-%E5%8F%8C%E5%90%91%E8%B0%83%E7%94%A8%E6%89%A7%E8%A1%8C%E6%B5%81%E7%A8%8B%E8%BF%BD%E8%B8%AA"><span class="toc-text">2.2 Kbuild 双向调用执行流程追踪</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%B8%89%E9%83%A8%E5%88%86%EF%BC%9A%E7%94%A8%E6%88%B7%E7%A9%BA%E9%97%B4%E5%8A%A0%E8%BD%BD%E5%91%BD%E4%BB%A4%E4%B8%8E%E5%86%85%E6%A0%B8%E6%80%81%E7%B3%BB%E7%BB%9F%E8%B0%83%E7%94%A8%E5%B7%AE%E5%BC%82"><span class="toc-text">第三部分：用户空间加载命令与内核态系统调用差异</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#3-1-%E6%A0%B8%E5%BF%83%E5%91%BD%E4%BB%A4%E5%AF%B9%E6%AF%94%E4%B8%8E%E5%B7%A5%E4%BD%9C%E7%BB%86%E8%8A%82"><span class="toc-text">3.1 核心命令对比与工作细节</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#1-insmod-%E4%B8%8E-modprobe-%E7%9A%84%E5%BA%95%E5%B1%82%E8%BE%83%E9%87%8F"><span class="toc-text">1. insmod 与 modprobe 的底层较量</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-lsmod-%E4%B8%8E-rmmod"><span class="toc-text">2. lsmod 与 rmmod</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-2-%E5%8A%A0%E8%BD%BD%E8%BF%87%E7%A8%8B%E7%9A%84%E5%86%85%E6%A0%B8%E7%B3%BB%E7%BB%9F%E8%B0%83%E7%94%A8%E9%93%BE%E8%BF%BD%E8%B8%AA"><span class="toc-text">3.2 加载过程的内核系统调用链追踪</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E5%9B%9B%E9%83%A8%E5%88%86%EF%BC%9A%E5%86%85%E6%A0%B8-printk-%E8%BE%93%E5%87%BA%E4%B8%8E-console-%E6%97%A5%E5%BF%97%E7%BA%A7%E5%88%AB%E6%8E%A7%E5%88%B6"><span class="toc-text">第四部分：内核 printk 输出与 console 日志级别控制</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#4-1-%E5%86%85%E6%A0%B8%E6%97%A5%E5%BF%97%E7%BA%A7%E5%88%AB%E5%88%92%E5%88%86"><span class="toc-text">4.1 内核日志级别划分</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-2-%E6%8E%A7%E5%88%B6%E5%8F%B0%E6%97%A5%E5%BF%97%E6%8B%A6%E6%88%AA%E6%9C%BA%E5%88%B6%E4%B8%8E%E9%85%8D%E7%BD%AE"><span class="toc-text">4.2 控制台日志拦截机制与配置</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%94%91-%E5%8A%A8%E6%80%81%E8%B0%83%E6%95%B4%E8%B0%83%E8%AF%95%E8%BF%87%E6%BB%A4%E8%8C%83%E5%BC%8F%EF%BC%9A"><span class="toc-text">🔑 动态调整调试过滤范式：</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-3-%E5%8A%A8%E6%80%81%E8%B0%83%E8%AF%95-Dynamic-Debug-%E9%9B%B6%E5%BC%80%E9%94%80%E6%8B%A6%E6%88%AA%E6%9C%BA%E5%88%B6"><span class="toc-text">4.3 动态调试 (Dynamic Debug) 零开销拦截机制</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%BA%94%E9%83%A8%E5%88%86%EF%BC%9AKGDB-%E6%BA%90%E7%A0%81%E7%BA%A7%E5%86%85%E6%A0%B8%E8%B0%83%E8%AF%95%E4%B8%8E%E7%AC%A6%E5%8F%B7%E8%A1%A8%E9%87%8D%E5%AE%9A%E4%BD%8D"><span class="toc-text">第五部分：KGDB 源码级内核调试与符号表重定位</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#5-1-KGDB-%E8%B0%83%E8%AF%95%E6%8B%93%E6%89%91%E6%A8%A1%E5%9E%8B"><span class="toc-text">5.1 KGDB 调试拓扑模型</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#5-2-%F0%9F%94%91-%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%EF%BC%88LKM%EF%BC%89%E7%AC%A6%E5%8F%B7%E8%A1%A8%E7%9A%84%E2%80%9C%E9%87%8D%E5%AE%9A%E4%BD%8D%E2%80%9D%E9%BB%91%E9%AD%94%E6%B3%95"><span class="toc-text">5.2 🔑 动态加载内核模块（LKM）符号表的“重定位”黑魔法</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%93%8A-%E5%8A%A8%E6%80%81%E9%87%8D%E5%AE%9A%E4%BD%8D%E4%B8%8E%E7%AC%A6%E5%8F%B7%E8%A1%A8%E5%8A%A0%E8%BD%BD%E5%AE%9E%E6%88%98%E6%AD%A5%E9%AA%A4%EF%BC%9A"><span class="toc-text">📊 动态重定位与符号表加载实战步骤：</span></a></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E5%85%AD%E9%83%A8%E5%88%86%EF%BC%9A%E5%86%85%E6%A0%B8%E5%8A%A8%E6%80%81%E8%BF%BD%E8%B8%AA%E6%8A%80%E6%9C%AF%EF%BC%9Aftrace-%E4%B8%8E-kprobes-%E5%AE%9E%E6%88%98"><span class="toc-text">第六部分：内核动态追踪技术：ftrace 与 kprobes 实战</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#6-1-ftrace-%E8%BF%BD%E8%B8%AA%E7%B3%BB%E7%BB%9F%E8%B0%83%E7%94%A8%E5%87%BD%E6%95%B0%E9%93%BE"><span class="toc-text">6.1 ftrace 追踪系统调用函数链</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%92%BB-%E8%BF%BD%E8%B8%AA%E8%87%AA%E5%AE%9A%E4%B9%89%E6%A8%A1%E5%9D%97%E9%A9%B1%E5%8A%A8%E7%9A%84%E5%AE%9E%E6%88%98%E6%93%8D%E4%BD%9C%E6%AD%A5%E9%AA%A4%EF%BC%9A"><span class="toc-text">💻 追踪自定义模块驱动的实战操作步骤：</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%93%8A-ftrace-%E6%8D%95%E8%8E%B7%E7%9A%84%E5%87%BD%E6%95%B0%E6%97%B6%E5%BA%8F%E5%9B%BE%EF%BC%9A"><span class="toc-text">📊 ftrace 捕获的函数时序图：</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-2-kprobes-%E5%8A%A8%E6%80%81%E6%8F%92%E6%A1%A9%E6%8A%80%E6%9C%AF%E5%BA%95%E5%B1%82%E5%8E%9F%E7%90%86%E8%A7%A3%E5%AF%86"><span class="toc-text">6.2 kprobes 动态插桩技术底层原理解密</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#1-%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%EF%BC%9A"><span class="toc-text">1. 工作原理：</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%F0%9F%92%BB-%E7%BC%96%E5%86%99%E4%B8%80%E4%B8%AA%E5%8A%A8%E6%80%81%E6%8C%82%E6%8E%A5-kprobes-%E6%8B%A6%E6%88%AA%E5%86%85%E6%A0%B8%E5%87%BD%E6%95%B0%E7%9A%84%E9%A9%B1%E5%8A%A8%E8%8C%83%E5%BC%8F%EF%BC%9A"><span class="toc-text">💻 编写一个动态挂接 kprobes 拦截内核函数的驱动范式：</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-3-LKM-%E4%B8%8E-eBPF-%E5%9C%A8%E7%BA%BF%E8%BF%BD%E8%B8%AA-VM-%E6%8A%80%E6%9C%AF%E7%9A%84%E5%AF%B9%E6%AF%94%E6%BC%94%E8%BF%9B"><span class="toc-text">6.3 LKM 与 eBPF 在线追踪 VM 技术的对比演进</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-4-%F0%9F%92%A1-SystemTap-%E5%8A%A8%E6%80%81%E8%84%9A%E6%9C%AC%E6%A1%86%E6%9E%B6%E4%B8%8E-LTTng-%E9%AB%98%E6%80%A7%E8%83%BD%E8%BF%BD%E8%B8%AA%E5%99%A8"><span class="toc-text">6.4 💡 SystemTap 动态脚本框架与 LTTng 高性能追踪器</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%AC%AC%E4%B8%83%E9%83%A8%E5%88%86%EF%BC%9ALKM-%E5%B8%B8%E8%A7%81%E7%BC%96%E8%AF%91%E5%8A%A0%E8%BD%BD%E6%95%85%E9%9A%9C%E6%8E%92%E6%9F%A5-Checklist"><span class="toc-text">第七部分：LKM 常见编译加载故障排查 Checklist</span></a></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>Scroll to Top</span></a><a class="buttom" onclick="util.scrollComment()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M8 10.5h8M8 14h5.5M17 3.338A9.95 9.95 0 0 0 12 2C6.477 2 2 6.477 2 12c0 1.6.376 3.112 1.043 4.453c.178.356.237.763.134 1.148l-.595 2.226a1.3 1.3 0 0 0 1.591 1.592l2.226-.596a1.63 1.63 0 0 1 1.149.133A9.96 9.96 0 0 0 12 22c5.523 0 10-4.477 10-10c0-1.821-.487-3.53-1.338-5"/></svg><span>Join Discussion</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  window.canonical["param"] = {"permalink":"https://lemoncyan.github.io/2026/07/17/1-%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F-Linux-%E5%86%85%E6%A0%B8-4-Linux%E5%86%85%E6%A0%B8%E6%A8%A1%E5%9D%97%E7%BC%96%E8%AF%91%E3%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E5%86%85%E6%A0%B8%E6%80%81%E8%B0%83%E8%AF%95%E8%BF%BD%E8%B8%AA%E6%8A%80%E6%9C%AF%E6%8C%87%E5%8D%97/","checklink":"/js/plugins/video.js"};
+  const ctx = {
+    date_suffix: {
+      just: `Just`,
+      min: `minutes ago`,
+      hour: `hours ago`,
+      day: `days ago`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        if ($(el).find('.loading-wrap').length == 0){
+          $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+        }
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `Switched to Light Mode`,
+      dark: `Switched to Dark Mode`,
+      auto: `Switched to Auto Mode`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+  <script type="module">
+  const el = document.querySelector("#comments #utterances");
+  util.viewportLazyload(el, load_utterances, true);
+
+  function load_utterances() {
+    if (!el) return;
+    try {
+      el.innerHTML = '';
+    } catch (error) {
+      console.error(error);
+    }
+    const script = document.createElement('script');
+    script.src = 'https://utteranc.es/client.js';
+    script.async = true;
+    for (const key of Object.keys(el.attributes)) {
+      const attr = el.attributes[key];
+      if (['class', 'id'].includes(attr.name) === false) {
+        script.setAttribute(attr.name, attr.value);
+      }
+    }
+    el.appendChild(script);
+  }
+</script>
+
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.chat-file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>

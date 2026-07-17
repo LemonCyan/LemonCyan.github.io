@@ -1,0 +1,1141 @@
+
+<!DOCTYPE html><html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="hexo-theme" content="https://github.com/xaoxuu/hexo-theme-stellar/tree/1.33.1" theme-name="Stellar" theme-version="1.33.1">
+  
+  
+  <meta name="generator" content="Hexo 7.3.0">
+  <meta http-equiv='x-dns-prefetch-control' content='on' />
+  
+  <meta name="renderer" content="webkit">
+  <meta name="force-rendering" content="webkit">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=1">
+  <meta name="HandheldFriendly" content="True" >
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000">
+  <meta name="theme-color" content="#f9fafb">
+  <title>嵌入式 Linux 启动性能优化与工具链/应用程序调优指南 - LemonCyan</title>
+
+  
+    <meta name="description" content="系统性论述嵌入式 Linux 系统的快速启动（Fast Boot）设计思路与调优方案。详解基于 GPIO 物理电平与 grabserial 的系统启动时间精确测量技术；分析内核级 quiet, 驱动裁剪与内核压缩算法优化；阐述 systemd-analyze 剖析；深度对比 Glibc、uClibc-ng 及 Musl 库的尺寸与内存占用开销；阐述 GCC 指令集选择、链接器 Section 垃圾">
+<meta property="og:type" content="article">
+<meta property="og:title" content="嵌入式 Linux 启动性能优化与工具链&#x2F;应用程序调优指南">
+<meta property="og:url" content="https://lemoncyan.github.io/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-9-%E5%B5%8C%E5%85%A5%E5%BC%8FLinux%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98%E6%8C%87%E5%8D%97/">
+<meta property="og:site_name" content="LemonCyan">
+<meta property="og:description" content="系统性论述嵌入式 Linux 系统的快速启动（Fast Boot）设计思路与调优方案。详解基于 GPIO 物理电平与 grabserial 的系统启动时间精确测量技术；分析内核级 quiet, 驱动裁剪与内核压缩算法优化；阐述 systemd-analyze 剖析；深度对比 Glibc、uClibc-ng 及 Musl 库的尺寸与内存占用开销；阐述 GCC 指令集选择、链接器 Section 垃圾">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+<meta property="article:published_time" content="2026-07-17T00:00:00.000Z">
+<meta property="article:modified_time" content="2026-07-17T03:19:27.457Z">
+<meta property="article:author" content="liuluhua">
+<meta property="article:tag" content="启动优化">
+<meta property="article:tag" content="快速启动">
+<meta property="article:tag" content="工具链优化">
+<meta property="article:tag" content="strace">
+<meta property="article:tag" content="oprofile">
+<meta property="article:tag" content="性能调优">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png">
+  
+  
+  
+  <meta name="keywords" content="启动优化,快速启动,工具链优化,strace,oprofile,性能调优">
+
+  <!-- feed -->
+  
+
+  <link rel="stylesheet" href="/css/main.css?v=1.33.1">
+
+
+  
+
+  
+
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","author":{"@type":"Person","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"},"dateCreated":"2026-07-17T00:00:00+00:00","dateModified":"2026-07-17T03:19:27+00:00","datePublished":"2026-07-17T00:00:00+00:00","description":"","headline":"嵌入式 Linux 启动性能优化与工具链/应用程序调优指南","mainEntityOfPage":{"@type":"WebPage","@id":"https://lemoncyan.github.io/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-9-%E5%B5%8C%E5%85%A5%E5%BC%8FLinux%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98%E6%8C%87%E5%8D%97/"},"publisher":{"@type":"Organization","name":"liuluhua","sameAs":[],"image":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png","logo":{"@type":"ImageObject","url":"https://raw.githubusercontent.com/LemonCyan/LemonCyan.github.io/ImageBed/BlogRes/17671541770009xm5z9.png"}},"url":"https://lemoncyan.github.io/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-9-%E5%B5%8C%E5%85%A5%E5%BC%8FLinux%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98%E6%8C%87%E5%8D%97/","keywords":"启动优化, 快速启动, 工具链优化, strace, oprofile, 性能调优","image":[]}</script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css" />
+</head>
+<body>
+
+<div class="l_body content" id="start" layout="post" type="tech" ><aside class="l_left"><div class="sidebg"></div><div class="leftbar-container">
+
+
+<header class="header"><div class="logo-wrap"><a class="avatar" href="/"><div class="bg" style="opacity:0;background-image:url(https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/rainbow64@3x.webp);"></div><img no-lazy class="avatar" src="config.avatar" onerror="javascript:this.classList.add('error');this.src='https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/image/2659360.svg';"></a><a class="title" href="/"><div class="main">LemonCyan</div><div class="sub cap">LemonCyan`s Charging</div></a></div></header>
+
+<div class="nav-area">
+
+<nav class="menu dis-select"><a class="nav-item active" title="博客" href="/" style="color:#1BCDFC"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M5.879 2.879C5 3.757 5 5.172 5 8v8c0 2.828 0 4.243.879 5.121C6.757 22 8.172 22 11 22h2c2.828 0 4.243 0 5.121-.879C19 20.243 19 18.828 19 16V8c0-2.828 0-4.243-.879-5.121C17.243 2 15.828 2 13 2h-2c-2.828 0-4.243 0-5.121.879M8.25 17a.75.75 0 0 1 .75-.75h3a.75.75 0 0 1 0 1.5H9a.75.75 0 0 1-.75-.75M9 12.25a.75.75 0 0 0 0 1.5h6a.75.75 0 0 0 0-1.5zM8.25 9A.75.75 0 0 1 9 8.25h6a.75.75 0 0 1 0 1.5H9A.75.75 0 0 1 8.25 9" clip-rule="evenodd"/><path fill="currentColor" d="M5.235 4.058C5 4.941 5 6.177 5 8v8c0 1.823 0 3.058.235 3.942L5 19.924c-.975-.096-1.631-.313-2.121-.803C2 18.243 2 16.828 2 14v-4c0-2.829 0-4.243.879-5.121c.49-.49 1.146-.707 2.121-.803zm13.53 15.884C19 19.058 19 17.822 19 16V8c0-1.823 0-3.059-.235-3.942l.235.018c.975.096 1.631.313 2.121.803C22 5.757 22 7.17 22 9.999v4c0 2.83 0 4.243-.879 5.122c-.49.49-1.146.707-2.121.803z" opacity=".5"/></svg></a><a class="nav-item" title="文档" href="/wiki/" style="color:#3DC550"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M14.25 4.48v3.057c0 .111 0 .27.02.406a.936.936 0 0 0 .445.683a.96.96 0 0 0 .783.072c.13-.04.272-.108.378-.159L17 8.005l1.124.534c.106.05.248.119.378.16a.958.958 0 0 0 .783-.073a.936.936 0 0 0 .444-.683c.021-.136.021-.295.021-.406V3.031c.113-.005.224-.01.332-.013C21.154 2.98 22 3.86 22 4.933v11.21c0 1.112-.906 2.01-2.015 2.08c-.97.06-2.108.179-2.985.41c-1.082.286-1.99 1.068-3.373 1.436c-.626.167-1.324.257-1.627.323V5.174c.32-.079 1.382-.203 1.674-.371c.184-.107.377-.216.576-.323m5.478 8.338a.75.75 0 0 1-.546.91l-4 1a.75.75 0 0 1-.364-1.456l4-1a.75.75 0 0 1 .91.546" clip-rule="evenodd"/><path fill="currentColor" d="M18.25 3.151c-.62.073-1.23.18-1.75.336a8.2 8.2 0 0 0-.75.27v3.182l.75-.356l.008-.005a1.13 1.13 0 0 1 .492-.13c.047 0 .094.004.138.01c.175.029.315.1.354.12l.009.005l.749.356V3.647z"/><path fill="currentColor" d="M12 5.214c-.334-.064-1.057-.161-1.718-.339C8.938 4.515 8.05 3.765 7 3.487c-.887-.234-2.041-.352-3.018-.412C2.886 3.007 2 3.9 2 4.998v11.146c0 1.11.906 2.01 2.015 2.079c.97.06 2.108.179 2.985.41c.486.129 1.216.431 1.873.726c1.005.451 2.052.797 3.127 1.034z" opacity=".5"/><path fill="currentColor" d="M4.273 12.818a.75.75 0 0 1 .91-.545l4 1a.75.75 0 1 1-.365 1.455l-4-1a.75.75 0 0 1-.545-.91m.909-4.545a.75.75 0 1 0-.364 1.455l4 1a.75.75 0 0 0 .364-1.455z"/></svg></a><a class="nav-item" title="探索" href="/explore/" style="color:#FA6400"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M20 12a8 8 0 1 1-16 0a8 8 0 0 1 16 0" opacity=".5"/><path fill="currentColor" d="M17.712 5.453c1.047-.193 2.006-.259 2.797-.152c.77.103 1.536.393 1.956 1.064c.446.714.312 1.542-.012 2.258c-.33.728-.918 1.499-1.672 2.268c-1.516 1.547-3.836 3.226-6.597 4.697c-2.763 1.472-5.495 2.484-7.694 2.92c-1.095.217-2.098.299-2.923.201c-.8-.095-1.6-.383-2.032-1.075c-.47-.752-.296-1.63.07-2.379c.375-.768 1.032-1.586 1.872-2.403L4 12.416c0 .219.083.71.168 1.146c.045.23.09.444.123.596c-.652.666-1.098 1.263-1.339 1.756c-.277.567-.208.825-.145.925c.072.116.305.305.937.38c.609.073 1.44.018 2.455-.183c2.02-.4 4.613-1.351 7.28-2.772c2.667-1.42 4.85-3.015 6.23-4.423c.694-.707 1.15-1.334 1.377-1.836c.233-.515.167-.75.107-.844c-.07-.112-.289-.294-.883-.374c-.542-.072-1.272-.041-2.163.112L16.87 5.656c.338-.101.658-.17.842-.203"/></svg></a><a class="nav-item" title="社交" href="/friends/" style="color:#F44336"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="m13.629 20.472l-.542.916c-.483.816-1.69.816-2.174 0l-.542-.916c-.42-.71-.63-1.066-.968-1.262c-.338-.197-.763-.204-1.613-.219c-1.256-.021-2.043-.098-2.703-.372a5 5 0 0 1-2.706-2.706C2 14.995 2 13.83 2 11.5v-1c0-3.273 0-4.91.737-6.112a5 5 0 0 1 1.65-1.651C5.59 2 7.228 2 10.5 2h3c3.273 0 4.91 0 6.113.737a5 5 0 0 1 1.65 1.65C22 5.59 22 7.228 22 10.5v1c0 2.33 0 3.495-.38 4.413a5 5 0 0 1-2.707 2.706c-.66.274-1.447.35-2.703.372c-.85.015-1.275.022-1.613.219c-.338.196-.548.551-.968 1.262" opacity=".5"/><path fill="currentColor" d="M10.99 14.308c-1.327-.978-3.49-2.84-3.49-4.593c0-2.677 2.475-3.677 4.5-1.609c2.025-2.068 4.5-1.068 4.5 1.609c0 1.752-2.163 3.615-3.49 4.593c-.454.335-.681.502-1.01.502c-.329 0-.556-.167-1.01-.502"/></svg></a></nav>
+</div>
+<div class="widgets">
+<div class="search-wrapper" id="search-wrapper"><form class="search-form"><a class="search-button" onclick="document.getElementById(&quot;search-input&quot;).focus();"><svg t="1705074644177" viewBox="0 0 1025 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1560" width="200" height="200"><path d="M1008.839137 935.96571L792.364903 719.491476a56.783488 56.783488 0 0 0-80.152866 0 358.53545 358.53545 0 1 1 100.857314-335.166073 362.840335 362.840335 0 0 1-3.689902 170.145468 51.248635 51.248635 0 1 0 99.217358 26.444296 462.057693 462.057693 0 1 0-158.255785 242.303546l185.930047 185.725053a51.248635 51.248635 0 0 0 72.568068 0 51.248635 51.248635 0 0 0 0-72.978056z" p-id="1561"></path><path d="M616.479587 615.969233a50.428657 50.428657 0 0 0-61.498362-5.534852 174.655348 174.655348 0 0 1-177.525271 3.484907 49.403684 49.403684 0 0 0-58.833433 6.76482l-3.074918 2.869923a49.403684 49.403684 0 0 0 8.609771 78.10292 277.767601 277.767601 0 0 0 286.992355-5.739847 49.403684 49.403684 0 0 0 8.404776-76.667958z" p-id="1562"></path></svg></a><input type="text" class="search-input" id="search-input" placeholder="Search"></form><div id="search-result"></div><div class="search-no-result">No Results!</div></div>
+
+
+
+<widget class="widget-wrapper recent post-list"><div class="widget-header dis-select"><span class="name">Recent Update</span></div><div class="widget-body fs14"><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-9-%E5%B5%8C%E5%85%A5%E5%BC%8FLinux%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98%E6%8C%87%E5%8D%97/"><span class="title">嵌入式 Linux 启动性能优化与工具链/应用程序调优指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-6-Linux%E5%85%B1%E4%BA%AB%E5%BA%93%E5%8A%A8%E6%80%81%E5%8A%A0%E8%BD%BD%E4%B8%8E%E8%BF%90%E8%A1%8C%E6%97%B6%E9%93%BE%E6%8E%A5%E5%99%A8%E5%AF%BB%E5%9D%80%E6%9C%BA%E5%88%B6%E5%8F%8A%E8%BF%9B%E9%98%B6%E5%BA%94%E7%94%A8/"><span class="title">Linux 共享库动态加载与运行时链接器寻址机制及进阶应用</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-7-%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%B5%8C%E5%85%A5%E5%BC%8F%E4%BA%A4%E5%8F%89%E5%B7%A5%E5%85%B7%E9%93%BE%E6%9E%84%E5%BB%BAcrosstool-ng%E6%B7%B1%E5%BA%A6%E5%AE%9E%E6%88%98/"><span class="title">交叉编译与嵌入式交叉工具链构建 crosstool-ng 深度实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-8-%E7%8E%B0%E4%BB%A3%E6%9E%84%E5%BB%BA%E7%B3%BB%E7%BB%9FMeson-Ninja%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%BC%80%E6%BA%90%E5%BA%93%E7%A7%BB%E6%A4%8D%E5%AE%9E%E6%88%98/"><span class="title">现代构建系统 Meson + Ninja 交叉编译与开源库移植实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-3-%E9%99%88%E7%9A%93%E3%80%8A%E8%B7%9F%E6%88%91%E5%AD%A6Makefile%E3%80%8B%E7%B2%BE%E7%BC%96%E4%B8%8E%E5%AE%9E%E6%88%98%E8%BF%9B%E9%98%B6%E6%8C%87%E5%8D%97/"><span class="title">陈皓《跟我学Makefile》精编与实战进阶指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-4-%E5%A4%8D%E6%9D%82C-C-%E9%A1%B9%E7%9B%AE%E7%9A%84%E5%A4%9A%E6%96%87%E4%BB%B6%E5%A4%B9Makefile%E8%AE%BE%E8%AE%A1%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%8C%96%E7%BC%96%E8%AF%91%E6%9E%B6%E6%9E%84/"><span class="title">复杂 C/C++ 项目的多文件夹 Makefile 设计与自动化编译架构</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-5-%E9%9D%99%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E4%B8%8E%E5%8A%A8%E6%80%81%E9%93%BE%E6%8E%A5%E5%BA%93%E6%A0%B8%E5%BF%83%E6%9C%BA%E5%88%B6%E4%B8%8E%E5%BC%80%E5%8F%91%E5%AE%9E%E6%88%98/"><span class="title">静态链接库与动态链接库核心机制与开发实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-1-GCC-G-%E7%BC%96%E8%AF%91%E5%99%A8%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86%E4%B8%8E%E5%91%BD%E4%BB%A4%E8%A1%8C%E9%80%89%E9%A1%B9%E6%B7%B1%E5%BA%A6%E6%8C%87%E5%8D%97/"><span class="title">GCC/G++ 编译器工作原理与命令行选项深度指南</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-10-Linux%E6%AE%B5%E9%94%99%E8%AF%AF%E6%8E%92%E6%9F%A5%E4%B8%8EGDB%E6%A0%B8%E5%BF%83%E8%BD%AC%E5%82%A8%E8%B0%83%E8%AF%95%E5%AE%9E%E6%88%98/"><span class="title">Linux 段错误排查与 GDB 核心转储调试实战</span></a><a class="item title" href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-2-GNU-Make%E4%B8%8EMakefile%E6%9E%84%E5%BB%BA%E5%9F%BA%E7%A1%80%E5%85%A5%E9%97%A8%E6%89%8B%E5%86%8C/"><span class="title">GNU Make 与 Makefile 构建基础入门手册</span></a></div></widget>
+</div>
+<footer class="footer dis-select"><div class="social-wrap"><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/08a41b181ce68.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3845874.svg"/></a><a class="social" href="/" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/3616429.svg"/></a><a class="social" href="/about/#comments" rel="noopener noreferrer"><img src="https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/social/942ebbf1a4b91.svg"/></a></div></footer>
+</div></aside><div class="l_main" id="main">
+
+
+
+
+
+<div class="article banner top">
+  <div class="content">
+    <div class="top bread-nav footnote"><div class="left"><div class="flex-row" id="breadcrumb"><a class="cap breadcrumb" href="/">Home</a>
+<span class="sep"></span><a class="cap breadcrumb" href="/">Blog</a><span class="sep"></span><a class="cap breadcrumb-link" href="/categories/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/">6.开发工具</a> <span class="sep"></span> <a class="cap breadcrumb-link" href="/categories/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7/%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5/">编译链接</a></div>
+<div class="flex-row" id="post-meta"><span class="text created">Posted on: <time datetime="2026-07-17T00:00:00.000Z">2026-07-17</time></span><span class="sep updated"></span><span class="text updated">Updated on: <time datetime="2026-07-17T03:19:27.457Z">2026-07-17</time></span></div></div></div>
+    
+    <div class="bottom only-title">
+      
+      <div class="text-area">
+        <h1 class="text title"><span>嵌入式 Linux 启动性能优化与工具链/应用程序调优指南</span></h1>
+        
+      </div>
+    </div>
+    
+  </div>
+  </div><article class="md-text content"><h1 id="嵌入式-Linux-启动性能优化与工具链-应用程序调优指南"><a href="#嵌入式-Linux-启动性能优化与工具链-应用程序调优指南" class="headerlink" title="嵌入式 Linux 启动性能优化与工具链&#x2F;应用程序调优指南"></a>嵌入式 Linux 启动性能优化与工具链&#x2F;应用程序调优指南</h1><p>在嵌入式 Linux 系统（如车载仪表、工业控制、智能家居等）开发中，<br>系统的<strong>启动时间（Boot Time）</strong>与<strong>固件体积（Footprint）</strong>是衡量产品质量的关键硬指标。<br>启动速度慢不仅影响用户体验，<br>还可能无法满足某些行业标准（如车载倒车影像必须在 2 秒内显示）。</p>
+<p>“最快的代码是未执行的代码，<br>最少的数据是未加载的数据”。<br>优化系统启动时间是一项系统工程，<br>涉及 Bootloader、Kernel、根文件系统以及应用层的全链路深度调优。<br>本指南将重点从<strong>系统级引导优化</strong>、<strong>工具链优化</strong>、<strong>编译期链接器优化</strong>以及<strong>运行期瓶颈诊断</strong>四个维度，<br>系统化阐述如何压榨嵌入式系统的启动与运行效率。</p>
+<hr>
+<h2 id="1-快速启动设计思路与高精度测量方法"><a href="#1-快速启动设计思路与高精度测量方法" class="headerlink" title="1. 快速启动设计思路与高精度测量方法"></a>1. 快速启动设计思路与高精度测量方法</h2><p>在展开任何优化工作之前，<br>必须建立可靠的、可重复的启动时间测量基准，<br>切忌凭主观感觉进行优化。</p>
+<h3 id="1-1-降低启动时间的黄金切入点"><a href="#1-1-降低启动时间的黄金切入点" class="headerlink" title="1.1 降低启动时间的黄金切入点"></a>1.1 降低启动时间的黄金切入点</h3><p>整个系统的启动开销可以划分为四个阶段：</p>
+<ol>
+<li><strong>Bootloader 阶段</strong>：硬件初始化，<br>加载内核映像到 RAM。</li>
+<li><strong>Kernel 阶段</strong>：驱动加载，<br>挂载根文件系统（Rootfs）。</li>
+<li><strong>Init 阶段</strong>：运行第一个用户空间进程（<code>init</code>），<br>解析启动脚本（如 systemd 或 sysvinit）。</li>
+<li><strong>App 阶段</strong>：启动核心业务程序并完成首帧绘制。</li>
+</ol>
+<p>优化的一般原则是：<strong>量化瓶颈、砍掉冗余、并行加载、先运行后加载</strong>。</p>
+<h3 id="1-2-高精度启动时间测量方法"><a href="#1-2-高精度启动时间测量方法" class="headerlink" title="1.2 高精度启动时间测量方法"></a>1.2 高精度启动时间测量方法</h3><h4 id="方案-A：硬件物理电平法（示波器测量）"><a href="#方案-A：硬件物理电平法（示波器测量）" class="headerlink" title="方案 A：硬件物理电平法（示波器测量）"></a>方案 A：硬件物理电平法（示波器测量）</h4><p>这是工业界最精确的测量方法。<br>在系统上电的瞬间，<br>利用硬件电路使某个 GPIO 引脚电平发生变化。<br>当应用程序启动完成并显示第一帧或建立完网络连接后，<br>通过代码控制该 GPIO 引脚再次发生电平跳变。<br>使用示波器测量两个跳变点之间的时间差，<br>即为高精度启动时间。</p>
+<p>以下为控制 GPIO 电平的用户空间 C 语言实现示例（使用 Sysfs 接口）：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;unistd.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;fcntl.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;string.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="type">void</span> <span class="title function_">toggle_gpio</span><span class="params">(<span class="type">int</span> pin, <span class="type">int</span> value)</span> &#123;</span><br><span class="line">    <span class="type">char</span> path[<span class="number">64</span>];</span><br><span class="line">    <span class="comment">// 导出 GPIO</span></span><br><span class="line">    <span class="type">int</span> fd = open(<span class="string">&quot;/sys/class/gpio/export&quot;</span>, O_WRONLY);</span><br><span class="line">    <span class="keyword">if</span> (fd &gt;= <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="type">char</span> pin_str[<span class="number">10</span>];</span><br><span class="line">        <span class="built_in">snprintf</span>(pin_str, <span class="keyword">sizeof</span>(pin_str), <span class="string">&quot;%d&quot;</span>, pin);</span><br><span class="line">        write(fd, pin_str, <span class="built_in">strlen</span>(pin_str));</span><br><span class="line">        close(fd);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 设置方向为输出</span></span><br><span class="line">    <span class="built_in">snprintf</span>(path, <span class="keyword">sizeof</span>(path), <span class="string">&quot;/sys/class/gpio/gpio%d/direction&quot;</span>, pin);</span><br><span class="line">    fd = open(path, O_WRONLY);</span><br><span class="line">    <span class="keyword">if</span> (fd &gt;= <span class="number">0</span>) &#123;</span><br><span class="line">        write(fd, <span class="string">&quot;out&quot;</span>, <span class="number">3</span>);</span><br><span class="line">        close(fd);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 写入电平值 (0 或 1)</span></span><br><span class="line">    <span class="built_in">snprintf</span>(path, <span class="keyword">sizeof</span>(path), <span class="string">&quot;/sys/class/gpio/gpio%d/value&quot;</span>, pin);</span><br><span class="line">    fd = open(path, O_WRONLY);</span><br><span class="line">    <span class="keyword">if</span> (fd &gt;= <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="type">char</span> val_str[<span class="number">2</span>];</span><br><span class="line">        <span class="built_in">snprintf</span>(val_str, <span class="keyword">sizeof</span>(val_str), <span class="string">&quot;%d&quot;</span>, value);</span><br><span class="line">        write(fd, val_str, <span class="number">1</span>);</span><br><span class="line">        close(fd);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="方案-B：串口终端时间戳法（grabserial）"><a href="#方案-B：串口终端时间戳法（grabserial）" class="headerlink" title="方案 B：串口终端时间戳法（grabserial）"></a>方案 B：串口终端时间戳法（grabserial）</h4><p>如果无法使用示波器，<br>我们可以借助 Python 工具 <code>grabserial</code> 监控串口控制台输出报文。<br>该工具可以为串口接收到的每一行日志自动打上高精度相对时间戳：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 启动 grabserial 监听指定串口，匹配特定的启动完毕标志</span></span><br><span class="line">python grabserial -p /dev/ttyUSB0 -b 115200 -e <span class="string">&quot;Starting app finished&quot;</span></span><br></pre></td></tr></table></figure>
+<p>其输出格式如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">[0.000 0.000] U-Boot 2020.04</span><br><span class="line">[0.120 0.120] Loading Kernel...</span><br><span class="line">[1.240 1.120] Starting Kernel...</span><br><span class="line">[1.850 0.610] Mounting Rootfs...</span><br><span class="line">[2.350 0.500] Starting app finished</span><br></pre></td></tr></table></figure>
+<p>第一列代表从串口收到第一包数据开始的绝对相对时间，<br>第二列代表行与行之间的增量时间。</p>
+<hr>
+<h2 id="2-内核级与初始化进程引导优化"><a href="#2-内核级与初始化进程引导优化" class="headerlink" title="2. 内核级与初始化进程引导优化"></a>2. 内核级与初始化进程引导优化</h2><h3 id="2-1-内核级优化选项与裁剪"><a href="#2-1-内核级优化选项与裁剪" class="headerlink" title="2.1 内核级优化选项与裁剪"></a>2.1 内核级优化选项与裁剪</h3><ol>
+<li><strong>控制台输出优化（Quiet）</strong>：<br>串口控制台（Console）打印非常消耗时间。<br>在生产环境中，<br>应在内核启动参数 <code>bootargs</code> 中添加 <code>quiet</code>。<br>这能立刻节省 <strong>200ms ~ 800ms</strong> 的启动耗时。</li>
+<li><strong>裁剪未使用的驱动程序</strong>：<br>编译内核时，<br>只保留必需的驱动，<br>删除不匹配的网卡、显卡、声卡和文件系统支持（如删除不需要的 EXT4，<br>转而使用只读 SQUASHFS）。</li>
+<li><strong>内核压缩算法选择</strong>：<ul>
+<li><code>LZO</code> &#x2F; <code>LZ4</code>：解压速度极快，但压缩率稍低（适合 CPU 慢、I&#x2F;O 快的设备）。</li>
+<li><code>XZ</code> &#x2F; <code>GZIP</code>：压缩率极高，文件体积小，但解压缩极其消耗 CPU 算力（适合存储小、CPU 强的设备）。</li>
+</ul>
+</li>
+</ol>
+<h3 id="2-2-初始化系统调优（systemd-analyze）"><a href="#2-2-初始化系统调优（systemd-analyze）" class="headerlink" title="2.2 初始化系统调优（systemd-analyze）"></a>2.2 初始化系统调优（systemd-analyze）</h3><p>在配备 <code>systemd</code> 的系统上，<br>可以使用分析工具直接定位系统服务启动热点：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 1. 打印各服务启动时间耗时排名</span></span><br><span class="line">systemd-analyze blame</span><br><span class="line"></span><br><span class="line"><span class="comment"># 2. 生成 SVG 矢量启动流程图，可直接在浏览器查看</span></span><br><span class="line">systemd-analyze plot &gt; boot_analysis.svg</span><br><span class="line"></span><br><span class="line"><span class="comment"># 3. 打印核心关键链条依赖</span></span><br><span class="line">systemd-analyze critical-chain</span><br></pre></td></tr></table></figure>
+<p>这可帮助开发者精准找出哪个无用网络配置或时钟同步服务阻塞了应用启动。</p>
+<hr>
+<h2 id="3-工具链级别优化：C-库选择与指令集策略"><a href="#3-工具链级别优化：C-库选择与指令集策略" class="headerlink" title="3. 工具链级别优化：C 库选择与指令集策略"></a>3. 工具链级别优化：C 库选择与指令集策略</h2><p>工具链是所有软件构建的基石。<br>在没有修改任何业务代码之前，<br>更换合适的工具链、调整指令集就能直接带来启动时间与文件体积的显着收益。</p>
+<h3 id="3-1-主流-C-标准库（Glibc-vs-uClibc-ng-vs-Musl）深度对比"><a href="#3-1-主流-C-标准库（Glibc-vs-uClibc-ng-vs-Musl）深度对比" class="headerlink" title="3.1 主流 C 标准库（Glibc vs uClibc-ng vs Musl）深度对比"></a>3.1 主流 C 标准库（Glibc vs uClibc-ng vs Musl）深度对比</h3><p>嵌入式 Linux 所能选择的 C 库具有以下三种：</p>
+<table>
+<thead>
+<tr>
+<th align="left">特性指标</th>
+<th align="left">Glibc</th>
+<th align="left">uClibc-ng</th>
+<th align="left">Musl-libc</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>设计目标</strong></td>
+<td align="left">功能最全、极致兼容与性能（GNU 标准）</td>
+<td align="left">专注于嵌入式系统、高度可配置（已有 20 年历史）</td>
+<td align="left">现代、规范、兼顾轻量化与安全性（较新且极成熟）</td>
+</tr>
+<tr>
+<td align="left"><strong>静态链接尺寸</strong></td>
+<td align="left">非常庞大（静态 hello 约 700KB+）</td>
+<td align="left">小（静态 hello 约 60KB）</td>
+<td align="left">极小（静态 hello 约 7KB）</td>
+</tr>
+<tr>
+<td align="left"><strong>内存开销</strong></td>
+<td align="left">较高（复杂分配算法，带有大量线程缓存）</td>
+<td align="left">很低</td>
+<td align="left">很低</td>
+</tr>
+<tr>
+<td align="left"><strong>动态库尺寸</strong></td>
+<td align="left">~2.0 MB</td>
+<td align="left">~300 KB</td>
+<td align="left">~600 KB</td>
+</tr>
+<tr>
+<td align="left"><strong>兼容性</strong></td>
+<td align="left">完美兼容 POSIX 及各类 GNU 扩展</td>
+<td align="left">部分 GNU 特殊扩展未实现，可能需要改代码</td>
+<td align="left">高度兼容 POSIX，对 GNU 扩展支持较好</td>
+</tr>
+</tbody></table>
+<h4 id="实战测试：使用不同-C-库静态编译-hello-c-生成的二进制大小（GCC-6-3-ARMel）"><a href="#实战测试：使用不同-C-库静态编译-hello-c-生成的二进制大小（GCC-6-3-ARMel）" class="headerlink" title="实战测试：使用不同 C 库静态编译 hello.c 生成的二进制大小（GCC 6.3, ARMel）"></a>实战测试：使用不同 C 库静态编译 <code>hello.c</code> 生成的二进制大小（GCC 6.3, ARMel）</h4><ul>
+<li><strong>使用 Glibc</strong>：492,792 字节（约 492 KB）</li>
+<li><strong>使用 uClibc-ng</strong>：67,204 字节（约 67 KB）</li>
+<li><strong>使用 Musl-libc</strong>：7,300 字节（仅约 7 KB）</li>
+</ul>
+<h4 id="实战测试：静态编译-BusyBox-1-26-2-的体积对比"><a href="#实战测试：静态编译-BusyBox-1-26-2-的体积对比" class="headerlink" title="实战测试：静态编译 BusyBox 1.26.2 的体积对比"></a>实战测试：静态编译 BusyBox 1.26.2 的体积对比</h4><ul>
+<li><strong>Glibc 编译</strong>：755,088 字节（约 755 KB）</li>
+<li><strong>uClibc-ng 编译</strong>：210,620 字节（约 210 KB）</li>
+<li><strong>Musl 编译</strong>：183,348 字节（约 183 KB）</li>
+</ul>
+<blockquote>
+<p>[!TIP]<br>如果你的设备存储资源（Flash）极其紧张（例如仅有 8MB 或 16MB SPI Flash），<strong>首选 Musl 或 uClibc-ng 工具链</strong>。<br>这可以直接减小 20%~30% 的根文件系统空间占用。<br>更小的文件体积意味着在系统引导时，从慢速存储介质（如 SPI Flash）读取并加载到 RAM 中的数据量越少，I&#x2F;O 耗时将等比例下降。</p>
+</blockquote>
+<h3 id="3-2-指令集选择：ARM-模式-vs-Thumb-2-模式"><a href="#3-2-指令集选择：ARM-模式-vs-Thumb-2-模式" class="headerlink" title="3.2 指令集选择：ARM 模式 vs Thumb-2 模式"></a>3.2 指令集选择：ARM 模式 vs Thumb-2 模式</h3><p>对于 ARM 架构（如 Cortex-A7&#x2F;A9&#x2F;A53 等），<br>GCC 支持在两种指令编码集之间进行切换：</p>
+<ul>
+<li><strong>ARM 模式</strong>：所有指令均固定为 32-bit 长度。执行效率高，但代码密度低。</li>
+<li><strong>Thumb-2 模式</strong>：16-bit 与 32-bit 指令混合编码。能够显着减小编译产物体积，通常可缩减 20%~30%。</li>
+</ul>
+<h4 id="编译选项切换："><a href="#编译选项切换：" class="headerlink" title="编译选项切换："></a>编译选项切换：</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 生成常规 32-bit ARM 代码</span></span><br><span class="line">arm-linux-gnueabihf-gcc -marm -o app_arm main.c</span><br><span class="line"></span><br><span class="line"><span class="comment"># 生成紧凑的 Thumb-2 代码</span></span><br><span class="line">arm-linux-gnueabihf-gcc -mthumb -march=armv7-a -o app_thumb main.c</span><br></pre></td></tr></table></figure>
+<h4 id="实战编译-Rootfs-总体积对比："><a href="#实战编译-Rootfs-总体积对比：" class="headerlink" title="实战编译 Rootfs 总体积对比："></a>实战编译 Rootfs 总体积对比：</h4><ul>
+<li><strong>ARM 模式构建的根文件系统总大小</strong>：3.79 MB</li>
+<li><strong>Thumb-2 模式构建的根文件系统总大小</strong>：3.10 MB（**体积缩减 18%**）</li>
+<li><strong>性能差异</strong>：Thumb-2 模式的性能通常与 ARM 模式差距小于 5%，在现代处理器的分支预测和缓存架构下，由于指令占用更少的 L1 I-Cache 空间，Thumb-2 甚至可能在某些缓存敏感型负载中表现得更好。</li>
+</ul>
+<hr>
+<h2 id="4-链接器与编译期深度调优技术"><a href="#4-链接器与编译期深度调优技术" class="headerlink" title="4. 链接器与编译期深度调优技术"></a>4. 链接器与编译期深度调优技术</h2><p>除了工具链的基础选择，<br>还可以利用编译器和链接器的高级特性对生成的可执行文件进行“缩容”和运行提速。</p>
+<h3 id="4-1-丢弃无用代码段（Garbage-Collection）"><a href="#4-1-丢弃无用代码段（Garbage-Collection）" class="headerlink" title="4.1 丢弃无用代码段（Garbage Collection）"></a>4.1 丢弃无用代码段（Garbage Collection）</h3><p>在编写 C&#x2F;C++ 程序时，<br>难免会包含未被调用的死代码（Dead Code）或引用的第三方库中未被使用的函数。<br>默认情况下，<br>链接器会整块合并 <code>.o</code> 文件中的 <code>.text</code> 段，<br>导致无用函数污染最终二进制。</p>
+<p>可以使用以下组合选项将未用代码彻底剔除：</p>
+<ul>
+<li>**<code>-ffunction-sections</code> &amp; <code>-fdata-sections</code>**（编译期）：将每一个函数 and 全局变量独立放置到专属的 Section（如 <code>.text.func_name</code>）中。</li>
+<li>**<code>-Wl,--gc-sections</code>**（链接期）：链接器执行垃圾回收，扫描符号调用树，将未被引用的 Section 彻底删除。</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">arm-linux-gnueabihf-g++ -ffunction-sections -fdata-sections -c main.cpp -o main.o</span><br><span class="line">arm-linux-gnueabihf-g++ -Wl,--gc-sections main.o -o app</span><br></pre></td></tr></table></figure>
+
+<h3 id="4-2-剥离调试符号（Stripping-Symbols）"><a href="#4-2-剥离调试符号（Stripping-Symbols）" class="headerlink" title="4.2 剥离调试符号（Stripping Symbols）"></a>4.2 剥离调试符号（Stripping Symbols）</h3><p>生产固件必须去除所有调试符号（Debug Symbols）和符号表：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">arm-linux-gnueabihf-strip --strip-unneeded ./app</span><br></pre></td></tr></table></figure>
+<p>这能立刻将文件体积缩减数倍。</p>
+<h3 id="4-3-链接符号顺序重排（Function-Ordering）"><a href="#4-3-链接符号顺序重排（Function-Ordering）" class="headerlink" title="4.3 链接符号顺序重排（Function Ordering）"></a>4.3 链接符号顺序重排（Function Ordering）</h3><p>在从 Flash 顺序读取二进制代码时，<br>如果程序在启动期高频调用多个空间分布极其零散的函数，<br>将导致 Flash 驱动频繁进行随机寻址读取（尤其是对于 MTD Flash 大块读取），<br>造成巨大的 I&#x2F;O 延迟。</p>
+<p><strong>解决方案</strong>：利用编译器分析启动阶段被调用的函数序列，然后编写自定义的链接脚本（Linker Script），指示链接器把这批函数在物理上连续排列。</p>
+<ol>
+<li>在编译时加入 GCC 选项 <code>-finstrument-functions</code>，<br>或者使用 <code>-ffunction-sections</code>。</li>
+<li>运行一次应用程序，<br>采集启动过程中触发的函数地址和调用流。</li>
+<li>生成自定义 <code>linker.map</code> 脚本文件，<br>按调用时序依次排列这些段。<br>详细参考：<a href="file:///home/reference/controlling-symbol-ordering">Controlling Symbol Ordering</a>。</li>
+</ol>
+<hr>
+<h2 id="5-应用程序运行期调优与诊断工具链"><a href="#5-应用程序运行期调优与诊断工具链" class="headerlink" title="5. 应用程序运行期调优与诊断工具链"></a>5. 应用程序运行期调优与诊断工具链</h2><p>当系统启动后，<br>或者在业务运行中出现卡顿，<br>我们需要工具链来定位具体的软件瓶颈。</p>
+<h3 id="5-1-使用-strace-精准定位-I-O-与阻塞点"><a href="#5-1-使用-strace-精准定位-I-O-与阻塞点" class="headerlink" title="5.1 使用 strace 精准定位 I&#x2F;O 与阻塞点"></a>5.1 使用 <code>strace</code> 精准定位 I&#x2F;O 与阻塞点</h3><p><code>strace</code> 允许追踪用户空间进程的所有系统调用（System Calls）。<br>对于启动优化，<br>使用 <code>strace</code> 可以迅速揪出“无用文件重复打开”、“等待不存在的设备文件”等延时杀手。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 跟踪运行 app 并统计系统调用时间占比</span></span><br><span class="line">strace -c ./app</span><br></pre></td></tr></table></figure>
+<p>输出示例如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">% time     seconds  usecs/call     calls    errors syscall</span><br><span class="line">------ ----------- ----------- --------- --------- -----------</span><br><span class="line"> 56.40    0.012300          42       292           read</span><br><span class="line"> 20.10    0.004383         101        43        20 open</span><br><span class="line"> 12.30    0.002685           5       512           mmap2</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+<p>由此可知 <code>read</code> 和 <code>open</code> 耗费了最多时间。</p>
+<p>进一步追踪具体的调用细节：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># -tt 显示带微秒级的时间戳，-o 写入日志</span></span><br><span class="line">strace -tt -T -v -f -o strace_boot.log ./app</span><br></pre></td></tr></table></figure>
+<p>打开日志搜索耗时大 10ms 的系统调用：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">10:12:05.123456 open(&quot;/etc/config.bin&quot;, O_RDONLY) = -1 ENOENT (No such file or directory) &lt;0.012450&gt;</span><br></pre></td></tr></table></figure>
+<p>这表明打开一个不存在的配置文件花费了 12ms。</p>
+<h3 id="5-2-使用-oprofile-进行系统级热点诊断"><a href="#5-2-使用-oprofile-进行系统级热点诊断" class="headerlink" title="5.2 使用 oprofile 进行系统级热点诊断"></a>5.2 使用 <code>oprofile</code> 进行系统级热点诊断</h3><p><code>oprofile</code> 是一套经典的全系统性能监控工具。<br>它不仅能分析当前应用，<br>还能监控内核驱动及中断处理函数的 CPU 占比。</p>
+<ol>
+<li>内核编译时需开启：<code>CONFIG_OPROFILE=y</code>。</li>
+<li>启动监控：<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">opcontrol --vmlinux=/path/to/vmlinux</span><br><span class="line">opcontrol --start</span><br><span class="line"><span class="comment"># 运行你的测试业务程序</span></span><br><span class="line">./my_performance_test</span><br><span class="line">opcontrol --stop</span><br></pre></td></tr></table></figure></li>
+<li>分析报告：<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 生成全局函数热点报告</span></span><br><span class="line">opreport -l ./my_performance_test</span><br></pre></td></tr></table></figure></li>
+</ol>
+<h3 id="5-3-使用-perf-挖掘-CPU-耗时热点"><a href="#5-3-使用-perf-挖掘-CPU-耗时热点" class="headerlink" title="5.3 使用 perf 挖掘 CPU 耗时热点"></a>5.3 使用 <code>perf</code> 挖掘 CPU 耗时热点</h3><p><code>perf</code> 是 Linux 内核源码自带的现代化性能剖析利器。<br>它基于硬件 PMU（Performance Monitoring Unit）计数器，<br>在几乎不产生性能损耗的情况下完成采样。</p>
+<ol>
+<li>编译内核时开启：<code>CONFIG_PERF_EVENTS=y</code>。</li>
+<li>记录采样：<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 以 99Hz 的频率对进程进行采样，记录其调用栈</span></span><br><span class="line">perf record -F 99 -g -p &lt;PID&gt; -- <span class="built_in">sleep</span> 10</span><br></pre></td></tr></table></figure></li>
+<li>查看交互式诊断报告：<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">perf report</span><br></pre></td></tr></table></figure>
+通过层层展开调用树，<br>可以直接精确锁定到用户空间中消耗 CPU 周期最多的 C++ 函数（如繁重的 JSON 解析、无效的死循环等），<br>从而指引我们完成系统底层的极致调优。</li>
+</ol>
+<hr>
+<h2 id="6-U-Boot-与-内核引导深度优化"><a href="#6-U-Boot-与-内核引导深度优化" class="headerlink" title="6. U-Boot 与 内核引导深度优化"></a>6. U-Boot 与 内核引导深度优化</h2><h3 id="6-1-U-Boot-极速调优"><a href="#6-1-U-Boot-极速调优" class="headerlink" title="6.1 U-Boot 极速调优"></a>6.1 U-Boot 极速调优</h3><p>在 Bootloader 阶段，<br>主要耗时在于内存检测和等待输入。</p>
+<ol>
+<li><strong>设置 <code>bootdelay</code> 为 0</strong>：<br>在环境变量中设置 <code>setenv bootdelay 0</code>，<br>消除上电时等待串口输入中断引导的倒计时延时。</li>
+<li><strong>关闭不需要的硬件初始化</strong>：<br>在 U-Boot 配置文件中，<br>裁剪掉 USB、PCIe、Ethernet 驱动及相关配置指令。<br>这些网络和外设总线初始化在引导内核阶段毫无用处，<br>且极其耗时。</li>
+<li><strong>启用 Falcon Mode（猎鹰模式）</strong>：<br>Falcon Mode 是 U-Boot 的进阶功能。<br>它允许 U-Boot 的 SPL（Secondary Program Loader）直接加载并引导 Linux 内核，<br>完全跳过 U-Boot Proper（即体积庞大的二进制主程序部分），<br>直接节省 <strong>500ms ~ 1.5s</strong> 的上电加载时间。</li>
+</ol>
+<h3 id="6-2-内核线程初始化并行化（initcall-debug）"><a href="#6-2-内核线程初始化并行化（initcall-debug）" class="headerlink" title="6.2 内核线程初始化并行化（initcall_debug）"></a>6.2 内核线程初始化并行化（initcall_debug）</h3><p>Linux 内核的很多驱动程序在初始化时是串行执行的。<br>如果某个驱动由于等待硬件就绪而产生了较大的延时，<br>会导致后续所有驱动初始化被同步挂起。</p>
+<ol>
+<li><strong>开启内核调试日志</strong>：<br>在 <code>bootargs</code> 中加入 <code>initcall_debug</code>，<br>这会记录下每个驱动初始化函数的进入和退出时间戳。</li>
+<li><strong>分析热点函数</strong>：<br>使用内核自带的工具 <code>scripts/bootgraph.pl</code> 分析 <code>dmesg</code> 日志，<br>生成可视化的初始化甘特图。</li>
+<li><strong>异步驱动初始化</strong>：<br>将耗时较长且非启动必需的驱动修改为异步加载模式，<br>使用 <code>module_init</code> 替换为 <code>async_initcall</code>。</li>
+</ol>
+<hr>
+<h2 id="7-存储介质与文件系统选择"><a href="#7-存储介质与文件系统选择" class="headerlink" title="7. 存储介质与文件系统选择"></a>7. 存储介质与文件系统选择</h2><p>存储介质的读取速度是限制加载速度的最重要物理瓶颈。</p>
+<h3 id="7-1-存储介质硬件对比"><a href="#7-1-存储介质硬件对比" class="headerlink" title="7.1 存储介质硬件对比"></a>7.1 存储介质硬件对比</h3><ul>
+<li><strong>SPI Nor Flash</strong>：读取速度慢（几十 MB&#x2F;s），但随机寻址好。由于体积小，适合极小系统。</li>
+<li><strong>eMMC</strong>：读取速度较快（100MB&#x2F;s - 250MB&#x2F;s），且支持并行多通道读取。是现代中高端嵌入式平台的首选。</li>
+<li><strong>SD 卡</strong>：性能极其依赖卡片级别（Class 10, UHS-I）。不适合作为可靠的量产设备介质，但非常方便调试。</li>
+</ul>
+<h3 id="7-2-只读压缩文件系统（SquashFS）"><a href="#7-2-只读压缩文件系统（SquashFS）" class="headerlink" title="7.2 只读压缩文件系统（SquashFS）"></a>7.2 只读压缩文件系统（SquashFS）</h3><p>对于根文件系统，<br>强烈推荐使用只读的 <code>SquashFS</code>。<br>它具备高压缩比，<br>能将根文件系统体积压缩至 30% 左右。<br>虽然加载时需要消耗少量 CPU 算力进行实时解压，<br>但是在随机读取（启动时加载大量小文件）场景下，<br>因为需要从存储介质读取的实际字节数大幅下降，<br>通常能够提供比未压缩的文件系统更短的整体启动耗时。</p>
+<hr>
+<h2 id="8-启动优化与应用程序调优-FAQ"><a href="#8-启动优化与应用程序调优-FAQ" class="headerlink" title="8. 启动优化与应用程序调优 FAQ"></a>8. 启动优化与应用程序调优 FAQ</h2><h3 id="Q1-优化启动时间，最应该先做什么？"><a href="#Q1-优化启动时间，最应该先做什么？" class="headerlink" title="Q1: 优化启动时间，最应该先做什么？"></a>Q1: 优化启动时间，最应该先做什么？</h3><ul>
+<li><strong>解决</strong>：永远是“测量与量化”。不要做无根据的猜测。先使用示波器或 <code>grabserial</code> 建立高精度时间测量基线，然后从 systemd 启动树 blame 以及 <code>initcall_debug</code> 中找出那几个占比 80% 的耗时热点进行解决。</li>
+</ul>
+<h3 id="Q2-为什么-quiet-内核参数对启动速度有如此大的提升？"><a href="#Q2-为什么-quiet-内核参数对启动速度有如此大的提升？" class="headerlink" title="Q2: 为什么 quiet 内核参数对启动速度有如此大的提升？"></a>Q2: 为什么 quiet 内核参数对启动速度有如此大的提升？</h3><ul>
+<li><strong>原因</strong>：Linux 内核默认向串口发送大量的调试日志。而串口芯片（UART）在发送字符时存在极低且固定的波特率限制（如 115200bps，每秒只能输出约 11.5KB 字符）。当内核进行大量 printk 打印时，如果内核的发送缓冲区被占满，内核线程将被迫挂起并发生阻塞，等待串口芯片发出字符。因此，禁用控制台打印不仅能减少 CPU 开销，更能直接消除 UART 队列阻塞挂起延迟。</li>
+</ul>
+<h3 id="Q3-应用程序启动慢，如何判断是自身-CPU-计算慢还是在等待硬件设备？"><a href="#Q3-应用程序启动慢，如何判断是自身-CPU-计算慢还是在等待硬件设备？" class="headerlink" title="Q3: 应用程序启动慢，如何判断是自身 CPU 计算慢还是在等待硬件设备？"></a>Q3: 应用程序启动慢，如何判断是自身 CPU 计算慢还是在等待硬件设备？</h3><ul>
+<li><strong>解决</strong>：使用 <code>strace -c</code> 或 <code>strace -tt -T</code> 观察系统调用。如果大量时间消耗在 <code>read</code>，<code>select</code>，<code>ioctl</code> 并且其增量耗时很长，说明程序在等待驱动或外设硬件就绪；如果系统调用耗时极短，但两个系统调用之间发生了大跨度的时间跳变，则说明 CPU 在运行密集的计算逻辑，或者发生了线程锁死。</li>
+</ul>
+<hr>
+<h2 id="9-现代初始化系统-systemd-早期服务配置调优"><a href="#9-现代初始化系统-systemd-早期服务配置调优" class="headerlink" title="9. 现代初始化系统 systemd 早期服务配置调优"></a>9. 现代初始化系统 systemd 早期服务配置调优</h2><h3 id="9-1-自定义早期启动服务"><a href="#9-1-自定义早期启动服务" class="headerlink" title="9.1 自定义早期启动服务"></a>9.1 自定义早期启动服务</h3><p>在 systemd 架构下，<br>为了让你的核心业务程序（例如车载倒车影像）在极短时间内启动，<br>必须绕过绝大部分不相干的系统初始化工作。<br>我们需要创建一个高优先级的启动服务配置文件。<br>新建 <code>/etc/systemd/system/reverse-cam.service</code> :</p>
+<figure class="highlight ini"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="section">[Unit]</span></span><br><span class="line"><span class="attr">Description</span>=Reverse Camera App</span><br><span class="line"><span class="attr">DefaultDependencies</span>=<span class="literal">no</span></span><br><span class="line"><span class="attr">Conflicts</span>=shutdown.target</span><br><span class="line"><span class="attr">Before</span>=sysinit.target shutdown.target</span><br><span class="line"></span><br><span class="line"><span class="section">[Service]</span></span><br><span class="line"><span class="attr">Type</span>=simple</span><br><span class="line"><span class="attr">ExecStart</span>=/usr/bin/reverse-cam-app</span><br><span class="line"><span class="attr">OOMScoreAdjust</span>=-<span class="number">1000</span></span><br><span class="line"></span><br><span class="line"><span class="section">[Install]</span></span><br><span class="line"><span class="attr">WantedBy</span>=sysinit.target</span><br></pre></td></tr></table></figure>
+
+<h3 id="9-2-关键参数详解："><a href="#9-2-关键参数详解：" class="headerlink" title="9.2 关键参数详解："></a>9.2 关键参数详解：</h3><ol>
+<li>**<code>DefaultDependencies=no</code>**：<br>这是核心配置。<br>默认情况下，<br>systemd 服务会自动引入大量默认依赖关系（如网络在线、文件系统完全挂载、日志服务等）。<br>将其设置为 <code>no</code> 即可切断这些依赖，<br>让该服务能够在 systemd 进程刚刚拉起时即立刻启动。</li>
+<li>**<code>Before=sysinit.target</code>**：<br>指定该服务在系统初始化核心目标（<code>sysinit.target</code>）完成前就执行。</li>
+<li>**<code>WantedBy=sysinit.target</code>**：<br>使该服务挂载在系统初始化早期阶段。</li>
+</ol>
+<hr>
+<h2 id="10-初始化内存根文件系统（Initramfs）优化"><a href="#10-初始化内存根文件系统（Initramfs）优化" class="headerlink" title="10. 初始化内存根文件系统（Initramfs）优化"></a>10. 初始化内存根文件系统（Initramfs）优化</h2><p>在许多嵌入式 Linux 方案中，<br>为了保证系统在 1 秒内响应，<br>通常使用 Initramfs 代替传统的硬盘挂载。</p>
+<h3 id="10-1-什么是-Initramfs？"><a href="#10-1-什么是-Initramfs？" class="headerlink" title="10.1 什么是 Initramfs？"></a>10.1 什么是 Initramfs？</h3><p>Initramfs 是一个被压缩并直接打入内核镜像（zImage&#x2F;uImage）中的临时根文件系统。<br>当内核启动时，<br>它会被直接加载并解压到内存中，<br>而不需要等待存储介质（如 SD 卡、eMMC、MTD 闪存）的驱动程序初始化并挂载真正的磁盘根分区。</p>
+<h3 id="10-2-极速-Initramfs-的优化流程"><a href="#10-2-极速-Initramfs-的优化流程" class="headerlink" title="10.2 极速 Initramfs 的优化流程"></a>10.2 极速 Initramfs 的优化流程</h3><ol>
+<li><strong>精简体积</strong>：<br>仅保留启动必需的 <code>/init</code> 脚本、静态编译的 BusyBox、核心驱动模块以及应用程序本身。<br>其体积通常控制在 <strong>2MB ~ 5MB</strong> 以内。</li>
+<li><strong>静态编译业务软件</strong>：<br>把应用程序及依赖库全部静态链接。<br>这样可以避免运行时加载 <code>/lib/ld-linux.so</code> 以及解析符号的时间开销。</li>
+<li><strong>极速引导脚本示例</strong>：<br>在 Initramfs 中，<br>创建根目录下的启动文件 <code>/init</code>：<figure class="highlight sh"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#!/bin/sh</span></span><br><span class="line"><span class="comment"># 1. 挂载必要的虚拟文件系统</span></span><br><span class="line">mount -t proc proc /proc</span><br><span class="line">mount -t sysfs sysfs /sys</span><br><span class="line"></span><br><span class="line"><span class="comment"># 2. 立刻运行倒车影像核心业务程序（在后台运行以防阻塞引导）</span></span><br><span class="line">/bin/reverse-cam-app &amp;</span><br><span class="line"></span><br><span class="line"><span class="comment"># 3. 继续执行系统其他挂载和守护进程启动</span></span><br><span class="line"><span class="built_in">exec</span> /bin/sh</span><br></pre></td></tr></table></figure>
+通过这一架构，<br>内核初始化完毕的微秒级时间内，<br>核心应用程序即可开始绘制屏幕，<br>极大地缩短了上电到冷启动呈现画面的延迟。</li>
+</ol>
+<hr>
+<h2 id="11-快速启动优化措施与预期收益自检表"><a href="#11-快速启动优化措施与预期收益自检表" class="headerlink" title="11. 快速启动优化措施与预期收益自检表"></a>11. 快速启动优化措施与预期收益自检表</h2><p>下面总结了嵌入式 Linux 快速启动调优的常用优化动作及其对应的预期启动时间缩减幅度：</p>
+<table>
+<thead>
+<tr>
+<th align="left">优化维度</th>
+<th align="left">优化具体措施</th>
+<th align="left">预期启动时间缩减</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left"><strong>Bootloader</strong></td>
+<td align="left">设置 <code>bootdelay</code> 为 0 并裁剪外设驱动</td>
+<td align="left">300ms ~ 1s</td>
+</tr>
+<tr>
+<td align="left"><strong>Bootloader</strong></td>
+<td align="left">启用 Falcon Mode 跳过 U-Boot 主程序</td>
+<td align="left">500ms ~ 1.5s</td>
+</tr>
+<tr>
+<td align="left"><strong>Kernel</strong></td>
+<td align="left">添加 <code>quiet</code> 抑制控制台串口打印输出</td>
+<td align="left">200ms ~ 800ms</td>
+</tr>
+<tr>
+<td align="left"><strong>Kernel</strong></td>
+<td align="left">剥离无用驱动程序，优化压缩算法（使用 LZ4&#x2F;LZO）</td>
+<td align="left">300ms ~ 1.2s</td>
+</tr>
+<tr>
+<td align="left"><strong>Rootfs</strong></td>
+<td align="left">采用 <code>SquashFS</code> 压缩只读文件系统</td>
+<td align="left">100ms ~ 500ms</td>
+</tr>
+<tr>
+<td align="left"><strong>Init</strong></td>
+<td align="left">使用极简 <code>/init</code> 脚本替换 Systemd&#x2F;SysV</td>
+<td align="left">500ms ~ 3s</td>
+</tr>
+<tr>
+<td align="left"><strong>Toolchain</strong></td>
+<td align="left">使用 <code>Musl</code> 或 <code>uClibc-ng</code> 替代 <code>Glibc</code> 动态库</td>
+<td align="left">100ms ~ 300ms</td>
+</tr>
+<tr>
+<td align="left"><strong>App</strong></td>
+<td align="left">使用 <code>-Wl,--gc-sections</code> 垃圾回收并进行符号剥离</td>
+<td align="left">50ms ~ 200ms</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="12-嵌入式启动性能优化核心检查清单（Checklist）"><a href="#12-嵌入式启动性能优化核心检查清单（Checklist）" class="headerlink" title="12. 嵌入式启动性能优化核心检查清单（Checklist）"></a>12. 嵌入式启动性能优化核心检查清单（Checklist）</h2><p>在进行项目交付前，<br>请通过以下清单进行最终自检：</p>
+<ul>
+<li><input disabled="" type="checkbox"> 内核参数 <code>bootargs</code> 是否已经配置了 <code>quiet</code> 选项？</li>
+<li><input disabled="" type="checkbox"> 串口终端波特率是否配置合理（推荐 115200 或更高，以防发送瓶颈）？</li>
+<li><input disabled="" type="checkbox"> 所有生产环境的应用程序和库是否已经过 <code>strip</code> 去除符号？</li>
+<li><input disabled="" type="checkbox"> 根文件系统是否已切换为高度压缩的 <code>SquashFS</code> 或 <code>Initramfs</code>？</li>
+<li><input disabled="" type="checkbox"> 编译选项中是否启用了 <code>-ffunction-sections</code> 与 <code>-Wl,--gc-sections</code> 垃圾回收？</li>
+<li><input disabled="" type="checkbox"> 启动阶段未使用的系统服务（如 SSHD、Cron、ModemManager 等）是否已全部禁用？</li>
+<li><input disabled="" type="checkbox"> 对启动的关键服务是否配置了 <code>DefaultDependencies=no</code> 并放置在 <code>sysinit.target</code> 前运行？</li>
+<li><input disabled="" type="checkbox"> 工具链是否根据存储空间限制选用了 <code>Musl</code> 或 <code>uClibc-ng</code> 库？</li>
+<li><input disabled="" type="checkbox"> CPU 密集的部分是否开启了 <code>-O2</code> 或 <code>-Os</code> 优化？</li>
+<li><input disabled="" type="checkbox"> 是否在 U-Boot 中配置了极速引导，关闭了多余总线和设备（如 USB、Ethernet）的扫描？</li>
+</ul>
+</article>
+<div class="article-footer">
+    <section id="license">
+      <div class="header"><span>License</span></div>
+      <div class="body"><p>本文采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">署名-非商业性使用-相同方式共享 4.0 国际</a> 许可协议，转载请注明出处。</p>
+</div>
+    </section>
+    
+
+</div>
+
+<div class="related-wrap" id="read-next"><section class="body"><div class="item" id="prev"><div class="note">Newer</div><a href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-8-%E7%8E%B0%E4%BB%A3%E6%9E%84%E5%BB%BA%E7%B3%BB%E7%BB%9FMeson-Ninja%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%BC%80%E6%BA%90%E5%BA%93%E7%A7%BB%E6%A4%8D%E5%AE%9E%E6%88%98/">现代构建系统 Meson + Ninja 交叉编译与开源库移植实战</a></div><div class="item" id="next"><div class="note">Older</div><a href="/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E6%95%B0%E6%8D%AE%E5%BA%93-MySQL-%E4%BA%A4%E5%8F%89%E7%BC%96%E8%AF%91%E4%B8%8E%E5%B5%8C%E5%85%A5%E5%BC%8F%E5%B9%B3%E5%8F%B0%E7%A7%BB%E6%A4%8D%E5%AE%9E%E6%88%98/">MySQL 交叉编译与嵌入式平台移植实战</a></div></section></div>
+
+
+
+
+  <div class="related-wrap md-text" id="comments">
+    <section class='header cmt-title cap theme'>
+      <p>快来参与讨论吧~</p>
+
+    </section>
+    <section class='body cmt-body utterances'>
+      
+
+<svg class="loading" style="vertical-align:middle;fill:currentColor;overflow:hidden;" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2709"><path d="M832 512c0-176-144-320-320-320V128c211.2 0 384 172.8 384 384h-64zM192 512c0 176 144 320 320 320v64C300.8 896 128 723.2 128 512h64z" p-id="2710"></path></svg>
+
+<div id="utterances" repo="luhuaCyan/luhuaCyan.github.io" issue-term="title" theme="preferred-color-scheme" label="comment"></div>
+
+    </section>
+  </div>
+
+
+
+<footer class="page-footer footnote"><hr><div class="sitemap" style="column-count:4;"><div class="sitemap-group"><span class="fs15">博客</span><a href="/">近期发布</a><a href="/blog/categories/">分类</a><a href="/blog/tags/">标签</a><a href="/blog/archives/">归档</a></div><div class="sitemap-group"><span class="fs15">项目</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">社交</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div><div class="sitemap-group"><span class="fs15">关于</span><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a><a href="/">xxx</a></div></div><div class="text"><p>本站为个人学习笔记记录和整理，所有内容仅用于个人知识梳理、复习回顾及学习交流。<br>声明：本站所有资源收集整理于网络,本站不参与制作,用于互联网爱好者学习和研究,如不慎侵犯了您的权利,请及时联系站长处理删除。敬请谅解！</p>
+</div></footer>
+<div class="main-mask" onclick="sidebar.dismiss()"></div></div><aside class="l_right">
+<div class="widgets">
+
+
+
+<widget class="widget-wrapper toc" id="data-toc" collapse="false"><div class="widget-header dis-select"><span class="name">On This Page</span><a class="cap-action" onclick="sidebar.toggleTOC()" ><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg></a></div><div class="widget-body"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%B5%8C%E5%85%A5%E5%BC%8F-Linux-%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98%E6%8C%87%E5%8D%97"><span class="toc-text">嵌入式 Linux 启动性能优化与工具链&#x2F;应用程序调优指南</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#1-%E5%BF%AB%E9%80%9F%E5%90%AF%E5%8A%A8%E8%AE%BE%E8%AE%A1%E6%80%9D%E8%B7%AF%E4%B8%8E%E9%AB%98%E7%B2%BE%E5%BA%A6%E6%B5%8B%E9%87%8F%E6%96%B9%E6%B3%95"><span class="toc-text">1. 快速启动设计思路与高精度测量方法</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-1-%E9%99%8D%E4%BD%8E%E5%90%AF%E5%8A%A8%E6%97%B6%E9%97%B4%E7%9A%84%E9%BB%84%E9%87%91%E5%88%87%E5%85%A5%E7%82%B9"><span class="toc-text">1.1 降低启动时间的黄金切入点</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#1-2-%E9%AB%98%E7%B2%BE%E5%BA%A6%E5%90%AF%E5%8A%A8%E6%97%B6%E9%97%B4%E6%B5%8B%E9%87%8F%E6%96%B9%E6%B3%95"><span class="toc-text">1.2 高精度启动时间测量方法</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%E6%96%B9%E6%A1%88-A%EF%BC%9A%E7%A1%AC%E4%BB%B6%E7%89%A9%E7%90%86%E7%94%B5%E5%B9%B3%E6%B3%95%EF%BC%88%E7%A4%BA%E6%B3%A2%E5%99%A8%E6%B5%8B%E9%87%8F%EF%BC%89"><span class="toc-text">方案 A：硬件物理电平法（示波器测量）</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%E6%96%B9%E6%A1%88-B%EF%BC%9A%E4%B8%B2%E5%8F%A3%E7%BB%88%E7%AB%AF%E6%97%B6%E9%97%B4%E6%88%B3%E6%B3%95%EF%BC%88grabserial%EF%BC%89"><span class="toc-text">方案 B：串口终端时间戳法（grabserial）</span></a></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-%E5%86%85%E6%A0%B8%E7%BA%A7%E4%B8%8E%E5%88%9D%E5%A7%8B%E5%8C%96%E8%BF%9B%E7%A8%8B%E5%BC%95%E5%AF%BC%E4%BC%98%E5%8C%96"><span class="toc-text">2. 内核级与初始化进程引导优化</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#2-1-%E5%86%85%E6%A0%B8%E7%BA%A7%E4%BC%98%E5%8C%96%E9%80%89%E9%A1%B9%E4%B8%8E%E8%A3%81%E5%89%AA"><span class="toc-text">2.1 内核级优化选项与裁剪</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-2-%E5%88%9D%E5%A7%8B%E5%8C%96%E7%B3%BB%E7%BB%9F%E8%B0%83%E4%BC%98%EF%BC%88systemd-analyze%EF%BC%89"><span class="toc-text">2.2 初始化系统调优（systemd-analyze）</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-%E5%B7%A5%E5%85%B7%E9%93%BE%E7%BA%A7%E5%88%AB%E4%BC%98%E5%8C%96%EF%BC%9AC-%E5%BA%93%E9%80%89%E6%8B%A9%E4%B8%8E%E6%8C%87%E4%BB%A4%E9%9B%86%E7%AD%96%E7%95%A5"><span class="toc-text">3. 工具链级别优化：C 库选择与指令集策略</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#3-1-%E4%B8%BB%E6%B5%81-C-%E6%A0%87%E5%87%86%E5%BA%93%EF%BC%88Glibc-vs-uClibc-ng-vs-Musl%EF%BC%89%E6%B7%B1%E5%BA%A6%E5%AF%B9%E6%AF%94"><span class="toc-text">3.1 主流 C 标准库（Glibc vs uClibc-ng vs Musl）深度对比</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%E5%AE%9E%E6%88%98%E6%B5%8B%E8%AF%95%EF%BC%9A%E4%BD%BF%E7%94%A8%E4%B8%8D%E5%90%8C-C-%E5%BA%93%E9%9D%99%E6%80%81%E7%BC%96%E8%AF%91-hello-c-%E7%94%9F%E6%88%90%E7%9A%84%E4%BA%8C%E8%BF%9B%E5%88%B6%E5%A4%A7%E5%B0%8F%EF%BC%88GCC-6-3-ARMel%EF%BC%89"><span class="toc-text">实战测试：使用不同 C 库静态编译 hello.c 生成的二进制大小（GCC 6.3, ARMel）</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%E5%AE%9E%E6%88%98%E6%B5%8B%E8%AF%95%EF%BC%9A%E9%9D%99%E6%80%81%E7%BC%96%E8%AF%91-BusyBox-1-26-2-%E7%9A%84%E4%BD%93%E7%A7%AF%E5%AF%B9%E6%AF%94"><span class="toc-text">实战测试：静态编译 BusyBox 1.26.2 的体积对比</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-2-%E6%8C%87%E4%BB%A4%E9%9B%86%E9%80%89%E6%8B%A9%EF%BC%9AARM-%E6%A8%A1%E5%BC%8F-vs-Thumb-2-%E6%A8%A1%E5%BC%8F"><span class="toc-text">3.2 指令集选择：ARM 模式 vs Thumb-2 模式</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#%E7%BC%96%E8%AF%91%E9%80%89%E9%A1%B9%E5%88%87%E6%8D%A2%EF%BC%9A"><span class="toc-text">编译选项切换：</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#%E5%AE%9E%E6%88%98%E7%BC%96%E8%AF%91-Rootfs-%E6%80%BB%E4%BD%93%E7%A7%AF%E5%AF%B9%E6%AF%94%EF%BC%9A"><span class="toc-text">实战编译 Rootfs 总体积对比：</span></a></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#4-%E9%93%BE%E6%8E%A5%E5%99%A8%E4%B8%8E%E7%BC%96%E8%AF%91%E6%9C%9F%E6%B7%B1%E5%BA%A6%E8%B0%83%E4%BC%98%E6%8A%80%E6%9C%AF"><span class="toc-text">4. 链接器与编译期深度调优技术</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#4-1-%E4%B8%A2%E5%BC%83%E6%97%A0%E7%94%A8%E4%BB%A3%E7%A0%81%E6%AE%B5%EF%BC%88Garbage-Collection%EF%BC%89"><span class="toc-text">4.1 丢弃无用代码段（Garbage Collection）</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-2-%E5%89%A5%E7%A6%BB%E8%B0%83%E8%AF%95%E7%AC%A6%E5%8F%B7%EF%BC%88Stripping-Symbols%EF%BC%89"><span class="toc-text">4.2 剥离调试符号（Stripping Symbols）</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-3-%E9%93%BE%E6%8E%A5%E7%AC%A6%E5%8F%B7%E9%A1%BA%E5%BA%8F%E9%87%8D%E6%8E%92%EF%BC%88Function-Ordering%EF%BC%89"><span class="toc-text">4.3 链接符号顺序重排（Function Ordering）</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#5-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%BF%90%E8%A1%8C%E6%9C%9F%E8%B0%83%E4%BC%98%E4%B8%8E%E8%AF%8A%E6%96%AD%E5%B7%A5%E5%85%B7%E9%93%BE"><span class="toc-text">5. 应用程序运行期调优与诊断工具链</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#5-1-%E4%BD%BF%E7%94%A8-strace-%E7%B2%BE%E5%87%86%E5%AE%9A%E4%BD%8D-I-O-%E4%B8%8E%E9%98%BB%E5%A1%9E%E7%82%B9"><span class="toc-text">5.1 使用 strace 精准定位 I&#x2F;O 与阻塞点</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#5-2-%E4%BD%BF%E7%94%A8-oprofile-%E8%BF%9B%E8%A1%8C%E7%B3%BB%E7%BB%9F%E7%BA%A7%E7%83%AD%E7%82%B9%E8%AF%8A%E6%96%AD"><span class="toc-text">5.2 使用 oprofile 进行系统级热点诊断</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#5-3-%E4%BD%BF%E7%94%A8-perf-%E6%8C%96%E6%8E%98-CPU-%E8%80%97%E6%97%B6%E7%83%AD%E7%82%B9"><span class="toc-text">5.3 使用 perf 挖掘 CPU 耗时热点</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#6-U-Boot-%E4%B8%8E-%E5%86%85%E6%A0%B8%E5%BC%95%E5%AF%BC%E6%B7%B1%E5%BA%A6%E4%BC%98%E5%8C%96"><span class="toc-text">6. U-Boot 与 内核引导深度优化</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#6-1-U-Boot-%E6%9E%81%E9%80%9F%E8%B0%83%E4%BC%98"><span class="toc-text">6.1 U-Boot 极速调优</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#6-2-%E5%86%85%E6%A0%B8%E7%BA%BF%E7%A8%8B%E5%88%9D%E5%A7%8B%E5%8C%96%E5%B9%B6%E8%A1%8C%E5%8C%96%EF%BC%88initcall-debug%EF%BC%89"><span class="toc-text">6.2 内核线程初始化并行化（initcall_debug）</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#7-%E5%AD%98%E5%82%A8%E4%BB%8B%E8%B4%A8%E4%B8%8E%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F%E9%80%89%E6%8B%A9"><span class="toc-text">7. 存储介质与文件系统选择</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#7-1-%E5%AD%98%E5%82%A8%E4%BB%8B%E8%B4%A8%E7%A1%AC%E4%BB%B6%E5%AF%B9%E6%AF%94"><span class="toc-text">7.1 存储介质硬件对比</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#7-2-%E5%8F%AA%E8%AF%BB%E5%8E%8B%E7%BC%A9%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F%EF%BC%88SquashFS%EF%BC%89"><span class="toc-text">7.2 只读压缩文件系统（SquashFS）</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#8-%E5%90%AF%E5%8A%A8%E4%BC%98%E5%8C%96%E4%B8%8E%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98-FAQ"><span class="toc-text">8. 启动优化与应用程序调优 FAQ</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#Q1-%E4%BC%98%E5%8C%96%E5%90%AF%E5%8A%A8%E6%97%B6%E9%97%B4%EF%BC%8C%E6%9C%80%E5%BA%94%E8%AF%A5%E5%85%88%E5%81%9A%E4%BB%80%E4%B9%88%EF%BC%9F"><span class="toc-text">Q1: 优化启动时间，最应该先做什么？</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Q2-%E4%B8%BA%E4%BB%80%E4%B9%88-quiet-%E5%86%85%E6%A0%B8%E5%8F%82%E6%95%B0%E5%AF%B9%E5%90%AF%E5%8A%A8%E9%80%9F%E5%BA%A6%E6%9C%89%E5%A6%82%E6%AD%A4%E5%A4%A7%E7%9A%84%E6%8F%90%E5%8D%87%EF%BC%9F"><span class="toc-text">Q2: 为什么 quiet 内核参数对启动速度有如此大的提升？</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Q3-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E5%90%AF%E5%8A%A8%E6%85%A2%EF%BC%8C%E5%A6%82%E4%BD%95%E5%88%A4%E6%96%AD%E6%98%AF%E8%87%AA%E8%BA%AB-CPU-%E8%AE%A1%E7%AE%97%E6%85%A2%E8%BF%98%E6%98%AF%E5%9C%A8%E7%AD%89%E5%BE%85%E7%A1%AC%E4%BB%B6%E8%AE%BE%E5%A4%87%EF%BC%9F"><span class="toc-text">Q3: 应用程序启动慢，如何判断是自身 CPU 计算慢还是在等待硬件设备？</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#9-%E7%8E%B0%E4%BB%A3%E5%88%9D%E5%A7%8B%E5%8C%96%E7%B3%BB%E7%BB%9F-systemd-%E6%97%A9%E6%9C%9F%E6%9C%8D%E5%8A%A1%E9%85%8D%E7%BD%AE%E8%B0%83%E4%BC%98"><span class="toc-text">9. 现代初始化系统 systemd 早期服务配置调优</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#9-1-%E8%87%AA%E5%AE%9A%E4%B9%89%E6%97%A9%E6%9C%9F%E5%90%AF%E5%8A%A8%E6%9C%8D%E5%8A%A1"><span class="toc-text">9.1 自定义早期启动服务</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#9-2-%E5%85%B3%E9%94%AE%E5%8F%82%E6%95%B0%E8%AF%A6%E8%A7%A3%EF%BC%9A"><span class="toc-text">9.2 关键参数详解：</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#10-%E5%88%9D%E5%A7%8B%E5%8C%96%E5%86%85%E5%AD%98%E6%A0%B9%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F%EF%BC%88Initramfs%EF%BC%89%E4%BC%98%E5%8C%96"><span class="toc-text">10. 初始化内存根文件系统（Initramfs）优化</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#10-1-%E4%BB%80%E4%B9%88%E6%98%AF-Initramfs%EF%BC%9F"><span class="toc-text">10.1 什么是 Initramfs？</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#10-2-%E6%9E%81%E9%80%9F-Initramfs-%E7%9A%84%E4%BC%98%E5%8C%96%E6%B5%81%E7%A8%8B"><span class="toc-text">10.2 极速 Initramfs 的优化流程</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#11-%E5%BF%AB%E9%80%9F%E5%90%AF%E5%8A%A8%E4%BC%98%E5%8C%96%E6%8E%AA%E6%96%BD%E4%B8%8E%E9%A2%84%E6%9C%9F%E6%94%B6%E7%9B%8A%E8%87%AA%E6%A3%80%E8%A1%A8"><span class="toc-text">11. 快速启动优化措施与预期收益自检表</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#12-%E5%B5%8C%E5%85%A5%E5%BC%8F%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E6%A0%B8%E5%BF%83%E6%A3%80%E6%9F%A5%E6%B8%85%E5%8D%95%EF%BC%88Checklist%EF%BC%89"><span class="toc-text">12. 嵌入式启动性能优化核心检查清单（Checklist）</span></a></li></ol></li></ol></div><div class="widget-footer"><a class="top" onclick="util.scrollTop()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m9 15.5l3-3l3 3m-6-4l3-3l3 3"/><path d="M7 3.338A9.95 9.95 0 0 1 12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12c0-1.821.487-3.53 1.338-5"/></g></svg><span>Scroll to Top</span></a><a class="buttom" onclick="util.scrollComment()"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><!-- Icon from Solar by 480 Design - https://creativecommons.org/licenses/by/4.0/ --><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M8 10.5h8M8 14h5.5M17 3.338A9.95 9.95 0 0 0 12 2C6.477 2 2 6.477 2 12c0 1.6.376 3.112 1.043 4.453c.178.356.237.763.134 1.148l-.595 2.226a1.3 1.3 0 0 0 1.591 1.592l2.226-.596a1.63 1.63 0 0 1 1.149.133A9.96 9.96 0 0 0 12 22c5.523 0 10-4.477 10-10c0-1.821-.487-3.53-1.338-5"/></svg><span>Join Discussion</span></a></div></widget>
+</div></aside><div class='float-panel'>
+  <button type='button' style='display:none' class='laptop-only rightbar-toggle mobile' onclick='sidebar.rightbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6h11m-11 6h11m-11 6h11M4 6h1v4m-1 0h2m0 8H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
+  </button>
+  <button type='button' style='display:none' class='mobile-only leftbar-toggle mobile' onclick='sidebar.leftbar()'>
+    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 11c0-3.771 0-5.657 1.172-6.828C4.343 3 6.229 3 10 3h4c3.771 0 5.657 0 6.828 1.172C22 5.343 22 7.229 22 11v2c0 3.771 0 5.657-1.172 6.828C19.657 21 17.771 21 14 21h-4c-3.771 0-5.657 0-6.828-1.172C2 18.657 2 16.771 2 13z"/><path id="sep" stroke-linecap="round" d="M5.5 10h6m-5 4h4m4.5 7V3"/></g></svg>
+  </button>
+</div>
+</div><div class="scripts">
+
+
+<script type="text/javascript">
+  window.canonical = {"originalHost":null,"officialHosts":["localhost"],"encoded":""};
+  window.canonical["param"] = {"permalink":"https://lemoncyan.github.io/2026/07/17/6-%E5%BC%80%E5%8F%91%E5%B7%A5%E5%85%B7-%E7%BC%96%E8%AF%91%E9%93%BE%E6%8E%A5-9-%E5%B5%8C%E5%85%A5%E5%BC%8FLinux%E5%90%AF%E5%8A%A8%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE-%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%E8%B0%83%E4%BC%98%E6%8C%87%E5%8D%97/","checklink":"/js/plugins/video.js"};
+  const ctx = {
+    date_suffix: {
+      just: `Just`,
+      min: `minutes ago`,
+      hour: `hours ago`,
+      day: `days ago`,
+    },
+    root : `/`,
+    tag_plugins: {
+      chat: Object.assign({"api":"https://siteinfo.listentothewind.cn/api/v1"}),
+    }
+  };
+
+  // required plugins (only load if needs)
+  if (`local_search`) {
+    ctx.search = {};
+    ctx.search.service = `local_search`;
+    if (ctx.search.service == 'local_search') {
+      let service_obj = Object.assign({}, `{"field":"all","path":"/search.json","content":true,"skip_search":null,"sort":"-date"}`);
+      ctx.search[ctx.search.service] = service_obj;
+    }
+  }
+  const def = {
+    avatar: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/avatar/round/3442075.svg`,
+    cover: `https://gcore.jsdelivr.net/gh/cdn-x/placeholder@1.0.12/cover/76b86c0226ffd.svg`,
+    loading: `https://api.iconify.design/eos-icons:three-dots-loading.svg?color=%231cd0fd`,
+  };
+  const deps = {
+    jquery: `https://gcore.jsdelivr.net/npm/jquery@3.7/dist/jquery.min.js`,
+    marked: `https://gcore.jsdelivr.net/npm/marked@13.0/lib/marked.umd.min.js`,
+    lazyload: `/%5Bobject%20Object%5D`
+  }
+  
+
+</script>
+
+<script type="text/javascript">
+  
+  function RunItem() {
+    this.list = []; // 存放回调函数
+    this.start = () => {
+      for (var i = 0; i < this.list.length; i++) {
+        this.list[i].run();
+      }
+    };
+    this.push = (fn, name, setRequestAnimationFrame = true) => {
+      let myfn = fn
+      if (setRequestAnimationFrame) {
+        myfn = () => {
+          utils.requestAnimationFrame(fn)
+        }
+      }
+      var f = new Item(myfn, name);
+      this.list.push(f);
+    };
+    this.remove = (name) => {
+      for (let index = 0; index < this.list.length; index++) {
+        const e = this.list[index];
+        if (e.name == name) {
+          this.list.splice(index, 1);
+        }
+      }
+    }
+    // 构造一个可以run的对象
+    function Item(fn, name) {
+      // 函数名称
+      this.name = name || fn.name;
+      // run方法
+      this.run = () => {
+        try {
+          fn()
+        } catch (error) {
+          console.log(error);
+        }
+      };
+    }
+  }
+
+  const utils = {
+    // 懒加载 css https://github.com/filamentgroup/loadCSS
+    css: (href, before, media, attributes) => {
+      var doc = window.document;
+      var ss = doc.createElement("link");
+      var ref;
+      if (before) {
+        ref = before;
+      } else {
+        var refs = (doc.body || doc.getElementsByTagName("head")[0]).childNodes;
+        ref = refs[refs.length - 1];
+      }
+      var sheets = doc.styleSheets;
+      if (attributes) {
+        for (var attributeName in attributes) {
+          if (attributes.hasOwnProperty(attributeName)) {
+            ss.setAttribute(attributeName, attributes[attributeName]);
+          }
+        }
+      }
+      ss.rel = "stylesheet";
+      ss.href = href;
+      ss.media = "only x";
+      function ready(cb) {
+        if (doc.body) {
+          return cb();
+        }
+        setTimeout(function () {
+          ready(cb);
+        });
+      }
+      ready(function () {
+        ref.parentNode.insertBefore(ss, before ? ref : ref.nextSibling);
+      });
+      var onloadcssdefined = function (cb) {
+        var resolvedHref = ss.href;
+        var i = sheets.length;
+        while (i--) {
+          if (sheets[i].href === resolvedHref) {
+            return cb();
+          }
+        }
+        setTimeout(function () {
+          onloadcssdefined(cb);
+        });
+      };
+      function loadCB() {
+        if (ss.addEventListener) {
+          ss.removeEventListener("load", loadCB);
+        }
+        ss.media = media || "all";
+      }
+      if (ss.addEventListener) {
+        ss.addEventListener("load", loadCB);
+      }
+      ss.onloadcssdefined = onloadcssdefined;
+      onloadcssdefined(loadCB);
+      return ss;
+    },
+
+    js: (src, opt) => new Promise((resolve, reject) => {
+      var script = document.createElement('script');
+      if (src.startsWith('/')) {
+        src = ctx.root + src.substring(1);
+      }
+      script.src = src;
+      if (opt) {
+        for (let key of Object.keys(opt)) {
+          script[key] = opt[key]
+        }
+      } else {
+        // 默认异步，如果需要同步，第二个参数传入 {} 即可
+        script.async = true
+      }
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function () {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    }),
+
+    jq: (fn) => {
+      if (typeof jQuery === 'undefined') {
+        utils.js(deps.jquery).then(fn)
+      } else {
+        fn()
+      }
+    },
+
+    onLoading: (el) => {
+      if (el) {
+        if ($(el).find('.loading-wrap').length == 0){
+          $(el).append('<div class="loading-wrap"><svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" stroke-opacity=".3" d="M12 3C16.9706 3 21 7.02944 21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="1.3s" values="60;0"/></path><path stroke-dasharray="15" stroke-dashoffset="15" d="M12 3C16.9706 3 21 7.02944 21 12"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.3s" values="15;0"/><animateTransform attributeName="transform" dur="1.5s" repeatCount="indefinite" type="rotate" values="0 12 12;360 12 12"/></path></g></svg></div>');
+        }
+      }
+    },
+    onLoadSuccess: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap').remove();
+      }
+    },
+    onLoadFailure: (el) => {
+      if (el) {
+        $(el).find('.loading-wrap svg').remove();
+        $(el).find('.loading-wrap').append('<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path stroke-dasharray="60" stroke-dashoffset="60" d="M12 3L21 20H3L12 3Z"><animate fill="freeze" attributeName="stroke-dashoffset" dur="0.5s" values="60;0"/></path><path stroke-dasharray="6" stroke-dashoffset="6" d="M12 10V14"><animate fill="freeze" attributeName="stroke-dashoffset" begin="0.6s" dur="0.2s" values="6;0"/></path></g><circle cx="12" cy="17" r="1" fill="currentColor" fill-opacity="0"><animate fill="freeze" attributeName="fill-opacity" begin="0.8s" dur="0.4s" values="0;1"/></circle></svg>');
+        $(el).find('.loading-wrap').addClass('error');
+      }
+    },
+    request: (el, url, callback, onFailure) => {
+      const maxRetry = 3;
+      let retryCount = 0;
+
+      return new Promise((resolve, reject) => {
+        const load = () => {
+          utils.onLoading?.(el);
+
+          let timedOut = false;
+          const timeout = setTimeout(() => {
+            timedOut = true;
+            console.warn('[request] 超时:', url);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject('请求超时');
+            } else {
+              setTimeout(load, 1000);
+            }
+          }, 5000);
+
+          fetch(url).then(resp => {
+            if (timedOut) return;
+            clearTimeout(timeout);
+
+            if (!resp.ok) throw new Error('响应失败');
+            return resp;
+          }).then(data => {
+            if (timedOut) return;
+            utils.onLoadSuccess?.(el);
+            callback(data);
+            resolve(data);
+          }).catch(err => {
+            clearTimeout(timeout);
+            console.warn('[request] 错误:', err);
+
+            if (++retryCount >= maxRetry) {
+              utils.onLoadFailure?.(el);
+              onFailure?.();
+              reject(err);
+            } else {
+              setTimeout(load, 1000);
+            }
+          });
+        };
+
+        load();
+      });
+    },
+    requestWithoutLoading: (url, options = {}, maxRetry = 2, timeout = 5000) => {
+      return new Promise((resolve, reject) => {
+        let retryCount = 0;
+
+        const tryRequest = () => {
+          let timedOut = false;
+          const timer = setTimeout(() => {
+            timedOut = true;
+            if (++retryCount > maxRetry) reject('timeout');
+            else tryRequest();
+          }, timeout);
+
+          fetch(url, options)
+            .then(resp => {
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error('bad response');
+              resolve(resp);
+            })
+            .catch(err => {
+              clearTimeout(timer);
+              if (++retryCount > maxRetry) reject(err);
+              else setTimeout(tryRequest, 500);
+            });
+        };
+
+        tryRequest();
+      });
+    },
+    /********************** requestAnimationFrame ********************************/
+    // 1、requestAnimationFrame 会把每一帧中的所有 DOM 操作集中起来，在一次重绘或回流中就完成，并且重绘或回流的时间间隔紧紧跟随浏览器的刷新频率，一般来说，这个频率为每秒60帧。
+    // 2、在隐藏或不可见的元素中，requestAnimationFrame 将不会进行重绘或回流，这当然就意味着更少的的 cpu，gpu 和内存使用量。
+    requestAnimationFrame: (fn) => {
+      if (!window.requestAnimationFrame) {
+        window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame;
+      }
+      window.requestAnimationFrame(fn)
+    },
+    dark: {},
+  };
+
+  // utils.dark.mode 当前模式 dark or light
+  // utils.dark.toggle() 暗黑模式触发器
+  // utils.dark.push(callBack[,"callBackName"]) 传入触发器回调函数
+  utils.dark.method = {
+    toggle: new RunItem(),
+  };
+  utils.dark = Object.assign(utils.dark, {
+    push: utils.dark.method.toggle.push,
+  });
+</script>
+<script>
+  const sidebar = {
+    leftbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    rightbar: () => {
+      if (l_body) {
+        l_body.toggleAttribute('rightbar');
+        l_body.removeAttribute('leftbar');
+      }
+    },
+    dismiss: () => {
+      if (l_body) {
+        l_body.removeAttribute('leftbar');
+        l_body.removeAttribute('rightbar');
+      }
+    },
+    toggleTOC: () => {
+      document.querySelector('#data-toc').classList.toggle('collapse');
+    }
+  }
+</script>
+<script type="text/javascript">
+  (() => {
+    const tagSwitchers = document.querySelectorAll('.tag-subtree.parent-tag > a > .tag-switcher-wrapper')
+    for (const tagSwitcher of tagSwitchers) {
+      tagSwitcher.addEventListener('click', (e) => {
+        const parent = e.target.closest('.tag-subtree.parent-tag')
+        parent.classList.toggle('expanded')
+        e.preventDefault()
+      })
+    }
+
+    // Get active tag from query string, then activate it.
+    const urlParams = new URLSearchParams(window.location.search)
+    const activeTag = urlParams.get('tag')
+    if (activeTag) {
+      let tag = document.querySelector(`.tag-subtree[data-tag="${activeTag}"]`)
+      if (tag) {
+        tag.querySelector('a').classList.add('active')
+        
+        while (tag) {
+          tag.classList.add('expanded')
+          tag = tag.parentElement.closest('.tag-subtree.parent-tag')
+        }
+      }
+    }
+  })()
+</script>
+
+<script async src="https://gcore.jsdelivr.net/npm/vanilla-lazyload@19.1/dist/lazyload.min.js"></script>
+<script>
+  // https://www.npmjs.com/package/vanilla-lazyload
+  // Set the options globally
+  // to make LazyLoad self-initialize
+  window.lazyLoadOptions = {
+    elements_selector: ".lazy",
+    callback_loaded: (el) => {
+      el.classList.add('loaded');
+      const wrapper = el.closest('.lazy-box');
+      const icon = wrapper?.querySelector('.lazy-icon');
+      if (icon) icon.remove();
+    }
+  };
+  // Listen to the initialization event
+  // and get the instance of LazyLoad
+  window.addEventListener(
+    "LazyLoad::Initialized",
+    function (event) {
+      window.lazyLoadInstance = event.detail.instance;
+    },
+    false
+  );
+  document.addEventListener('DOMContentLoaded', function () {
+    window.lazyLoadInstance?.update();
+  });
+
+  window.wrapLazyloadImages = (container) => {
+    if (typeof container === 'string') {
+      container = document.querySelector(container);
+    }
+    if (!container) return;
+    
+    const images = container.querySelectorAll('img');
+    images.forEach((img) => {
+      if (img.classList.contains('lazy')) return;
+
+      const src = img.getAttribute('src');
+      if (!src) return;
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'lazy-box';
+
+      const newImg = img.cloneNode();
+      newImg.removeAttribute('src');
+      newImg.setAttribute('data-src', src);
+      newImg.classList.add('lazy');
+
+      const icon = document.createElement('div');
+      icon.className = 'lazy-icon';
+      if (def.loading) {
+        icon.style.backgroundImage = `url("${def.loading}")`;
+      }
+
+      wrapper.appendChild(newImg);
+      wrapper.appendChild(icon);
+
+      img.replaceWith(wrapper);
+    });
+
+    // 通知 LazyLoad 更新
+    if (window.lazyLoadInstance?.update) {
+      window.lazyLoadInstance.update();
+    }
+  }
+  
+</script>
+
+<!-- required -->
+<script src="/js/main.js?v=1.33.1" defer></script>
+
+<script type="text/javascript">
+  const applyTheme = (theme) => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme')
+    } else {
+      document.documentElement.setAttribute('data-theme', theme)
+    }
+
+    // applyThemeToGiscus(theme)
+  }
+
+  // FIXME: 这会导致无法使用 preferred_color_scheme 以外的主题
+  const applyThemeToGiscus = (theme) => {
+    // theme = theme === 'auto' ? 'preferred_color_scheme' : theme
+    const cmt = document.getElementById('giscus')
+    if (cmt) {
+      // This works before giscus load.
+      cmt.setAttribute('data-theme', theme)
+    }
+
+    const iframe = document.querySelector('#comments > section.giscus > iframe')
+    if (iframe) {
+      // This works after giscus loaded.
+      const src = iframe.src
+      const newSrc = src.replace(/theme=[\w]+/, `theme=${theme}`)
+      iframe.src = newSrc
+    }
+  }
+
+  const switchTheme = () => {
+    // light -> dark -> auto -> light -> ...
+    const currentTheme = document.documentElement.getAttribute('data-theme')
+    let newTheme;
+    switch (currentTheme) {
+      case 'light':
+        newTheme = 'dark'
+        break
+      case 'dark':
+        newTheme = 'auto'
+        break
+      default:
+        newTheme = 'light'
+    }
+    applyTheme(newTheme)
+    window.localStorage.setItem('Stellar.theme', newTheme)
+    utils.dark.mode = newTheme === 'auto' ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : newTheme;
+    utils.dark.method.toggle.start();
+
+    const messages = {
+      light: `Switched to Light Mode`,
+      dark: `Switched to Dark Mode`,
+      auto: `Switched to Auto Mode`,
+    }
+    hud?.toast?.(messages[newTheme])
+  }
+
+  (() => {
+    // Apply user's preferred theme, if any.
+    const theme = window.localStorage.getItem('Stellar.theme')
+    if (theme !== null) {
+      applyTheme(theme)
+    } else {
+      utils.dark.mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    utils.dark.method.toggle.start();
+  })()
+</script>
+
+
+<!-- optional -->
+
+  <script type="module">
+  const el = document.querySelector("#comments #utterances");
+  util.viewportLazyload(el, load_utterances, true);
+
+  function load_utterances() {
+    if (!el) return;
+    try {
+      el.innerHTML = '';
+    } catch (error) {
+      console.error(error);
+    }
+    const script = document.createElement('script');
+    script.src = 'https://utteranc.es/client.js';
+    script.async = true;
+    for (const key of Object.keys(el.attributes)) {
+      const attr = el.attributes[key];
+      if (['class', 'id'].includes(attr.name) === false) {
+        script.setAttribute(attr.name, attr.value);
+      }
+    }
+    el.appendChild(script);
+  }
+</script>
+
+
+
+
+<script defer>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.services = Object.assign({}, JSON.parse(`{"mdrender":{"js":"/js/services/mdrender.js"},"siteinfo":{"js":"/js/services/siteinfo.js","api":null},"ghinfo":{"js":"/js/services/ghinfo.js"},"rating":{"js":"/js/services/rating.js","api":"https://star-vote.xaox.cc/api/rating"},"vote":{"js":"/js/services/vote.js","api":"https://star-vote.xaox.cc/api/vote"},"sites":{"js":"/js/services/sites.js"},"friends":{"js":"/js/services/friends.js"},"friends_and_posts":{"js":"/js/services/friends_and_posts.js"},"timeline":{"js":"/js/services/timeline.js"},"fcircle":{"js":"/js/services/fcircle.js"},"weibo":{"js":"/js/services/weibo.js"},"memos":{"js":"/js/services/memos.js"},"voice":{"js":"/js/plugins/voice.js"},"video":{"js":"/js/plugins/video.js"},"download-file":{"js":"/js/plugins/download-file.js"},"twikoo":{"js":"/js/services/twikoo_latest_comment.js"},"waline":{"js":"/js/services/waline_latest_comment.js"},"artalk":{"js":"/js/services/artalk_latest_comment.js"},"giscus":{"js":"/js/services/giscus_latest_comment.js"},"contributors":{"edit_this_page":{"_posts/":null,"wiki/stellar/":"https://github.com/xaoxuu/hexo-theme-stellar-docs/blob/main/"},"js":"/js/services/contributors.js"}}`));
+    for (let id of Object.keys(ctx.services)) {
+      const js = ctx.services[id].js;
+      if (id == 'siteinfo') {
+        ctx.cardlinks = document.querySelectorAll('a.link-card[cardlink]');
+        if (ctx.cardlinks?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            setCardLink(ctx.cardlinks);
+          });
+        }
+      } else if (id == 'voice') {
+        ctx.voiceAudios = document.querySelectorAll('.voice>audio');
+        if (ctx.voiceAudios?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            createVoiceDom(ctx.voiceAudios);
+          });
+        }
+      } else if (id == 'video') {
+        ctx.videos = document.querySelectorAll('.video>video');
+        if (ctx.videos?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            videoEvents(ctx.videos);
+          });
+        }
+      } else if (id == 'download-file') {
+        ctx.files = document.querySelectorAll('.chat-file');
+        if (ctx.files?.length > 0) {
+          utils.js(js, { defer: true }).then(function () {
+            downloadFileEvent(ctx.files);
+          });
+        }
+      } else {
+        const els = document.getElementsByClassName(`ds-${id}`);
+        if (els?.length > 0) {
+          utils.jq(() => {
+            if (id == 'timeline' || 'memos' || 'marked') {
+              utils.js(deps.marked).then(function () {
+                utils.js(js, { defer: true });
+              });
+            } else {
+              utils.js(js, { defer: true });
+            }
+          });
+        }
+      }
+    }
+
+    // chat iphone time
+    let phoneTimes = document.querySelectorAll('.chat .status-bar .time');
+
+    if (phoneTimes.length > 0) {
+      NowTime();
+      var date = new Date();
+      var sec = date.getSeconds();
+      var firstAdjustInterval = setInterval(firstAdjustTime, 1000 * (60 - sec));
+    }
+
+    function firstAdjustTime() {
+      NowTime();
+      clearInterval(firstAdjustInterval);
+      setInterval(NowTime, 1000 * 60);
+    }
+
+    function NowTime() {
+      for (let i = 0; i < phoneTimes.length; ++i) {
+        var timeSpan = phoneTimes[i];
+        var date = new Date();
+        var hour = date.getHours();
+        var min = date.getMinutes();
+        timeSpan.innerHTML = check(hour) + ":" + check(min);
+      }
+    };
+
+    function check(val) {
+      if (val < 10) {
+        return ("0" + val);
+      }
+      return (val);
+    }
+
+    // chat quote
+    const chat_quote_obverser = new IntersectionObserver((entries, observer) => {
+      entries.filter((entry) => { return entry.isIntersecting }).sort((a, b) => a.intersectionRect.y !== b.intersectionRect.y ? a.intersectionRect.y - b.intersectionRect.y : a.intersectionRect.x - b.intersectionRect.x).forEach((entry, index) => {
+          observer.unobserve(entry.target);
+          setTimeout(() => {
+            entry.target.classList.add('quote-blink');
+            setTimeout(() => {
+              entry.target.classList.remove('quote-blink');
+            }, 1000);
+          }, Math.max(100, 16) * (index + 1));
+        });
+    });
+
+    var chatQuotes = document.querySelectorAll(".chat .talk .quote");
+    chatQuotes.forEach((quote) => {
+      quote.addEventListener('click', function () {
+        var chatCellDom = document.getElementById("quote-" + quote.getAttribute("quotedCellTag"));
+        if (chatCellDom) {
+          var chatDiv = chatCellDom.parentElement;
+          var mid = chatDiv.clientHeight / 2;
+          var offsetTop = chatCellDom.offsetTop;
+          if (offsetTop > mid - chatCellDom.clientHeight / 2) {
+            chatDiv.scrollTo({
+              top: chatCellDom.offsetTop - mid + chatCellDom.clientHeight / 2,
+              behavior: "smooth"
+            });
+          } else {
+            chatDiv.scrollTo({
+              top: 0,
+              behavior: "smooth"
+            });
+          }
+          chat_quote_obverser.observe(chatCellDom);
+        }
+      });
+    });
+  });
+</script>
+
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    ctx.search = {
+      path: `/search.json`,
+    }
+    utils.js('/js/search/local-search.js', { defer: true });
+  });
+</script><script>
+  window.FPConfig = {
+    delay: 0,
+    ignoreKeywords: [],
+    maxRPS: 5,
+    hoverDelay: 25
+  };
+</script>
+<script defer src="https://gcore.jsdelivr.net/npm/flying-pages@2/flying-pages.min.js"></script><script>
+  ctx.fancybox = {
+    selector: `.timenode p>img`,
+    css: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css`,
+    js: `https://gcore.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js`
+  };
+  var selector = '[data-fancybox]:not(.error), .with-fancybox .atk-content img:not([atk-emoticon])';
+  if (ctx.fancybox.selector) {
+    selector += `, ${ctx.fancybox.selector}`
+  }
+  var needFancybox = document.querySelectorAll(selector).length !== 0;
+  if (!needFancybox) {
+    const memos = document.getElementsByClassName('ds-memos');
+    if (memos != undefined && memos.length > 0) {
+      needFancybox = true;
+    }
+    const fancybox = document.getElementsByClassName('with-fancybox');
+    if (fancybox != undefined && fancybox.length > 0) {
+      needFancybox = true;
+    }
+  }
+  if (needFancybox) {
+    utils.css(ctx.fancybox.css);
+    utils.js(ctx.fancybox.js, { defer: true }).then(function () {
+      Fancybox.bind(selector, {
+        hideScrollbar: false,
+        Thumbs: {
+          autoStart: false,
+        },
+        caption: (fancybox, slide) => {
+          return slide.triggerEl.alt || slide.triggerEl.dataset.caption || null
+        }
+      });
+    })
+  }
+</script>
+<script>
+  window.addEventListener('DOMContentLoaded', (event) => {
+    const swiper_api = document.getElementById('swiper-api');
+    if (swiper_api != undefined) {
+      utils.css(`https://unpkg.com/swiper@10.3/swiper-bundle.min.css`);
+      utils.js(`https://unpkg.com/swiper@10.3/swiper-bundle.min.js`, { defer: true }).then(function () {
+        const effect = swiper_api.getAttribute('effect') || '';
+        var swiper = new Swiper('.swiper#swiper-api', {
+          slidesPerView: 'auto',
+          spaceBetween: 8,
+          centeredSlides: true,
+          effect: effect,
+          rewind: true,
+          pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+          },
+          navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+          },
+        });
+      })
+    }
+  });
+</script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    window.codeElements = document.querySelectorAll('.code');
+    if (window.codeElements.length > 0) {
+      ctx.copycode = {
+        default_text: `Copy`,
+        success_text: `Copied`,
+        toast: `复制成功`,
+      };
+      utils.js('/js/plugins/copycode.js');
+    }
+  });
+</script>
+
+
+<!-- inject -->
+
+</div></body></html>
