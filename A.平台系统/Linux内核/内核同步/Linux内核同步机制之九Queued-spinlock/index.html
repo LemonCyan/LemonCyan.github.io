@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Linux内核同步机制之九Queued spinlock · LemonCyan</title>
+
+<link rel="icon" href="/img/favicon.ico">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#2196f3" title="平台系统">平台系统</a>
+        
+        <a href="/B.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" class="topnav-item" style="--dot:#3f51b5" title="编程语言">编程语言</a>
+        
+        <a href="/C.%E5%BC%80%E5%8F%91%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#009688" title="开发框架">开发框架</a>
+        
+        <a href="/D.%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#00bcd4" title="通讯协议">通讯协议</a>
+        
+        <a href="/E.%E5%B5%8C%E5%85%A5%E5%BC%8F%E5%BC%80%E5%8F%91/" class="topnav-item" style="--dot:#8bc34a" title="嵌入式开发">嵌入式开发</a>
+        
+        <a href="/F.%E4%B8%93%E4%B8%9A%E7%9F%A5%E8%AF%86/" class="topnav-item" style="--dot:#ffc107" title="专业知识">专业知识</a>
+        
+        <a href="/G.%E6%8A%95%E8%B5%84/" class="topnav-item" style="--dot:#ff9800" title="投资">投资</a>
+        
+        <a href="/H.AI%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%8C%96/" class="topnav-item" style="--dot:#9c27b0" title="AI 与自动化">AI 与自动化</a>
+        
+        <a href="/I.%E4%B8%AA%E4%BA%BA%E7%94%9F%E6%B4%BB/" class="topnav-item" style="--dot:#e91e63" title="个人生活">个人生活</a>
+        
+        <a href="/J.%E8%81%8C%E4%B8%9A%E4%B8%8E%E6%88%90%E9%95%BF/" class="topnav-item" style="--dot:#795548" title="职业与成长">职业与成长</a>
+        
+        <a href="/K.%E9%9A%8F%E7%AC%94%E4%B8%8E%E6%9D%82%E8%AE%B0/" class="topnav-item" style="--dot:#607d8b" title="随笔与杂记">随笔与杂记</a>
+        
+        <a href="/L.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E8%AE%BE%E8%AE%A1/" class="topnav-item" style="--dot:#f44336" title="项目与设计">项目与设计</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">Linux内核同步机制之九Queued spinlock</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/A.平台系统/Linux内核/内核同步/Linux内核同步机制之九Queued-spinlock/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">Linux内核同步机制之九Queued spinlock</span>
+                <div class="reader-content">
+                  <h1 id="linux内核同步机制之九queued-spinlock" tabindex="-1">Linux内核同步机制之（九）：Queued spinlock <a class="header-anchor" href="#linux内核同步机制之九queued-spinlock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h1>
+<h2 id="前言" tabindex="-1">前言 <a class="header-anchor" href="#前言"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>本站之前已经有了一篇关于 spinlock 的文档，在之前的文章中有对自旋锁进行简单的介绍，同时给出了 API 汇整和应用场景。不过该文章中的自旋锁描述是基于比较老的内核版本，那时候的自旋锁还是 ticket base 锁，而目前最新内核中的自旋锁已经进化成 queued spinlock，因此需要一篇新的自旋锁文档来跟上时代。此外，本文将不再描述基本的 API 和应用场景，主要的篇幅将集中在具体的自旋锁实现上。顺便说一句，同时准备一份 linux5.10 源码是打开本文的正确方式。</p>
+<p>由于自旋锁可以在各种上下文中使用，因此本文中的 thread 是执行线索的意思，表示进程上下文、hardirq 上下文、softirq 上下文等多种执行线索，而不是调度器中线程的意思。</p>
+<h2 id="一简介" tabindex="-1">一、简介 <a class="header-anchor" href="#一简介"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Spinlock 是 linux 内核中常用的一种互斥锁机制，和 mutex 不同，当无法持锁进入临界区的时候，当前执行线索不会阻塞，而是不断地自旋等待该锁释放。正因为如此，自旋锁也是可以用在中断上下文的。也正是因为自旋，临界区的代码要求尽量地精简，否则在高竞争场景下会浪费宝贵的 CPU 资源。</p>
+<h3 id="1代码结构" tabindex="-1">1、代码结构 <a class="header-anchor" href="#1代码结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>我们整理 spinlock 的代码结构如下：</p>
+<blockquote>
+<p>注：原文此处配有一幅 spinlock 代码结构示意图，在网页抓取过程中丢失。</p>
+</blockquote>
+<p>最上层是通用自旋锁代码（体系结构无关，平台无关），这一层的代码提供了两种接口：spinlock 接口和 raw spinlock 接口。在没有配置 PREEMPT_RT 情况下，spinlock 接口和 raw spinlock 接口是一毛一样的，但是如果配置了 PREEMPT_RT，spinlock 接口走 rt spinlock，底层是基于 rtmutex 的。也就是说这时候的 spinlock 不再禁止抢占，不再自旋等待，而是使用了支持 PI 的睡眠锁来实现，因此有了更好的实时性。而 raw spinlock 接口即便在配置了 PREEMPT_RT 下仍然保持传统自旋锁特性。</p>
+<p>中间一层是区分 SMP 和 UP 的，在 SMP 和 UP 上，自旋锁的实现是不一样的。对于 UP，自旋没有意义，因此 spinlock 的上锁和放锁操作退化为 preempt disable 和 enable。SMP 平台上，除了抢占操作之外还有正常自旋锁的逻辑，具体如何实现自旋锁逻辑是和底层的 CPU architecture 相关的，后面我们会详细描述。</p>
+<p>最底层的代码是体系结构相关的代码，ARM64 上，目前采用是 qspinlock。和体系结构无关的 Qspinlock 代码抽象在 qspinlock.c 文件中，也就是本文重点要描述的内容。</p>
+<h3 id="2接口-api" tabindex="-1">2、接口 API <a class="header-anchor" href="#2接口-api"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一个示例性的接口 API 流程如下（左边是 UP，右边是 SMP）：</p>
+<blockquote>
+<p>注：原文此处配有一幅 spinlock 接口 API 流程图（UP 与 SMP 对比），在网页抓取过程中丢失。</p>
+</blockquote>
+<p>具体的接口 API 简单而直观，这里就不再罗列了。</p>
+<h3 id="3自旋锁的演进" tabindex="-1">3、自旋锁的演进 <a class="header-anchor" href="#3自旋锁的演进"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>自旋锁的演进过程如下：</p>
+<blockquote>
+<p>注：原文此处配有一幅自旋锁演进过程示意图，在网页抓取过程中丢失。</p>
+</blockquote>
+<p>最早的自旋锁是 TAS（test and set）自旋锁，即通过原子指令来修改自旋锁的状态（locked、unlocked）。这种锁存在不公平的现象，具体原因如下图所示：</p>
+<blockquote>
+<p>注：原文此处配有一幅 TAS 自旋锁不公平现象示意图，在网页抓取过程中丢失。</p>
+</blockquote>
+<p>如果 thread4 当前持锁，同一个 cluster 中的 cpu7 上的 thread7 和另外一个 cluster 中的 thread0 都在自旋等待锁的释放。当 thread4 释放锁的时候，由于 cpu7 和 cpu4 的拓扑距离更近，thread7 会有更高概率可以抢到自旋锁，从而产生了不公平现象。为了解决这个问题，内核工程师又开发了 ticket base 的自旋锁，但是这种自旋锁在持锁失败的时候会对自旋锁状态数据 next 成员进行 ++ 操作，当 CPU 数据巨大并且竞争激烈的时候，自旋锁状态数据对应的 cacheline 会在不同 cpu 上跳来跳去，从而对性能产生影响，为了解决这个问题，qspinlock 产生了，下面的文章会集中在 qspinlock 的原理和实现上。</p>
+<h2 id="二qspinlock-的数据结构" tabindex="-1">二、Qspinlock 的数据结构 <a class="header-anchor" href="#二qspinlock-的数据结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1qspinlock" tabindex="-1">1、Qspinlock <a class="header-anchor" href="#1qspinlock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>struct qspinlock 定义如下（little endian）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">qspinlock</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">union</span> {</span>
+        <span class="hljs-type">atomic_t</span> val;
+
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+            u8 locked;-----<span class="hljs-number">-0</span> unlocked， <span class="hljs-number">1</span> locked
+            u8 pending;--------有thread（非队列中）自旋等待locked状态
+        };
+
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+            u16 locked_pending;-------mcs锁队列的head node等待该域变成<span class="hljs-number">0</span>
+            u16 tail;--------在自旋等待队列中（mcs锁队列）
+        };
+    };
+} <span class="hljs-type">arch_spinlock_t</span>;
+</code></pre></div></code></pre>
+<p>Qspinlock 的数据结构一共 4 个 byte，不同的场景下，为了操作方便，我们可以从不同的视角来看这四个字节，示意图如下：</p>
+<blockquote>
+<p>注：原文此处配有一幅 qspinlock 四个字节不同视角的布局示意图，在网页抓取过程中丢失。</p>
+</blockquote>
+<p>Tail 成员占 2B，包括 tail index（16~17）和 tail cpu（18~31）两个域。补充说明一下，上图是系统 CPU 的个数小于 16k 的时候的布局，如果 CPU 数据太大，tail 需要扩展，压缩 pending 域的空间。这时候 pending 域占一个 bit，其他的 7 个 bit 用于 tail。之所以定义得如此复杂主要是为了操作方便，有时候我们需要对整个 4B 的 spinlock val 进行操作（例如判断空锁需要直接判断 val 是否为 0 值），有时候需要对 pending+locked 这两个 byte 进行操作（例如 mcs node queue head 需要自旋在 pending+locked 上），而有的时候又需要单独对 pending 或者 locked 进行设置，大家可以结合代码体会 owner 的良苦用心。</p>
+<p>抛开这些复杂的 union 数据成员，实际上 spinlock 的 4B 由下面三个域组成：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>域</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Locked</td>
+<td>描述该 spinlock 的持锁状态，0 unlocked， 1 locked</td>
+</tr>
+<tr>
+<td>Pending</td>
+<td>描述该 spinlock 是否有 pending thread（没有在 mcs 队列中，等待在 locked 字段上），1 表示有 thread 正自旋在 spinlock 上（确切地说是自旋在 locked 这个域），0 表示没有 pending thread。</td>
+</tr>
+<tr>
+<td>Tail</td>
+<td>指向 Mcs node 队列的尾部节点。这个队列中的 thread 有两种状态：头部的节点对应的 thread 自旋在 pending+locked 域（我们称之为自旋在 qspinlock 上），其他节点自旋在其自己的 mcs lock 上（我们称之为自旋在 mcs lock 上）。</td>
+</tr>
+</tbody>
+</table></div><h3 id="2mcs-lock" tabindex="-1">2、MCS lock <a class="header-anchor" href="#2mcs-lock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>MCS lock 定义如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">qnode</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">mcs_spinlock</span> <span class="hljs-title">mcs</span>;</span>
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">mcs_spinlock</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">mcs_spinlock</span> *<span class="hljs-title">next</span>;</span>
+    <span class="hljs-type">int</span> locked; <span class="hljs-comment">/* 1 if lock acquired */</span>
+    <span class="hljs-type">int</span> count;  <span class="hljs-comment">/* nesting count, see qspinlock.c */</span>
+};
+</code></pre></div></code></pre>
+<p>为了解决多个 thread 对 spinlock 的读写造成的 cache bouncing 问题，我们引入了 per cpu 的 mcs lock，让 thread 自旋在各自 CPU 的 mcs lock，从而减少了缓存颠簸问题，提升了性能。由于自旋锁可能是嵌套的，因此 mcs lock 节点在每个 CPU 上是多个，具体如下图所示：</p>
+<blockquote>
+<p>注：原文此处配有一幅 per-CPU mcs lock 节点布局示意图，在网页抓取过程中丢失。</p>
+</blockquote>
+<p>在某个线程上下文，由于持 A 锁失败而进入自旋，我们需要把该 CPU 上的 mcs 锁节点挂入 A spinlock 的队列。在这个自旋过程中，该 CPU 有可能发生软中断，在软中断处理函数中，我们试图持 B 锁，如果失败，那么该 cpu 上的 mcs 锁节点需要挂入 B spinlock 的队列。在这样的场景中，我们必须区分线程上下文和软中断上下文的 mcs node。这样复杂的嵌套最多有四层：线程上下文、软中断上下文、硬中断上下文和 NMI 上下文。因此我们每个 CPU 实际上定义了多个 mcs node 节点（目前是四个），用来解决自旋锁的嵌套问题。</p>
+<p>了解了上面的内容之后，我们可以回头看看 tail 成员。这个成员分成两个部分，一个是 cpu id 加一（0 表示队列无节点），一个就是 context index。这两部分合起来可以确定一个 mcs node 对象。</p>
+<h2 id="三qspinlock-的原理" tabindex="-1">三、Qspinlock 的原理 <a class="header-anchor" href="#三qspinlock-的原理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1qspinlock-状态说明" tabindex="-1">1、Qspinlock 状态说明 <a class="header-anchor" href="#1qspinlock-状态说明"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>通过上面对 qspinlock 数据结构的说明我们可以知道，spinlock 的状态由 locked、pending 和 tail 三元组来表示。下面就是几种状态示例：</p>
+<blockquote>
+<p>注：原文此处配有一幅 qspinlock 各种状态组合示例的表格图，在网页抓取过程中丢失。</p>
+</blockquote>
+<p>需要说明的是 tail block 中的 &quot;n&quot; 和 &quot;<em>&quot; 表示了 mcs node 队列的情况。n 表示 qspinlock 只有一个 mcs node，</em> 表示 qspinlock 有若干个 mcs node 形成队列，同时在竞争 spinlock。</p>
+<h3 id="2qspinlock-中的状态迁移" tabindex="-1">2、Qspinlock 中的状态迁移 <a class="header-anchor" href="#2qspinlock-中的状态迁移"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一个完整的 qspinlock 状态迁移过程如下：</p>
+<blockquote>
+<p>注：原文此处配有一幅 qspinlock 状态迁移示意图，在网页抓取过程中丢失。</p>
+</blockquote>
+<p>我们可以对照下一节的代码来验证上面的这张状态迁移图。</p>
+<h2 id="四qspinlock-的实现" tabindex="-1">四、Qspinlock 的实现 <a class="header-anchor" href="#四qspinlock-的实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1获取-qspinlock" tabindex="-1">1、获取 qspinlock <a class="header-anchor" href="#1获取-qspinlock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>本小节我们主要描述获取和释放 qspinlock 的代码逻辑（省略了调试、内存屏障等的代码）。我们先看获取 qspinlock 的代码如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> __always_inline <span class="hljs-type">void</span> <span class="hljs-title function_">queued_spin_lock</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> qspinlock *lock)</span>
+{
+    u32 val = <span class="hljs-number">0</span>;
+
+    <span class="hljs-keyword">if</span> (likely(atomic_try_cmpxchg_acquire(&amp;lock-&gt;val, &amp;val, _Q_LOCKED_VAL)))
+        <span class="hljs-keyword">return</span>;
+
+    queued_spin_lock_slowpath(lock, val);
+}
+</code></pre></div></code></pre>
+<p>如果 spinlock 的值（指完整的 4B 数据，即 spinlock 的 val 成员）等于 0，那么说明是空锁，那么调用线程可以持锁进入临界区。这时候，spinlock 的值被设置为 _Q_LOCKED_VAL（值为 1），即标记锁处于 locked 状态。如果快速路径失败，那么进入慢速路径。慢速路径比较长，我们分段解读</p>
+<h3 id="2pending-到-locked-的中间状态" tabindex="-1">2、Pending 到 locked 的中间状态 <a class="header-anchor" href="#2pending-到-locked-的中间状态"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>慢速路径的第一段代码是处理 Pending 到 locked 的中间的，如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (val == _Q_PENDING_VAL) {----------------A
+    <span class="hljs-type">int</span> cnt = _Q_PENDING_LOOPS;
+    val = atomic_cond_read_relaxed(&amp;lock-&gt;val,
+           (VAL != _Q_PENDING_VAL) || !cnt--);
+}
+
+<span class="hljs-keyword">if</span> (val &amp; ~_Q_LOCKED_MASK)---------------B
+    <span class="hljs-keyword">goto</span> <span class="hljs-built_in">queue</span>;
+</code></pre></div></code></pre>
+<p>A、如果当前 spinlock 的值只有 pending 比特被设定，那么说明该 spinlock 正处于 owner 把锁转交给 pending owner 的过程中（即 owner 释放了锁，但是 pending owner 还没有拾取该锁）。在这种情况下，我们需要重读 spinlock 的值。当然，如果持续重读的结果仍然是仅 pending 比特被设定，那么在 _Q_PENDING_LOOPS 次循环读之后放弃。</p>
+<p>为何这里我们要这么执着地等待 pending owner 线程将其状态从 pending 迁移到 locked 状态呢？因为我们不想排队。如果带着 pending bit 往下走，在 B 处就会直接接入排队过程。一旦进入排队过程，我们会触碰第二条 cacheline（mcs lock），如果 pending owner 获取了锁，它会 clear pending 比特，这样我们就成为第一个等锁线程，也就不需要排队，变成 pending owner 线程。理论上 owner 释放锁和 pending owner 获取锁应该很快，但是当竞争比较激烈的时候，难免会出现长时间单 pending bit 被设定的情况，因此这里也不适合死等，我们设置 _Q_PENDING_LOOPS 等于 1，即重读一次就 OK 了。</p>
+<p>B、如果有其他的线程已经自旋等待该 spinlock（pending 域被设置为 1）或者挂入 MCS 队列（设置了 tail 域），那么当前线程需要挂入 MCS 等待队列。否则说明该线程是第一个等待持锁的，那么不需要排队，只要 pending 在自旋锁上就 OK 了。</p>
+<h3 id="3pending-owner-task" tabindex="-1">3、Pending owner task <a class="header-anchor" href="#3pending-owner-task"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>我们先看看 pending owner 怎么自旋等待 spinlock：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>val = queued_fetch_set_pending_acquire(lock);---------A
+
+<span class="hljs-title function_">if</span> <span class="hljs-params">(unlikely(val &amp; ~_Q_LOCKED_MASK))</span> {------------B
+    <span class="hljs-title function_">if</span> <span class="hljs-params">(!(val &amp; _Q_PENDING_MASK))</span>
+        <span class="hljs-title function_">clear_pending</span><span class="hljs-params">(lock)</span>;
+    <span class="hljs-keyword">goto</span> <span class="hljs-built_in">queue</span>;
+}
+</code></pre></div></code></pre>
+<p>A、执行至此 tail+pending 都是 0，看起来我们应该是第一个 pending 线程，通过 queued_fetch_set_pending_acquire 函数读取了 spinlock 的旧值，同时设置 pending 比特标记状态。</p>
+<p>B、在设置 pending 标记位之后，我们需要再次检查一下我们这里设置 pending 比特的时候，其他的竞争者是否也修改了 pending 或者 tail 域。如果其他线程已经抢先修改，那么本线程不能再 pending 在自旋锁上了，而是需要回退 pending 设置（如果需要的话），并且挂入自旋等待队列。如果没有其他线程插入，那么当前线程可以开始自旋在 spinlock 上，等待 owner 释放锁了（我们称这种状态的线程被称为 pending owner）</p>
+<h3 id="4pending-owner-持锁" tabindex="-1">4、Pending owner 持锁 <a class="header-anchor" href="#4pending-owner-持锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>我们一起来看看 pending owner 如何持锁：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (val &amp; _Q_LOCKED_MASK)
+    atomic_cond_read_acquire(&amp;lock-&gt;val,
+        !(VAL &amp; _Q_LOCKED_MASK));---------A，spinlock自旋
+
+clear_pending_set_locked(lock);----------B
+<span class="hljs-keyword">return</span>;
+</code></pre></div></code></pre>
+<p>A、至此，我们已经成为合法的 pending owner，距离获取 spinlock 仅一步之遥，属于是一人之下，万人之上（对比 pending 在 mcs lock 的线程而言）。pending owner 通过 atomic_cond_read_acquire 函数自旋在 spinlock 的 locked 域，直到 owner 释放 spinlock。这里自旋并不是轮询，而是通过 WFE 指令让 CPU 停下来，降低功耗。当 owner 释放 spinlock 的时候会发送事件唤醒该 CPU。</p>
+<p>B、发现 owner 已经释放了锁，那么 pending owner 解除自旋状态继续前行。清除 pending 标记，同时设定 locked 标记，持锁成功，进入临界区。以上的代码就是 pending owner 自旋等待进入临界区的代码。</p>
+<h3 id="5入队操作" tabindex="-1">5、入队操作 <a class="header-anchor" href="#5入队操作"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>下面我们再一起看看需要排队的情况：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>node = this_cpu_ptr(&amp;qnodes[<span class="hljs-number">0</span>].mcs);--------A
+idx = node-&gt;count++;------B
+tail = encode_tail(smp_processor_id(), idx);-------C
+node = grab_mcs_node(node, idx);-------D
+</code></pre></div></code></pre>
+<p>当不能 pending 在 spinlock 的时候，当前执行线索需要挂入 MCS 队列。如果不是队首，那么线程会自旋在自己的 mcs lock 上，如果在队首的位置，那么线程需要自旋在 spinlock 上。和 pending owner 不同的是，队首的线程是针对 pending+locked 两个域进行自旋。</p>
+<p>首先要进行入队前的准备工作：一是要找到对应的 mcs node，其次要准备好 tail 域要设置的值。</p>
+<p>A、获取 mcs node 的基地址</p>
+<p>B、由于 spin_lock 可能会嵌套（在不同的自旋锁上嵌套，如果同一个那么就是死锁了）因此我们构建了多个 mcs node，每次递进一层。顺便一提的是：当 index 大于阀值的时候，我们会取消 qspinlock 机制，恢复原始自旋机制。</p>
+<p>C、将 context index 和 cpu id 组合成 tail</p>
+<p>D、根据 mcs node 基地址和 index 找到对应的 mcs node</p>
+<p>找到 mcs node 之后，我们需要挂入队列，代码如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>node-&gt;locked = <span class="hljs-number">0</span>;--------------------A
+node-&gt;next = <span class="hljs-literal">NULL</span>;
+
+<span class="hljs-keyword">if</span> (queued_spin_trylock(lock))-------B
+    <span class="hljs-keyword">goto</span> release;
+
+old = xchg_tail(lock, tail);----------------C
+next = <span class="hljs-literal">NULL</span>;
+</code></pre></div></code></pre>
+<p>A、初始化 MCS lock 为未持锁状态（指 mcs 锁，注意和 spinlock 区分开），考虑到我们是尾部节点，next 设置为 NULL。</p>
+<p>B、试图获取锁，很可能在上面的过程中，pending thread 和 owner thread 都已经离开了临界区，这时候如果持锁成功，那么就可以长驱直入，进入临界区，无需排队。</p>
+<p>C、当然，大部分场合下我们还是要入队。这里修改 qspinlock 的 tail 域，old 保存了旧值。如果这是队列中的第一个节点，那么至此就结束了，如果之前 tail 域就有值，那么说明有队列中有其他 waiter，需要把队列串联起来当前节点才真正挂入队列。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (old &amp; _Q_TAIL_MASK) {-----------A
+    prev = decode_tail(old);
+    WRITE_ONCE(prev-&gt;next, node);----------B
+
+    <span class="hljs-title function_">arch_mcs_spin_lock_contended</span><span class="hljs-params">(&amp;node-&gt;locked)</span>;-----C，MCS锁自旋状态
+
+    next = READ_ONCE(node-&gt;next);---------D
+    <span class="hljs-title function_">if</span> <span class="hljs-params">(next)</span>
+        <span class="hljs-title function_">prefetchw</span><span class="hljs-params">(next)</span>;
+}
+</code></pre></div></code></pre>
+<p>A、如果在本节点挂入队列之前，等待队列中已经有了 waiter，那么我们需要把 tail 指向的尾部节点和旧的 MCS 队列串联起来。</p>
+<p>B、建立新 node 和旧的等待队列的关系。</p>
+<p>C、至此，我们已经是处于 mcs queue 的队列尾部，自旋在自己的 mcs lock 上，等待 locked 状态（是 mcs lock，不是 spinlock 的）变成 1。</p>
+<p>D、执行至此，我们已经获得了 MCS lock，也就是说我们成为了队首。在我们自旋等待的时候，可能其他的竞争者也加入到链表了，next 不再是 null 了（即我们不再是队尾了）。因此这里需要更新 next 变量，以便我们把 mcs 锁禅让给下一个 node。</p>
+<h3 id="6持锁成功" tabindex="-1">6、持锁成功 <a class="header-anchor" href="#6持锁成功"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>由于本线程已经成为队首，获取了入主中原的机会，那么需要进入新的 spinlock 自旋状态：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>val = atomic_cond_read_acquire(&amp;lock-&gt;val,
+       !(VAL &amp; _Q_LOCKED_PENDING_MASK));---A，spinlock自旋状态
+
+locked:
+<span class="hljs-keyword">if</span> ((val &amp; _Q_TAIL_MASK) == tail) {
+    <span class="hljs-keyword">if</span> (atomic_try_cmpxchg_relaxed(&amp;lock-&gt;val, &amp;val, _Q_LOCKED_VAL))
+        <span class="hljs-keyword">goto</span> release; <span class="hljs-comment">/* No contention */</span>------B
+}
+</code></pre></div></code></pre>
+<p>A、在获取了 MCS lock 之后（排到了 mcs node queue 的头部），我们获准了在 spinlock 上自旋。这里等待 pending 和 owner 离开临界区。</p>
+<p>B、至此，我们获取了 spinlock，成为万人敬仰的&quot;owner task&quot;，在进入临界区之前，我们需要把 mcs 锁传给下一个节点。如果本 mcs node 是队列中的最后一个节点，我们不需要处理 mcs lock 传递，直接试图持锁，如果成功，完成持锁，进入临界区。如果 mcs node 队列中仍然有节点，那么逻辑要更复杂一些，代码如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>set_locked(lock);---------------A
+
+<span class="hljs-title function_">if</span> <span class="hljs-params">(!next)</span>
+    next = smp_cond_load_relaxed(&amp;node-&gt;next, (VAL));-----B
+
+<span class="hljs-title function_">arch_mcs_spin_unlock_contended</span><span class="hljs-params">(&amp;next-&gt;locked)</span>;-----------C
+
+release:
+__this_cpu_dec(qnodes[<span class="hljs-number">0</span>].mcs.count);
+</code></pre></div></code></pre>
+<p>A、如果本 mcs node 不是队列尾部，那么不需要考虑竞争，直接持 spinlock</p>
+<p>B、如果 next 为空，说明不存在下一个节点。不过也许在我们等自旋锁的时候，新的节点又挂入了，所以这里重新读一下 next 节点。</p>
+<p>C、把 mcs lock 传递给下一个节点，让其自旋在 spinlock 上。</p>
+<h3 id="7释放-qspinlock" tabindex="-1">7、释放 qspinlock <a class="header-anchor" href="#7释放-qspinlock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>释放 spinlock 的代码是 queued_spin_unlock 函数，非常的简单，就是把 qspinlock 的 locked 域设置为 0。</p>
+<h2 id="五小结" tabindex="-1">五、小结 <a class="header-anchor" href="#五小结"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>本文简单地介绍了 linux 内核中的自旋锁同步机制，在移动环境的激烈竞争场景中，自旋锁的性能表现不尽如人意，无论是吞吐量还是延迟。产生这个问题的主要原因有两个：一是内核中自旋锁的设计基本上是仅考虑 SMP 硬件平台，在目前异构的手机平台上表现不佳。二是由于内核自旋锁是基于公平的原则来设计，而手机场景中从来不是追求公平的，它看中的是响应延迟。目前 OPPO 内核团队正在进行内核自旋锁的优化课题，我们也欢迎对此有兴趣的小伙伴加入我们，一起感受这份优化内核带来的快乐。</p>
+<h2 id="参考文献" tabindex="-1">参考文献 <a class="header-anchor" href="#参考文献"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>1、内核源代码</p>
+<p>2、linux-5.10.61\Documentation\scheduler*</p>
+<p>本文首发在&quot;内核工匠&quot;微信公众号，欢迎扫描以下二维码关注公众号获取最新 Linux 技术分享：</p>
+<blockquote>
+<p>注：原文此处配有一幅&quot;内核工匠&quot;微信公众号二维码图片，在网页抓取过程中丢失。</p>
+</blockquote>
+<h2 id="修正记录" tabindex="-1">修正记录 <a class="header-anchor" href="#修正记录"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>1、7 月 14 日，对 qspinlock 的实现进行了补充，修正。</p>
+
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="本页目录">
+                <div class="toc-title">本页目录</div>
+                <nav class="toc-list">
+                  
+                  <a class="toc-item toc-lv2" href="#前言" data-toc-target="前言">前言</a>
+                  
+                  <a class="toc-item toc-lv2" href="#一简介" data-toc-target="一简介">一、简介</a>
+                  
+                  <a class="toc-item toc-lv3" href="#1代码结构" data-toc-target="1代码结构">1、代码结构</a>
+                  
+                  <a class="toc-item toc-lv3" href="#2接口-api" data-toc-target="2接口-api">2、接口 API</a>
+                  
+                  <a class="toc-item toc-lv3" href="#3自旋锁的演进" data-toc-target="3自旋锁的演进">3、自旋锁的演进</a>
+                  
+                  <a class="toc-item toc-lv2" href="#二qspinlock-的数据结构" data-toc-target="二qspinlock-的数据结构">二、Qspinlock 的数据结构</a>
+                  
+                  <a class="toc-item toc-lv3" href="#1qspinlock" data-toc-target="1qspinlock">1、Qspinlock</a>
+                  
+                  <a class="toc-item toc-lv3" href="#2mcs-lock" data-toc-target="2mcs-lock">2、MCS lock</a>
+                  
+                  <a class="toc-item toc-lv2" href="#三qspinlock-的原理" data-toc-target="三qspinlock-的原理">三、Qspinlock 的原理</a>
+                  
+                  <a class="toc-item toc-lv3" href="#1qspinlock-状态说明" data-toc-target="1qspinlock-状态说明">1、Qspinlock 状态说明</a>
+                  
+                  <a class="toc-item toc-lv3" href="#2qspinlock-中的状态迁移" data-toc-target="2qspinlock-中的状态迁移">2、Qspinlock 中的状态迁移</a>
+                  
+                  <a class="toc-item toc-lv2" href="#四qspinlock-的实现" data-toc-target="四qspinlock-的实现">四、Qspinlock 的实现</a>
+                  
+                  <a class="toc-item toc-lv3" href="#1获取-qspinlock" data-toc-target="1获取-qspinlock">1、获取 qspinlock</a>
+                  
+                  <a class="toc-item toc-lv3" href="#2pending-到-locked-的中间状态" data-toc-target="2pending-到-locked-的中间状态">2、Pending 到 locked 的中间状态</a>
+                  
+                  <a class="toc-item toc-lv3" href="#3pending-owner-task" data-toc-target="3pending-owner-task">3、Pending owner task</a>
+                  
+                  <a class="toc-item toc-lv3" href="#4pending-owner-持锁" data-toc-target="4pending-owner-持锁">4、Pending owner 持锁</a>
+                  
+                  <a class="toc-item toc-lv3" href="#5入队操作" data-toc-target="5入队操作">5、入队操作</a>
+                  
+                  <a class="toc-item toc-lv3" href="#6持锁成功" data-toc-target="6持锁成功">6、持锁成功</a>
+                  
+                  <a class="toc-item toc-lv3" href="#7释放-qspinlock" data-toc-target="7释放-qspinlock">7、释放 qspinlock</a>
+                  
+                  <a class="toc-item toc-lv2" href="#五小结" data-toc-target="五小结">五、小结</a>
+                  
+                  <a class="toc-item toc-lv2" href="#参考文献" data-toc-target="参考文献">参考文献</a>
+                  
+                  <a class="toc-item toc-lv2" href="#修正记录" data-toc-target="修正记录">修正记录</a>
+                  
+                </nav>
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1997 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1997 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+</body>
+</html>

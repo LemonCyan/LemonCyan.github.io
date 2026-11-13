@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Linux 网络协议栈之内核锁（九）—— RCU锁机制 - 知秋一叶 - CSDN博客 · LemonCyan</title>
+
+<link rel="icon" href="/img/favicon.ico">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#2196f3" title="平台系统">平台系统</a>
+        
+        <a href="/B.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" class="topnav-item" style="--dot:#3f51b5" title="编程语言">编程语言</a>
+        
+        <a href="/C.%E5%BC%80%E5%8F%91%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#009688" title="开发框架">开发框架</a>
+        
+        <a href="/D.%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#00bcd4" title="通讯协议">通讯协议</a>
+        
+        <a href="/E.%E5%B5%8C%E5%85%A5%E5%BC%8F%E5%BC%80%E5%8F%91/" class="topnav-item" style="--dot:#8bc34a" title="嵌入式开发">嵌入式开发</a>
+        
+        <a href="/F.%E4%B8%93%E4%B8%9A%E7%9F%A5%E8%AF%86/" class="topnav-item" style="--dot:#ffc107" title="专业知识">专业知识</a>
+        
+        <a href="/G.%E6%8A%95%E8%B5%84/" class="topnav-item" style="--dot:#ff9800" title="投资">投资</a>
+        
+        <a href="/H.AI%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%8C%96/" class="topnav-item" style="--dot:#9c27b0" title="AI 与自动化">AI 与自动化</a>
+        
+        <a href="/I.%E4%B8%AA%E4%BA%BA%E7%94%9F%E6%B4%BB/" class="topnav-item" style="--dot:#e91e63" title="个人生活">个人生活</a>
+        
+        <a href="/J.%E8%81%8C%E4%B8%9A%E4%B8%8E%E6%88%90%E9%95%BF/" class="topnav-item" style="--dot:#795548" title="职业与成长">职业与成长</a>
+        
+        <a href="/K.%E9%9A%8F%E7%AC%94%E4%B8%8E%E6%9D%82%E8%AE%B0/" class="topnav-item" style="--dot:#607d8b" title="随笔与杂记">随笔与杂记</a>
+        
+        <a href="/L.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E8%AE%BE%E8%AE%A1/" class="topnav-item" style="--dot:#f44336" title="项目与设计">项目与设计</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">Linux 网络协议栈之内核锁（九）—— RCU锁机制 - 知秋一叶 - CSDN博客</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/D.通讯协议/网络/Linux-网络协议栈之内核锁（九）——-RCU锁机制-知秋一叶-CSDN博客/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">Linux 网络协议栈之内核锁（九）—— RCU锁机制 - 知秋一叶 - CSDN博客</span>
+                <div class="reader-content">
+                  <h1 id="linux-网络协议栈之内核锁九-rcu锁机制" tabindex="-1">Linux 网络协议栈之内核锁（九）—— RCU锁机制 <a class="header-anchor" href="#linux-网络协议栈之内核锁九-rcu锁机制"><span data-pagefind-ignore aria-hidden="true">#</span></a></h1>
+<p>一、 引言</p>
+<p>众所周知，为了保护共享数据,需要一些同步机制,如自旋锁(spinlock)，读写锁(rwlock)，它们使用起
+来非常简单,而且是一种很有效的同步机制，在UNIX系统和Linux系统中得到了广泛的使用。但是随着
+计算机硬件的快速发展，获得这种锁的开销相对于CPU的速度在成倍地增加，原因很简单，CPU的速
+度与访问内存的速度差距越来越大，而这种锁使用了原子操作指令，它需要原子地访问内存，也就说
+获得锁的开销与访存速度相关，另外在大部分非x86架构上获取锁使用了内存栅(Memory Barrier)，这
+会导致处理器流水线停滞或刷新，因此它的开销相对于CPU速度而言就越来越大。表1数据证明了这一
+点。</p>
+<p>表1是在700MHz的奔腾III机器上的基本操作的开销，在该机器上一个时钟周期能够执行两条整数指
+令。在1.8GHz的奔腾4机器上, 原子加1指令的开销要比700MHz的奔腾III机器慢75纳秒(ns)，尽管
+CPU速度快两倍多。</p>
+<p>这种锁机制的另一个问题在于其可扩展性，在多处理器系统上，可扩展性非常重要，否则根本无法发
+挥其性能。图1表明了Linux上各种锁的扩展性。</p>
+<p>图 1 Linux的4种锁机制的扩展性</p>
+<p>图 1 Linux的4种锁机制的扩展性</p>
+<p>注：refcnt表示自旋锁与引用记数一起使用。</p>
+<p>读写锁rwlock在两个CPU的情况下性能反倒比一个CPU的差，在四个CPU的情况下，refcnt的性能要
+高于rwlock，refcnt大 约是理论性能的45%，而rwlock是理论性能的39%,自旋缩spinlock的性能明显
+好于refcnt和rwlock，但它也只达到了理性性能的 57%，brlock（Big Reader Lock）性能可以线性
+扩展。Brlock是由Redhat的Ingo Molnar实现的一个高性能的rwlock，它适用于读特多而写特少的情
+况，读者获得brlock的开销很低，但写者获得锁的开销非常大，而且它只预定 义了几个锁，用户无法
+随便定义并使用这种锁，它也需要为每个CPU定义一个锁状态数组，因此这种锁并没有被作为rwlock
+的替代方案广泛使用，只是在一 些特别的地方使用到。</p>
+<p>正是在这种背景下，一个高性能的锁机制RCU呼之欲出，它克服了以上锁的缺点，具有很好的扩展
+性，但是这种锁机制的使用范围比较窄，它只适用于读多写少的情况，如网络路由表的查询更新、设
+备状态表的维护、数据结构的延迟释放以及多径I/O设备的维护等。</p>
+<p>RCU并不是新的锁机制，它只是对Linux内核而言是新的。早在二十世纪八十年代就有了这种机制，而
+且在生产系</p>
+<p>统中使用了这种机制，但这种早期的实现并不太好，在二十世纪九十年代出现了一个比较高效的实
+现，而在linux中是在开发内核2.5.43中引入该技术的并正式包含在2.6内核中。</p>
+<p>二、RCU的原理</p>
+<p>RCU(Read-Copy Update)，顾名思义就是读-拷贝修改，它是基于其原理命名的。对于被RCU保护
+的共享数据结构，读者不需要获得任何锁就可以访问它，但写者在访问它 时首先拷贝一个副本，然后
+对副本进行修改，最后使用一个回调（callback）机制在适当的时机把指向原来数据的指针重新指向新
+的被修改的数据。这个时机就是所有引用该数据的CPU都退出对共享数据的操作。</p>
+<p>因此RCU实际上是一种改进的rwlock，读者几乎没有什么同步开销，它不需要锁，不使用原子指令，
+而且在除alpha的所有架构上也不需要内存栅（Memory Barrier），因此不会导致锁竞争，内存延迟
+以及流水线停滞。不需要锁也使得使用更容易，因为死锁问题就不需要考虑了。写者的同步开销比较
+大，它需要延迟数据结构的释放，复制被修改的数据结构，它也必须使用某种锁机制同步并行的其它
+写者的修改操作。读者必须提供一个信号给写者以便写者能够确定数据可以 被安全地释放或修改的时
+机。有一个专门的垃圾收集器来探测读者的信号，一旦所有的读者都已经发送信号告知它们都不在使
+用被RCU保护的数据结构，垃圾收集器就调用回调函数完成最后的数据释放或修改操作。 RCU与
+rwlock的不同之处是：它既允许多个读者同时访问被保护的数据，又允许多个读者和多个写者同时访
+问被保护的数据（注意：是否可以有多个写者并行访问取决于写者之间使用的同步机制），读者没有</p>
+<p>任何同步开销，而写者的同步开销则取决于使用的写者间同步机制。但RCU不能替代rwlock，因为如
+果写比较多时，对读者的性能提高不能弥补写者导致的损失。</p>
+<p>读者在访问被RCU保护的共享数据期间不能被阻塞，这是RCU机制得以实现的一个基本前提，也就说
+当读者在引用被RCU保护的共享数据期间，读者所 在的CPU不能发生上下文切换，spinlock和
+rwlock都需要这样的前提。写者在访问被RCU保护的共享数据时不需要和读者竞争任何锁，只有在有
+多于一个写者的情况下需要获得某种锁以与其他写者同步。写者修改数据前首先拷贝一个被修改元素
+的副本，然后在副本上进行修改，修改完毕后它向垃圾回收器注 册一个回调函数以便在适当的时机执
+行真正的修改操作。等待适当时机的这一时期称为grace period，而CPU发生了上下文切换称为经历
+一个quiescent state，grace period就是所有CPU都经历一次quiescent state所需要的等待的时间。
+垃圾收集器就是在grace period之后调用写者注册的回调函数来完成真正的数据修改或数据释放操作
+的。</p>
+<p>以下以链表元素删除为例详细说明这一过程。</p>
+<p>写者要从链表中删除元素 B，它首先遍历该链表得到指向元素 B 的指针，然后修改元素 B 的前一个
+元素的 next 指针指向元素 B 的 next 指针指向的元素C，修改元素 B 的 next 指针指向的元素 C 的
+prep 指针指向元素 B 的 prep指针指向的元素 A,在这期间可能有读者访问该链表，修改指针指向的操
+作是原子的，所以不需要同步，而元素 B 的指针并没有去修改，因为读者可能正在使用 B 元素来得到
+下一个或前一个元素。写者完成这些操作后注册一个回调函数以便在 grace period 之后删除元素 B，
+然后就认为已经完成删除操作。垃圾收集器在检测到所有的CPU不在引用该链表后，即所有的 CPU 已
+经经历了 quiescent state,grace period 已经过去后，就调用刚才写者注册的回调函数删除了元素
+B。</p>
+<p>图 2 使用 RCU 进行链表删除操作</p>
+<p>图 2 使用 RCU 进行链表删除操作</p>
+<p>三、RCU 实现机制</p>
+<p>按照第二节所讲原理，对于读者，RCU仅需要抢占失效，因此获得读锁和释放读锁分别定义为：</p>
+<p>#define rcu_read_lock() preempt_disable()</p>
+<p>#define rcu_read_unlock() preempt_enable()</p>
+<p>它们有一个变种：</p>
+<p>#define rcu_read_lock_bh() local_bh_disable()</p>
+<p>#define rcu_read_unlock_bh() local_bh_enable()</p>
+<p>这个变种只在修改是通过 call_rcu_bh 进行的情况下使用，因为 call_rcu_bh将把 softirq 的执行完毕
+也认为是一个 quiescent state，因此如果修改是通过 call_rcu_bh 进行的，在进程上下文的读端临界
+区必须使用这一变种。</p>
+<p>每一个 CPU 维护两个数据结构rcu_data,rcu_bh_data，它们用于保存回调函数，函数call_rcu和函数
+call_rcu_bh用户注册回调函 数，前者把回调函数注册到rcu_data，而后者则把回调函数注册到
+rcu_bh_data，在每一个数据结构上，回调函数被组成一个链表，先注册的排 在前头，后注册的排在
+末尾。</p>
+<p>当在CPU上发生进程切换时，函数rcu_qsctr_inc将被调用以标记该CPU已经经历了一个quiescent
+state。该函数也会被时钟中断触发调用。</p>
+<p>时钟中断触发垃圾收集器运行，它会检查：
+如果以上四个条件只要有一个满足，它就调用函数rcu_check_callbacks。</p>
+<p>是否在该CPU上有需要处理的回调函数并且已经经过一个grace period；
+是否没有需要处理的回调函数但有注册的回调函数；
+是否该CPU已经完成回调函数的处理；
+是否该CPU正在等待一个quiescent state的到来；
+1.
+2.
+3.
+4.</p>
+<p>函数rcu_check_callbacks首先检查该CPU是否经历了一个quiescent state，如果：</p>
+<p>1． 当前进程运行在用户态；</p>
+<p>2． 当前进程为idle且当前不处在运行softirq状态，也不处在运行IRQ处理函数的状态；</p>
+<p>那么，该CPU已经经历了一个quiescent state，因此通过调用函数rcu_qsctr_inc标记该CPU的数据
+结构rcu_data和rcu_bh_data的标记字段 passed_quiesc，以记录该CPU已经经历一个quiescent
+state。</p>
+<p>否则，如果当前不处在运行softirq状态，那么，只标记该CPU的数据结构rcu_bh_data的标记字段
+passed_quiesc，以记录该CPU已经经历一个quiescent state。注意，该标记只对rcu_bh_data有效。</p>
+<p>然后，函数rcu_check_callbacks将调用tasklet_schedule，它将调度为该CPU设置的tasklet
+rcu_tasklet，每一个CPU都有一个对应的rcu_tasklet。</p>
+<p>在时钟中断返回后，rcu_tasklet将在softirq上下文被运行。</p>
+<p>rcu_tasklet将运行函数rcu_process_callbacks，函数rcu_process_callbacks可能做以下事情：</p>
+<p>1． 开始一个新的grace period；这通过调用函数rcu_start_batch实现。</p>
+<p>2． 运行需要处理的回调函数；这通过调用函数rcu_do_batch实现。</p>
+<p>3． 检查该CPU是否经历一个quiescent state；这通过函数rcu_check_quiescent_state实现</p>
+<p>如果还没有开始grace period，就调用rcu_start_batch开始新的grace period。调用函数
+rcu_check_quiescent_state检查该CPU是否经历了一个quiescent state,如果是并且是最后一个经历
+quiescent state的CPU，那么就结束grace period，并开始新的grace period。如果有完成的grace
+period，那么就调用rcu_do_batch运行所有需要处理的回调函数。函数rcu_process_callbacks将对该
+CPU的两个数据 结构rcu_data和rcu_bh_data执行上述操作。</p>
+<p>四、RCU API</p>
+<p>rcu_read_lock()</p>
+<p>读者在读取由RCU保护的共享数据时使用该函数标记它进入读端临界区。</p>
+<p>rcu_read_unlock()</p>
+<p>该函数与rcu_read_lock配对使用，用以标记读者退出读端临界区。夹在这两个函数之间的代码区称
+为&quot;读端临界区&quot;(read-side critical section)。读端临界区可以嵌套，如图3，临界区2被嵌套在临界区
+1内。</p>
+<p>图 3 嵌套读端临界区示例
+回页首</p>
+<p>图 3 嵌套读端临界区示例</p>
+<p>synchronize_rcu()</p>
+<p>该函数由RCU写端调用，它将阻塞写者，直到经过grace period后，即所有的读者已经完成读端临界
+区，写者才可以继续下一步操作。如果有多个RCU写端调用该函数，他们将在一个grace period之后
+全部被唤醒。注意，该函数在2.6.11及以前的2.6内核版本中为synchronize_kernel，只是在2.6.12才
+更名为 synchronize_rcu,但在2.6.12中也提供了synchronize_kernel和一个新的函数
+synchronize_sched， 因为以前有很多内核开发者使用synchronize_kernel用于等待所有CPU都退出
+不可抢占区，而在RCU设计时该函数只是用于等待所有CPU 都退出读端临界区，它可能会随着RCU实
+现的修改而发生语意变化，因此为了预先防止这种情况发生，在新的修改中增加了专门的用于其它内
+核用户的 synchronize_sched函数和只用于RCU使用的synchronize_rcu，现在建议非RCU内核代码
+部分不使用 synchronize_kernel而使用synchronize_sched，RCU代码部分则使用
+synchronize_rcu， synchronize_kernel之所以存在是为了保证代码兼容性。</p>
+<p>synchronize_kernel()</p>
+<p>其他非RCU的内核代码使用该函数来等待所有CPU处在可抢占状态，目前功能等同于
+synchronize_rcu，但现在已经不建议使用，而使用synchronize_sched。</p>
+<p>synchronize_sched()</p>
+<p>该函数用于等待所有CPU都处在可抢占状态，它能保证正在运行的中断处理函数处理完毕，但不能保
+证正在运行的softirq处理完毕。注意，synchronize_rcu只保证所有CPU都处理完正在运行的读端临界
+区。 注：在2.6.12内核中，synchronize_kernel和synchronize_sched都实际使用synchronize_rcu，
+因此当前它们的功能实际是完全等同的，但是将来将可能有大的变化，因此务必根据需求选择恰当的
+函数。</p>
+<p>函数 call_rcu 也由 RCU 写端调用，它不会使写者阻塞，因而可以在中断上下文或 softirq 使用，而
+synchronize_rcu、synchronize_kernel 和synchronize_shced 只能在进程上下文使用。该函数将把
+函数 func 挂接到 RCU回调函数链上，然后立即返回。一旦所有的 CPU 都已经完成端临界区操作，该
+函数将被调用来释放删除的将绝不在被应用的数据。参数 head 用于记录回调函数 func，一般该结构
+void fastcall call_rcu(struct rcu_head *head,
+void (*func)(struct rcu_head *rcu))
+struct rcu_head {
+struct rcu_head *next;
+void (*func)(struct rcu_head *head);
+};</p>
+<p>会作为被 RCU 保护的数据结构的一个字段，以便省去单独为该结构分配内存的操作。需要指出的是，
+函数 synchronize_rcu 的实现实际上使用函数call_rcu。</p>
+<p>函数call_ruc_bh功能几乎与call_rcu完全相同，唯一差别就是它把softirq的完成也当作经历一个
+quiescent state，因此如果写端使用了该函数，在进程上下文的读端必须使用rcu_read_lock_bh。</p>
+<p>该宏用于在RCU读端临界区获得一个RCU保护的指针，该指针可以在以后安全地引用，内存栅只在
+alpha架构上才使用。</p>
+<p>除了这些API，RCU还增加了链表操作的RCU版本，因为对于RCU，对共享数据的操作必须保证能够
+被没有使用同步机制的读者看到，所以内存栅是非常必要的。</p>
+<p>static inline void list_add_rcu(struct list_head *new, struct list_head *head)</p>
+<p>该函数把链表项new插入到RCU保护的链表head的开头。使用内存栅保证了在引用这个新插入的链表
+项之前，新链表项的链接指针的修改对所有读者是可见的。</p>
+<p>该函数类似于list_add_rcu，它将把新的链表项new添加到被RCU保护的链表的末尾。</p>
+<p>该函数从RCU保护的链表中移走指定的链表项entry，并且把entry的prev指针设置为
+LIST_POISON2，但是并没有把entry的next指针设置为LIST_POISON1，因为该指针可能仍然在被读
+者用于便利该链表。</p>
+<p>void fastcall call_rcu_bh(struct rcu_head *head,
+void (*func)(struct rcu_head *rcu))
+#define rcu_dereference(p)     ({ <br>
+typeof(p) _________p1 = p; <br>
+smp_read_barrier_depends(); <br>
+(_________p1); <br>
+})
+static inline void list_add_tail_rcu(struct list_head *new,
+struct list_head *head)
+static inline void list_del_rcu(struct list_head *entry)
+static inline void list_replace_rcu(struct list_head *old, struct list_head *new)</p>
+<p>该函数是RCU新添加的函数，并不存在非RCU版本。它使用新的链表项new取代旧的链表项old，内存
+栅保证在引用新的链表项之前，它的链接指针的修正对所有读者可见。</p>
+<p>该宏用于遍历由RCU保护的链表head，只要在读端临界区使用该函数，它就可以安全地和其它_rcu链
+表操作函数（如list_add_rcu）并发运行。</p>
+<p>该宏类似于list_for_each_rcu，但不同之处在于它允许安全地删除当前链表项pos。</p>
+<p>该宏类似于list_for_each_rcu，不同之处在于它用于遍历指定类型的数据结构链表，当前链表项pos为
+一包含struct list_head结构的特定的数据结构。</p>
+<p>该宏用于在退出点之后继续遍历由RCU保护的链表head。</p>
+<p>它从由RCU保护的哈希链表中移走链表项n，并设置n的ppre指针为LIST_POISON2，但并没有设置
+next为LIST_POISON1,因为该指针可能被读者使用用于遍利链表。
+该函数用于把链表项n插入到被RCU保护的哈希链表的开头，但同时允许读者对该哈希链表的遍历。内
+存栅确保在引用新链表项之前，它的指针修正对所有读者可见。</p>
+<p>该宏用于遍历由RCU保护的哈希链表head，只要在读端临界区使用该函数，它就可以安全地和其它
+_rcu哈希链表操作函数（如hlist_add_rcu）并发运行。</p>
+<p>list_for_each_rcu(pos, head)
+list_for_each_safe_rcu(pos, n, head)
+list_for_each_entry_rcu(pos, head, member)
+list_for_each_continue_rcu(pos, head)
+static inline void hlist_del_rcu(struct hlist_node *n)
+static inline void hlist_add_head_rcu(struct hlist_node *n,
+struct hlist_head *h)
+hlist_for_each_rcu(pos, head)</p>
+<p>类似于hlist_for_each_rcu，不同之处在于它用于遍历指定类型的数据结构哈希链表，当前链表项pos
+为一包含struct list_head结构的特定的数据结构。</p>
+<p>五、RCU 典型应用</p>
+<p>下面部分将就 RCU 的几种典型应用情况详细讲解。</p>
+<p>1．只有增加和删除的链表操作</p>
+<p>在这种应用情况下，绝大部分是对链表的遍历，即读操作，而很少出现的写操作只有增加或删除链表
+项，并没有对链表项的修改操作，这种情况使用RCU非常容易，从rwlock转换成RCU非常自然。路由
+表的维护就是这种情况的典型应用，对路由表的操作，绝大部分是路由表查询，而对路由表的写操作
+也仅仅是增加或删除，因此使用RCU替换原来的rwlock顺理成章。系统调用审计也是这样的情况。</p>
+<p>这是一段使用rwlock的系统调用审计部分的读端代码：</p>
+<p>使用RCU后将变成：
+hlist_for_each_entry_rcu(tpos, pos, head, member)
+static enum audit_state audit_filter_task(struct task_struct *tsk)
+{
+struct audit_entry <em>e;
+enum audit_state   state;
+read_lock(&amp;auditsc_lock);
+/</em> Note: audit_netlink_sem held by caller. */
+list_for_each_entry(e, &amp;audit_tsklist, list) {
+if (audit_filter_rules(tsk, &amp;e-&gt;rule, NULL, &amp;state)) {
+read_unlock(&amp;auditsc_lock);
+return state;
+}
+}
+read_unlock(&amp;auditsc_lock);
+return AUDIT_BUILD_CONTEXT;
+}
+static enum audit_state audit_filter_task(struct task_struct *tsk)
+{
+struct audit_entry <em>e;
+enum audit_state   state;
+rcu_read_lock();
+/</em> Note: audit_netlink_sem held by caller. */
+list_for_each_entry_rcu(e, &amp;audit_tsklist, list) {
+if (audit_filter_rules(tsk, &amp;e-&gt;rule, NULL, &amp;state)) {</p>
+<p>这种转换非常直接，使用rcu_read_lock和rcu_read_unlock分别替换read_lock和read_unlock，链表
+遍历函数使用_rcu版本替换就可以了。</p>
+<p>使用rwlock的写端代码：</p>
+<p>使用RCU后写端代码变成为：
+rcu_read_unlock();
+return state;
+}
+}
+rcu_read_unlock();
+return AUDIT_BUILD_CONTEXT;
+}
+static inline int audit_del_rule(struct audit_rule *rule,
+struct list_head *list)
+{
+struct audit_entry  <em>e;
+write_lock(&amp;auditsc_lock);
+list_for_each_entry(e, list, list) {
+if (!audit_compare_rule(rule, &amp;e-&gt;rule)) {
+list_del(&amp;e-&gt;list);
+write_unlock(&amp;auditsc_lock);
+return 0;
+}
+}
+write_unlock(&amp;auditsc_lock);
+return -EFAULT;         /</em> No matching rule */
+}
+static inline int audit_add_rule(struct audit_entry *entry,
+struct list_head *list)
+{
+write_lock(&amp;auditsc_lock);
+if (entry-&gt;rule.flags &amp; AUDIT_PREPEND) {
+entry-&gt;rule.flags &amp;= ~AUDIT_PREPEND;
+list_add(&amp;entry-&gt;list, list);
+} else {
+list_add_tail(&amp;entry-&gt;list, list);
+}
+write_unlock(&amp;auditsc_lock);
+return 0;
+}
+static inline int audit_del_rule(struct audit_rule *rule,
+struct list_head *list)
+{
+struct audit_entry  *e;</p>
+<p>对于链表删除操作，list_del替换为list_del_rcu和call_rcu，这是因为被删除的链表项可能还在被别的
+读者引用，所以不能 立即删除，必须等到所有读者经历一个quiescent state才可以删除。另外，
+list_for_each_entry并没有被替换为list_for_each_entry_rcu，这是因为，只有一个写者在做链表删除
+操作，因此没有必要使用_rcu版本。</p>
+<p>通常情况下，write_lock和write_unlock应当分别替换成spin_lock和spin_unlock，但是对于只是
+对链表进行 增加和删除操作而且只有一个写者的写端，在使用了_rcu版本的链表操作API后，rwlock
+可以完全消除，不需要spinlock来同步读者的访问。 对于上面的例子，由于已经有
+audit_netlink_sem被调用者保持，所以spinlock就没有必要了。</p>
+<p>这种情况允许修改结果延后一定时间才可见，而且写者对链表仅仅做增加和删除操作，所以转换成使
+用RCU非常容易。</p>
+<p>2．写端需要对链表条目进行修改操作</p>
+<p>如果写者需要对链表条目进行修改，那么就需要首先拷贝要修改的条目，然后修改条目的拷贝，等修
+改完毕后，再使用条目拷贝取代要修改的条目，要修改条目将被在经历一个grace period后安全删
+除。</p>
+<pre><code>            /* Do not use the _rcu iterator here, since this is the only
+             * deletion routine. */
+            list_for_each_entry(e, list, list) {
+                    if (!audit_compare_rule(rule, &amp;e-&gt;rule)) {
+                            list_del_rcu(&amp;e-&gt;list);
+                            call_rcu(&amp;e-&gt;rcu, audit_free_rule, e);
+                            return 0;
+                    }
+            }
+            return -EFAULT;         /* No matching rule */
+    }
+    static inline int audit_add_rule(struct audit_entry *entry,
+                                     struct list_head *list)
+    {
+            if (entry-&gt;rule.flags &amp; AUDIT_PREPEND) {
+                    entry-&gt;rule.flags &amp;= ~AUDIT_PREPEND;
+                    list_add_rcu(&amp;entry-&gt;list, list);
+            } else {
+                    list_add_tail_rcu(&amp;entry-&gt;list, list);
+            }
+            return 0;
+    }
+</code></pre>
+<p>对于系统调用审计代码，并没有这种情况。这里假设有修改的情况，那么使用rwlock的修改代码应当
+如下：</p>
+<p>如果使用RCU，修改代码应当为；
+static inline int audit_upd_rule(struct audit_rule *rule,
+struct list_head *list,
+__u32 newaction,
+__u32 newfield_count)
+{
+struct audit_entry  *e;
+struct audit_newentry <em>ne;
+write_lock(&amp;auditsc_lock);
+/</em> Note: audit_netlink_sem held by caller. <em>/
+list_for_each_entry(e, list, list) {
+if (!audit_compare_rule(rule, &amp;e-&gt;rule)) {
+e-&gt;rule.action = newaction;
+e-&gt;rule.file_count = newfield_count;
+write_unlock(&amp;auditsc_lock);
+return 0;
+}
+}
+write_unlock(&amp;auditsc_lock);
+return -EFAULT;         /</em> No matching rule */
+}
+static inline int audit_upd_rule(struct audit_rule *rule,
+struct list_head *list,
+__u32 newaction,
+__u32 newfield_count)
+{
+struct audit_entry  *e;
+struct audit_newentry *ne;
+list_for_each_entry(e, list, list) {
+if (!audit_compare_rule(rule, &amp;e-&gt;rule)) {
+ne = kmalloc(sizeof(<em>entry), GFP_ATOMIC);
+if (ne == NULL)
+return -ENOMEM;
+audit_copy_rule(&amp;ne-&gt;rule, &amp;e-&gt;rule);
+ne-&gt;rule.action = newaction;
+ne-&gt;rule.file_count = newfield_count;
+list_replace_rcu(e, ne);
+call_rcu(&amp;e-&gt;rcu, audit_free_rule, e);
+return 0;
+}
+}
+return -EFAULT;         /</em> No matching rule */
+}</p>
+<p>3．修改操作立即可见</p>
+<p>前面两种情况，读者能够容忍修改可以在一段时间后看到，也就说读者在修改后某一时间段内，仍然
+看到的是原来的数据。在很多情况下，读者不能容忍看到 旧的数据，这种情况下，需要使用一些新措
+施，如System V IPC，它在每一个链表条目中增加了一个deleted字段，标记该字段是否删除，如果删
+除了，就设置为真，否则设置为假，当代码在遍历链表时，核对每一 个条目的deleted字段，如果为
+真，就认为它是不存在的。</p>
+<p>还是以系统调用审计代码为例，如果它不能容忍旧数据，那么，读端代码应该修改为：
+注意，对于这种情况，每一个链表条目都需要一个spinlock保护，因为删除操作将修改条目的deleted
+标志。此外，该函数如果搜索到条目，返回时应当保持该条目的锁，因为只有这样，才能看到新的修
+改的数据，否则，仍然可能看到就的数据。</p>
+<p>写端的删除操作将变成：
+static enum audit_state audit_filter_task(struct task_struct *tsk)
+{
+struct audit_entry *e;
+enum audit_state   state;
+rcu_read_lock();
+list_for_each_entry_rcu(e, &amp;audit_tsklist, list) {
+if (audit_filter_rules(tsk, &amp;e-&gt;rule, NULL, &amp;state)) {
+spin_lock(&amp;e-&gt;lock);
+if (e-&gt;deleted) {
+spin_unlock(&amp;e-&gt;lock);
+rcu_read_unlock();
+return AUDIT_BUILD_CONTEXT;
+}
+rcu_read_unlock();
+return state;
+}
+}
+rcu_read_unlock();
+return AUDIT_BUILD_CONTEXT;
+}
+static inline int audit_del_rule(struct audit_rule *rule,
+struct list_head *list)
+{
+struct audit_entry  <em>e;
+/</em> Do not use the _rcu iterator here, since this is the only
+* deletion routine. */
+list_for_each_entry(e, list, list) {</p>
+<p>删除条目时，需要标记该条目为已删除。这样读者就可以通过该标志立即得知条目是否已经删除。</p>
+<p>六、小结</p>
+<p>RCU是2.6内核引入的新的锁机制，在绝大部分为读而只有极少部分为写的情况下，它是非常高效
+的，因此在路由表维护、系统调用审计、 SELinux的AVC、dcache和IPC等代码部分中，使用它来取代
+rwlock来获得更高的性能。但是，它也有缺点，延后的删除或释放将占用一些内存，尤其是对嵌入式
+系统，这可能是非常昂贵的内存开销。此外，写者的开销比较大，尤其是对于那些无法容忍旧数据的
+情况以及不只一个写者的情况，写者需要 spinlock或其他的锁机制来与其他写者同步。</p>
+<pre><code>                    if (!audit_compare_rule(rule, &amp;e-&gt;rule)) {
+                            spin_lock(&amp;e-&gt;lock);
+                            list_del_rcu(&amp;e-&gt;list);
+                            e-&gt;deleted = 1;
+                            spin_unlock(&amp;e-&gt;lock);
+                            call_rcu(&amp;e-&gt;rcu, audit_free_rule, e);
+                            return 0;
+                    }
+            }
+            return -EFAULT;         /* No matching rule */
+    }
+</code></pre>
+
+                </div>
+              </main>
+
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1997 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1997 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+</body>
+</html>

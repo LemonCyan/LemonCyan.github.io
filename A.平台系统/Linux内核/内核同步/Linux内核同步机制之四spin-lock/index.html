@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Linux内核同步机制之四spin lock · LemonCyan</title>
+
+<link rel="icon" href="/img/favicon.ico">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#2196f3" title="平台系统">平台系统</a>
+        
+        <a href="/B.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" class="topnav-item" style="--dot:#3f51b5" title="编程语言">编程语言</a>
+        
+        <a href="/C.%E5%BC%80%E5%8F%91%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#009688" title="开发框架">开发框架</a>
+        
+        <a href="/D.%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#00bcd4" title="通讯协议">通讯协议</a>
+        
+        <a href="/E.%E5%B5%8C%E5%85%A5%E5%BC%8F%E5%BC%80%E5%8F%91/" class="topnav-item" style="--dot:#8bc34a" title="嵌入式开发">嵌入式开发</a>
+        
+        <a href="/F.%E4%B8%93%E4%B8%9A%E7%9F%A5%E8%AF%86/" class="topnav-item" style="--dot:#ffc107" title="专业知识">专业知识</a>
+        
+        <a href="/G.%E6%8A%95%E8%B5%84/" class="topnav-item" style="--dot:#ff9800" title="投资">投资</a>
+        
+        <a href="/H.AI%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%8C%96/" class="topnav-item" style="--dot:#9c27b0" title="AI 与自动化">AI 与自动化</a>
+        
+        <a href="/I.%E4%B8%AA%E4%BA%BA%E7%94%9F%E6%B4%BB/" class="topnav-item" style="--dot:#e91e63" title="个人生活">个人生活</a>
+        
+        <a href="/J.%E8%81%8C%E4%B8%9A%E4%B8%8E%E6%88%90%E9%95%BF/" class="topnav-item" style="--dot:#795548" title="职业与成长">职业与成长</a>
+        
+        <a href="/K.%E9%9A%8F%E7%AC%94%E4%B8%8E%E6%9D%82%E8%AE%B0/" class="topnav-item" style="--dot:#607d8b" title="随笔与杂记">随笔与杂记</a>
+        
+        <a href="/L.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E8%AE%BE%E8%AE%A1/" class="topnav-item" style="--dot:#f44336" title="项目与设计">项目与设计</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">Linux内核同步机制之四spin lock</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/A.平台系统/Linux内核/内核同步/Linux内核同步机制之四spin-lock/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">Linux内核同步机制之四spin lock</span>
+                <div class="reader-content">
+                  <h1 id="linux内核同步机制之四spin-lock" tabindex="-1">Linux内核同步机制之（四）：spin lock <a class="header-anchor" href="#linux内核同步机制之四spin-lock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h1>
+<h2 id="一前言" tabindex="-1">一、前言 <a class="header-anchor" href="#一前言"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>在 linux kernel 的实现中，经常会遇到这样的场景：共享数据被中断上下文和进程上下文访问，该如何保护呢？如果只有进程上下文的访问，那么可以考虑使用 semaphore 或者 mutex 的锁机制，但是现在中断上下文也参和进来，那些可以导致睡眠的 lock 就不能使用了，这时候，可以考虑使用 spin lock。本文主要介绍了 linux kernel 中的 spin lock 的原理以及代码实现。由于 spin lock 是 architecture dependent 代码，因此，我们在第四章讨论了 ARM32 和 ARM64 上的实现细节。</p>
+<blockquote>
+<p>注：本文需要进程和中断处理的基本知识作为支撑。</p>
+</blockquote>
+<h2 id="二工作原理" tabindex="-1">二、工作原理 <a class="header-anchor" href="#二工作原理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1spin-lock-的特点" tabindex="-1">1、spin lock 的特点 <a class="header-anchor" href="#1spin-lock-的特点"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>我们可以总结 spin lock 的特点如下：</p>
+<p>（1）spin lock 是一种死等的锁机制。当发生访问资源冲突的时候，可以有两个选择：一个是死等，一个是挂起当前进程，调度其他进程执行。spin lock 是一种死等的机制，当前的执行 thread 会不断地重新尝试直到获取锁进入临界区。</p>
+<p>（2）只允许一个 thread 进入。semaphore 可以允许多个 thread 进入，spin lock 不行，一次只能有一个 thread 获取锁并进入临界区，其他的 thread 都是在门口不断地尝试。</p>
+<p>（3）执行时间短。由于 spin lock 死等这种特性，因此它使用在那些代码不是非常复杂的临界区（当然也不能太简单，否则使用原子操作或者其他适用简单场景的同步机制就 OK 了），如果临界区执行时间太长，那么不断在临界区门口&quot;死等&quot;的那些 thread 是多么的浪费 CPU 啊（当然，现代 CPU 的设计都会考虑同步原语的实现，例如 ARM 提供了 WFE 和 SEV 这样的类似指令，避免 CPU 进入 busy loop 的悲惨境地）</p>
+<p>（4）可以在中断上下文执行。由于不睡眠，因此 spin lock 可以在中断上下文中适用。</p>
+<h3 id="2场景分析" tabindex="-1">2、场景分析 <a class="header-anchor" href="#2场景分析"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>对于 spin lock，其保护的资源可能来自多个 CPU CORE 上的进程上下文和中断上下文中的访问，其中，进程上下文包括：用户进程通过系统调用访问，内核线程直接访问，来自 workqueue 中 work function 的访问（本质上也是内核线程）。中断上下文包括：HW interrupt context（中断 handler）、软中断上下文（soft irq，当然由于各种原因，该 softirq 被推迟到 softirqd 的内核线程中执行的时候就不属于这个场景了，属于进程上下文那个分类了）、timer 的 callback 函数（本质上也是 softirq）、tasklet（本质上也是 softirq）。</p>
+<p>先看最简单的单 CPU 上的进程上下文的访问。如果一个全局的资源被多个进程上下文访问，这时候，内核如何交错执行呢？对于那些没有打开 preemptive 选项的内核，所有的系统调用都是串行化执行的，因此不存在资源争抢的问题。如果内核线程也访问这个全局资源呢？本质上内核线程也是进程，类似普通进程，只不过普通进程时而在用户态运行、时而通过系统调用陷入内核执行，而内核线程永远都是在内核态运行，但是，结果是一样的，对于 non-preemptive 的 linux kernel，只要在内核态，就不会发生进程调度，因此，这种场景下，共享数据根本不需要保护（没有并发，谈何保护呢）。如果时间停留在这里该多么好，单纯而美好，在继续前进之前，让我们先享受这一刻。</p>
+<p>当打开 preemptive 选项后，事情变得复杂了，我们考虑下面的场景：</p>
+<p>（1）进程 A 在某个系统调用过程中访问了共享资源 R</p>
+<p>（2）进程 B 在某个系统调用过程中也访问了共享资源 R</p>
+<p>会不会造成冲突呢？假设在 A 访问共享资源 R 的过程中发生了中断，中断唤醒了沉睡中的、优先级更高的 B，在中断返回现场的时候，发生进程切换，B 启动执行，并通过系统调用访问了 R，如果没有锁保护，则会出现两个 thread 进入临界区，导致程序执行不正确。OK，我们加上 spin lock 看看如何：A 在进入临界区之前获取了 spin lock，同样的，在 A 访问共享资源 R 的过程中发生了中断，中断唤醒了沉睡中的、优先级更高的 B，B 在访问临界区之前仍然会试图获取 spin lock，这时候由于 A 进程持有 spin lock 而导致 B 进程进入了永久的 spin……怎么破？linux 的 kernel 很简单，在 A 进程获取 spin lock 的时候，禁止本 CPU 上的抢占（上面的永久 spin 的场合仅仅在本 CPU 的进程抢占本 CPU 的当前进程这样的场景中发生）。如果 A 和 B 运行在不同的 CPU 上，那么情况会简单一些：A 进程虽然持有 spin lock 而导致 B 进程进入 spin 状态，不过由于运行在不同的 CPU 上，A 进程会持续执行并会很快释放 spin lock，解除 B 进程的 spin 状态。</p>
+<p>多 CPU core 的场景和单核 CPU 打开 preemptive 选项的效果是一样的，这里不再赘述。</p>
+<p>我们继续向前分析，现在要加入中断上下文这个因素。访问共享资源的 thread 包括：</p>
+<p>（1）运行在 CPU0 上的进程 A 在某个系统调用过程中访问了共享资源 R</p>
+<p>（2）运行在 CPU1 上的进程 B 在某个系统调用过程中也访问了共享资源 R</p>
+<p>（3）外设 P 的中断 handler 中也会访问共享资源 R</p>
+<p>在这样的场景下，使用 spin lock 可以保护访问共享资源 R 的临界区吗？我们假设 CPU0 上的进程 A 持有 spin lock 进入临界区，这时候，外设 P 发生了中断事件，并且调度到了 CPU1 上执行，看起来没有什么问题，执行在 CPU1 上的 handler 会稍微等待一会 CPU0 上的进程 A，等它离开临界区就会释放 spin lock 的，但是，如果外设 P 的中断事件被调度到了 CPU0 上执行会怎么样？CPU0 上的进程 A 在持有 spin lock 的状态下被中断上下文抢占，而抢占它的 CPU0 上的 handler 在进入临界区之前仍然会试图获取 spin lock，悲剧发生了，CPU0 上的 P 外设的中断 handler 永远地进入 spin 状态，这时候，CPU1 上的进程 B 也不可避免在试图持有 spin lock 的时候失败而导致进入 spin 状态。为了解决这样的问题，linux kernel 采用了这样的办法：如果涉及到中断上下文的访问，spin lock 需要和禁止本 CPU 上的中断联合使用。</p>
+<p>linux kernel 中提供了丰富的 bottom half 的机制，虽然同属中断上下文，不过还是稍有不同。我们可以把上面的场景简单修改一下：外设 P 不是中断 handler 中访问共享资源 R，而是在的 bottom half 中访问。使用 spin lock+禁止本地中断当然是可以达到保护共享资源的效果，但是使用牛刀来杀鸡似乎有点小题大做，这时候 disable bottom half 就 OK 了。</p>
+<p>最后，我们讨论一下中断上下文之间的竞争。同一种中断 handler 之间在 uni core 和 multi core 上都不会并行执行，这是 linux kernel 的特性。如果不同中断 handler 需要使用 spin lock 保护共享资源，对于新的内核（不区分 fast handler 和 slow handler），所有 handler 都是关闭中断的，因此使用 spin lock 不需要关闭中断的配合。bottom half 又分成 softirq 和 tasklet，同一种 softirq 会在不同的 CPU 上并发执行，因此如果某个驱动中的 softirq 的 handler 中会访问某个全局变量，对该全局变量是需要使用 spin lock 保护的，不用配合 disable CPU 中断或者 bottom half。tasklet 更简单，因为同一种 tasklet 不会多个 CPU 上并发，具体我就不分析了，大家自行思考吧。</p>
+<h2 id="三通用代码实现" tabindex="-1">三、通用代码实现 <a class="header-anchor" href="#三通用代码实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1文件整理" tabindex="-1">1、文件整理 <a class="header-anchor" href="#1文件整理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>和体系结构无关的代码如下：</p>
+<p>（1）include/linux/spinlock_types.h。这个头文件定义了通用 spin lock 的基本的数据结构（例如 spinlock_t）和如何初始化的接口（DEFINE_SPINLOCK）。这里的&quot;通用&quot;是指不论 SMP 还是 UP 都通用的那些定义。</p>
+<p>（2）include/linux/spinlock_types_up.h。这个头文件不应该直接 include，在 include/linux/spinlock_types.h 文件会根据系统的配置（是否 SMP）include 相关的头文件，如果 UP 则会 include 该头文件。这个头文件定义 UP 系统中和 spin lock 的基本的数据结构和如何初始化的接口。当然，对于 non-debug 版本而言，大部分 struct 都是 empty 的。</p>
+<p>（3）include/linux/spinlock.h。这个头文件定义了通用 spin lock 的接口函数声明，例如 spin_lock、spin_unlock 等，使用 spin lock 模块接口 API 的驱动模块或者其他内核模块都需要 include 这个头文件。</p>
+<p>（4）include/linux/spinlock_up.h。这个头文件不应该直接 include，在 include/linux/spinlock.h 文件会根据系统的配置（是否 SMP）include 相关的头文件。这个头文件是 debug 版本的 spin lock 需要的。</p>
+<p>（5）include/linux/spinlock_api_up.h。同上，只不过这个头文件是 non-debug 版本的 spin lock 需要的</p>
+<p>（6）linux/spinlock_api_smp.h。SMP 上的 spin lock 模块的接口声明</p>
+<p>（7）kernel/locking/spinlock.c。SMP 上的 spin lock 实现。</p>
+<p>头文件有些凌乱，我们对 UP 和 SMP 上 spin lock 头文件进行整理：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>linux/spinlock_type_up.h:
+linux/spinlock_types.h:
+linux/spinlock_up.h:
+linux/spinlock_api_up.h:
+linux/spinlock.h
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>asm/spinlock_types.h
+linux/spinlock_types.h:
+asm/spinlock.h
+linux/spinlock_api_smp.h:
+linux/spinlock.h
+</code></pre></div></code></pre>
+<h3 id="2数据结构" tabindex="-1">2、数据结构 <a class="header-anchor" href="#2数据结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>根据第二章的分析，我们可以基本可以推断出 spin lock 的实现。首先定义一个 spinlock_t 的数据类型，其本质上是一个整数值（对该数值的操作需要保证原子性），该数值表示 spin lock 是否可用。初始化的时候被设定为 1。当 thread 想要持有锁的时候调用 spin_lock 函数，该函数将 spin lock 那个整数值减去 1，然后进行判断，如果等于 0，表示可以获取 spin lock，如果是负数，则说明其他 thread 持有该锁，本 thread 需要 spin。</p>
+<p>内核中的 spinlock_t 的数据类型定义如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">spinlock</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">raw_spinlock</span> <span class="hljs-title">rlock</span>;</span>
+} <span class="hljs-type">spinlock_t</span>;
+
+<span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">raw_spinlock</span> {</span>
+    <span class="hljs-type">arch_spinlock_t</span> raw_lock;
+} <span class="hljs-type">raw_spinlock_t</span>;
+</code></pre></div></code></pre>
+<p>由于各种原因（各种锁的 debug、锁的 validate 机制，多平台支持什么的），spinlock_t 的定义没有那么直观，为了让事情简单一些，我们去掉那些繁琐的成员。struct spinlock 中定义了一个 struct raw_spinlock 的成员，为何会如此呢？好吧，我们又需要回到 kernel 历史课本中去了。在旧的内核中（比如我熟悉的 linux 2.6.23 内核），spin lock 的命名规则是这样：</p>
+<p>通用（适用于各种 arch）的 spin lock 使用 spinlock_t 这样的 type name，各种 arch 定义自己的 struct raw_spinlock。听起来不错的主意和命名方式，直到 linux realtime tree（PREEMPT_RT）提出对 spinlock 的挑战。real time linux 是一个试图将 linux kernel 增加硬实时性能的一个分支（你知道的，linux kernel mainline 只是支持 soft realtime），多年来，很多来自 realtime branch 的特性被 merge 到了 mainline 上，例如：高精度 timer、中断线程化等等。realtime tree 希望可以对现存的 spinlock 进行分类：一种是在 realtime kernel 中可以睡眠的 spinlock，另外一种就是在任何情况下都不可以睡眠的 spinlock。分类很清楚但是如何起名字？起名字绝对是个技术活，起得好了事半功倍，可维护性好，什么文档啊、注释啊都素那浮云，阅读代码就是享受，如沐春风。起得不好，注定被后人唾弃，或者拖出来吊打（这让我想起给我儿子起名字的那段不堪回首的岁月……）。最终，spin lock 的命名规范定义如下：</p>
+<p>（1）spinlock，在 rt linux（配置了 PREEMPT_RT）的时候可能会被抢占（实际底层可能是使用支持 PI（优先级翻转）的 mutex）。</p>
+<p>（2）raw_spinlock，即便是配置了 PREEMPT_RT 也要顽强地 spin</p>
+<p>（3）arch_spinlock，spin lock 是和 architecture 相关的，arch_spinlock 是 architecture 相关的实现</p>
+<p>对于 UP 平台，所有的 arch_spinlock_t 都是一样的，定义如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span> } <span class="hljs-type">arch_spinlock_t</span>;
+</code></pre></div></code></pre>
+<p>什么都没有，一切都是空啊。当然，这也符合前面的分析，对于 UP，即便是打开的 preempt 选项，所谓的 spin lock 也不过就是 disable preempt 而已，不需定义什么 spin lock 的变量。</p>
+<p>对于 SMP 平台，这和 arch 相关，我们在下一节描述。</p>
+<h3 id="3spin-lock-接口-api" tabindex="-1">3、spin lock 接口 API <a class="header-anchor" href="#3spin-lock-接口-api"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>我们整理 spin lock 相关的接口 API 如下：</p>
+<blockquote>
+<p>注：原文此处配有一幅 spin lock 接口 API 汇整图，在网页抓取过程中丢失。</p>
+</blockquote>
+<p>在具体的实现面，我们不可能把每一个接口函数的代码都呈现出来，我们选择最基础的 spin_lock 为例子，其他的读者可以自己阅读代码来理解。</p>
+<p>spin_lock 的代码如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">spin_lock</span><span class="hljs-params">(<span class="hljs-type">spinlock_t</span> *lock)</span>
+{
+    raw_spin_lock(&amp;lock-&gt;rlock);
+}
+</code></pre></div></code></pre>
+<p>当然，在 linux mainline 代码中，spin_lock 和 raw_spin_lock 是一样的，在 realtime linux patch 中，spin_lock 应该被换成可以 sleep 的版本，当然具体如何实现我没有去看（也许直接使用了 Mutex，毕竟它提供了优先级继承特性来解决了优先级翻转的问题），有兴趣的读者可以自行阅读，我们这里重点看看（本文也主要 focus 这个主题）真正的、不睡眠的 spin lock，也就是 raw_spin_lock，代码如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> raw_spin_lock(lock)    _raw_spin_lock(lock)</span>
+</code></pre></div></code></pre>
+<p>UP 中的实现：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> _raw_spin_lock(lock)            __LOCK(lock)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __LOCK(lock) \
+ do { preempt_disable(); ___LOCK(lock); } while (0)</span>
+</code></pre></div></code></pre>
+<p>SMP 的实现：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> __lockfunc _raw_spin_lock(<span class="hljs-type">raw_spinlock_t</span> *lock)
+{
+    __raw_spin_lock(lock);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> __raw_spin_lock(<span class="hljs-type">raw_spinlock_t</span> *lock)
+{
+    preempt_disable();
+    spin_acquire(&amp;lock-&gt;dep_map, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>, _RET_IP_);
+    LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+}
+</code></pre></div></code></pre>
+<p>UP 中很简单，本质上就是一个 preempt_disable 而已，和我们在第二章中分析的一致。SMP 中稍显复杂，preempt_disable 当然也是必须的，spin_acquire 可以略过，这是和运行时检查锁的有效性有关的，如果没有定义 CONFIG_LOCKDEP 其实就是空函数。如果没有定义 CONFIG_LOCK_STAT（和锁的统计信息相关），LOCK_CONTENDED 就是调用 do_raw_spin_lock 而已，如果没有定义 CONFIG_DEBUG_SPINLOCK，它的代码如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">do_raw_spin_lock</span><span class="hljs-params">(<span class="hljs-type">raw_spinlock_t</span> *lock)</span> __<span class="hljs-title function_">acquires</span><span class="hljs-params">(lock)</span>
+{
+    __acquire(lock);
+    arch_spin_lock(&amp;lock-&gt;raw_lock);
+}
+</code></pre></div></code></pre>
+<p>__acquire 和静态代码检查相关，忽略之，最终实际的获取 spin lock 还是要靠 arch 相关的代码实现。</p>
+<h2 id="四arm-平台的细节" tabindex="-1">四、ARM 平台的细节 <a class="header-anchor" href="#四arm-平台的细节"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>代码位于 arch/arm/include/asm/spinlock.h 和 spinlock_type.h，和通用代码类似，spinlock_type.h 定义 ARM 相关的 spin lock 定义以及初始化相关的宏；spinlock.h 中包括了各种具体的实现。</p>
+<h3 id="1回忆过去" tabindex="-1">1、回忆过去 <a class="header-anchor" href="#1回忆过去"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>在分析新的 spin lock 代码之前，让我们先回到 2.6.23 版本的内核中，看看 ARM 平台如何实现 spin lock 的。和 arm 平台相关 spin lock 数据结构的定义如下（那时候还是使用 raw_spinlock_t 而不是 arch_spinlock_t）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-keyword">volatile</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> lock;
+} <span class="hljs-type">raw_spinlock_t</span>;
+</code></pre></div></code></pre>
+<p>一个整数就 OK 了，0 表示 unlocked，1 表示 locked。配套的 API 包括 __raw_spin_lock 和 __raw_spin_unlock。__raw_spin_lock 会持续判断 lock 的值是否等于 0，如果不等于 0（locked）那么其他 thread 已经持有该锁，本 thread 就不断地 spin，判断 lock 的数值，一直等到该值等于 0 为止，一旦探测到 lock 等于 0，那么就设定该值为 1，表示本 thread 持有该锁了，当然，这些操作要保证原子性，细节和 exclusive 版本的 ldr 和 str（即 ldrex 和 strexeq）相关，这里略过。离开临界区后，持锁 thread 会调用 __raw_spin_unlock 函数释放 spin lock，其实就是把 0 这个数值赋给 lock。</p>
+<p>这个版本的 spin lock 的实现当然可以实现功能，而且在没有冲突的时候表现出不错的性能，不过存在一个问题：不公平。也就是所有的 thread 都是在无序地争抢 spin lock，谁先抢到谁先得，不管 thread 等了很久还是刚刚开始 spin。在冲突比较少的情况下，不公平不会体现得特别明显，然而，随着硬件的发展，多核处理器的数目越来越多，多核之间的冲突越来越剧烈，无序竞争的 spinlock 带来的 performance issue 终于浮现出来，根据 Nick Piggin 的描述：</p>
+<p>On an 8 core (2 socket) Opteron, spinlock unfairness is extremely noticable, with a userspace test having a difference of up to 2x runtime per thread, and some threads are starved or &quot;unfairly&quot; granted the lock up to 1 000 000 (!) times.</p>
+<p>多么的不公平，有些可怜的 thread 需要饥饿地等待 1000000 次。本质上无序竞争从概率论的角度看应该是均匀分布的，不过由于硬件特性导致这么严重的不公平，我们来看一看硬件 block：</p>
+<p>lock 本质上是保存在 main memory 中的，由于 cache 的存在，当然不需要每次都有访问 main memory。在多核架构下，每个 CPU 都有自己的 L1 cache，保存了 lock 的数据。假设 CPU0 获取了 spin lock，那么执行完临界区，在释放锁的时候会调用 smp_mb invalide 其他忙等待的 CPU 的 L1 cache，这样后果就是释放 spin lock 的那个 cpu 可以更快地访问 L1 cache，操作 lock 数据，从而大大增加了下一次获取该 spin lock 的机会。</p>
+<h3 id="2回到现在arch_spinlock_t" tabindex="-1">2、回到现在：arch_spinlock_t <a class="header-anchor" href="#2回到现在arch_spinlock_t"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>ARM 平台中的 arch_spinlock_t 定义如下（little endian）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">union</span> {</span>
+        u32 slock;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> __<span class="hljs-title">raw_tickets</span> {</span>
+            u16 owner;
+            u16 next;
+        } tickets;
+    };
+} <span class="hljs-type">arch_spinlock_t</span>;
+</code></pre></div></code></pre>
+<p>本来以为一个简单的整数类型的变量就搞定的 spin lock 看起来没有那么简单，要理解这个数据结构，需要了解一些 ticket-based spin lock 的概念。如果你有机会去九毛九去排队吃饭（声明：不是九毛九的饭托，仅仅是喜欢面食而常去吃而已）就会理解 ticket-based spin lock。大概是因为便宜，每次去九毛九总是无法长驱直入，门口的笑容可掬的靓女会给一个 ticket，上面写着 15 号，同时会告诉你，当前状态是 10 号已经入席，11 号在等待。</p>
+<p>回到 arch_spinlock_t，这里的 owner 就是当前已经入席的那个号码，next 记录的是下一个要分发的号码。下面的描述使用普通的计算机语言和在九毛九就餐（假设九毛九只有一张餐桌）的例子来进行描述，估计可以让吃货更有兴趣阅读下去。最开始的时候，slock 被赋值为 0，也就是说 owner 和 next 都是 0，owner 和 next 相等，表示 unlocked。当第一个 thread 调用 spin_lock 来申请 lock（第一个人就餐）的时候，owner 和 next 相等，表示 unlocked，这时候该 thread 持有该 spin lock（可以拥有九毛九的唯一的那个餐桌），并且执行 next++，也就是将 next 设定为 1（再来人就分配 1 这个号码让他等待就餐）。也许该 thread 执行很快（吃饭吃得快），没有其他 thread 来竞争就调用 spin_unlock 了（无人等待就餐，生意惨淡啊），这时候执行 owner++，也就是将 owner 设定为 1（表示当前持有 1 这个号码牌的人可以就餐）。姗姗来迟的 1 号获得了直接就餐的机会，next++ 之后等于 2。1 号这个家伙吃饭巨慢，这是不文明现象（thread 不能持有 spin lock 太久），但是存在。又来一个人就餐，分配当前 next 值的号码 2，当然也会执行 next++，以便下一个人或者 3 的号码牌。持续来人就会分配 3、4、5、6 这些号码牌，next 值不断地增加，但是 owner 岿然不动，直到欠扁的 1 号吃饭完毕（调用 spin_unlock），释放饭桌这个唯一资源，owner++ 之后等于 2，表示持有 2 那个号码牌的人可以进入就餐了。</p>
+<h3 id="3接口实现" tabindex="-1">3、接口实现 <a class="header-anchor" href="#3接口实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>同样的，这里也只是选择一个典型的 API 来分析，其他的大家可以自行学习。我们选择的是 arch_spin_lock，其 ARM32 的代码如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arch_spin_lock</span><span class="hljs-params">(<span class="hljs-type">arch_spinlock_t</span> *lock)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> tmp;
+    u32 newval;
+    <span class="hljs-type">arch_spinlock_t</span> lockval;
+
+    prefetchw(&amp;lock-&gt;slock);－－－－－－－－－－－－－－－－－－－－－－－－（<span class="hljs-number">1</span>）
+
+    __asm__ __volatile__(
+<span class="hljs-string">&quot;1:    ldrex    %0, [%3]\n&quot;</span>－－－－－－－－－－－－－－－－－－－－－－－－－（<span class="hljs-number">2</span>）
+<span class="hljs-string">&quot;    add    %1, %0, %4\n&quot;</span>
+<span class="hljs-string">&quot;    strex    %2, %1, [%3]\n&quot;</span>－－－－－－－－－－－－－－－－－－－－－－－－（<span class="hljs-number">3</span>）
+<span class="hljs-string">&quot;    teq    %2, #0\n&quot;</span>－－－－－－－－－－－－－－－－－－－－－－－－－－－－（<span class="hljs-number">4</span>）
+<span class="hljs-string">&quot;    bne    1b&quot;</span>
+    : <span class="hljs-string">&quot;=&amp;r&quot;</span> (lockval), <span class="hljs-string">&quot;=&amp;r&quot;</span> (newval), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp)
+    : <span class="hljs-string">&quot;r&quot;</span> (&amp;lock-&gt;slock), <span class="hljs-string">&quot;I&quot;</span> (<span class="hljs-number">1</span> &lt;&lt; TICKET_SHIFT)
+    : <span class="hljs-string">&quot;cc&quot;</span>);
+
+    <span class="hljs-keyword">while</span> (lockval.tickets.next != lockval.tickets.owner) {－－－－－－－－－－－－（<span class="hljs-number">5</span>）
+        wfe();－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－（<span class="hljs-number">6</span>）
+        lockval.tickets.owner = ACCESS_ONCE(lock-&gt;tickets.owner);－－－－－－（<span class="hljs-number">7</span>）
+    }
+
+    smp_mb();－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－（<span class="hljs-number">8</span>）
+}
+</code></pre></div></code></pre>
+<p>（1）和 preloading cache 相关的操作，主要是为了性能考虑</p>
+<p>（2）将 slock 的值保存在 lockval 这个临时变量中</p>
+<p>（3）将 spin lock 中的 next 加一</p>
+<p>（4）判断是否有其他的 thread 插入。更具体的细节参考 Linux内核同步机制之（一）：原子操作中的描述</p>
+<p>（5）判断当前 spin lock 的状态，如果是 unlocked，那么直接获取到该锁</p>
+<p>（6）如果当前 spin lock 的状态是 locked，那么调用 wfe 进入等待状态。更具体的细节请参考 ARM WFI 和 WFE 指令中的描述。</p>
+<p>（7）其他的 CPU 唤醒了本 cpu 的执行，说明 owner 发生了变化，该新的 own 赋给 lockval，然后继续判断 spin lock 的状态，也就是回到 step 5。</p>
+<p>（8）memory barrier 的操作，具体可以参考 memory barrier 中的描述。</p>
+<p>arch_spin_lock 函数 ARM64 的代码（来自 4.1.10 内核）如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arch_spin_lock</span><span class="hljs-params">(<span class="hljs-type">arch_spinlock_t</span> *lock)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> tmp;
+    <span class="hljs-type">arch_spinlock_t</span> lockval, newval;
+
+    <span class="hljs-keyword">asm</span> <span class="hljs-title function_">volatile</span><span class="hljs-params">(
+    <span class="hljs-comment">/* Atomically increment the next ticket. */</span>
+<span class="hljs-string">&quot;    prfm    pstl1strm, %3\n&quot;</span>
+<span class="hljs-string">&quot;1:    ldaxr    %w0, %3\n&quot;</span>－－－－－（A）－－－－－－－－－－－lockval = lock
+<span class="hljs-string">&quot;    add    %w1, %w0, %w5\n&quot;</span>－－－－－－－－－－－－－newval ＝ lockval + (<span class="hljs-number">1</span> &lt;&lt; <span class="hljs-number">16</span>)，相当于next++
+<span class="hljs-string">&quot;    stxr    %w2, %w1, %3\n&quot;</span>－－－－－－－－－－－－－－lock ＝ newval
+<span class="hljs-string">&quot;    cbnz    %w2, 1b\n&quot;</span>－－－－－－－－－－－－－－是否有其他PE的执行流插入？有的话，重来。
+
+    <span class="hljs-comment">/* Did we get the lock? */</span>
+<span class="hljs-string">&quot;    eor    %w1, %w0, %w0, ror #16\n&quot;</span>－－lockval中的next域就是自己的号码牌，判断是否等于owner
+<span class="hljs-string">&quot;    cbz    %w1, 3f\n&quot;</span>－－－－－－－－－－－－－－－－如果等于，持锁进入临界区
+
+    <span class="hljs-comment">/*
+     * No: spin on the owner. Send a local event to avoid missing an
+     * unlock before the exclusive load.
+     */</span>
+<span class="hljs-string">&quot;    sevl\n&quot;</span>
+<span class="hljs-string">&quot;2:    wfe\n&quot;</span>－－－－－－－－－－－－－－－－－－－－否则进入spin
+<span class="hljs-string">&quot;    ldaxrh    %w2, %4\n&quot;</span>－－－－（A）－－－－－－－－－其他cpu唤醒本cpu，获取当前owner值
+<span class="hljs-string">&quot;    eor    %w1, %w2, %w0, lsr #16\n&quot;</span>－－－－－－－－－自己的号码牌是否等于owner？
+<span class="hljs-string">&quot;    cbnz    %w1, 2b\n&quot;</span>－－－－－－－－－－如果等于，持锁进入临界区，否者回到<span class="hljs-number">2</span>，即继续spin
+
+    <span class="hljs-comment">/* We got the lock. Critical section starts here. */</span>
+<span class="hljs-string">&quot;3:&quot;</span>
+    : <span class="hljs-string">&quot;=&amp;r&quot;</span> (lockval), <span class="hljs-string">&quot;=&amp;r&quot;</span> (newval), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp), <span class="hljs-string">&quot;+Q&quot;</span> (*lock)
+    : <span class="hljs-string">&quot;Q&quot;</span> (lock-&gt;owner), <span class="hljs-string">&quot;I&quot;</span> (<span class="hljs-number">1</span> &lt;&lt; TICKET_SHIFT)
+    : <span class="hljs-string">&quot;memory&quot;</span>)</span>;
+}
+</code></pre></div></code></pre>
+<p>基本的代码逻辑的描述都已经嵌入代码中，这里需要特别说明的有两个知识点：</p>
+<p>（1）Load-Acquire/Store-Release 指令的应用。Load-Acquire/Store-Release 指令是 ARMv8 的特性，在执行 load 和 store 操作的时候顺便执行了 memory barrier 相关的操作，在 spinlock 这个场景，使用 Load-Acquire/Store-Release 指令代替 dmb 指令可以节省一条指令。上面代码中的（A）就标识了使用 Load-Acquire 指令的位置。Store-Release 指令在哪里呢？在 arch_spin_unlock 中，这里就不贴代码了。Load-Acquire/Store-Release 指令的作用如下：</p>
+<ul>
+<li>Load-Acquire 可以确保系统中所有的 observer 看到的都是该指令先执行，然后是该指令之后的指令（program order）再执行</li>
+<li>Store-Release 指令可以确保系统中所有的 observer 看到的都是该指令之前的指令（program order）先执行，Store-Release 指令随后执行</li>
+</ul>
+<p>（2）第二个知识点是关于在 arch_spin_unlock 代码中为何没有 SEV 指令？关于这个问题可以参考 ARM ARM 文档中的 Figure B2-5，这个图是 PE（n）的 global monitor 的状态迁移图。当 PE（n）对 x 地址发起了 exclusive 操作的时候，PE（n）的 global monitor 从 open access 迁移到 exclusive access 状态，来自其他 PE 上针对 x（该地址已经被 mark for PE（n））的 store 操作会导致 PE（n）的 global monitor 从 exclusive access 迁移到 open access 状态，这时候，PE（n）的 Event register 会被写入 event，就好像生成一个 event，将该 PE 唤醒，从而可以省略一个 SEV 的指令。</p>
+<h2 id="change-log" tabindex="-1">Change log <a class="header-anchor" href="#change-log"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>1、2015/11/5，加入 ARM64 的代码实现部分的分析</p>
+<p>2、2015/11/17，增加 ARM64 代码中的两个知识点的描述</p>
+
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="本页目录">
+                <div class="toc-title">本页目录</div>
+                <nav class="toc-list">
+                  
+                  <a class="toc-item toc-lv2" href="#一前言" data-toc-target="一前言">一、前言</a>
+                  
+                  <a class="toc-item toc-lv2" href="#二工作原理" data-toc-target="二工作原理">二、工作原理</a>
+                  
+                  <a class="toc-item toc-lv3" href="#1spin-lock-的特点" data-toc-target="1spin-lock-的特点">1、spin lock 的特点</a>
+                  
+                  <a class="toc-item toc-lv3" href="#2场景分析" data-toc-target="2场景分析">2、场景分析</a>
+                  
+                  <a class="toc-item toc-lv2" href="#三通用代码实现" data-toc-target="三通用代码实现">三、通用代码实现</a>
+                  
+                  <a class="toc-item toc-lv3" href="#1文件整理" data-toc-target="1文件整理">1、文件整理</a>
+                  
+                  <a class="toc-item toc-lv3" href="#2数据结构" data-toc-target="2数据结构">2、数据结构</a>
+                  
+                  <a class="toc-item toc-lv3" href="#3spin-lock-接口-api" data-toc-target="3spin-lock-接口-api">3、spin lock 接口 API</a>
+                  
+                  <a class="toc-item toc-lv2" href="#四arm-平台的细节" data-toc-target="四arm-平台的细节">四、ARM 平台的细节</a>
+                  
+                  <a class="toc-item toc-lv3" href="#1回忆过去" data-toc-target="1回忆过去">1、回忆过去</a>
+                  
+                  <a class="toc-item toc-lv3" href="#2回到现在arch_spinlock_t" data-toc-target="2回到现在arch_spinlock_t">2、回到现在：arch_spinlock_t</a>
+                  
+                  <a class="toc-item toc-lv3" href="#3接口实现" data-toc-target="3接口实现">3、接口实现</a>
+                  
+                  <a class="toc-item toc-lv2" href="#change-log" data-toc-target="change-log">Change log</a>
+                  
+                </nav>
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1997 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1997 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+</body>
+</html>

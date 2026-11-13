@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>KASAN实现原理 · LemonCyan</title>
+
+<link rel="icon" href="/img/favicon.ico">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#2196f3" title="平台系统">平台系统</a>
+        
+        <a href="/B.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" class="topnav-item" style="--dot:#3f51b5" title="编程语言">编程语言</a>
+        
+        <a href="/C.%E5%BC%80%E5%8F%91%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#009688" title="开发框架">开发框架</a>
+        
+        <a href="/D.%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#00bcd4" title="通讯协议">通讯协议</a>
+        
+        <a href="/E.%E5%B5%8C%E5%85%A5%E5%BC%8F%E5%BC%80%E5%8F%91/" class="topnav-item" style="--dot:#8bc34a" title="嵌入式开发">嵌入式开发</a>
+        
+        <a href="/F.%E4%B8%93%E4%B8%9A%E7%9F%A5%E8%AF%86/" class="topnav-item" style="--dot:#ffc107" title="专业知识">专业知识</a>
+        
+        <a href="/G.%E6%8A%95%E8%B5%84/" class="topnav-item" style="--dot:#ff9800" title="投资">投资</a>
+        
+        <a href="/H.AI%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%8C%96/" class="topnav-item" style="--dot:#9c27b0" title="AI 与自动化">AI 与自动化</a>
+        
+        <a href="/I.%E4%B8%AA%E4%BA%BA%E7%94%9F%E6%B4%BB/" class="topnav-item" style="--dot:#e91e63" title="个人生活">个人生活</a>
+        
+        <a href="/J.%E8%81%8C%E4%B8%9A%E4%B8%8E%E6%88%90%E9%95%BF/" class="topnav-item" style="--dot:#795548" title="职业与成长">职业与成长</a>
+        
+        <a href="/K.%E9%9A%8F%E7%AC%94%E4%B8%8E%E6%9D%82%E8%AE%B0/" class="topnav-item" style="--dot:#607d8b" title="随笔与杂记">随笔与杂记</a>
+        
+        <a href="/L.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E8%AE%BE%E8%AE%A1/" class="topnav-item" style="--dot:#f44336" title="项目与设计">项目与设计</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">KASAN实现原理</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/A.平台系统/Linux内核/调试与性能/KASAN实现原理/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">KASAN实现原理</span>
+                <div class="reader-content">
+                  <h1 id="kasan-实现原理" tabindex="-1">KASAN 实现原理 <a class="header-anchor" href="#kasan-实现原理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h1>
+<h2 id="1.-前言" tabindex="-1">1. 前言 <a class="header-anchor" href="#1.-前言"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>KASAN 是一个动态检测内存错误的工具。KASAN 可以检测全局变量、栈、堆分配的内存发生越界访问等问题。功能比 SLUB DEBUG 齐全并且支持实时检测。越界访问的严重性和危害性通过我之前的文章（SLUB DEBUG 技术）应该有所了解。正是由于 SLUB DEBUG 缺陷，因此我们需要一种更加强大的检测工具。难道你不想吗？KASAN 就是其中一种。KASAN 的使用真的很简单。但是我是一个追求刨根问底的人。仅仅止步于使用的层面，我是不愿意的，只有更清楚的了解实现原理才能更加熟练的使用工具。不止是 KASAN，其他方面我也是这么认为。但是，说实话，写这篇文章是有点底气不足的。因为从我查阅的资料来说，国内没有一篇文章说 KASAN 的工作原理，国外也是没有什么文章关注 KASAN 的原理。大家好像都在说 How to use。由于本人水平有限，就根据现有的资料以及自己阅读代码揣摩其中的意思。本文章作为抛准引玉，如果有不合理的地方还请指正。</p>
+<p>注：文章代码分析基于 linux-4.15.0-rc3。</p>
+<p>图片显示有点走形，请点开查看。</p>
+<h2 id="2.-简介" tabindex="-1">2. 简介 <a class="header-anchor" href="#2.-简介"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>KernelAddressSANitizer（KASAN）是一个动态检测内存错误的工具。它为找到 use-after-free 和 out-of-bounds 问题提供了一个快速和全面的解决方案。KASAN 使用编译时检测每个内存访问，因此您需要 GCC 4.9.2 或更高版本。检测堆栈或全局变量的越界访问需要 GCC 5.0 或更高版本。目前 KASAN 仅支持 x86_64 和 arm64 架构（linux 4.4 版本合入）。你使用 ARM64 架构，那么就需要保证 linux 版本在 4.4 以上。当然了，如果你使用的 linux 也有可能打过 KASAN 的补丁。例如，使用高通平台做手机的厂商使用 linux 3.18 同样支持 KASAN。</p>
+<h2 id="3.-如何使用" tabindex="-1">3. 如何使用 <a class="header-anchor" href="#3.-如何使用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>使用 KASAN 工具是比较简单的，只需要添加 kernel 以下配置项。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>CONFIG_SLUB_DEBUG=y
+CONFIG_KASAN=y
+</code></pre></div></code></pre>
+<p>为什么这里必须打开 SLUB_DEBUG 呢？是因为有段时间 KASAN 是依赖 SLUBU_DEBUG 的，什么意思呢？就是在 Kconfig 中使用了 depends on，明白了吧。不过最新的代码已经不需要依赖了，可以看下提交。但是我建议你打开该选项，因为 log 可以输出更多有用的信息。重新编译 kernel 即可，编译之后你会发现 boot.img（Android 环境）大小大了一倍左右。所以说，影响效率不是没有道理的。不过我们可以作为产品发布前的最后检查，也可以排查越界访问等问题。我们可以查看内核日志内容是否包含 KASAN 检查出的 bugs 信息。</p>
+<h2 id="4.-kasan-是如何实现检测的" tabindex="-1">4. KASAN 是如何实现检测的？ <a class="header-anchor" href="#4.-kasan-是如何实现检测的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>KASAN 的原理是利用额外的内存标记可用内存的状态。这部分额外的内存被称作 shadow memory（影子区）。KASAN 将 1/8 的内存用作 shadow memory。使用特殊的 magic num 填充 shadow memory，在每一次 load/store（load/store 检查指令由编译器插入）内存的时候检测对应的 shadow memory 确定操作是否 valid。连续 8 bytes 内存（8 bytes align）使用 1 byte shadow memory 标记。如果 8 bytes 内存都可以访问，则 shadow memory 的值为 0；如果连续 N(1 =&lt; N &lt;= 7) bytes 可以访问，则 shadow memory 的值为 N；如果 8 bytes 内存访问都是 invalid，则 shadow memory 的值为负数。</p>
+<p>在代码运行时，每一次 memory access 都会检测对应的 shawdow memory 的值是否 valid。这就需要编译器为我们做些工作。编译的时候，在每一次 memory access 前编译器会帮我们插入 __asan_load##size() 或者 __asan_store##size() 函数调用（size 是访问内存字节的数量）。这也是要求更新版本 gcc 的原因，只有更新的版本才支持自动插入。</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">mov</span> <span class="hljs-built_in">x0</span>, <span class="hljs-number">#0x5678</span>
+<span class="hljs-symbol">movk</span> <span class="hljs-built_in">x0</span>, <span class="hljs-number">#0x1234</span>, <span class="hljs-keyword">lsl</span> <span class="hljs-number">#16</span>
+<span class="hljs-symbol">movk</span> <span class="hljs-built_in">x0</span>, <span class="hljs-number">#0x8000</span>, <span class="hljs-keyword">lsl</span> <span class="hljs-number">#32</span>
+<span class="hljs-symbol">movk</span> <span class="hljs-built_in">x0</span>, <span class="hljs-number">#0xffff</span>, <span class="hljs-keyword">lsl</span> <span class="hljs-number">#48</span>
+<span class="hljs-keyword">mov</span> <span class="hljs-built_in">w1</span>, <span class="hljs-number">#0x5</span>
+<span class="hljs-keyword">bl</span> __asan_store1
+<span class="hljs-keyword">strb</span> <span class="hljs-built_in">w1</span>, [<span class="hljs-built_in">x0</span>]
+</code></pre></div></code></pre>
+<p>上面一段汇编指令是往 0xffff800012345678 地址写 5。在 KASAN 打开的情况下，编译器会帮我们自动插入 bl __asan_store1 指令，__asan_store1 函数就是检测一个地址对应的 shadow memory 的值是否允许写 1 byte。蓝色汇编指令就是真正的内存访问。因此 KASAN 可以在 out-of-bounds 的时候及时检测。__asan_load##size() 和 __asan_store##size() 的代码在 mm/kasan/kasan.c 文件实现。</p>
+<h3 id="4.1.-如何根据-shadow-memory-的值判断内存访问操作是否-valid" tabindex="-1">4.1. 如何根据 shadow memory 的值判断内存访问操作是否 valid？ <a class="header-anchor" href="#4.1.-如何根据-shadow-memory-的值判断内存访问操作是否-valid"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>shadow memory 检测原理的实现主要就是 __asan_load##size() 和 __asan_store##size() 函数的实现。那么 KASAN 是如何根据访问的 address 以及对应的 shadow memory 的状态值来判断访问是否合法呢？首先看一种最简单的情况。访问 8 bytes 内存。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">long</span> *addr = (<span class="hljs-type">long</span> *)<span class="hljs-number">0xffff800012345678</span>;
+*addr = <span class="hljs-number">0</span>;
+</code></pre></div></code></pre>
+<p>以上代码是访问 8 bytes 情况，检测原理如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">long</span> *addr = (<span class="hljs-type">long</span> *)<span class="hljs-number">0xffff800012345678</span>;
+
+<span class="hljs-type">char</span> *shadow = (<span class="hljs-type">char</span> *)(((<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>)addr &gt;&gt; <span class="hljs-number">3</span>) + KASAN_SHADOW_OFFSE);
+
+<span class="hljs-keyword">if</span> (*shadow)
+    report_bug();
+
+*addr = <span class="hljs-number">0</span>;
+</code></pre></div></code></pre>
+<p>红色区域类似是编译器插入的指令。既然是访问 8 bytes，必须要保证对应的 shadow mempry 的值必须是 0，否则肯定是有问题。那么如果访问的是 1,2 or 4 bytes 该如何检查呢？也很简单，我们只需要修改一下 if 判断条件即可。修改如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (*shadow &amp;&amp; *shadow &lt; ((<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>)addr &amp; <span class="hljs-number">7</span>) + N); <span class="hljs-comment">//N = 1,2,4</span>
+</code></pre></div></code></pre>
+<p>如果 *shadow 的值为 0 代表 8 bytes 均可以访问，自然就不需要 report bug。addr &amp; 7 是计算访问地址相对于 8 字节对齐地址的偏移。还是使用下图来说明关系吧。假设内存是从地址 8~15 一共 8 bytes。对应的 shadow memory 值为 5，现在访问 11 地址。那么这里的 N 只要大于 2 就是 invalid。</p>
+<h3 id="4.2.-shadow-memory-内存如何分配" tabindex="-1">4.2. shadow memory 内存如何分配？ <a class="header-anchor" href="#4.2.-shadow-memory-内存如何分配"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>在 ARM64 中，假设 VA_BITS 配置成 48。那么 kernel space 空间大小是 256TB，因此 shadow memory 的内存需要 32TB。我们需要在虚拟地址空间为 KASAN shadow memory 分配地址空间。所以我们有必要了解一下 ARM64 memory layout。</p>
+<p>基于 linux-4.15.0-rc3 的代码分析，我绘制了如下 memory layout（VA_BITS = 48）。kernel space 起始虚拟地址是 0xffff_0000_0000_0000，kernel space 被分成几个部分分别是 KASAN、MODULE、VMALLOC、FIXMAP、PCI_IO、VMEMMAP 以及 linear mapping。其中 KASAN 的大小是 32TB，正好是 kernel space 大小的 1/8。不知道你注意到没有，KERNEL 的位置相对以前是不是有所不一样。你的印象中，KERNEL 是不是位于 linear mapping 区域，这里怎么变成了 VMALLOC 区域？这里是 Ard Biesheuvel 提交的修改。主要是为了迎接 ARM64 世界的 KASLR（which allows the kernel image to be located anywhere in the vmalloc area）的到来。</p>
+<h3 id="4.3.-如何建立-shadow-memory-的映射关系" tabindex="-1">4.3. 如何建立 shadow memory 的映射关系？ <a class="header-anchor" href="#4.3.-如何建立-shadow-memory-的映射关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>当打开 KASAN 的时候，KASAN 区域位于 kernel space 首地址处，从 0xffff_0000_0000_0000 地址开始，大小是 32TB。shadow memory 和 kernel address 转换关系是：shadow_addr = (kaddr &gt;&gt; 3) + KASAN_SHADOW_OFFSE。为了将[0xffff_0000_0000_0000, 0xffff_ffff_ffff_ffff] 和[0xffff_0000_0000_0000, 0xffff_1fff_ffff_ffff] 对应起来，因此计算 KASAN_SHADOW_OFFSE 的值为 0xdfff_2000_0000_0000。我们将 KASAN 区域放大，如下图所示。</p>
+<p>KASAN 区域仅仅是分配的虚拟地址，在访问的时候必须建立和物理地址的映射才可以访问。上图就是 KASAN 建立的映射布局。左边是系统启动初期建立的映射。在 kasan_early_init() 函数中，将所有的 KASAN 区域映射到 kasan_zero_page 物理页面。因此系统启动初期，KASAN 并不能工作。右侧是在 kasan_init() 函数中建立的映射关系，kasan_init() 函数执行结束就预示着 KASAN 的正常工作。我们将不需要 address sanitizer 功能的区域同样还是映射到 kasan_zero_page 物理页面，并且是 readonly。我们主要是检测 kernel 和物理内存是否存在 UAF 或者 OOB 问题。所以建立 KERNEL 和 linear mapping（仅仅是所有的物理地址建立的映射区域）区域对应的 shadow memory 建立真实的映射关系。MOUDLE 区域对应的 shadow memory 的映射关系也是需要创建的，但是映射关系建立是动态的，他在 module 加载的时候才会去创建映射关系。</p>
+<h3 id="4.4.-伙伴系统分配的内存的-shadow-memory-值如何填充" tabindex="-1">4.4. 伙伴系统分配的内存的 shadow memory 值如何填充？ <a class="header-anchor" href="#4.4.-伙伴系统分配的内存的-shadow-memory-值如何填充"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>既然 shadow memory 已经建立映射，接下来的事情就是探究各种内存分配器向 shadow memory 填充什么数据了。首先看一下伙伴系统 allocate page(s) 函数填充 shadow memory 情况。</p>
+<p>假设我们从 buddy system 分配 4 pages。系统首先从 order=2 的链表中摘下一块内存，然后根据 shadow memory address 和 memory address 之间的对应的关系找对应的 shadow memory。这里 shadow memory 的大小将会是 2KB，系统会全部填充 0 代表内存可以访问。我们对分配的内存的任意地址内存进行访问的时候，首先都会找到对应的 shadow memory，然后根据 shadow memory value 判断访问内存操作是否 valid。</p>
+<p>如果释放 pages，情况又是如何呢？</p>
+<p>同样的，当释放 pages 的时候，会填充 shadow memory 的值为 0xFF。如果释放之后，依然访问内存的话，此时 KASAN 根据 shadow memory 的值是 0xFF 就可以断，这是一个 use-after-free 问题。</p>
+<h3 id="4.5.-slub-分配对象的内存的-shadow-memory-值如何填充" tabindex="-1">4.5. SLUB 分配对象的内存的 shadow memory 值如何填充？ <a class="header-anchor" href="#4.5.-slub-分配对象的内存的-shadow-memory-值如何填充"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>当我们打开 KASAN 的时候，SLUB Allocator 管理的 object layout 将会放生一定的变化。如下图所示。</p>
+<p>在打开 SLUB_DEBUG 的时候，object 就增加很多内存，KASAN 打开之后，在此基础上又加了一截。为什么这里必须打开 SLUB_DEBUG 呢？是因为有段时间 KASAN 是依赖 SLUBU_DEBUG 的，什么意思呢？就是在 Kconfig 中使用了 depends on，明白了吧。不过最新的代码已经不需要依赖了，可以看下提交。</p>
+<p>当我们第一次创建 slab 缓存池的时候，系统会调用 kasan_poison_slab() 函数初始化 shadow memory 为下图的模样。整个 slab 对应的 shadow memory 都填充 0xFC。</p>
+<p>上述步骤虽然填充了 0xFC，但是接下来初始化 object 的时候，会改变一些 shadow memory 的值。我们先看一下 kmalloc(20) 的情况。我们知道 kmalloc() 就是基于 SLUB Allocator 实现的，所以会从 kmalloc-32 的 kmem_cache 中分配一个 32 bytes object。</p>
+<p>首先调用 kmalloc(20) 函数会匹配到 kmalloc-32 的 kmem_cache，因此实际分配的 object 大小是 32 bytes。KASAN 同样会标记剩下的 12 bytes 的 shadow memory 为不可访问状态。根据 object 的地址，计算 shadow memory 的地址，并开始填充数值。由于 kmalloc() 返回的 object 的 size 是 32 bytes，由于 kmalloc(20) 只申请了 20 bytes，剩下的 12 bytes 不能使用。KASAN 必须标记 shadow memory 这种情况。object 对应的 4 bytes shadow memory 分别填充 00 00 04 FC。00 代表 8 个连续的字节可以访问。04 代表前 4 个字节可以访问。作为越界访问的检测的方法。总共加在一起是正好是 20 bytes 可访问。0xFC 是 Redzone 标记。如果访问了 Redzone 区域 KASAN 就会检测 out-of-bounds 的发生。</p>
+<p>当申请使用之后，现在调用 kfree() 释放之后的 shadow memory 情况是怎样的呢？看下图。</p>
+<p>根据 object 首地址找到对应的 shadow memory，32 bytes object 对应 4 bytes 的 shadow memory，现在填充 0xFB 标记内存是释放的状态。此时如果继续访问 object，那么根据 shadow memory 的状态值既可以确定是 use-after-free 问题。</p>
+<h3 id="4.6.-全局变量的-shadow-memory-值如何填充" tabindex="-1">4.6. 全局变量的 shadow memory 值如何填充？ <a class="header-anchor" href="#4.6.-全局变量的-shadow-memory-值如何填充"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>前面的分析都是基于内存分配器的，Redzone 都会随着内存分配器一起分配。那么 global variables 如何检测呢？global variable 的 Redzone 在哪里呢？这就需要编译器下手了。编译器会帮我们填充 Redzone 区域。例如我们定义一个全局变量 a，编译器会帮我们填充成下面的样子。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">char</span> a[<span class="hljs-number">4</span>];
+</code></pre></div></code></pre>
+<p>转换</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-type">char</span> original[<span class="hljs-number">4</span>];
+    <span class="hljs-type">char</span> redzone[<span class="hljs-number">60</span>];
+} a; <span class="hljs-comment">//32 bytes aligned</span>
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> __init <span class="hljs-title function_">do_ctors</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">ctor_fn_t</span> *fn = (<span class="hljs-type">ctor_fn_t</span> *) __ctors_start;
+    <span class="hljs-keyword">for</span> (; fn &lt; (<span class="hljs-type">ctor_fn_t</span> *) __ctors_end; fn++)
+        (*fn)();
+}
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> __asan_register_globals(<span class="hljs-keyword">struct</span> kasan_global *globals, <span class="hljs-type">size_t</span> size)
+{
+    <span class="hljs-type">int</span> i;
+    <span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; size; i++)
+        register_global(&amp;globals[i]);
+}
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* The layout of struct dictated by compiler */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">kasan_global</span> {</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">void</span> *beg;        <span class="hljs-comment">/* Address of the beginning of the global variable. */</span>
+    <span class="hljs-type">size_t</span> size;            <span class="hljs-comment">/* Size of the global variable. */</span>
+    <span class="hljs-type">size_t</span> size_with_redzone;   <span class="hljs-comment">/* Size of the variable + size of the red zone. 32 bytes aligned */</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">void</span> *name;
+    <span class="hljs-type">const</span> <span class="hljs-type">void</span> *module_name;    <span class="hljs-comment">/* Name of the module where the global variable is declared. */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> has_dynamic_init; <span class="hljs-comment">/* This needed for C++ */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">if</span> KASAN_ABI_VERSION &gt;= 4</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">kasan_source_location</span> *<span class="hljs-title">location</span>;</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+};
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* The layout of struct dictated by compiler */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">kasan_source_location</span> {</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *filename;
+    <span class="hljs-type">int</span> line_no;
+    <span class="hljs-type">int</span> column_no;
+};
+</code></pre></div></code></pre>
+<p>第一个成员 filename 地址是 ffff2000092bd6b8 和 module_name 一样的数据。剩下两个数据分别是 14 和 15，分别代表全局变量定义地方的行号和列号。现在回到上面我定义变量的截图，仔细数数列号是不是 15，行号截图中也有哦！特地截出来给你看的。剩下的 struct kasan_global 数据就是 smc_num1 和 smc_num2 的数据。分析就不说了。前面说 _GLOBAL__sub_I_65535_1_smc_num1 函数会被自动调用，该地址数据填充在 __ctors_start 和 __ctors_end 之间。现在也证明一下观点。先从 System.map 得到符号的地址数据。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ffff2000093ac5d8 T __ctors_start
+ffff2000093ae860 T __ctors_end
+</code></pre></div></code></pre>
+<p>然后搜索一下 _GLOBAL__sub_I_65535_1_smc_num1 的地址 ffff200009381df0 被存储在什么位置，记得搜索的关键字是 f01d3809 0020ffff。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ffff2000093ae0c0 f01d3809 0020ffff 181e3809 0020ffff
+</code></pre></div></code></pre>
+<p>可以看出 ffff2000093ae0c0 地址处存储着 _GLOBAL__sub_I_65535_1_smc_num1 函数地址。这个地址不是正好位于 __ctors_start 和 __ctors_end 之间嘛！</p>
+<p>现在就剩下 __asan_register_globals() 函数到底是是怎么初始化 shadow memory 的呢？以 char a[4] 为例，如下图所示。</p>
+<p>a[4] 只有 4 bytes 可以访问，所以对应的 shadow memory 的第一个 byte 值是 4，后面的 redzone 就填充 0xFA 作为越界检测。a[4] 只有 4 bytes 可以访问，所以对应的 shadow memory 的第一个 byte 值是 4，后面的 redzone 就填充 0xFA 作为越界检测。因为这里是全局变量，因此分配的内存区域位于 kernel 区域。</p>
+<h3 id="4.7.-栈分配变量的-readzone-是如何分配的" tabindex="-1">4.7. 栈分配变量的 readzone 是如何分配的？ <a class="header-anchor" href="#4.7.-栈分配变量的-readzone-是如何分配的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>从栈中分配的变量同样和全局变量一样需要填充一些内存作为 redzone 区域。下面继续举个例子说明编译器怎么填充。首先来一段正常的代码，没有编译器的插手。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">foo</span><span class="hljs-params">()</span>
+{
+    <span class="hljs-type">char</span> a[<span class="hljs-number">328</span>];
+}
+</code></pre></div></code></pre>
+<p>再来看看编译器插了哪些东西进去。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">foo</span><span class="hljs-params">()</span>
+{
+    <span class="hljs-type">char</span> rz1[<span class="hljs-number">32</span>];
+    <span class="hljs-type">char</span> a[<span class="hljs-number">328</span>];
+    <span class="hljs-type">char</span> rz2[<span class="hljs-number">56</span>];
+    <span class="hljs-type">int</span> *shadow = （&amp;rz1 &gt;&gt; <span class="hljs-number">3</span>）+ KASAN_SHADOW_OFFSE;
+
+    shadow[<span class="hljs-number">0</span>] = <span class="hljs-number">0xffffffff</span>;
+    shadow[<span class="hljs-number">11</span>] = <span class="hljs-number">0xffffff00</span>;
+    shadow[<span class="hljs-number">12</span>] = <span class="hljs-number">0xffffffff</span>;
+
+------------------------使用完毕----------------------------------------
+    shadow[<span class="hljs-number">0</span>] = shadow[<span class="hljs-number">11</span>] = shadow[<span class="hljs-number">12</span>] = <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>红色部分是编译器填充内存，rz2 是 56，可以根据上一节全局变量的公式套用计算得到。但是这里在变量前面竟然还有 32 bytes 的 rz1。这个是和全局变量的不同，我猜测这里是为了检测栈变量左边界越界问题。蓝色部分代码也是编译器填充，初始化 shadow memory。栈的填充就没有探究那么深入了，有兴趣的读者可以自己探究。</p>
+<h2 id="5.-error-log-信息包含哪些信息" tabindex="-1">5. Error log 信息包含哪些信息？ <a class="header-anchor" href="#5.-error-log-信息包含哪些信息"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>从 kernel 的 Documentation 文档找份典型的 KASAN bug 输出的 log 信息如下。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>==================================================================
+BUG: AddressSanitizer: out of bounds access in kmalloc_oob_right+0x65/0x75 [test_kasan] at addr ffff8800693bc5d3
+Write of size 1 by task modprobe/1689
+=============================================================================
+BUG kmalloc-128 (Not tainted): kasan error
+-----------------------------------------------------------------------------
+
+Bytes b4 ffff8800693bc548: 00 00 00 00 00 00 00 00 5a 5a 5a 5a 5a 5a 5a 5a  ........ZZZZZZZZ
+
+Object ffff8800693bc558: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+
+Object ffff8800693bc568: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+
+Object ffff8800693bc578: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+
+Object ffff8800693bc588: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+
+Object ffff8800693bc598: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+
+Object ffff8800693bc5a8: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+
+Object ffff8800693bc5b8: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b  kkkkkkkkkkkkkkkk
+
+Object ffff8800693bc5c8: 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b 6b a5  kkkkkkkkkkkkkkk.
+
+Redzone ffff8800693bc5d8: cc cc cc cc cc cc cc cc                          ........
+
+Padding ffff8800693bc718: 5a 5a 5a 5a 5a 5a 5a 5a                          ZZZZZZZZ
+
+CPU: 0 PID: 1689 Comm: modprobe Tainted: G    B          3.18.0-rc1-mm1+ #98
+
+Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS rel-1.7.5-0-ge51488c-20140602_164612-nilsson.home.kraxel.org 04/01/2014
+
+ ffff8800693bc000 0000000000000000 ffff8800693bc558 ffff88006923bb78
+
+ ffffffff81cc68ae 00000000000000f3 ffff88006d407600 ffff88006923bba8
+
+ ffffffff811fd848 ffff88006d407600 ffffea0001a4ef00 ffff8800693bc558
+
+Call Trace:
+
+ [&lt;ffffffff81cc68ae&gt;] dump_stack+0x46/0x58
+
+ [&lt;ffffffff811fd848&gt;] print_trailer+0xf8/0x160
+
+ [&lt;ffffffffa00026a7&gt;] ? kmem_cache_oob+0xc3/0xc3 [test_kasan]
+
+ [&lt;ffffffff811ff0f5&gt;] object_err+0x35/0x40
+
+ [&lt;ffffffffa0002065&gt;] ? kmalloc_oob_right+0x65/0x75 [test_kasan]
+
+ [&lt;ffffffff8120b9fa&gt;] kasan_report_error+0x38a/0x3f0
+
+ [&lt;ffffffff8120a79f&gt;] ? kasan_poison_shadow+0x2f/0x40
+
+ [&lt;ffffffff8120b344&gt;] ? kasan_unpoison_shadow+0x14/0x40
+
+ [&lt;ffffffff8120a79f&gt;] ? kasan_poison_shadow+0x2f/0x40
+
+ [&lt;ffffffffa00026a7&gt;] ? kmem_cache_oob+0xc3/0xc3 [test_kasan]
+
+ [&lt;ffffffff8120a995&gt;] __asan_store1+0x75/0xb0
+
+ [&lt;ffffffffa0002601&gt;] ? kmem_cache_oob+0x1d/0xc3 [test_kasan]
+
+ [&lt;ffffffffa0002065&gt;] ? kmalloc_oob_right+0x65/0x75 [test_kasan]
+
+ [&lt;ffffffffa0002065&gt;] kmalloc_oob_right+0x65/0x75 [test_kasan]
+
+ [&lt;ffffffffa00026b0&gt;] init_module+0x9/0x47 [test_kasan]
+
+ [&lt;ffffffff810002d9&gt;] do_one_initcall+0x99/0x200
+
+ [&lt;ffffffff811e4e5c&gt;] ? __vunmap+0xec/0x160
+
+ [&lt;ffffffff81114f63&gt;] load_module+0x2cb3/0x3b20
+
+ [&lt;ffffffff8110fd70&gt;] ? m_show+0x240/0x240
+
+ [&lt;ffffffff81115f06&gt;] SyS_finit_module+0x76/0x80
+
+ [&lt;ffffffff81cd3129&gt;] system_call_fastpath+0x12/0x17
+
+Memory state around the buggy address:
+
+ ffff8800693bc300: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+
+ ffff8800693bc380: fc fc 00 00 00 00 00 00 00 00 00 00 00 00 00 fc
+
+ ffff8800693bc400: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+
+ ffff8800693bc480: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+
+ ffff8800693bc500: fc fc fc fc fc fc fc fc fc fc fc 00 00 00 00 00
+
+&gt;ffff8800693bc580: 00 00 00 00 00 00 00 00 00 00 03 fc fc fc fc fc
+                                                                           ^
+  ffff8800693bc600: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+  ffff8800693bc680: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+  ffff8800693bc700: fc fc fc fc fb fb fb fb fb fb fb fb fb fb fb fb
+  ffff8800693bc780: fb fb fb fb fb fb fb fb fb fb fb fb fb fb fb fb
+  ffff8800693bc800: fb fb fb fb fb fb fb fb fb fb fb fb fb fb fb fb
+ ==================================================================
+</code></pre></div></code></pre>
+<p>输出的信息很丰富，包含了 bug 发生的类型、SLUB 输出的 object 内存信息、Call Trace 以及 shadow memory 的状态值。其中红色信息都是比较重要的信息。我没有写 demo 历程，而是找了一份 log 信息，不是我想偷懒，而是锻炼自己。怎么锻炼呢？我想问的是，从这份 log 中你可以推测代码应该是怎么样的？我可以得到一下信息：</p>
+<ol>
+<li>
+<p>程序是通过 kmalloc 接口申请内存的；</p>
+</li>
+<li>
+<p>申请的内存大小是 123 bytes，即 p = kamlloc(123);</p>
+</li>
+<li>
+<p>代码中类似往 p[123] 中写 1 bytes 导致越界访问的 bug；</p>
+</li>
+<li>
+<p>在 3) 步骤发生前没有任何的对该内存的写操作；</p>
+</li>
+</ol>
+<p>如果你也能得到以上 4 点猜测，我觉的我写的这几篇文章你是真的看明白了。首先输出信息是有 SLUB 的信息，所以应该是通过 kmalloc() 接口；在打印的 shadow memory 的值中，我们看到连续的 15 个 0 和一个 3，所以申请的内存 size 就是 15x8+3=123；由于是往 ffff8800693bc5d3 地址写 1 个字节，并且 object 首地址是 ffff8800693bc558，所以推测是往 p[123] 写 1 byte 出问题；由于 log 中将 object 中所有的 128 bytes 数据全部打印出来，一共是 127 个 0x6b 和一个 0xa5（SLUB DEBUG 文章介绍的内容）。所以我推测在 3) 步骤发生前没有任何的对该内存的写操作。</p>
+<h2 id="6.-补充" tabindex="-1">6. 补充 <a class="header-anchor" href="#6.-补充"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>我看了 linux-4.18 的代码，KASAN 的 log 输出已经发生了部分变化。例如：上面举例的 SLUB 的 object 的内容就不会打印了。我们用一下的程序展示这些变化（实际上就是上面举例用的程序）。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> noinline <span class="hljs-type">void</span> __init <span class="hljs-title function_">kmalloc_oob_right</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	<span class="hljs-type">char</span> *ptr;
+	<span class="hljs-type">size_t</span> size = <span class="hljs-number">123</span>;
+
+	ptr = kmalloc(size, GFP_KERNEL);
+	<span class="hljs-keyword">if</span> (!ptr) {
+		pr_err(<span class="hljs-string">&quot;Allocation failed\n&quot;</span>);
+		<span class="hljs-keyword">return</span>;
+	}
+
+	ptr[size] = <span class="hljs-string">&#x27;x&#x27;</span>;
+	kfree(ptr);
+}
+</code></pre></div></code></pre>
+<p>针对以上代码，KASAN 检测到 bug 后的输出 log 如下：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>==================================================================
+BUG: KASAN: slab-out-of-bounds in kmalloc_oob_right+0x6c/0x8c
+Write of size 1 at addr ffffffc0cb114d7b by task swapper/0/1
+
+CPU: 4 PID: 1 Comm: swapper/0 Tainted: G S      W       4.9.82-perf+ #310
+Hardware name: Qualcomm Technologies, Inc. SDM632 PMI632
+Call trace:
+[&lt;ffffff90cf88d9f8&gt;] dump_backtrace+0x0/0x320
+[&lt;ffffff90cf88dd2c&gt;] show_stack+0x14/0x20
+[&lt;ffffff90cfdd1148&gt;] dump_stack+0xa8/0xd0
+[&lt;ffffff90cfabf298&gt;] print_address_description+0x60/0x250
+[&lt;ffffff90cfabf6a0&gt;] kasan_report.part.2+0x218/0x2f0
+[&lt;ffffff90cfabfac0&gt;] kasan_report+0x20/0x28
+[&lt;ffffff90cfabdc64&gt;] __asan_store1+0x4c/0x58
+[&lt;ffffff90d1a4f760&gt;] kmalloc_oob_right+0x6c/0x8c
+[&lt;ffffff90d1a50448&gt;] kmalloc_tests_init+0xc/0x68
+[&lt;ffffff90cf8845dc&gt;] do_one_initcall+0xa4/0x1f0
+[&lt;ffffff90d1a011ac&gt;] kernel_init_freeable+0x244/0x300
+[&lt;ffffff90d0d6da70&gt;] kernel_init+0x10/0x110
+[&lt;ffffff90cf8842a0&gt;] ret_from_fork+0x10/0x30
+
+Allocated by task 1:
+ kasan_kmalloc+0xd8/0x188
+ kmem_cache_alloc_trace+0x130/0x248
+ kmalloc_oob_right+0x4c/0x8c
+ kmalloc_tests_init+0xc/0x68
+ do_one_initcall+0xa4/0x1f0
+ kernel_init_freeable+0x244/0x300
+ kernel_init+0x10/0x110
+ ret_from_fork+0x10/0x30
+
+Freed by task 1:
+ kasan_slab_free+0x88/0x178
+ kfree+0x84/0x298
+ kobject_uevent_env+0x144/0x620
+ kobject_uevent+0x10/0x18
+ device_add+0x5f8/0x860
+ amba_device_try_add+0x22c/0x2f8
+ amba_device_add+0x20/0x128
+ of_platform_bus_create+0x390/0x478
+ of_platform_bus_create+0x21c/0x478
+ of_platform_populate+0x4c/0xb8
+ of_platform_default_populate_init+0x78/0x8c
+ do_one_initcall+0xa4/0x1f0
+ kernel_init_freeable+0x244/0x300
+ kernel_init+0x10/0x110
+ ret_from_fork+0x10/0x30
+
+The buggy address belongs to the object at ffffffc0cb114d00
+ which belongs to the cache kmalloc-128 of size 128
+The buggy address is located 123 bytes inside of
+ 128-byte region [ffffffc0cb114d00, ffffffc0cb114d80)
+The buggy address belongs to the page:
+page:ffffffbf032c4500 count:1 mapcount:0 mapping: (null) index:0xffffffc0cb115200 compound_mapcount: 0
+flags: 0x4080(slab|head)
+page dumped because: kasan: bad access detected
+
+Memory state around the buggy address:
+ ffffffc0cb114c00: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+ ffffffc0cb114c80: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+&gt;ffffffc0cb114d00: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 03
+                                                                ^
+ ffffffc0cb114d80: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+ ffffffc0cb114e00: fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc fc
+==================================================================
+</code></pre></div></code></pre>
+<ul>
+<li>
+<p>line2：发生越界访问位置。</p>
+</li>
+<li>
+<p>line3：越界写 1 个字节，写的地址是 0xffffffc0cb114d7b。当前进程是 comm 是 swapper/0，pid 是 1。</p>
+</li>
+<li>
+<p>line7：Call trace，方便定位出问题的函数调用关系。</p>
+</li>
+<li>
+<p>line22：该 object 分配的调用栈，并指出分配内存的进程 pid 是 1。</p>
+</li>
+<li>
+<p>line32：释放该 object 的调用栈（上次释放），并指出释放内存的进程 pid 是 1。</p>
+</li>
+<li>
+<p>line49：指出 slub 相关的信息，从“kmalloc-28”的 kmem_cache 分配的 object。object 起始地址是 0xffffffc0cb114d00。</p>
+</li>
+<li>
+<p>line51：访问出问题的地址位于 object 起始地址偏移 123 bytes 的位置。object 的地址范围是[0xffffffc0cb114d00, 0xffffffc0cb114d80)。object 实际大小是 128 bytes。</p>
+</li>
+<li>
+<p>line61：出问题地址对应的 shadow memory 的值，可以确定申请内存的实际大小是 123 bytes。</p>
+</li>
+</ul>
+<h2 id="参考文献" tabindex="-1">参考文献 <a class="header-anchor" href="#参考文献"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>1．How to use KASAN to debug memory corruption in OpenStack environment.pdf</p>
+<p>2．KernelAddressSanitizer (KASan) a fast memory error detector for the Linux kernel.pdf</p>
+
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="本页目录">
+                <div class="toc-title">本页目录</div>
+                <nav class="toc-list">
+                  
+                  <a class="toc-item toc-lv2" href="#1.-前言" data-toc-target="1.-前言">1. 前言</a>
+                  
+                  <a class="toc-item toc-lv2" href="#2.-简介" data-toc-target="2.-简介">2. 简介</a>
+                  
+                  <a class="toc-item toc-lv2" href="#3.-如何使用" data-toc-target="3.-如何使用">3. 如何使用</a>
+                  
+                  <a class="toc-item toc-lv2" href="#4.-kasan-是如何实现检测的" data-toc-target="4.-kasan-是如何实现检测的">4. KASAN 是如何实现检测的？</a>
+                  
+                  <a class="toc-item toc-lv3" href="#4.1.-如何根据-shadow-memory-的值判断内存访问操作是否-valid" data-toc-target="4.1.-如何根据-shadow-memory-的值判断内存访问操作是否-valid">4.1. 如何根据 shadow memory 的值判断内存访问操作是否 valid？</a>
+                  
+                  <a class="toc-item toc-lv3" href="#4.2.-shadow-memory-内存如何分配" data-toc-target="4.2.-shadow-memory-内存如何分配">4.2. shadow memory 内存如何分配？</a>
+                  
+                  <a class="toc-item toc-lv3" href="#4.3.-如何建立-shadow-memory-的映射关系" data-toc-target="4.3.-如何建立-shadow-memory-的映射关系">4.3. 如何建立 shadow memory 的映射关系？</a>
+                  
+                  <a class="toc-item toc-lv3" href="#4.4.-伙伴系统分配的内存的-shadow-memory-值如何填充" data-toc-target="4.4.-伙伴系统分配的内存的-shadow-memory-值如何填充">4.4. 伙伴系统分配的内存的 shadow memory 值如何填充？</a>
+                  
+                  <a class="toc-item toc-lv3" href="#4.5.-slub-分配对象的内存的-shadow-memory-值如何填充" data-toc-target="4.5.-slub-分配对象的内存的-shadow-memory-值如何填充">4.5. SLUB 分配对象的内存的 shadow memory 值如何填充？</a>
+                  
+                  <a class="toc-item toc-lv3" href="#4.6.-全局变量的-shadow-memory-值如何填充" data-toc-target="4.6.-全局变量的-shadow-memory-值如何填充">4.6. 全局变量的 shadow memory 值如何填充？</a>
+                  
+                  <a class="toc-item toc-lv3" href="#4.7.-栈分配变量的-readzone-是如何分配的" data-toc-target="4.7.-栈分配变量的-readzone-是如何分配的">4.7. 栈分配变量的 readzone 是如何分配的？</a>
+                  
+                  <a class="toc-item toc-lv2" href="#5.-error-log-信息包含哪些信息" data-toc-target="5.-error-log-信息包含哪些信息">5. Error log 信息包含哪些信息？</a>
+                  
+                  <a class="toc-item toc-lv2" href="#6.-补充" data-toc-target="6.-补充">6. 补充</a>
+                  
+                  <a class="toc-item toc-lv2" href="#参考文献" data-toc-target="参考文献">参考文献</a>
+                  
+                </nav>
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1997 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1997 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+</body>
+</html>

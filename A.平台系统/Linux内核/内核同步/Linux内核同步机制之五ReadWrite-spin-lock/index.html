@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Linux内核同步机制之五ReadWrite spin lock · LemonCyan</title>
+
+<link rel="icon" href="/img/favicon.ico">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E5%B9%B3%E5%8F%B0%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#2196f3" title="平台系统">平台系统</a>
+        
+        <a href="/B.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80/" class="topnav-item" style="--dot:#3f51b5" title="编程语言">编程语言</a>
+        
+        <a href="/C.%E5%BC%80%E5%8F%91%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#009688" title="开发框架">开发框架</a>
+        
+        <a href="/D.%E9%80%9A%E8%AE%AF%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#00bcd4" title="通讯协议">通讯协议</a>
+        
+        <a href="/E.%E5%B5%8C%E5%85%A5%E5%BC%8F%E5%BC%80%E5%8F%91/" class="topnav-item" style="--dot:#8bc34a" title="嵌入式开发">嵌入式开发</a>
+        
+        <a href="/F.%E4%B8%93%E4%B8%9A%E7%9F%A5%E8%AF%86/" class="topnav-item" style="--dot:#ffc107" title="专业知识">专业知识</a>
+        
+        <a href="/G.%E6%8A%95%E8%B5%84/" class="topnav-item" style="--dot:#ff9800" title="投资">投资</a>
+        
+        <a href="/H.AI%E4%B8%8E%E8%87%AA%E5%8A%A8%E5%8C%96/" class="topnav-item" style="--dot:#9c27b0" title="AI 与自动化">AI 与自动化</a>
+        
+        <a href="/I.%E4%B8%AA%E4%BA%BA%E7%94%9F%E6%B4%BB/" class="topnav-item" style="--dot:#e91e63" title="个人生活">个人生活</a>
+        
+        <a href="/J.%E8%81%8C%E4%B8%9A%E4%B8%8E%E6%88%90%E9%95%BF/" class="topnav-item" style="--dot:#795548" title="职业与成长">职业与成长</a>
+        
+        <a href="/K.%E9%9A%8F%E7%AC%94%E4%B8%8E%E6%9D%82%E8%AE%B0/" class="topnav-item" style="--dot:#607d8b" title="随笔与杂记">随笔与杂记</a>
+        
+        <a href="/L.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E8%AE%BE%E8%AE%A1/" class="topnav-item" style="--dot:#f44336" title="项目与设计">项目与设计</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">Linux内核同步机制之五ReadWrite spin lock</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/A.平台系统/Linux内核/内核同步/Linux内核同步机制之五ReadWrite-spin-lock/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">Linux内核同步机制之五ReadWrite spin lock</span>
+                <div class="reader-content">
+                  <h1 id="linux-内核同步机制之五readwrite-spin-lock" tabindex="-1">Linux 内核同步机制之（五）：Read/Write spin lock <a class="header-anchor" href="#linux-内核同步机制之五readwrite-spin-lock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h1>
+<h2 id="一为何会有-rw-spin-lock" tabindex="-1">一、为何会有 rw spin lock？ <a class="header-anchor" href="#一为何会有-rw-spin-lock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>在有了强大的 spin lock 之后，为何还会有 rw spin lock 呢？无他，仅仅是为了增加内核的并发，从而增加性能而已。spin lock 严格的限制只有一个 thread 可以进入临界区，但是实际中，有些对共享资源的访问可以严格区分读和写的，这时候，其实多个读的 thread 进入临界区是 OK 的，使用 spin lock 则限制一个读 thread 进入，从而导致性能的下降。</p>
+<p>本文主要描述 RW spin lock 的工作原理及其实现。需要说明的是 Linux 内核同步机制之（四）：spin lock 是本文的基础，请先阅读该文档以便保证阅读的畅顺。</p>
+<h2 id="二工作原理" tabindex="-1">二、工作原理 <a class="header-anchor" href="#二工作原理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1应用举例" tabindex="-1">1、应用举例 <a class="header-anchor" href="#1应用举例"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>我们来看一个 rw spinlock 在文件系统中的例子：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">file_system_type</span> *<span class="hljs-title">file_systems</span>;</span>
+<span class="hljs-type">static</span> <span class="hljs-title function_">DEFINE_RWLOCK</span><span class="hljs-params">(file_systems_lock)</span>;
+</code></pre></div></code></pre>
+<p>linux 内核支持多种文件系统类型，例如 EXT4，YAFFS2 等，每种文件系统都用 struct file_system_type 来表示。内核中所有支持的文件系统用一个链表来管理，file_systems 指向这个链表的第一个 node。访问这个链表的时候，需要用 file_systems_lock 来保护，场景包括：</p>
+<p>（1）register_filesystem 和 unregister_filesystem 分别用来向系统注册和注销一个文件系统。</p>
+<p>（2）fs_index 或者 fs_name 等函数会遍历该链表，找到对应的 struct file_system_type 的名字或者 index。</p>
+<p>这些操作可以分成两类，第一类就是需要对链表进行更新的动作，例如向链表中增加一个 file system type（注册）或者减少一个（注销）。另外一类就是仅仅对链表进行遍历的操作，并不修改链表的内容。在不修改链表的内容的前提下，多个 thread 进入这个临界区是 OK 的，都能返回正确的结果。但是对于第一类操作则不然，这样的更新链表的操作是排他的，只能是同时有一个 thread 在临界区中。</p>
+<h3 id="2基本的策略" tabindex="-1">2、基本的策略 <a class="header-anchor" href="#2基本的策略"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>使用普通的 spin lock 可以完成上一节中描述的临界区的保护，但是，由于 spin lock 的特定就是只允许一个 thread 进入，因此这时候就禁止了多个读 thread 进入临界区，而实际上多个 read thread 可以同时进入的，但现在也只能是不停的 spin，cpu 强大的运算能力无法发挥出来，如果使用不断 retry 检查 spin lock 的状态的话（而不是使用类似 ARM 上的 WFE 这样的指令），对系统的功耗也是影响很大的。因此，必须有新的策略来应对：</p>
+<p>我们首先看看加锁的逻辑：</p>
+<p>（1）假设临界区内没有任何的 thread，这时候任何 read thread 或者 write thread 可以进入，但是只能是其一。</p>
+<p>（2）假设临界区内有一个 read thread，这时候新来的 read thread 可以任意进入，但是 write thread 不可以进入</p>
+<p>（3）假设临界区内有一个 write thread，这时候任何的 read thread 或者 write thread 都不可以进入</p>
+<p>（4）假设临界区内有一个或者多个 read thread，write thread 当然不可以进入临界区，但是该 write thread 也无法阻止后续 read thread 的进入，他要一直等到临界区一个 read thread 也没有的时候，才可以进入，多么可怜的 write thread。</p>
+<p>unlock 的逻辑如下：</p>
+<p>（1）在 write thread 离开临界区的时候，由于 write thread 是排他的，因此临界区有且只有一个 write thread，这时候，如果 write thread 执行 unlock 操作，释放掉锁，那些处于 spin 的各个 thread（read 或者 write）可以竞争上岗。</p>
+<p>（2）在 read thread 离开临界区的时候，需要根据情况来决定是否让其他处于 spin 的 write thread 们参与竞争。如果临界区仍然有 read thread，那么 write thread 还是需要 spin（注意：这时候 read thread 可以进入临界区，听起来也是不公平的）直到所有的 read thread 释放锁（离开临界区），这时候 write thread 们可以参与到临界区的竞争中，如果获取到锁，那么该 write thread 可以进入。</p>
+<h2 id="三实现" tabindex="-1">三、实现 <a class="header-anchor" href="#三实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1通用代码文件的整理" tabindex="-1">1、通用代码文件的整理 <a class="header-anchor" href="#1通用代码文件的整理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>rw spin lock 的头文件的结构和 spin lock 是一样的。include/linux/rwlock_types.h 文件中定义了通用 rw spin lock 的基本的数据结构（例如 rwlock_t）和如何初始化的接口（DEFINE_RWLOCK）。include/linux/rwlock.h。这个头文件定义了通用 rw spin lock 的接口函数声明，例如 read_lock、write_lock、read_unlock、write_unlock 等。include/linux/rwlock_api_smp.h 文件定义了 SMP 上的 rw spin lock 模块的接口声明。</p>
+<p>需要特别说明的是：用户不需要 include 上面的头文件，基本上普通 spinlock 和 rw spinlock 使用统一的头文件接口，用户只需要 include 一个 include/linux/spinlock.h 文件就 OK 了。</p>
+<h3 id="2数据结构" tabindex="-1">2、数据结构 <a class="header-anchor" href="#2数据结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>rwlock_t 数据结构定义如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+	<span class="hljs-type">arch_rwlock_t</span> raw_lock;
+} <span class="hljs-type">rwlock_t</span>;
+</code></pre></div></code></pre>
+<p>rwlock_t 依赖 arch 对 rw spinlock 相关的定义。</p>
+<h3 id="3api" tabindex="-1">3、API <a class="header-anchor" href="#3api"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>我们整理 RW spinlock 的接口 API 如下表：</p>
+<blockquote>
+<p>注：原文此处配有一张 RW spinlock 接口 API 列表的表格，在网页抓取过程中丢失。</p>
+</blockquote>
+<p>在具体的实现面，如何将 archtecture independent 的代码转到具体平台的代码的思路是和 spin lock 一样的，这里不再赘述。</p>
+<h3 id="4arm-上的实现" tabindex="-1">4、ARM 上的实现 <a class="header-anchor" href="#4arm-上的实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>对于 arm 平台，rw spin lock 的代码位于 arch/arm/include/asm/spinlock.h 和 spinlock_type.h（其实普通 spin lock 的代码也是在这两个文件中），和通用代码类似，spinlock_type.h 定义 ARM 相关的 rw spin lock 定义以及初始化相关的宏；spinlock.h 中包括了各种具体的实现。我们先看 arch_rwlock_t 的定义：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+	u32 lock;
+} <span class="hljs-type">arch_rwlock_t</span>;
+</code></pre></div></code></pre>
+<p>毫无压力，就是一个 32-bit 的整数。从定义就可以看出 rw spinlock 不是 ticket-based spin lock。我们再看看 arch_write_lock 的实现：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arch_write_lock</span><span class="hljs-params">(<span class="hljs-type">arch_rwlock_t</span> *rw)</span>
+{
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> tmp;
+
+	prefetchw(&amp;rw-&gt;lock); －－－－－－－知道后面需要访问这个内存，先通知hw进行preloading cache
+
+	__asm__ __volatile__(
+<span class="hljs-string">&quot;1:	ldrex	%0, [%1]\n&quot;</span> －－－－－获取lock的值并保存在tmp中
+<span class="hljs-string">&quot;	teq	%0, #0\n&quot;</span> －－－－－－－－判断是否等于<span class="hljs-number">0</span>
+	WFE(<span class="hljs-string">&quot;ne&quot;</span>) －－－－－－－－－－如果tmp不等于<span class="hljs-number">0</span>，那么说明有read 或者write的thread持有锁，那么还是静静的等待吧。其他thread会在unlock的时候Send Event来唤醒该CPU的
+<span class="hljs-string">&quot;	strexeq	%0, %2, [%1]\n&quot;</span> －－－－如果tmp等于<span class="hljs-number">0</span>，将<span class="hljs-number">0x80000000</span>这个值赋给lock
+<span class="hljs-string">&quot;	teq	%0, #0\n&quot;</span> －－－－－－－－是否str成功，如果有其他thread在上面的过程插入进来就会失败
+<span class="hljs-string">&quot;	bne	1b&quot;</span> －－－－－－－－－如果不成功，那么需要重新来过，否则持有锁，进入临界区
+	: <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp) －－－－％<span class="hljs-number">0</span>
+	: <span class="hljs-string">&quot;r&quot;</span> (&amp;rw-&gt;lock), <span class="hljs-string">&quot;r&quot;</span> (<span class="hljs-number">0x80000000</span>)－－－－－－－％<span class="hljs-number">1</span>和％<span class="hljs-number">2</span>
+	: <span class="hljs-string">&quot;cc&quot;</span>);
+
+	smp_mb(); －－－－－－－memory barrier的操作
+}
+</code></pre></div></code></pre>
+<p>对于 write lock，只要临界区有一个 thread 进行读或者写的操作（具体判断是针对 32bit 的 lock 进行，覆盖了 writer 和 reader thread），该 thread 都会进入 spin 状态。如果临界区没有任何的读写 thread，那么 writer 进入临界区，并设定 lock＝0x80000000。我们再来看看 write unlock 的操作：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arch_write_unlock</span><span class="hljs-params">(<span class="hljs-type">arch_rwlock_t</span> *rw)</span>
+{
+	smp_mb(); －－－－－－－memory barrier的操作
+
+	__asm__ __volatile__(
+	<span class="hljs-string">&quot;str	%1, [%0]\n&quot;</span>－－－－－－－－－－－恢复<span class="hljs-number">0</span>值
+	:
+	: <span class="hljs-string">&quot;r&quot;</span> (&amp;rw-&gt;lock), <span class="hljs-string">&quot;r&quot;</span> (<span class="hljs-number">0</span>) －－－－－－－－％<span class="hljs-number">0</span>和％<span class="hljs-number">1</span>
+	: <span class="hljs-string">&quot;cc&quot;</span>);
+
+	dsb_sev();－－－－－－－memory barrier的操作加上send event，wakeup其他 thread（那些cpu处于WFE状态）
+}
+</code></pre></div></code></pre>
+<p>write unlock 看起来很简单，就是一个 lock＝0x0 的操作。了解了 write 相关的操作后，我们再来看看 read 的操作：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arch_read_lock</span><span class="hljs-params">(<span class="hljs-type">arch_rwlock_t</span> *rw)</span>
+{
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> tmp, tmp2;
+
+	prefetchw(&amp;rw-&gt;lock);
+
+	__asm__ __volatile__(
+<span class="hljs-string">&quot;1:	ldrex	%0, [%2]\n&quot;</span>－－－－－－－－获取lock的值并保存在tmp中
+<span class="hljs-string">&quot;	adds	%0, %0, #1\n&quot;</span>－－－－－－－－tmp = tmp + <span class="hljs-number">1</span>
+<span class="hljs-string">&quot;	strexpl	%1, %0, [%2]\n&quot;</span>－－－－如果tmp结果非负值，那么就执行该指令，将tmp值存入lock
+	WFE(<span class="hljs-string">&quot;mi&quot;</span>)－－－－－－－－－如果tmp是负值，说明有write thread，那么就进入wait <span class="hljs-keyword">for</span> event状态
+<span class="hljs-string">&quot;	rsbpls	%0, %1, #0\n&quot;</span>－－－－－判断strexpl指令是否成功执行
+<span class="hljs-string">&quot;	bmi	1b&quot;</span>－－－－－－－－－－如果不成功，那么需要重新来过，否则持有锁，进入临界区
+	: <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp2)－－－－－－－－－－％<span class="hljs-number">0</span>和％<span class="hljs-number">1</span>
+	: <span class="hljs-string">&quot;r&quot;</span> (&amp;rw-&gt;lock)－－－－－－－－－－－－－－－％<span class="hljs-number">2</span>
+	: <span class="hljs-string">&quot;cc&quot;</span>);
+
+	smp_mb();
+}
+</code></pre></div></code></pre>
+<p>上面的代码比较简单，需要说明的是 adds 指令更新了状态寄存器（指令中 s 那个字符就是这个意思），strexpl 会根据 adds 指令的执行结果来判断是否执行。pl 的意思就是 positive or zero，也就是说，如果结果是正数或者 0（没有 thread 在临界区或者临界区内有若干 read thread），该指令都会执行，如果是负数（有 write thread 在临界区），那么就不执行。OK，最后我们来看 read unlock 的函数：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arch_read_unlock</span><span class="hljs-params">(<span class="hljs-type">arch_rwlock_t</span> *rw)</span>
+{
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> tmp, tmp2;
+
+	smp_mb();
+
+	prefetchw(&amp;rw-&gt;lock);
+
+	__asm__ __volatile__(
+<span class="hljs-string">&quot;1:	ldrex	%0, [%2]\n&quot;</span>－－－－－－－－获取lock的值并保存在tmp中
+<span class="hljs-string">&quot;	sub	%0, %0, #1\n&quot;</span>－－－－－－－－tmp = tmp - <span class="hljs-number">1</span>
+<span class="hljs-string">&quot;	strex	%1, %0, [%2]\n&quot;</span>－－－－－－将tmp值存入lock中
+<span class="hljs-string">&quot;	teq	%1, #0\n&quot;</span>－－－－－－是否str成功，如果有其他thread在上面的过程插入进来就会失败
+<span class="hljs-string">&quot;	bne	1b&quot;</span>－－－－－－－如果不成功，那么需要重新来过，否则离开临界区
+	: <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp2)－－－－－－－－－－－－％<span class="hljs-number">0</span>和％<span class="hljs-number">1</span>
+	: <span class="hljs-string">&quot;r&quot;</span> (&amp;rw-&gt;lock)－－－－－－－－－－－－－－－－－％<span class="hljs-number">2</span>
+	: <span class="hljs-string">&quot;cc&quot;</span>);
+
+	<span class="hljs-keyword">if</span> (tmp == <span class="hljs-number">0</span>)
+		dsb_sev();－－－－－如果read thread已经等于<span class="hljs-number">0</span>，说明是最后一个离开临界区的reader，那么调用sev去唤醒WFE的cpu core
+}
+</code></pre></div></code></pre>
+<p>最后，总结一下：</p>
+<p>32 个 bit 的 lock，0～30 的 bit 用来记录进入临界区的 read thread 的数目，第 31 个 bit 用来记录 write thread 的数目，由于只允许一个 write thread 进入临界区，因此 1 个 bit 就 OK 了。在这样的设计下，read thread 的数目最大就是 2 的 30 次幂减去 1 的数值，超过这个数值就溢出了，当然这个数值在目前的系统中已经足够的大了，姑且认为它是安全的吧。</p>
+<h2 id="四后记" tabindex="-1">四、后记 <a class="header-anchor" href="#四后记"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>read/write spinlock 对于 read thread 和 write thread 采用相同的优先级，read thread 必须等待 write thread 完成离开临界区才可以进入，而 write thread 需要等到所有的 read thread 完成操作离开临界区才能进入。正如我们前面所说，这看起来对 write thread 有些不公平，但这就是 read/write spinlock 的特点。此外，在内核中，已经不鼓励对 read/write spinlock 的使用了，RCU 是更好的选择。如何解决 read/write spinlock 优先级问题？RCU 又是什么呢？我们下回分解。</p>
+<h2 id="参考资料" tabindex="-1">参考资料 <a class="header-anchor" href="#参考资料"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><a href="http://www.wowotech.net/kernel_synchronization/rw-spinlock.html" target="_blank" rel="noopener noreferrer">http://www.wowotech.net/kernel_synchronization/rw-spinlock.html</a></p>
+
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="本页目录">
+                <div class="toc-title">本页目录</div>
+                <nav class="toc-list">
+                  
+                  <a class="toc-item toc-lv2" href="#一为何会有-rw-spin-lock" data-toc-target="一为何会有-rw-spin-lock">一、为何会有 rw spin lock？</a>
+                  
+                  <a class="toc-item toc-lv2" href="#二工作原理" data-toc-target="二工作原理">二、工作原理</a>
+                  
+                  <a class="toc-item toc-lv3" href="#1应用举例" data-toc-target="1应用举例">1、应用举例</a>
+                  
+                  <a class="toc-item toc-lv3" href="#2基本的策略" data-toc-target="2基本的策略">2、基本的策略</a>
+                  
+                  <a class="toc-item toc-lv2" href="#三实现" data-toc-target="三实现">三、实现</a>
+                  
+                  <a class="toc-item toc-lv3" href="#1通用代码文件的整理" data-toc-target="1通用代码文件的整理">1、通用代码文件的整理</a>
+                  
+                  <a class="toc-item toc-lv3" href="#2数据结构" data-toc-target="2数据结构">2、数据结构</a>
+                  
+                  <a class="toc-item toc-lv3" href="#3api" data-toc-target="3api">3、API</a>
+                  
+                  <a class="toc-item toc-lv3" href="#4arm-上的实现" data-toc-target="4arm-上的实现">4、ARM 上的实现</a>
+                  
+                  <a class="toc-item toc-lv2" href="#四后记" data-toc-target="四后记">四、后记</a>
+                  
+                  <a class="toc-item toc-lv2" href="#参考资料" data-toc-target="参考资料">参考资料</a>
+                  
+                </nav>
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1997 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1997 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+</body>
+</html>
