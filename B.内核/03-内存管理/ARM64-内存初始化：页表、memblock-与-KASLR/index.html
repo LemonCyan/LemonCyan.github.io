@@ -1,0 +1,1623 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ARM64 内存初始化：页表、memblock 与 KASLR · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">ARM64 内存初始化：页表、memblock 与 KASLR</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">ARM64 内存初始化：页表、memblock 与 KASLR</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">ARM64 内存初始化：页表、memblock 与 KASLR</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>这篇把六份旧稿压成一条线：ARM64 上从 bootloader 交棒，到 <code>free_area_init</code> 之前，内核怎么建页表、怎么记内存、怎么把自己随机化。代码全部取自 ARM64。版本按原稿分开标，不统一：建表三函数、<code>__create_page_tables</code>、memblock、<code>paging_init</code>、fixmap 是 4.4.6；KASLR 那一大段是 4.15；出处见附录。</p>
+<p>不讲的东西：伙伴系统的分配算法、slab/slub 内部、页回收与 swap、TLB 刷新策略、DMA 与 IOMMU。各有专文，别在这里找：</p>
+<ul>
+<li>地址翻译机制、VMA、缺页处理 → <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/%E5%9C%B0%E5%9D%80%E7%A9%BA%E9%97%B4%E4%B8%8E%E5%9C%B0%E5%9D%80%E7%BF%BB%E8%AF%91/" class="wikilink">地址空间与地址翻译</a></li>
+<li>页帧、zone、node、内存模型 → <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/%E7%89%A9%E7%90%86%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86%EF%BC%9A%E9%A1%B5%E3%80%81zone-%E4%B8%8E%E5%86%85%E5%AD%98%E6%A8%A1%E5%9E%8B/" class="wikilink">物理内存管理：页、zone 与内存模型</a></li>
+<li>mmap 在 ARM64 上的坑、TLB 一致性 → <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/%E9%A1%B5%E8%A1%A8%E3%80%81TLB-%E4%B8%8E-mmap-%E7%9A%84%E5%9D%91/" class="wikilink">页表、TLB 与 mmap 的坑</a></li>
+<li>分配器内部 → <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/slab-%E4%B8%8E-slub-%E5%88%86%E9%85%8D%E5%99%A8/" class="wikilink">slab 与 slub 分配器</a></li>
+<li>回收与逆向映射 → <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/%E9%A1%B5%E9%9D%A2%E5%9B%9E%E6%94%B6%E4%B8%8E%E9%80%86%E5%90%91%E6%98%A0%E5%B0%84/" class="wikilink">页面回收与逆向映射</a></li>
+<li>入口那几行汇编、<code>__cpu_setup</code>、UEFI stub、4.15 的地址布局宏 → <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/03-ARM%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%BC%82%E5%B8%B8/ARM64-%E5%86%85%E6%A0%B8%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%A1%B5%E8%A1%A8%E5%BB%BA%E7%AB%8B/" class="wikilink">ARM64 内核启动与页表建立</a></li>
+<li>描述符位域、<code>pgtable-prot.h</code> 的宏 → <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/03-ARM%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%BC%82%E5%B8%B8/ARM64-%E5%9C%B0%E5%9D%80%E7%BF%BB%E8%AF%91%E4%B8%8E%E9%A1%B5%E8%A1%A8%E5%AE%8F%E5%AE%9A%E4%B9%89/" class="wikilink">ARM64 地址翻译与页表宏定义</a></li>
+</ul>
+<p>两个前置约定：VA/PA 都是 64 位值，除非写明位宽；48 位和 39 位两种 VA 配置都会出现，各自标注着看，混着读会对不上号——第十七章那份 dump 就是 39 位的。</p>
+</blockquote>
+<h2 id="一打开-mmu-之前内核面对的局面" tabindex="-1">一、打开 MMU 之前：内核面对的局面 <a class="header-anchor" href="#一打开-mmu-之前内核面对的局面"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>bootloader 摸清系统内存，把 kernel image 和 dtb image 搬进 DRAM，跳到内核入口。此刻 MMU 关着，CPU 眼里只有物理地址。原文这里配过一张「启动之前的内存布局」图，抓取时丢了，用表补上：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">对象</th>
+<th style="text-align:left">谁放在哪</th>
+<th style="text-align:left">约束</th>
+<th style="text-align:left">内核的假设</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">kernel image</td>
+<td style="text-align:left">bootloader 放在 main memory 起始地址偏移 <code>TEXT_OFFSET</code> 处</td>
+<td style="text-align:left"><code>TEXT_OFFSET</code> 与内核事先谈好（4.4.6 常见值 0x80000）</td>
+<td style="text-align:left">低于 image 的物理内存，内核不纳入自己的内存管理</td>
+</tr>
+<tr>
+<td style="text-align:left">dtb image</td>
+<td style="text-align:left">bootloader 随便放</td>
+<td style="text-align:left">早期要求 8 字节对齐、不跨 2M、落在 image 起始 512M 内</td>
+<td style="text-align:left">汇编阶段不碰它，进 C 之后再建映射</td>
+</tr>
+<tr>
+<td style="text-align:left">页表</td>
+<td style="text-align:left">内核自己在 bss 段之后静态占几页</td>
+<td style="text-align:left">链接脚本里连续摆放、页对齐</td>
+<td style="text-align:left">汇编代码自己清零、自己填表项</td>
+</tr>
+<tr>
+<td style="text-align:left">MMU / D-cache</td>
+<td style="text-align:left">关</td>
+<td style="text-align:left">—</td>
+<td style="text-align:left">看到的地址就是总线上的地址</td>
+</tr>
+</tbody>
+</table></div><p>三条后果决定后面所有代码的形状。image 想要的位置是 <code>PHYS_OFFSET + TEXT_OFFSET</code>，但并非必须——它也可以落在更高的物理地址上，只要不在最底下，下面那段内存内核就不认了，这是取舍不是 bug。cache 的要求只有一条：image 那一段必须 clean 到 PoC，也就是所有 observer 访问时内容一致；页表不在 image 里，所以页表的 cacheline 得自己 invalidate。编译器按虚拟地址编，链接脚本里的 <code>_text</code>、<code>_end</code> 全是虚拟地址，代码实际跑在物理地址上，这个错位从第一行就存在，一直持续到 MMU 打开。</p>
+<p>所以内核接手后做的第一件正事不是初始化内存管理，而是先给自己造一个能跑的世界。</p>
+<h2 id="二两段映射的由来identity-mapping-与-kernel-image-mapping" tabindex="-1">二、两段映射的由来：identity mapping 与 kernel image mapping <a class="header-anchor" href="#二两段映射的由来identity-mapping-与-kernel-image-mapping"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>汇编初始化阶段准备两套页表，注意是两套。原文此处也丢了图，同样用表代替：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">映射</th>
+<th style="text-align:left">虚拟地址</th>
+<th style="text-align:left">映射到哪</th>
+<th style="text-align:left">对齐要求</th>
+<th style="text-align:left">谁在用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">identity mapping（idmap）</td>
+<td style="text-align:left">数值上等于 PA</td>
+<td style="text-align:left">同一段 PA，VA == PA</td>
+<td style="text-align:left">覆盖 <code>.idmap.text</code>（<code>__idmap_text_start</code>~<code>__idmap_text_end</code>）</td>
+<td style="text-align:left">开 MMU 那几条指令。ARM 架构强推荐，否则取指会被翻译前后含义不同的地址搞疯</td>
+</tr>
+<tr>
+<td style="text-align:left">kernel image mapping</td>
+<td style="text-align:left">从 <code>PAGE_OFFSET</code>（4.4.6）或 <code>KIMAGE_VADDR + TEXT_OFFSET</code>（4.15）起</td>
+<td style="text-align:left">image 所在的 PA</td>
+<td style="text-align:left">section mapping 时 <code>PAGE_OFFSET</code> 要 2M 对齐（4K 页）</td>
+<td style="text-align:left">正文、rodata、data、bss</td>
+</tr>
+</tbody>
+</table></div><p>开 MMU 的代码被塞进 <code>.idmap.text</code>，这段代码被映射两次：作为 image 的一部分映射到 <code>__idmap_text_start</code> 起的虚拟地址；设它的物理地址是 A，还映射到从 A 起的虚拟地址。A 与 <code>PAGE_OFFSET</code> 谁大谁小没有规定，写死的只有一件事：这几十行指令在两种翻译下必须指向同一块内存。</p>
+<p>页表要占多大，值得算一遍。48 位 VA、4K 页、四级映射，地址切成 <code>9 + 9 + 9 + 9 + 12</code>。给 L0~L3 各一页，最后一页 512 项 × 4K = 2M，装不下 image，那就让 PMD 直接放 block 描述符，三级页表覆盖 512 × 2M = 1G，副作用是 <code>PAGE_OFFSET</code> 必须 2M 对齐。16K、64K 页上这个技巧不划算，对齐要求抬得太高：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">页大小</th>
+<th style="text-align:left">不用 section mapping，一页覆盖</th>
+<th style="text-align:left">用 section mapping 的对齐要求</th>
+<th style="text-align:left">选择</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">4K</td>
+<td style="text-align:left">512 × 4K = 2M</td>
+<td style="text-align:left">2M</td>
+<td style="text-align:left">用 section mapping</td>
+</tr>
+<tr>
+<td style="text-align:left">16K</td>
+<td style="text-align:left">2K × 16K = 32M</td>
+<td style="text-align:left">32M</td>
+<td style="text-align:left">不用，32M 够</td>
+</tr>
+<tr>
+<td style="text-align:left">64K</td>
+<td style="text-align:left">8K × 64K = 512M</td>
+<td style="text-align:left">512M</td>
+<td style="text-align:left">不用，512M 够</td>
+</tr>
+</tbody>
+</table></div><p>结论：swapper 要预留的页表页数跟级数挂钩——用 section mapping 是 <code>PGTABLE_LEVELS - 1</code> 页，不用是 <code>PGTABLE_LEVELS</code> 页。</p>
+<p>有个特例。VA 配 39 位、PA 是 48 位，而 <code>.idmap.text</code> 恰在高端（超出 39 位能表示的范围），上面这结论就废了：<code>PGTABLE_LEVELS</code> 只认虚拟地址位宽和 <code>PAGE_SIZE</code>，不认物理地址。内核的处理是往上挂一级 EXTRA 翻译表，<code>EXTRA_SHIFT = PGDIR_SHIFT + PAGE_SHIFT - 3</code>，<code>EXTRA_PTRS = 1 &lt;&lt; (48 - EXTRA_SHIFT)</code>，第四章会看到那段 <code>#ifndef CONFIG_ARM64_VA_BITS_48</code>。页表填完，<code>sctlr_el1.M</code> 一置，kernel 进虚拟地址世界，美中不足是只剩两段地址可见。</p>
+<h2 id="三建页表的三个基础函数" tabindex="-1">三、建页表的三个基础函数 <a class="header-anchor" href="#三建页表的三个基础函数"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>版本：4.4.6。三处代码按原样保留，行尾的全角破折号标注改成 <code>// ①</code>。</p>
+<h3 id="1create_table_entry填一个中间级描述符" tabindex="-1">1、create_table_entry：填一个中间级描述符 <a class="header-anchor" href="#1create_table_entry填一个中间级描述符"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">.macro</span>    create_table_entry, tbl, virt, shift, ptrs, tmp1, tmp2
+    <span class="hljs-keyword">lsr</span>    \tmp1, \virt, #\shift
+    <span class="hljs-keyword">and</span>    \tmp1, \tmp1, #\ptrs - <span class="hljs-number">1</span>     <span class="hljs-comment">// ① table index</span>
+    <span class="hljs-keyword">add</span>    \tmp2, \tbl, <span class="hljs-symbol">#PAGE_SIZE</span>      <span class="hljs-comment">// ② 下一级表 = 当前页 + 一页</span>
+    <span class="hljs-keyword">orr</span>    \tmp2, \tmp2, <span class="hljs-symbol">#PMD_TYPE_TABLE</span> <span class="hljs-comment">// ③ bit0=1 valid, bit1=1 table</span>
+    <span class="hljs-keyword">str</span>    \tmp2, [\tbl, \tmp1, <span class="hljs-keyword">lsl</span> <span class="hljs-number">#3</span>] <span class="hljs-comment">// ④ 每项 8 字节</span>
+    <span class="hljs-keyword">add</span>    \tbl, \tbl, <span class="hljs-symbol">#PAGE_SIZE</span>       <span class="hljs-comment">// ⑤ 指针移到下一级</span>
+<span class="hljs-symbol">.endm</span>
+</code></pre></div></code></pre>
+<p>① linux 术语里这是 PGD/PUD/PMD 描述符，ARM64 术语里是 L0/L1/L2 描述符，填哪级由 <code>tbl</code> 指的那页决定。定位项的办法老一套：地址右移 <code>shift</code>，截 <code>ptrs</code> 位。② 下一级表地址硬编码成「当前页 + 一页」，全靠链接脚本把启动页表连续摆放：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>BSS_SECTION(0, 0, 0)
+. = ALIGN(PAGE_SIZE);
+idmap_pg_dir = .;
+. += IDMAP_DIR_SIZE;
+swapper_pg_dir = .;
+. += SWAPPER_DIR_SIZE;
+</code></pre></div></code></pre>
+<p>改一个尺寸就得改另一处。③ 光有地址不行，还得告诉 MMU 这项 valid（bit 0）且是 table（bit 1），所以最低两位 <code>0b11</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> PMD_TYPE_TABLE        (_AT(pmdval_t, 3) &lt;&lt; 0)</span>
+</code></pre></div></code></pre>
+<p>④ <code>lsl #3</code> 是因为一项 8 字节。⑤ 把 <code>tbl</code> 推到下一级供后续调用接着用。</p>
+<h3 id="2create_pgd_entry把中间级一路串下去" tabindex="-1">2、create_pgd_entry：把中间级一路串下去 <a class="header-anchor" href="#2create_pgd_entry把中间级一路串下去"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">.macro</span>    create_pgd_entry, tbl, virt, tmp1, tmp2
+    create_table_entry \tbl, \virt, PGDIR_SHIFT, PTRS_PER_PGD, \tmp1, \tmp2   <span class="hljs-comment">// ①</span>
+<span class="hljs-comment">#if SWAPPER_PGTABLE_LEVELS &gt; 3                                                // ②</span>
+    create_table_entry \tbl, \virt, PUD_SHIFT, PTRS_PER_PUD, \tmp1, \tmp2     <span class="hljs-comment">// ③</span>
+<span class="hljs-comment">#endif</span>
+<span class="hljs-comment">#if SWAPPER_PGTABLE_LEVELS &gt; 2                                                // ④</span>
+    create_table_entry \tbl, \virt, SWAPPER_TABLE_SHIFT, PTRS_PER_PTE, \tmp1, \tmp2
+<span class="hljs-comment">#endif</span>
+<span class="hljs-symbol">.endm</span>
+</code></pre></div></code></pre>
+<p>名字叫 <code>create_pgd_entry</code>，干的活不止 PGD：所有中间级都建好，每级只填一项，只留最后一级的 PTE（或 section）给别人。② <code>SWAPPER_PGTABLE_LEVELS</code> 跟 <code>ARM64_SWAPPER_USES_SECTION_MAPS</code> 绑定，取 3 或取 2：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">if</span> ARM64_SWAPPER_USES_SECTION_MAPS</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SWAPPER_PGTABLE_LEVELS  (CONFIG_PGTABLE_LEVELS - 1)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SWAPPER_PGTABLE_LEVELS  (CONFIG_PGTABLE_LEVELS)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SWAPPER_DIR_SIZE    (SWAPPER_PGTABLE_LEVELS * PAGE_SIZE)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> IDMAP_DIR_SIZE      (IDMAP_PGTABLE_LEVELS * PAGE_SIZE)</span>
+</code></pre></div></code></pre>
+<p>三个例子对着看：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">配置</th>
+<th style="text-align:left">级数</th>
+<th style="text-align:left">映射链</th>
+<th style="text-align:left">建几级</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">48 位 VA，4K 页（section）</td>
+<td style="text-align:left">4</td>
+<td style="text-align:left">PGD(L0) → PUD(L1) → PMD(L2) → section</td>
+<td style="text-align:left">PGD + PUD</td>
+</tr>
+<tr>
+<td style="text-align:left">48 位 VA，16K 页（不 section）</td>
+<td style="text-align:left">4</td>
+<td style="text-align:left">PGD → PUD → PMD → PT(L3) → page</td>
+<td style="text-align:left">PGD + PUD + PMD</td>
+</tr>
+<tr>
+<td style="text-align:left">39 位 VA，4K 页（section）</td>
+<td style="text-align:left">3</td>
+<td style="text-align:left">PGD(L1) → PMD(L2) → section</td>
+<td style="text-align:left">只有 PGD</td>
+</tr>
+</tbody>
+</table></div><h3 id="3create_block_map填最后一级的-block-描述符" tabindex="-1">3、create_block_map：填最后一级的 block 描述符 <a class="header-anchor" href="#3create_block_map填最后一级的-block-描述符"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">.macro</span>    create_block_map, tbl, flags, phys, start, <span class="hljs-meta">end</span>
+    <span class="hljs-keyword">lsr</span>    \phys, \phys, <span class="hljs-symbol">#SWAPPER_BLOCK_SHIFT</span>
+    <span class="hljs-keyword">lsr</span>    \start, \start, <span class="hljs-symbol">#SWAPPER_BLOCK_SHIFT</span>
+    <span class="hljs-keyword">and</span>    \start, \start, <span class="hljs-symbol">#PTRS_PER_PTE</span> - <span class="hljs-number">1</span>    <span class="hljs-comment">// table index</span>
+    <span class="hljs-keyword">orr</span>    \phys, \flags, \phys, <span class="hljs-keyword">lsl</span> <span class="hljs-symbol">#SWAPPER_BLOCK_SHIFT</span> <span class="hljs-comment">// table entry</span>
+    <span class="hljs-keyword">lsr</span>    \<span class="hljs-meta">end</span>, \<span class="hljs-meta">end</span>, <span class="hljs-symbol">#SWAPPER_BLOCK_SHIFT</span>
+    <span class="hljs-keyword">and</span>    \<span class="hljs-meta">end</span>, \<span class="hljs-meta">end</span>, <span class="hljs-symbol">#PTRS_PER_PTE</span> - <span class="hljs-number">1</span>        <span class="hljs-comment">// table end index</span>
+<span class="hljs-number">9999</span>:    <span class="hljs-keyword">str</span>    \phys, [\tbl, \start, <span class="hljs-keyword">lsl</span> <span class="hljs-number">#3</span>]   <span class="hljs-comment">// store the entry</span>
+    <span class="hljs-keyword">add</span>    \start, \start, <span class="hljs-number">#1</span>                   <span class="hljs-comment">// next entry</span>
+    <span class="hljs-keyword">add</span>    \phys, \phys, <span class="hljs-symbol">#SWAPPER_BLOCK_SIZE</span>    <span class="hljs-comment">// next block</span>
+    <span class="hljs-keyword">cmp</span>    \start, \<span class="hljs-meta">end</span>
+    b.ls    <span class="hljs-number">9999</span>b
+<span class="hljs-symbol">.endm</span>
+</code></pre></div></code></pre>
+<p>把 <code>start</code>~<code>end</code> 这段 VA 映射到从 <code>phys</code> 起的 PA，一块一项。三个细节：起止右移 <code>SWAPPER_BLOCK_SHIFT</code>（4K 页时是 21，即 2M 粒度）转索引；<code>orr \flags</code> 把内存属性并进物理地址；<code>b.ls</code> 是<strong>闭区间</strong>，<code>end</code> 那项也要填。顺手记 4.15 的改名：<code>SWAPPER_BLOCK_SHIFT</code>/<code>SWAPPER_BLOCK_SIZE</code> 早先叫 <code>BLOCK_SHIFT</code>/<code>BLOCK_SIZE</code>，<code>SWAPPER_TABLE_SHIFT</code> 叫 <code>TABLE_SHIFT</code>。</p>
+<h2 id="四__create_page_tables-完整走读" tabindex="-1">四、__create_page_tables 完整走读 <a class="header-anchor" href="#四__create_page_tables-完整走读"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>版本：4.4.6。跟执行路径走一遍。</p>
+<h3 id="1准备阶段" tabindex="-1">1、准备阶段 <a class="header-anchor" href="#1准备阶段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">__create_page_tables:</span>
+    <span class="hljs-keyword">adrp</span>    <span class="hljs-built_in">x25</span>, idmap_pg_dir                        <span class="hljs-comment">// ①</span>
+    <span class="hljs-keyword">adrp</span>    <span class="hljs-built_in">x26</span>, swapper_pg_dir
+    <span class="hljs-keyword">mov</span>    <span class="hljs-built_in">x27</span>, <span class="hljs-built_in">lr</span>
+
+    <span class="hljs-keyword">mov</span>    <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x25</span>                                   <span class="hljs-comment">// ②</span>
+    <span class="hljs-keyword">add</span>    <span class="hljs-built_in">x1</span>, <span class="hljs-built_in">x26</span>, <span class="hljs-symbol">#SWAPPER_DIR_SIZE</span>
+    <span class="hljs-keyword">bl</span>    __inval_cache_range
+
+    <span class="hljs-keyword">mov</span>    <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x25</span>                                   <span class="hljs-comment">// ③</span>
+    <span class="hljs-keyword">add</span>    <span class="hljs-built_in">x6</span>, <span class="hljs-built_in">x26</span>, <span class="hljs-symbol">#SWAPPER_DIR_SIZE</span>
+<span class="hljs-number">1</span>:    stp    xzr, xzr, [<span class="hljs-built_in">x0</span>], <span class="hljs-number">#16</span>
+    stp    xzr, xzr, [<span class="hljs-built_in">x0</span>], <span class="hljs-number">#16</span>
+    stp    xzr, xzr, [<span class="hljs-built_in">x0</span>], <span class="hljs-number">#16</span>
+    stp    xzr, xzr, [<span class="hljs-built_in">x0</span>], <span class="hljs-number">#16</span>
+    <span class="hljs-keyword">cmp</span>    <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x6</span>
+    b.lo    <span class="hljs-number">1</span>b
+
+    <span class="hljs-keyword">ldr</span>    <span class="hljs-built_in">x7</span>, <span class="hljs-symbol">=SWAPPER_MM_MMUFLAGS</span>                  <span class="hljs-comment">// ④</span>
+</code></pre></div></code></pre>
+<p>① <code>adrp</code> 按 4K 粒度算 PC 相对偏移，立即数 21 位，覆盖 ±4G，算出来的地址低 12 位是 0——链接脚本保证符号页对齐，所以够用。此刻 MMU 没开，<code>adrp</code> 拿到的是<strong>物理地址</strong>。② invalidate <code>idmap_pg_dir</code> 到 <code>swapper_pg_dir + SWAPPER_DIR_SIZE</code>，也就是启动页表那 6 页，理由第一章说过：boot 协议只保证 image 那段 clean 到 PoC。③ 清零的语义很省事：bit 0 是 valid 位，写 0 天然就是 invalid 描述符。④ 内存属性：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">if</span> ARM64_SWAPPER_USES_SECTION_MAPS</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SWAPPER_MM_MMUFLAGS    (PMD_ATTRINDX(MT_NORMAL) | SWAPPER_PMD_FLAGS)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SWAPPER_MM_MMUFLAGS    (PTE_ATTRINDX(MT_NORMAL) | SWAPPER_PTE_FLAGS)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SWAPPER_PTE_FLAGS    (PTE_TYPE_PAGE | PTE_AF | PTE_SHARED)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SWAPPER_PMD_FLAGS    (PMD_TYPE_SECT | PMD_SECT_AF | PMD_SECT_S)</span>
+</code></pre></div></code></pre>
+<p><code>MT_NORMAL</code> 说明这是普通内存。<code>AF</code> 是 access flag，标记这项被访问过：image 的页永远算 active，直接置 1。<code>SH</code> 配成 <code>0b11</code> 即 inner shareable——domain 里所有 bus master 访问这段是硬件保证一致的，软件不用管 cache。其余位都是 0：AP=0 表示 EL1 可读写、EL0 不许访问；nG=0 表示翻译是全局的、不分进程，内核页本来就该这样。（shareable 的位域图原文也丢了，结论就一句：<code>SH[1:0]</code> 的 <code>0b11</code> 是 inner shareable，<code>0b10</code> 是 outer，<code>0b00</code> 非共享。）</p>
+<h3 id="2建立-identity-mapping" tabindex="-1">2、建立 identity mapping <a class="header-anchor" href="#2建立-identity-mapping"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">mov</span>    <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x25</span>                                  <span class="hljs-comment">// ①</span>
+    <span class="hljs-keyword">adrp</span>    <span class="hljs-built_in">x3</span>, __idmap_text_start                  <span class="hljs-comment">// ②</span>
+
+<span class="hljs-comment">#ifndef CONFIG_ARM64_VA_BITS_48</span>
+<span class="hljs-comment">#define EXTRA_SHIFT    (PGDIR_SHIFT + PAGE_SHIFT - 3)     // ③</span>
+<span class="hljs-comment">#define EXTRA_PTRS    (1 &lt;&lt; (48 - EXTRA_SHIFT))           // ④</span>
+<span class="hljs-comment">#if VA_BITS != EXTRA_SHIFT</span>
+<span class="hljs-comment">#error &quot;Mismatch between VA_BITS and page size/number of translation levels&quot;</span>
+<span class="hljs-comment">#endif</span>
+
+    <span class="hljs-keyword">adrp</span>    <span class="hljs-built_in">x5</span>, __idmap_text_end                    <span class="hljs-comment">// ⑤</span>
+    <span class="hljs-keyword">clz</span>    <span class="hljs-built_in">x5</span>, <span class="hljs-built_in">x5</span>
+    <span class="hljs-keyword">cmp</span>    <span class="hljs-built_in">x5</span>, TCR_T0SZ(VA_BITS)                    <span class="hljs-comment">// ⑥</span>
+    b.ge    <span class="hljs-number">1</span>f
+
+    adr_l    <span class="hljs-built_in">x6</span>, idmap_t0sz                         <span class="hljs-comment">// ⑦</span>
+    <span class="hljs-keyword">str</span>    <span class="hljs-built_in">x5</span>, [<span class="hljs-built_in">x6</span>]
+    <span class="hljs-keyword">dmb</span>    sy
+    dc    ivac, <span class="hljs-built_in">x6</span>
+
+    create_table_entry <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x3</span>, EXTRA_SHIFT, EXTRA_PTRS, <span class="hljs-built_in">x5</span>, <span class="hljs-built_in">x6</span>   <span class="hljs-comment">// ⑧</span>
+<span class="hljs-number">1</span>:
+<span class="hljs-comment">#endif</span>
+
+    create_pgd_entry <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x3</span>, <span class="hljs-built_in">x5</span>, <span class="hljs-built_in">x6</span>                 <span class="hljs-comment">// ⑨</span>
+    <span class="hljs-keyword">mov</span>    <span class="hljs-built_in">x5</span>, <span class="hljs-built_in">x3</span>                <span class="hljs-comment">// __pa(__idmap_text_start)</span>
+    adr_l    <span class="hljs-built_in">x6</span>, __idmap_text_end                    <span class="hljs-comment">// __pa(__idmap_text_end)</span>
+
+    create_block_map <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x7</span>, <span class="hljs-built_in">x3</span>, <span class="hljs-built_in">x5</span>, <span class="hljs-built_in">x6</span>             <span class="hljs-comment">// ⑩</span>
+</code></pre></div></code></pre>
+<p>① <code>x0</code> 指向 idmap 的 PGD，即 <code>idmap_pg_dir</code> 的物理地址。② <code>x3</code> 存 <code>__idmap_text_start</code> 的物理地址；idmap 的 VA 等于 PA，一个值两种身份都用。</p>
+<p>③~⑧ 是「物理地址太高、VA 位宽不够」的补丁。48 位是 ARMv8 上限，扩不上去，所以整段被 <code>#ifndef CONFIG_ARM64_VA_BITS_48</code> 包着。没配 48 位时：<code>clz x5, x5</code> 数出物理地址的前导 0 个数，<code>TCR_T0SZ(VA_BITS)</code> 算出当前 VA 应有的前导 0 个数，前者更小就说明地址超出当前 VA 能表示的范围。</p>
+<p>那个 <code>#error</code> 值得单独说。内核要求 PGD 是满的，也就是索引 PGD 的位数必须等于 <code>PAGE_SIZE - 3</code>：48 位 VA + 4K 页是 <code>9+9+9+9+12</code>，42 位 VA + 64K 页是 <code>13+13+16</code>，两者的 PGD 都恰好占满一页。正因为这条，扩出来之后 <code>EXTRA_SHIFT</code> 必然等于 <code>VA_BITS</code>，不等就是配置错；42 位 + 64K 扩到 48 位后映射链是 <code>EXTRA(6-bit) + PGD(13-bit) + PTE(13-bit) + offset(16-bit)</code>。</p>
+<p>⑦ 需要的位宽通过 <code>TCR_EL1.T0SZ</code> 生效，但这时还不到写系统寄存器的时候（那在 <code>__cpu_setup</code> 里），所以只把值存进 <code>idmap_t0sz</code> 变量，<code>__cpu_setup</code> 会来取。⑨⑩ 建中间级，再填最后一级；最后一级是 page 还是 block 描述符，看配置。</p>
+<h3 id="3建立-kernel-image-mapping4.4.6-里叫-kernel-direct-mapping" tabindex="-1">3、建立 kernel image mapping（4.4.6 里叫 kernel direct mapping） <a class="header-anchor" href="#3建立-kernel-image-mapping4.4.6-里叫-kernel-direct-mapping"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">mov</span>    <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x26</span>                <span class="hljs-comment">// ① swapper_pg_dir</span>
+    <span class="hljs-keyword">mov</span>    <span class="hljs-built_in">x5</span>, <span class="hljs-symbol">#PAGE_OFFSET</span>       <span class="hljs-comment">// ②</span>
+    create_pgd_entry <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x5</span>, <span class="hljs-built_in">x3</span>, <span class="hljs-built_in">x6</span>          <span class="hljs-comment">// ③</span>
+    <span class="hljs-keyword">ldr</span>    <span class="hljs-built_in">x6</span>, <span class="hljs-symbol">=KERNEL_END</span>        <span class="hljs-comment">// __va(KERNEL_END)</span>
+    <span class="hljs-keyword">mov</span>    <span class="hljs-built_in">x3</span>, <span class="hljs-built_in">x24</span>                <span class="hljs-comment">// phys offset</span>
+    create_block_map <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x7</span>, <span class="hljs-built_in">x3</span>, <span class="hljs-built_in">x5</span>, <span class="hljs-built_in">x6</span>      <span class="hljs-comment">// ④</span>
+
+    <span class="hljs-keyword">mov</span>    <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x25</span>                <span class="hljs-comment">// ⑤ 收尾：再 invalidate 一次</span>
+    <span class="hljs-keyword">add</span>    <span class="hljs-built_in">x1</span>, <span class="hljs-built_in">x26</span>, <span class="hljs-symbol">#SWAPPER_DIR_SIZE</span>
+    <span class="hljs-keyword">dmb</span>    sy
+    <span class="hljs-keyword">bl</span>    __inval_cache_range
+
+    <span class="hljs-keyword">mov</span>    <span class="hljs-built_in">lr</span>, <span class="hljs-built_in">x27</span>
+    ret
+</code></pre></div></code></pre>
+<p>① <code>swapper_pg_dir</code> 就是 swapper（pid 0，即 idle）的地址空间，内核空间全局只有这一份 PGD。② 4.4.6 里 <code>PAGE_OFFSET</code> 是线性区起点，48 位 VA 下为 <code>0xffff800000000000</code>；image 落在 <code>PAGE_OFFSET + TEXT_OFFSET</code>，所以这里从 <code>PAGE_OFFSET</code> 一路映射到 <code>KERNEL_END</code>，多出来的 <code>TEXT_OFFSET</code> 那一截就是 image 前的保留区。③④ 建中间级，再一段段填 block，物理侧从 <code>x24</code>（phys offset）开始跟。⑤ 填完再 invalidate 一次，理由和开头对称：这期间写过页表，那些 cacheline 现在是脏的，而 MMU 一开就直接从内存读页表。4.15 里这段换了面孔：<code>mov_q x5, KIMAGE_VADDR + TEXT_OFFSET</code> 然后 <code>add x5, x5, x23</code>，<code>x23</code> 就是 KASLR 偏移，第十六章看。</p>
+<h2 id="五turn-on-mmu.idmap.text-与两次映射" tabindex="-1">五、turn on MMU：.idmap.text 与两次映射 <a class="header-anchor" href="#五turn-on-mmu.idmap.text-与两次映射"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>页表填完，剩下的事交给 <code>__enable_mmu</code> 和 <code>__primary_switch</code>：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">步</th>
+<th style="text-align:left">动作</th>
+<th style="text-align:left">为什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left"><code>TTBR0_EL1 ← idmap_pg_dir</code></td>
+<td style="text-align:left">低半区（用户 + idmap）走 TTBR0</td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:left"><code>TTBR1_EL1 ← swapper_pg_dir</code></td>
+<td style="text-align:left">高半区内核空间走 TTBR1</td>
+</tr>
+<tr>
+<td style="text-align:left">3</td>
+<td style="text-align:left">设 <code>TCR_EL1</code>、<code>MAIR_EL1</code></td>
+<td style="text-align:left">翻译粒度、内存属性；<code>T0SZ</code> 取 <code>__cpu_setup</code> 从 <code>idmap_t0sz</code> 读出的值</td>
+</tr>
+<tr>
+<td style="text-align:left">4</td>
+<td style="text-align:left"><code>isb</code>，然后 <code>msr sctlr_el1</code> 置 <code>M=1</code></td>
+<td style="text-align:left">从这一条起 PC 已被翻译</td>
+</tr>
+<tr>
+<td style="text-align:left">5</td>
+<td style="text-align:left"><code>isb</code>，然后 <code>br x27</code></td>
+<td style="text-align:left">冲刷流水线，丢掉按物理地址预取的指令</td>
+</tr>
+</tbody>
+</table></div><p>第 4、5 步之间是全链最脆的一段。<code>br x27</code> 里的地址是链接时的虚拟地址，MMU 一开，这个 VA 必须翻译到正确的 PA，否则当场跑飞。靠的就是 identity mapping：<code>.idmap.text</code> 那段 VA 数值上等于 PA，翻译前后指向同一块内存，哪怕流水线里混着两种理解也不出事。ARM 强推荐 idmap，原因就在这几十纳秒里——少了 <code>isb</code>，后面几条指令还在用旧翻译上下文执行。从核走另一条路，但复用同一份页表，同样在 <code>.idmap.text</code> 里，同样靠 idmap 过渡。</p>
+<p>4.15 把 idmap 收窄到只覆盖 <code>.idmap.text</code>（4.1.10 那会儿是整个 image，见 <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/03-ARM%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%BC%82%E5%B8%B8/ARM64-%E5%86%85%E6%A0%B8%E5%90%AF%E5%8A%A8%E4%B8%8E%E9%A1%B5%E8%A1%A8%E5%BB%BA%E7%AB%8B/" class="wikilink">ARM64 内核启动与页表建立</a>）。收窄的代价是：任何被塞进这个 section 的函数都得掂量，它在 MMU 开前后的语义必须一致——<code>__primary_switch</code> 里那句 <code>adrp x0, __PHYS_OFFSET</code> 之所以能把虚拟地址当物理用，就因为它在里面。</p>
+<h2 id="六进-c-之后第一件事early-fixmap" tabindex="-1">六、进 C 之后第一件事：early fixmap <a class="header-anchor" href="#六进-c-之后第一件事early-fixmap"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>版本：4.4.6。</p>
+<p>MMU 开了，<code>sp</code> 有了，BSS 清了，<code>setup_arch</code> 抬眼一看，能访问的还是只有 image 那一段。DTB 的地址是 <code>x0</code> 传进来的<strong>物理地址</strong>，读不了。于是有个环：要读 DTB 得先建映射，建映射缺页表内存，而伙伴系统没起来，连系统里有多少内存都不知道。答案偏偏就在要读的那个 DTB 里——<code>memory</code> 节点描述了物理内存布局。</p>
+<p>破法：PGD 直接用现成的 <code>swapper_pg_dir</code>，剩下三张表在 bss 里静态定好。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">pte_t</span> bm_pte[PTRS_PER_PTE] __page_aligned_bss;
+<span class="hljs-type">static</span> <span class="hljs-type">pmd_t</span> bm_pmd[PTRS_PER_PMD] __page_aligned_bss __maybe_unused;
+<span class="hljs-type">static</span> <span class="hljs-type">pud_t</span> bm_pud[PTRS_PER_PUD] __page_aligned_bss __maybe_unused;
+
+<span class="hljs-type">void</span> __init <span class="hljs-title function_">early_fixmap_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	<span class="hljs-type">pgd_t</span> *pgd;
+	<span class="hljs-type">pud_t</span> *pud;
+	<span class="hljs-type">pmd_t</span> *pmd;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> addr = FIXADDR_START;
+
+	pgd = pgd_offset_k(addr);
+	<span class="hljs-keyword">if</span> (pgd_none(*pgd))
+		__pgd_populate(pgd, __pa_symbol(bm_pud), PUD_TYPE_TABLE);
+	pud = fixmap_pud(addr);
+	<span class="hljs-keyword">if</span> (pud_none(*pud))
+		__pud_populate(pud, __pa_symbol(bm_pmd), PMD_TYPE_TABLE);
+	pmd = fixmap_pmd(addr);
+	__pmd_populate(pmd, __pa_symbol(bm_pte), PMD_TYPE_TABLE);
+
+	BUILD_BUG_ON((__fix_to_virt(FIX_BTMAP_BEGIN) &gt;&gt; PMD_SHIFT) !=
+		     (__fix_to_virt(FIX_BTMAP_END) &gt;&gt; PMD_SHIFT));
+	...
+}
+</code></pre></div></code></pre>
+<p>三张表都是 <code>__page_aligned_bss</code>，在 image 里，image 可见所以能直接写。PGD 复用意味着整个系统只有一份内核 PGD。那个 <code>BUILD_BUG_ON</code> 盯的是 FDT 区和 BTMAP 区必须落在同一张 PMD 表里，做不到就得再要一页，而这时候要不到。代价随之定死：一张 PMD 表 512 项 × 4K，fixmap 只能覆盖 <strong>2M</strong>。「DTB 不能大于 2M」这条要求的真实来源在这儿——不是规范，是页表只建到这一级。</p>
+<p>建好表才能映射 DTB。<code>__fixmap_remap_fdt()</code> 里三行关键代码：<code>BUILD_BUG_ON(dt_virt_base % SZ_2M)</code> 要求 <code>FIX_FDT</code> 2M 对齐（<code>FIX_FDT</code> 排在枚举最前面就是为这个）；<code>offset = dt_phys % SWAPPER_BLOCK_SIZE</code> 把 DTB 在 2M 块内的偏移搬到虚拟侧，于是「映射 2M」跟 DTB 真实起点无关；先只映射 2M，<code>offset + *size</code> 越过才补第二段，而多数 DTB 就几十 KB。函数末尾还有一句 <code>memblock_reserve(dt_phys, size)</code>，防止这段内存被分配出去。</p>
+<p>一句版本旁注。旧方案是把 DTB 塞在 image 起始 512M 内、8 字节对齐、不跨 2M，然后借 image 的页表加一项了事，位置校验还得在 asm 里写。fixmap 把校验和建表都搬进了 C，bootloader 终于可以随便放 DTB。</p>
+<h2 id="七fixmap-是什么为什么地址在编译期固定" tabindex="-1">七、fixmap 是什么，为什么地址在编译期固定 <a class="header-anchor" href="#七fixmap-是什么为什么地址在编译期固定"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>版本：4.4.6。</p>
+<p>fixmap 的 fix，固定的是虚拟地址。物理地址不固定，运行时才定。为什么非要固定 VA？因为伙伴系统 ready 之前，内核没有能力分配虚拟地址。注意区别：memblock 能给你物理页，给不了虚拟地址——VA 的管理归 vmalloc 那套，它依赖 <code>vmap_area</code> 记账，记账要靠 slab，slab 要靠伙伴系统。链条太长。</p>
+<p>所以干脆在编译期划一段 VA，谁需要谁去填描述符：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> __fix_to_virt(x)  (FIXADDR_TOP - ((x) &lt;&lt; PAGE_SHIFT))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __virt_to_fix(x)  ((FIXADDR_TOP - ((x) &amp; PAGE_MASK)) &gt;&gt; PAGE_SHIFT)</span>
+</code></pre></div></code></pre>
+<p>index 越大地址越低。这个方向容易记反，<code>FIX_BTMAP_BEGIN</code> 和 <code>FIX_BTMAP_END</code> 的数值大小关系就是靠它解释。区域在 <code>FIXADDR_START</code> 和 <code>FIXADDR_TOP</code> 之间，按 4.15 的真实 dump 看，<code>fixed</code> 那一段夹在 vmalloc 之下、PCI I/O 之上，39 位 VA 下是 <code>0xffffffbefe7fb000</code>~<code>0xffffffbefec00000</code>、4116K（原文这里也丢过一张布局图，这是补上的等价信息）。</p>
+<p>槽位在枚举里定死，分界线是 <code>__end_of_permanent_fixed_addresses</code>：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">类别</th>
+<th style="text-align:left">枚举范围</th>
+<th style="text-align:left">归属</th>
+<th style="text-align:left">生命周期</th>
+<th style="text-align:left">谁在用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">permanent</td>
+<td style="text-align:left"><code>FIX_HOLE</code> ~ <code>__end_of_permanent_fixed_addresses</code></td>
+<td style="text-align:left">专供某个模块</td>
+<td style="text-align:left">建好不拆</td>
+<td style="text-align:left">DTB、early console、text poke</td>
+</tr>
+<tr>
+<td style="text-align:left">temporary</td>
+<td style="text-align:left"><code>FIX_BTMAP_END</code> ~ <code>FIX_BTMAP_BEGIN</code></td>
+<td style="text-align:left">大家抢</td>
+<td style="text-align:left">用完立刻还</td>
+<td style="text-align:left">early ioremap</td>
+</tr>
+</tbody>
+</table></div><pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">fixed_addresses</span> {</span>
+	FIX_HOLE,
+	FIX_FDT_END,
+	FIX_FDT = FIX_FDT_END + FIX_FDT_SIZE / PAGE_SIZE - <span class="hljs-number">1</span>,
+	FIX_EARLYCON_MEM_BASE,
+	FIX_TEXT_POKE0,
+	__end_of_permanent_fixed_addresses,
+	FIX_BTMAP_END = __end_of_permanent_fixed_addresses,
+	FIX_BTMAP_BEGIN = FIX_BTMAP_END + TOTAL_FIX_BTMAPS - <span class="hljs-number">1</span>,
+	__end_of_fixed_addresses
+};
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> FIX_FDT_SIZE        (MAX_FDT_SIZE + SZ_2M)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NR_FIX_BTMAPS       (SZ_256K / PAGE_SIZE)              <span class="hljs-comment">// 64 页</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> FIX_BTMAPS_SLOTS    7</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> TOTAL_FIX_BTMAPS    (NR_FIX_BTMAPS * FIX_BTMAPS_SLOTS) <span class="hljs-comment">// 448 页</span></span>
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">槽位</th>
+<th style="text-align:left">大小</th>
+<th style="text-align:left">用途</th>
+<th style="text-align:left">为什么不能用 ioremap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>FIX_FDT</code></td>
+<td style="text-align:left">4M（<code>MAX_FDT_SIZE + SZ_2M</code>）</td>
+<td style="text-align:left">映射 DTB</td>
+<td style="text-align:left">DTB 里有物理内存布局，读完才知道内存多少</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>FIX_EARLYCON_MEM_BASE</code></td>
+<td style="text-align:left">1 页</td>
+<td style="text-align:left">early console 的串口寄存器</td>
+<td style="text-align:left">要打印，而 console 驱动还早</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>FIX_TEXT_POKE0</code></td>
+<td style="text-align:left">1 页</td>
+<td style="text-align:left">打补丁时映射 RW 正文</td>
+<td style="text-align:left">正文段被映射成只读，改代码得另找可写映射</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>FIX_BTMAP_*</code></td>
+<td style="text-align:left">7 × 256K = 448 页</td>
+<td style="text-align:left"><code>early_ioremap()</code></td>
+<td style="text-align:left"><code>ioremap</code> 缺页表时找伙伴系统要页</td>
+</tr>
+</tbody>
+</table></div><p>这就是「为何有 fixmap」的全部答案。<code>start_kernel</code> 里想点个 LED 看走到哪了，<code>ioremap</code> 帮不上忙——它要 <code>kmalloc</code>，<code>kmalloc</code> 要伙伴系统，能用的只有一张表加几个描述符。代价也认：槽位数写死在枚举里，多一个就得改头文件重编整棵树；可用范围就 2M；槽位全局独享，两个模块抢同一个 permanent 槽位就是设计错误。</p>
+<h2 id="八fixmap-用在哪dtbearly-ioremapdebug-uart" tabindex="-1">八、fixmap 用在哪：DTB、early ioremap、debug uart <a class="header-anchor" href="#八fixmap-用在哪dtbearly-ioremapdebug-uart"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>版本：4.4.6。permanent 三项：DTB（顺序不能反，<code>early_fixmap_init()</code> 先建三张表，<code>__fixmap_remap_fdt()</code> 才往 <code>FIX_FDT</code> 里填描述符，反了就是往不存在的页表里写）、early console（走 <code>early_param</code> 注册，<code>parse_early_param</code> 之后就能出字，调试卡在 <code>setup_arch</code> 的内核时这条输出往往是唯一线索，<code>earlycon=uart8250,mmio,0x...</code> 就是给它用的）、text poke（正文只读，改代码得临时搞一条可写映射，改完再撤）。</p>
+<p>temporary 是 early ioremap，7 个 slot，每个 256K：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>  slot_virt[FIX_BTMAPS_SLOTS] __initdata;
+
+<span class="hljs-type">void</span> __init <span class="hljs-title function_">early_ioremap_setup</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	<span class="hljs-type">int</span> i;
+
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; FIX_BTMAPS_SLOTS; i++)
+		slot_virt[i] = __fix_to_virt(FIX_BTMAP_BEGIN - NR_FIX_BTMAPS * i);
+}
+</code></pre></div></code></pre>
+<p>用起来和 <code>ioremap</code> 一个样：<code>early_ioremap(reg_phys, SZ_4K)</code> 拿指针，<code>readl</code>/<code>writel</code> 读写，<code>early_iounmap(base, SZ_4K)</code> 还。三条纪律：必须成对，漏一次那个 slot 就一直被占着、不报错只会在别处挂；同时最多 7 段、单段不超 256K；<code>early_ioremap_init()</code> 之后才能用，它比 <code>early_fixmap_init()</code> 晚，还依赖后者把表建好。</p>
+<p>两者的差别只在「页表从哪来」：前者用静态躺好的，后者缺页表时找伙伴系统。结论一句：<strong>伙伴系统之前要碰设备寄存器，用 early ioremap</strong>。<code>early_iounmap</code> 之后那个 VA 会被人拿去映射别的物理地址，跨它保住任何指针都是定时炸弹。</p>
+<h2 id="九memblock内核早期的内存账本" tabindex="-1">九、memblock：内核早期的内存账本 <a class="header-anchor" href="#九memblock内核早期的内存账本"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>版本：4.4.6。DTB 读进来了，物理内存布局有了，存哪？memblock。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">memblock</span> {</span>
+	<span class="hljs-type">bool</span> bottom_up;              <span class="hljs-comment">/* is bottom up direction? */</span>
+	<span class="hljs-type">phys_addr_t</span> current_limit;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">memblock_type</span> <span class="hljs-title">memory</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">memblock_type</span> <span class="hljs-title">reserved</span>;</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_MOVABLE_NODE</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">memblock_type</span> <span class="hljs-title">movable</span>;</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">memblock_type</span> {</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> cnt;           <span class="hljs-comment">/* number of regions */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> max;           <span class="hljs-comment">/* size of the regions array */</span>
+	<span class="hljs-type">phys_addr_t</span> total_size;      <span class="hljs-comment">/* size of all regions */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">memblock_region</span> *<span class="hljs-title">regions</span>;</span>
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">memblock_region</span> {</span>
+	<span class="hljs-type">phys_addr_t</span> base;
+	<span class="hljs-type">phys_addr_t</span> size;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_NUMA</span>
+	<span class="hljs-type">int</span> nid;
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+};
+</code></pre></div></code></pre>
+<p>两类 region 的分工：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left"></th>
+<th style="text-align:left">memory type</th>
+<th style="text-align:left">reserved type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">装什么</td>
+<td style="text-align:left">所有可被内核管理的物理内存</td>
+<td style="text-align:left">已被占用、不给通用分配器的内存</td>
+</tr>
+<tr>
+<td style="text-align:left">数组</td>
+<td style="text-align:left"><code>memblock.memory</code></td>
+<td style="text-align:left"><code>memblock.reserved</code></td>
+</tr>
+<tr>
+<td style="text-align:left">谁往里加</td>
+<td style="text-align:left"><code>memblock_add()</code>，DTB 的 <code>memory</code> 节点解析时</td>
+<td style="text-align:left"><code>memblock_reserve()</code>：DTB 自身、image、initrd、<code>reserved-memory</code></td>
+</tr>
+<tr>
+<td style="text-align:left">排序</td>
+<td style="text-align:left">按 <code>base</code> 升序</td>
+<td style="text-align:left">按 <code>base</code> 升序</td>
+</tr>
+<tr>
+<td style="text-align:left">分配器眼里</td>
+<td style="text-align:left">候选</td>
+<td style="text-align:left">全部排除</td>
+</tr>
+</tbody>
+</table></div><p>「近似子集」这个措辞是有意的。<code>memblock_reserve()</code> 只在 reserved 里加一段，不动 memory；而 <code>memblock_remove()</code> 从<strong>两个数组里都摘掉</strong>，带 <code>no-map</code> 的 <code>reserved-memory</code> 走的就是 remove——那段内存对 OS 根本不存在，也不建映射。所以 reserved 里每段都能在 memory 里找到（除非被 remove 过），反过来不成立。<code>flags</code> 给 <code>MEMBLOCK_NOMAP</code> 这类标记用；<code>nid</code> 只有开 NUMA 才存在，<code>early_init_dt_add_memory_arch</code> 加内存时把节点号带进来——这是内存模型里 node 概念的源头。</p>
+<p>接口按用途记：<code>memblock_add()</code> 往 memory 加；<code>memblock_reserve()</code> 往 reserved 加；<code>memblock_remove()</code> 从两边摘掉（<code>no-map</code> 段、超出线性区的高端内存）；<code>memblock_alloc()</code>/<code>memblock_free()</code> 找一段没被 reserve 的塞进 reserved，<code>early_alloc</code> 和页表内存走它；<code>memblock_set_current_limit()</code> 给分配划上限，只有 <code>map_mem</code> 用。</p>
+<p><code>memblock_alloc</code> 不维护自由页位图，而是拿 memory 减 reserved 现算：慢，但简单，只适合启动阶段。还有一条容易踩：memblock 里全是<strong>物理地址</strong>，<code>reg-&gt;base</code> 不能直接解引用，得先 <code>__va()</code>——而 <code>__va()</code> 要成立，那段内存必须已有映射。这条约束在第十三章会把 <code>map_mem</code> 逼出一套特别写法。</p>
+<h2 id="十memory-region-怎么建起来" tabindex="-1">十、memory region 怎么建起来 <a class="header-anchor" href="#十memory-region-怎么建起来"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>版本：4.4.6。这一步的产物就是 <code>memblock.memory</code>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> __init <span class="hljs-title function_">early_init_dt_scan_nodes</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	of_scan_flat_dt(early_init_dt_scan_chosen, boot_command_line);  <span class="hljs-comment">// ①</span>
+	of_scan_flat_dt(early_init_dt_scan_root, <span class="hljs-literal">NULL</span>);                 <span class="hljs-comment">// ②</span>
+	of_scan_flat_dt(early_init_dt_scan_memory, <span class="hljs-literal">NULL</span>);               <span class="hljs-comment">// ③</span>
+}
+</code></pre></div></code></pre>
+<p>① 每个节点都回调一次 <code>early_init_dt_scan_chosen</code>。为什么这么笨？因为 DTB 还没展开成 <code>device_node</code> 树，只能顺着扁平结构扫。② 读 root 的 <code>#address-cells</code>/<code>#size-cells</code>，填进 <code>dt_root_addr_cells</code>/<code>dt_root_size_cells</code>——这两个不是常量，后面解析 <code>reg</code> 要靠它。③ 找 <code>memory</code> 节点。</p>
+<p><code>chosen</code> 回调干三件事：判断 <code>depth == 1</code> 且名字是 <code>chosen</code>/<code>chosen@0</code>（不是就立刻返回，这个回调要跑几百次）；<code>early_init_dt_check_for_initrd()</code> 取 <code>initrd-start</code>/<code>initrd-end</code>；把 <code>bootargs</code> 拷进 <code>boot_command_line</code>。最后那段 <code>#ifdef CONFIG_CMDLINE</code> 别跳过：bootloader 没传命令行时用编译期默认值，定义了 <code>CONFIG_CMDLINE_FORCE</code> 则强制用默认值，bootloader 传的无效。</p>
+<p><code>memory</code> 回调的核心：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>	<span class="hljs-keyword">if</span> (type == <span class="hljs-literal">NULL</span>) {
+		<span class="hljs-keyword">if</span> (!IS_ENABLED(CONFIG_PPC32) || depth != <span class="hljs-number">1</span> || <span class="hljs-built_in">strcmp</span>(uname, <span class="hljs-string">&quot;memory@0&quot;</span>) != <span class="hljs-number">0</span>)
+			<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+	} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (<span class="hljs-built_in">strcmp</span>(type, <span class="hljs-string">&quot;memory&quot;</span>) != <span class="hljs-number">0</span>)
+		<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;                                              <span class="hljs-comment">// ①</span>
+
+	reg = of_get_flat_dt_prop(node, <span class="hljs-string">&quot;linux,usable-memory&quot;</span>, &amp;l);
+	<span class="hljs-keyword">if</span> (reg == <span class="hljs-literal">NULL</span>)
+		reg = of_get_flat_dt_prop(node, <span class="hljs-string">&quot;reg&quot;</span>, &amp;l);             <span class="hljs-comment">// ②</span>
+	<span class="hljs-keyword">if</span> (reg == <span class="hljs-literal">NULL</span>)
+		<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+	endp = reg + (l / <span class="hljs-keyword">sizeof</span>(__be32));                          <span class="hljs-comment">// ③</span>
+
+	<span class="hljs-keyword">while</span> ((endp - reg) &gt;= (dt_root_addr_cells + dt_root_size_cells)) {
+		base = dt_mem_next_cell(dt_root_addr_cells, &amp;reg);
+		size = dt_mem_next_cell(dt_root_size_cells, &amp;reg);      <span class="hljs-comment">// ④</span>
+		early_init_dt_add_memory_arch(base, size);              <span class="hljs-comment">// ⑤</span>
+	}
+</code></pre></div></code></pre>
+<p>① 认节点。有 <code>device_type</code> 就看是不是 <code>&quot;memory&quot;</code>；没有的话（PPC32 上深层节点常常没这属性）退一步看节点名。② 优先 <code>linux,usable-memory</code>，没有再用 <code>reg</code>。③ <code>l / sizeof(__be32)</code> 是 cell 数，<code>endp</code> 指末尾。④ 一个 entry 是一对 base/size，各占 <code>dt_root_addr_cells</code>/<code>dt_root_size_cells</code> 个 cell；ARMv8 上这两个一般等于 2，即 64 位地址。⑤ 每段一次 <code>early_init_dt_add_memory_arch</code>，最终落到 <code>memblock_add()</code>。</p>
+<p><code>mem=</code> 参数由 <code>early_mem()</code> 处理，只做一件事：<code>memory_limit = memparse(p, &amp;p) &amp; PAGE_MASK</code>。没有 device tree 的年代，它用来告诉内核 memory bank 在哪；ARM64 强制用 DTB，这个参数只剩一个语义——<strong>内存上限</strong>，<code>arm64_memblock_init</code> 里 <code>memblock_enforce_memory_limit(memory_limit)</code> 按它裁掉超出的部分。老资料里「<code>mem=</code> 指定内存大小」的说法在 ARM64 上不成立。</p>
+<h2 id="十一reserved-region-怎么建起来" tabindex="-1">十一、reserved region 怎么建起来 <a class="header-anchor" href="#十一reserved-region-怎么建起来"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>版本：4.4.6。保留动作分散在几处，按代码顺序看。</p>
+<p><strong>① DTB 自己</strong>。第六章末尾那句 <code>memblock_reserve(dt_phys, size)</code>。必须保留，否则后面页表内存会分配到 DTB 头上。</p>
+<p><strong>② image 和 initrd</strong>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> __init <span class="hljs-title function_">arm64_memblock_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	memblock_enforce_memory_limit(memory_limit);              <span class="hljs-comment">// ①</span>
+	memblock_reserve(__pa_symbol(_text), _end - _text);        <span class="hljs-comment">// ②</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_BLK_DEV_INITRD</span>
+	<span class="hljs-keyword">if</span> (initrd_start)
+		memblock_reserve(__virt_to_phys(initrd_start),
+				 initrd_end - initrd_start);       <span class="hljs-comment">// ③</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+	...
+}
+</code></pre></div></code></pre>
+<p>① 按 <code>memory_limit</code> 裁，超出上限的 region 改 base/size 或直接删掉，memory 和 reserved 两边都处理。② 保留 <code>_text</code>~<code>_end</code>，整个 image：正文、rodata、data、bss，还有那 6 页启动页表。③ 保留 initrd。原文这里写的是 <code>__virt_to_phys(initrd_start)</code>，而 <code>__pa_symbol</code> 和 <code>__virt_to_phys</code> 不是一回事，见附录。</p>
+<p><strong>③ 扫 <code>/memreserve/</code> 和 <code>reserved-memory</code></strong>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> __init <span class="hljs-title function_">early_init_fdt_scan_reserved_mem</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	<span class="hljs-type">int</span> n;
+	u64 base, size;
+
+	<span class="hljs-keyword">if</span> (!initial_boot_params)                                  <span class="hljs-comment">// ①</span>
+		<span class="hljs-keyword">return</span>;
+
+	<span class="hljs-keyword">for</span> (n = <span class="hljs-number">0</span>; ; n++) {
+		fdt_get_mem_rsv(initial_boot_params, n, &amp;base, &amp;size); <span class="hljs-comment">// ②</span>
+		<span class="hljs-keyword">if</span> (!size)
+			<span class="hljs-keyword">break</span>;
+		early_init_dt_reserve_memory_arch(base, size, <span class="hljs-number">0</span>);       <span class="hljs-comment">// ③</span>
+	}
+
+	of_scan_flat_dt(__fdt_scan_reserved_mem, <span class="hljs-literal">NULL</span>);             <span class="hljs-comment">// ④</span>
+	fdt_init_reserved_mem();
+}
+</code></pre></div></code></pre>
+<p>① <code>initial_boot_params</code> 就是 FDT 的虚拟地址，在 <code>early_init_dt_verify</code> 里设的。② 一条条读 header 里 <code>off_mem_rsvmap</code> 指向的 <code>(address, size)</code> 数组，遇到 <code>(0, 0)</code> 停。③ 每条 reserve，这是 dts 里 <code>/memreserve/ 0x05e00000 0x00100000;</code> 那种行的落地方式——它不在任何节点里，被 dtc 编进 header 的 <code>off_mem_rsvmap</code>。④ <code>reserved-memory</code> 节点走另一条路。</p>
+<p>回调 <code>__fdt_scan_reserved_mem</code> 先找本体（<code>depth == 1</code>、名字对得上），找到后校验它带 <code>#address-cells</code>/<code>#size-cells</code>/<code>ranges</code> 且前两个值和 root 一致；扫完所有子节点、<code>depth</code> 退回 1 以下时返回 1 结束扫描。每个子节点：<code>status</code> 可有可无，有就必须是 <code>okay</code>/<code>ok</code>；有 <code>reg</code> 的是静态定义，走 <code>__reserved_mem_reserve_reg()</code>——它看有没有 <code>no-map</code>，有就 <code>memblock_remove()</code>，无就 <code>memblock_reserve()</code>，这个差别在第十三章变成「这段内存建不建映射」；只有 <code>size</code> 的是动态定义，<code>err == -ENOENT</code> 时调 <code>fdt_reserved_mem_save_node()</code> 存进 <code>reserved_mem[]</code>，分配推到下一步。</p>
+<p><strong>④ 落实动态定义的那些</strong>。<code>fdt_init_reserved_mem()</code> 做四件事：<code>__rmem_check_for_overlap()</code> 查静态 region 有无重叠（有只报错、不改 base/size）；取 <code>phandle</code> 供别的节点引用；<code>size == 0</code> 的调 <code>__reserved_mem_alloc_size()</code> 按 <code>size</code>/<code>alignment</code>/<code>alloc-ranges</code> 算好再分配，把这页从 memory 挪到 reserved；最后 <code>__reserved_mem_init_node()</code>——要么等驱动 probe，要么靠 <code>RESERVEDMEM_OF_DECLARE</code> 在启动期就绪（CMA、per-device coherent DMA 走这条）。</p>
+<p><strong>⑤ CMA</strong>。<code>arm64_memblock_init</code> → <code>dma_contiguous_reserve</code> 按命令行参数留 CMA 内存，这块留给 CMA 那篇。走完这五步，<code>memblock.memory</code> 是全集，<code>memblock.reserved</code> 是所有不能碰的段，两者一减就是内核真正能用的物理内存。</p>
+<h2 id="十二memblock-到伙伴系统的交接" tabindex="-1">十二、memblock 到伙伴系统的交接 <a class="header-anchor" href="#十二memblock-到伙伴系统的交接"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>memblock 是临时的，结构体本身标着 <code>__initdata_memblock</code>——账本自己也要被算账。顺序：<code>paging_init</code> 建映射（两数组不动）→ <code>free_area_init_nodes</code> 按 region 算出每个 node/zone 的 <code>present_pages</code>、建 <code>struct page</code> 数组（仍在用 memblock 遍历）→ <code>mem_init</code> 把「memory 减 reserved」整块还给伙伴系统（开始退场）→ <code>free_all_bootmem</code> 之下逐段释放、跳过 reserved（分配职能移交）→ 之后只有 <code>memblock_alloc</code> 的极少数晚期调用还会用一下，<code>__init</code> 段回收后账本消失。</p>
+<p>判据很简单：<strong>reserved 里的东西永远不进伙伴系统</strong>，启动阶段提前 reserve 的那些段（image、DTB、页表、<code>no-map</code> 区）天然不会被别人分配走。</p>
+<p>顺序陷阱单独记：<code>free_area_init_nodes</code> 要给每页建 <code>struct page</code>，而 <code>vmemmap</code> 数组自己也要占内存。4.4.6 的 ARM64 上 <code>vmemmap</code> 是一段虚拟区域，背后物理页由 memblock 分配，所以它必须发生在 <code>free_area_init_nodes</code> 之前，并且这时映射必须已经建好。这也是 <code>map_mem</code> 要把整段内存先映射出来的原因之一。</p>
+<h2 id="十三paging_init为系统内存正式建映射" tabindex="-1">十三、paging_init：为系统内存正式建映射 <a class="header-anchor" href="#十三paging_init为系统内存正式建映射"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>版本：4.4.6。到这里全局只有三段可见：image、DTB、fixmap 那 2M。剩下几 G 在黑暗里，<code>paging_init</code> → <code>map_mem</code> 负责点亮。</p>
+<p>先说悖论：建映射要页表内存，页表内存要 <code>memblock_alloc</code>，而 <code>memblock_alloc</code> 返回的物理页要能访问就得先有映射。解法不是「先分配再映射」，而是<strong>控制顺序</strong>，让要分配的页表内存严格落在已映射的物理范围内。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> __init <span class="hljs-title function_">map_mem</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">memblock_region</span> *<span class="hljs-title">reg</span>;</span>
+	<span class="hljs-type">phys_addr_t</span> limit;
+
+	limit = PHYS_OFFSET + SWAPPER_INIT_MAP_SIZE;          <span class="hljs-comment">// ①</span>
+	memblock_set_current_limit(limit);
+
+	for_each_memblock(memory, reg) {                       <span class="hljs-comment">// ②</span>
+		<span class="hljs-type">phys_addr_t</span> start = reg-&gt;base;
+		<span class="hljs-type">phys_addr_t</span> end = start + reg-&gt;size;
+
+		<span class="hljs-keyword">if</span> (start &gt;= end)
+			<span class="hljs-keyword">break</span>;
+
+		<span class="hljs-keyword">if</span> (ARM64_SWAPPER_USES_SECTION_MAPS) {          <span class="hljs-comment">// ③</span>
+			<span class="hljs-keyword">if</span> (start &lt; limit)
+				start = ALIGN(start, SECTION_SIZE);
+			<span class="hljs-keyword">if</span> (end &lt; limit) {
+				limit = end &amp; SECTION_MASK;
+				memblock_set_current_limit(limit);
+			}
+		}
+
+		__map_memblock(start, end);                     <span class="hljs-comment">// ④</span>
+	}
+
+	memblock_set_current_limit(MEMBLOCK_ALLOC_ANYWHERE);   <span class="hljs-comment">// ⑤</span>
+}
+</code></pre></div></code></pre>
+<p>① 给 <code>memblock_alloc</code> 划上限 <code>[PHYS_OFFSET, PHYS_OFFSET + SWAPPER_INIT_MAP_SIZE)</code>，这段的页表全是第四章静态建好的，往里填描述符不需要分配。② 遍历所有 memory region 建映射，reserved 是 memory 的子集，所以保留区的映射顺带也建了——注意是「建映射」，不是「允许分配」。③ 给 section mapping 打的补丁：第一个 memory block 的 start 必定 2M 对齐（image 在那儿），end 不一定；end 没对齐就没法整块 section mapping，<code>create_mapping</code> 会退化成分配 PTE 页，所以把 <code>limit</code> 缩到 <code>end &amp; SECTION_MASK</code>。④ 真正建映射：<code>create_mapping(start, __phys_to_virt(start), end - start, PAGE_KERNEL_EXEC)</code>。⑤ 全部完事，解除上限。</p>
+<p><code>map_mem</code> 之后，第四章那些描述符全被覆盖，属性换成 <code>__pgprot(_PAGE_DEFAULT | PTE_UXN | PTE_DIRTY | PTE_WRITE)</code>。<code>MT_NORMAL</code>、<code>PTE_AF</code>、<code>PTE_SHARED</code> 跟原来一样，新加三个：<code>PTE_UXN</code> 是 Unprivileged Execute-never，禁止 EL0 从这里取指；<code>PTE_DIRTY</code> 是纯软件位，硬件不碰，回收时据此判断要不要回写；<code>PTE_WRITE</code> 是可写，跟 ARMv8 的 AP 位配合，怎么算见 <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/03-ARM%E6%9E%B6%E6%9E%84%E4%B8%8E%E5%BC%82%E5%B8%B8/ARM64-%E5%9C%B0%E5%9D%80%E7%BF%BB%E8%AF%91%E4%B8%8E%E9%A1%B5%E8%A1%A8%E5%AE%8F%E5%AE%9A%E4%B9%89/" class="wikilink">ARM64 地址翻译与页表宏定义</a>。</p>
+<p>DTB 里那些 <code>no-map</code> 的段依旧不可见——它们在第十一章被 <code>memblock_remove</code> 掉了，压根不在这轮 <code>for_each_memblock(memory, ...)</code> 里。</p>
+<h2 id="十四逐级填表pgd--pud--pmd--pte" tabindex="-1">十四、逐级填表：PGD → PUD → PMD → PTE <a class="header-anchor" href="#十四逐级填表pgd--pud--pmd--pte"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>版本：4.4.6。这是 <code>create_mapping</code> 往下的完整调用链。先看往哪个位段塞东西，48 位 VA、4K 页、四级：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">级别</th>
+<th style="text-align:left">位段</th>
+<th style="text-align:left">索引宏</th>
+<th style="text-align:left">一项覆盖</th>
+<th style="text-align:left">表大小</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">PGD（L0）</td>
+<td style="text-align:left">VA[47:39]</td>
+<td style="text-align:left"><code>PGDIR_SHIFT</code> = 39</td>
+<td style="text-align:left">512G</td>
+<td style="text-align:left">512 × 8B = 4K</td>
+</tr>
+<tr>
+<td style="text-align:left">PUD（L1）</td>
+<td style="text-align:left">VA[38:30]</td>
+<td style="text-align:left"><code>PUD_SHIFT</code> = 30</td>
+<td style="text-align:left">1G</td>
+<td style="text-align:left">4K</td>
+</tr>
+<tr>
+<td style="text-align:left">PMD（L2）</td>
+<td style="text-align:left">VA[29:21]</td>
+<td style="text-align:left"><code>PMD_SHIFT</code> = 21</td>
+<td style="text-align:left">2M</td>
+<td style="text-align:left">4K</td>
+</tr>
+<tr>
+<td style="text-align:left">PTE（L3）</td>
+<td style="text-align:left">VA[20:12]</td>
+<td style="text-align:left"><code>PAGE_SHIFT</code> = 12</td>
+<td style="text-align:left">4K</td>
+<td style="text-align:left">4K</td>
+</tr>
+<tr>
+<td style="text-align:left">offset</td>
+<td style="text-align:left">VA[11:0]</td>
+<td style="text-align:left">—</td>
+<td style="text-align:left">1B</td>
+<td style="text-align:left">—</td>
+</tr>
+</tbody>
+</table></div><p>每级 9 位、512 项、每项 8 字节，恰好一页，这就是 <code>create_table_entry</code> 里 <code>add \tmp2, \tbl, #PAGE_SIZE</code> 敢写死的底气。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> __init <span class="hljs-title function_">create_mapping</span><span class="hljs-params">(<span class="hljs-type">phys_addr_t</span> phys, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> virt,
+				  <span class="hljs-type">phys_addr_t</span> size, <span class="hljs-type">pgprot_t</span> prot)</span>
+{
+	<span class="hljs-keyword">if</span> (virt &lt; VMALLOC_START) {
+		pr_warn(<span class="hljs-string">&quot;BUG: not creating mapping for %pa at 0x%016lx - outside kernel range\n&quot;</span>,
+			&amp;phys, virt);
+		<span class="hljs-keyword">return</span>;
+	}
+
+	__create_mapping(&amp;init_mm, pgd_offset_k(virt &amp; PAGE_MASK), phys, virt,
+			 size, prot, early_alloc);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> __init __create_mapping(<span class="hljs-keyword">struct</span> mm_struct *mm, <span class="hljs-type">pgd_t</span> *pgd,
+				    <span class="hljs-type">phys_addr_t</span> phys, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> virt,
+				    <span class="hljs-type">phys_addr_t</span> size, <span class="hljs-type">pgprot_t</span> prot,
+				    <span class="hljs-type">void</span> *(*alloc)(<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> size))
+{
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> addr, length, end, next;
+
+	addr = virt &amp; PAGE_MASK;                        <span class="hljs-comment">// ①</span>
+	length = PAGE_ALIGN(size + (virt &amp; ~PAGE_MASK));
+
+	end = addr + length;
+	<span class="hljs-keyword">do</span> {                                            <span class="hljs-comment">// ②</span>
+		next = pgd_addr_end(addr, end);          <span class="hljs-comment">// ③</span>
+		alloc_init_pud(mm, pgd, addr, next, phys, prot, alloc); <span class="hljs-comment">// ④</span>
+		phys += next - addr;
+	} <span class="hljs-keyword">while</span> (pgd++, addr = next, addr != end);
+}
+</code></pre></div></code></pre>
+<p><code>init_mm</code> 是内核空间的 <code>mm_struct</code>；<code>pgd_offset_k(virt)</code> 找到 VA 对应的 PGD 项；<code>early_alloc</code> 是「缺页表内存时调谁」。那个 <code>virt &lt; VMALLOC_START</code> 检查不是摆设，它是唯一一道门——低于它就等于往用户空间建内核映射，直接拒。① 对齐到页，<code>(addr, length)</code> 是包住 <code>(virt, size)</code> 的最小页对齐范围。② 一段 VA 会跨多个 PGD 项。③ <code>pgd_addr_end</code> 算出当前 PGD 项能覆盖到哪。④ 交给下一级，顺便把物理指针往前推。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">alloc_init_pud</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> mm_struct *mm, <span class="hljs-type">pgd_t</span> *pgd,
+			   <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> addr, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> end,
+			   <span class="hljs-type">phys_addr_t</span> phys, <span class="hljs-type">pgprot_t</span> prot,
+			   <span class="hljs-type">void</span> *(*alloc)(<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> size))</span>
+{
+	<span class="hljs-type">pud_t</span> *pud;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> next;
+
+	<span class="hljs-keyword">if</span> (pgd_none(*pgd)) {                                  <span class="hljs-comment">// ①</span>
+		pud = alloc(PTRS_PER_PUD * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">pud_t</span>));
+		pgd_populate(mm, pgd, pud);
+	}
+
+	pud = pud_offset(pgd, addr);                           <span class="hljs-comment">// ②</span>
+
+	<span class="hljs-keyword">do</span> {                                                   <span class="hljs-comment">// ③</span>
+		next = pud_addr_end(addr, end);
+
+		<span class="hljs-keyword">if</span> (use_1G_block(addr, next, phys)) {          <span class="hljs-comment">// ④</span>
+			<span class="hljs-type">pud_t</span> old_pud = *pud;
+			set_pud(pud, __pud(phys | pgprot_val(mk_sect_prot(prot)))); <span class="hljs-comment">// ⑤</span>
+
+			<span class="hljs-keyword">if</span> (!pud_none(old_pud)) {               <span class="hljs-comment">// ⑥</span>
+				flush_tlb_all();                <span class="hljs-comment">// ⑦</span>
+				<span class="hljs-keyword">if</span> (pud_table(old_pud)) {
+					<span class="hljs-type">phys_addr_t</span> table = __pa(pmd_offset(&amp;old_pud, <span class="hljs-number">0</span>));
+					<span class="hljs-keyword">if</span> (!WARN_ON_ONCE(slab_is_available()))
+						memblock_free(table, PAGE_SIZE); <span class="hljs-comment">// ⑧</span>
+				}
+			}
+		} <span class="hljs-keyword">else</span> {
+			alloc_init_pmd(mm, pud, addr, next, phys, prot, alloc);
+		}
+
+		phys += next - addr;
+	} <span class="hljs-keyword">while</span> (pud++, addr = next, addr != end);
+}
+</code></pre></div></code></pre>
+<p>① PGD 项是空的，说明还没有 PUD 表，要一页再 <code>pgd_populate</code>；这一刻伙伴系统没起来，<code>alloc</code> 走 memblock。② 定位 <code>addr</code> 落在 PUD 表哪一项。③ 一个 PGD 项下会有多个 PUD 项。④ 能不能用 1G block：4K 页配置下 PUD 项覆盖 1G，且起止 VA 和对应的 PA 都要 1G 对齐。⑤ 能就一行画完 1G，没有 PMD、没有 PTE；4G 内存对齐在 1G 上的话，四个 PUD 项就画完整个线性区。</p>
+<p>⑥⑦⑧ 是清旧账。早期 <code>__create_page_tables</code> 在这附近填过 PUD/PMD，现在换成 block 描述符，旧账得清：⑥ 旧项非空；⑦ 新页表建了，旧翻译还赖在 TLB 里，<code>flush_tlb_all()</code> 清干净；⑧ 旧项是 table 类型说明它指向一张 PMD 表，那页可以还了。<code>slab_is_available()</code> 那个 <code>WARN_ON_ONCE</code> 意思是：slab 已经能用的话，这条释放路径就不该再走（说明映射重建发生得太晚）。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">alloc_init_pmd</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> mm_struct *mm, <span class="hljs-type">pud_t</span> *pud,
+			   <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> addr, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> end,
+			   <span class="hljs-type">phys_addr_t</span> phys, <span class="hljs-type">pgprot_t</span> prot,
+			   <span class="hljs-type">void</span> *(*alloc)(<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> size))</span>
+{
+	<span class="hljs-type">pmd_t</span> *pmd;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> next;
+
+	<span class="hljs-keyword">if</span> (pud_none(*pud) || pud_sect(*pud)) {                  <span class="hljs-comment">// ①</span>
+		pmd = alloc(PTRS_PER_PMD * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">pmd_t</span>));
+		<span class="hljs-keyword">if</span> (pud_sect(*pud)) {                           <span class="hljs-comment">// ②</span>
+			split_pud(pud, pmd);
+		}
+		pud_populate(mm, pud, pmd);                     <span class="hljs-comment">// ③</span>
+		flush_tlb_all();
+	}
+	BUG_ON(pud_bad(*pud));
+
+	pmd = pmd_offset(pud, addr);                            <span class="hljs-comment">// ④</span>
+	<span class="hljs-keyword">do</span> {
+		next = pmd_addr_end(addr, end);
+		<span class="hljs-keyword">if</span> (((addr | next | phys) &amp; ~SECTION_MASK) == <span class="hljs-number">0</span>) { <span class="hljs-comment">// ⑤</span>
+			<span class="hljs-type">pmd_t</span> old_pmd = *pmd;
+			set_pmd(pmd, __pmd(phys | pgprot_val(mk_sect_prot(prot))));
+			<span class="hljs-keyword">if</span> (!pmd_none(old_pmd)) {               <span class="hljs-comment">// ⑥</span>
+				flush_tlb_all();
+				<span class="hljs-keyword">if</span> (pmd_table(old_pmd)) {
+					<span class="hljs-type">phys_addr_t</span> table = __pa(pte_offset_map(&amp;old_pmd, <span class="hljs-number">0</span>));
+					<span class="hljs-keyword">if</span> (!WARN_ON_ONCE(slab_is_available()))
+						memblock_free(table, PAGE_SIZE);
+				}
+			}
+		} <span class="hljs-keyword">else</span> {
+			alloc_init_pte(pmd, addr, next, __phys_to_pfn(phys),
+				       prot, alloc);
+		}
+
+		phys += next - addr;
+	} <span class="hljs-keyword">while</span> (pmd++, addr = next, addr != end);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">alloc_init_pte</span><span class="hljs-params">(<span class="hljs-type">pmd_t</span> *pmd, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> addr,
+			   <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> end, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> pfn,
+			   <span class="hljs-type">pgprot_t</span> prot,
+			   <span class="hljs-type">void</span> *(*alloc)(<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> size))</span>
+{
+	<span class="hljs-type">pte_t</span> *pte;
+
+	<span class="hljs-keyword">if</span> (pmd_none(*pmd) || pmd_sect(*pmd)) {                 <span class="hljs-comment">// ⑦</span>
+		pte = alloc(PTRS_PER_PTE * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">pte_t</span>));
+		<span class="hljs-keyword">if</span> (pmd_sect(*pmd))
+			split_pmd(pmd, pte);                    <span class="hljs-comment">// ⑧</span>
+		__pmd_populate(pmd, __pa(pte), PMD_TYPE_TABLE);  <span class="hljs-comment">// ⑨</span>
+		flush_tlb_all();
+	}
+	BUG_ON(pmd_bad(*pmd));
+
+	pte = pte_offset_kernel(pmd, addr);
+	<span class="hljs-keyword">do</span> {
+		set_pte(pte, pfn_pte(pfn, prot));               <span class="hljs-comment">// ⑩</span>
+		pfn++;
+	} <span class="hljs-keyword">while</span> (pte++, addr += PAGE_SIZE, addr != end);
+}
+</code></pre></div></code></pre>
+<p>① 两种情形要 PMD 表：PUD 项是空的；或 PUD 项是 1G section 而现在要改它。② 旧的是 1G section 时，<code>split_pud</code> 把它拆成 512 个 2M section——一个 PUD 描述符换 512 个 PMD 描述符，覆盖范围不变，粒度变细。③ 让 PUD 项指向新表，清 TLB。④ 循环逻辑和上一级同构。⑤ 三个地址都 2M 对齐才能用 2M section。⑥ 旧的若是 table 类型，那张 PTE 表可以还了。</p>
+<p>⑦ 走到这儿说明要往 4K 粒度落。⑧ 有 2M section 就拆成 512 个 page 描述符。⑨ 让 PMD 项指向新 PTE 表，注意那个区别：PMD 项原本是空的话，新表 512 项全 invalid；原本是 section 的话，<code>split_pmd</code> 已经填好 512 项。⑩ 一页一项，<code>pfn</code> 递增。</p>
+<p>整条链是<strong>按需分配、能省就省</strong>：4K 页且地址都 1G 对齐时走 PUD section，每 1G 一句 <code>set_pud</code>，页表页数 0；2M section 可用时走 PMD section，每 1G 一张 PMD 表；真要 4K 粒度才落到 PTE page，每 2M 一张 PTE 表。所以一个 4G、1G 对齐的系统，<code>map_mem</code> 只花四个 PUD 项——不只省内存，TLB miss 也少一大截。</p>
+<h2 id="十五kaslr随机化的到底是什么" tabindex="-1">十五、KASLR：随机化的到底是什么 <a class="header-anchor" href="#十五kaslr随机化的到底是什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>版本：4.15。</p>
+<p>先把误解掐掉。KASLR 随机化的不是物理地址，也不是页表结构，而是<strong>内核 image 在虚拟地址空间里落哪</strong>。物理上 image 还是那块 DRAM，虚拟侧挪一段。为什么值得挪？内核里 gadget 的地址是攻击者的第一需求，地址固定，ROP 链可以写死。</p>
+<p>随机的是两样东西，原稿在注释里一带而过：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">对象</th>
+<th style="text-align:left">随机源</th>
+<th style="text-align:left">影响什么</th>
+<th style="text-align:left">约束</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">image 偏移 <code>offset</code></td>
+<td style="text-align:left">DTB <code>chosen/kaslr-seed</code></td>
+<td style="text-align:left"><code>.text</code> 的起始虚拟地址</td>
+<td style="text-align:left">2M 对齐；不超 <code>2^(VA_BITS-2)</code>；不跨 PUD</td>
+</tr>
+<tr>
+<td style="text-align:left">线性区起点</td>
+<td style="text-align:left">同一个 seed 的高 16 位</td>
+<td style="text-align:left"><code>memstart_addr</code>，物理内存被摆到线性区的哪一段</td>
+<td style="text-align:left">1G 对齐；线性区要装得下全部物理内存</td>
+</tr>
+</tbody>
+</table></div><p>随机源由 bootloader 塞进 DTB：</p>
+<pre><code class="language-dts"><div class="code-block" data-lang="dts"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">dts</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-title class_">/</span> <span class="hljs-punctuation">{</span>
+    <span class="hljs-title class_">chosen</span> <span class="hljs-punctuation">{</span>
+        <span class="hljs-attr">kaslr-seed</span> <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-number">0x10000000</span>&gt;</span><span class="hljs-punctuation">;</span>
+    <span class="hljs-punctuation">};</span>
+<span class="hljs-punctuation">};</span>
+</code></pre></div></code></pre>
+<p><code>kaslr-seed</code> 是 64 位值。没有这个属性，<code>kaslr_early_init</code> 返回 0，内核照链接地址跑。命令行可以一票否决：<code>nokaslr</code>，匹配规则很土但严格，必须出现在行首或空格之后，<code>mynokaslr</code> 不生效。</p>
+<h2 id="十六kaslr_early_init-逐行分析" tabindex="-1">十六、kaslr_early_init 逐行分析 <a class="header-anchor" href="#十六kaslr_early_init-逐行分析"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>版本：4.15。原稿零标题、纯代码加注释，这里拆开。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>u64 __init <span class="hljs-title function_">kaslr_early_init</span><span class="hljs-params">(u64 dt_phys)</span>
+{
+	<span class="hljs-type">void</span> *fdt;
+	u64 seed, offset, mask, module_range;
+	<span class="hljs-type">const</span> u8 *cmdline, *str;
+	<span class="hljs-type">int</span> size;
+
+	early_fixmap_init();                                         <span class="hljs-comment">/* 1 */</span>
+	fdt = __fixmap_remap_fdt(dt_phys, &amp;size, PAGE_KERNEL);       <span class="hljs-comment">/* 2 */</span>
+
+	seed = get_kaslr_seed(fdt);                                  <span class="hljs-comment">/* 3 */</span>
+
+	<span class="hljs-keyword">if</span> (!seed)
+		<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+	cmdline = get_cmdline(fdt);
+
+	str = <span class="hljs-built_in">strstr</span>(cmdline, <span class="hljs-string">&quot;nokaslr&quot;</span>);                            <span class="hljs-comment">/* 4 */</span>
+
+	<span class="hljs-keyword">if</span> (str == cmdline || (str &gt; cmdline &amp;&amp; *(str - <span class="hljs-number">1</span>) == <span class="hljs-string">&#x27; &#x27;</span>))
+		<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+	mask = ((<span class="hljs-number">1UL</span> &lt;&lt; (VA_BITS - <span class="hljs-number">2</span>)) - <span class="hljs-number">1</span>) &amp; ~(SZ_2M - <span class="hljs-number">1</span>);          <span class="hljs-comment">/* 5 */</span>
+
+	offset = seed &amp; mask;
+
+	<span class="hljs-comment">/* use the top 16 bits to randomize the linear region */</span>
+
+	memstart_offset_seed = seed &gt;&gt; <span class="hljs-number">48</span>;                           <span class="hljs-comment">/* 6 */</span>
+
+	<span class="hljs-keyword">if</span> ((((u64)_text + offset) &gt;&gt; SWAPPER_TABLE_SHIFT) !=
+	    (((u64)_end + offset) &gt;&gt; SWAPPER_TABLE_SHIFT))
+		offset = round_down(offset, <span class="hljs-number">1</span> &lt;&lt; SWAPPER_TABLE_SHIFT);   <span class="hljs-comment">/* 7 */</span>
+
+	<span class="hljs-keyword">return</span> offset;
+}
+</code></pre></div></code></pre>
+<ul>
+<li><strong>1</strong> <code>early_fixmap_init()</code> 执行的时刻比名字暗示的早得多：它在 <code>kaslr_early_init</code> 里，而后者被 <code>__primary_switched</code> 调，那时 <code>start_kernel</code> 还没进。第七章那些静态 <code>bm_pud</code>/<code>bm_pmd</code>/<code>bm_pte</code> 就是为了这一刻。</li>
+<li><strong>2</strong> <code>__fixmap_remap_fdt()</code> 把物理的 DTB 地址映射到 <code>FIX_FDT</code>，形状和第六章一样。</li>
+<li><strong>3</strong> <code>get_kaslr_seed()</code> 从 <code>chosen</code> 取 <code>kaslr-seed</code>，取不到就是 0。</li>
+</ul>
+<p><strong>4</strong> 认 <code>nokaslr</code>。<code>strstr</code> 找到子串后还得判边界：<code>str == cmdline</code> 是行首，<code>*(str-1) == ' '</code> 是前有空格，于是 <code>nokaslr</code> 和 <code>foo nokaslr</code> 都拦得住，<code>xnokaslr</code> 拦不住。</p>
+<p><strong>5</strong> 算掩码，<code>(1UL &lt;&lt; (VA_BITS-2)) - 1</code> 取低 <code>VA_BITS-2</code> 位，<code>&amp; ~(SZ_2M - 1)</code> 保证 2M 对齐，VA_BITS=48 时是 <code>0x0000_3fff_ffe0_0000</code>。原稿把这句注释解释成「位于 VMALLOC 区域大小的一半以下」，按宏算其实是 VA 空间的 1/4——<code>VA_BITS-1</code> 才是「一半」（线性区大小），再减一即 <code>VA_BITS-2</code>。措辞对不上，数值本身没错，见附录。</p>
+<ul>
+<li><strong>6</strong> 线性区也随机。<code>seed &gt;&gt; 48</code> 存进 <code>memstart_offset_seed</code>，后面影响 <code>memstart_addr</code>。</li>
+<li><strong>7</strong> 不让 image 跨 PUD：判断 <code>_text + offset</code> 和 <code>_end + offset</code> 是否落在同一个 <code>SWAPPER_TABLE_SHIFT</code> 区段，不是就往下对齐。原因很硬——<code>__create_page_tables</code> 启动时只准备了一张 PUD 表，想跨就得再要一张，而那时没有分配器。</li>
+</ul>
+<p>调用点在 <code>__primary_switched</code>：</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">__primary_switched:</span>
+
+	<span class="hljs-keyword">tst</span>	<span class="hljs-built_in">x23</span>, ~(MIN_KIMG_ALIGN - <span class="hljs-number">1</span>)	<span class="hljs-comment">// already running randomized?</span>
+	b.ne	<span class="hljs-number">0</span>f
+
+	<span class="hljs-keyword">mov</span>	<span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x21</span>				<span class="hljs-comment">// pass FDT address in x0</span>
+	<span class="hljs-keyword">bl</span>	kaslr_early_init		<span class="hljs-comment">// parse FDT for KASLR options</span>
+
+	<span class="hljs-keyword">cbz</span>	<span class="hljs-built_in">x0</span>, <span class="hljs-number">0</span>f				<span class="hljs-comment">// KASLR disabled? just proceed</span>
+
+	<span class="hljs-keyword">orr</span>	<span class="hljs-built_in">x23</span>, <span class="hljs-built_in">x23</span>, <span class="hljs-built_in">x0</span>			<span class="hljs-comment">// record KASLR offset</span>
+
+	ldp	<span class="hljs-built_in">x29</span>, <span class="hljs-built_in">x30</span>, [<span class="hljs-built_in">sp</span>], <span class="hljs-number">#16</span>		<span class="hljs-comment">// we must enable KASLR, return</span>
+	ret					<span class="hljs-comment">// to __primary_switch()</span>
+</code></pre></div></code></pre>
+<p><code>x23</code> 是后半程一直带着的偏移。<code>tst</code> + <code>b.ne</code> 防重入：<code>MIN_KIMG_ALIGN</code> 是 image 最小对齐，<code>~(MIN_KIMG_ALIGN - 1)</code> 取高位部分，非零说明 <code>x23</code> 已经带了偏移，别算第二遍。用 <code>orr</code> 不用 <code>mov</code>，是把它「或」进 <code>x23</code> 的低位，靠对齐保证两者不重叠。</p>
+<p><code>x23</code> 最终落到建表代码里。4.15 的版本：</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">__create_page_tables:</span>
+    <span class="hljs-keyword">adrp</span>	<span class="hljs-built_in">x0</span>, swapper_pg_dir
+
+    mov_q	<span class="hljs-built_in">x5</span>, KIMAGE_VADDR + TEXT_OFFSET  <span class="hljs-comment">// compile time __va(_text)</span>
+    <span class="hljs-keyword">add</span>	<span class="hljs-built_in">x5</span>, <span class="hljs-built_in">x5</span>, <span class="hljs-built_in">x23</span>                         <span class="hljs-comment">// add KASLR displacement</span>
+
+    create_pgd_entry <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x5</span>, <span class="hljs-built_in">x3</span>, <span class="hljs-built_in">x6</span>
+
+    <span class="hljs-keyword">adrp</span>	<span class="hljs-built_in">x6</span>, _<span class="hljs-meta">end</span>                        <span class="hljs-comment">// runtime __pa(_end)</span>
+    <span class="hljs-keyword">adrp</span>	<span class="hljs-built_in">x3</span>, _text                       <span class="hljs-comment">// runtime __pa(_text)</span>
+    <span class="hljs-keyword">sub</span>	<span class="hljs-built_in">x6</span>, <span class="hljs-built_in">x6</span>, <span class="hljs-built_in">x3</span>                          <span class="hljs-comment">// _end - _text</span>
+    <span class="hljs-keyword">add</span>	<span class="hljs-built_in">x6</span>, <span class="hljs-built_in">x6</span>, <span class="hljs-built_in">x5</span>                          <span class="hljs-comment">// runtime __va(_end)</span>
+
+    create_block_map <span class="hljs-built_in">x0</span>, <span class="hljs-built_in">x7</span>, <span class="hljs-built_in">x3</span>, <span class="hljs-built_in">x5</span>, <span class="hljs-built_in">x6</span>
+</code></pre></div></code></pre>
+<p>原稿说「注意第 7 行」，但那是原稿代码块里的 <code>adrp x0, swapper_pg_dir</code>；真正加上偏移的是 <code>add x5, x5, x23</code>（原稿代码块第 11 行，本文压掉空行后更靠前）。行号偏差不影响结论：<code>x3</code> 拿 <code>_text</code> 的运行时物理地址，<code>x6</code> 拿 <code>_end</code> 的物理值，相减得 image 物理长度，再加到带偏移的虚拟起点上得虚拟终点。物理起点不随 offset 变——这就是「随机化虚拟地址」的直接证据。</p>
+<p><strong>重定位</strong>。<code>x23</code> 一进来，链接时定死的符号全体错位：<code>_text</code>、<code>_etext</code>、<code>_end</code> 的值在链接时确定，现在运行时比它们多 <code>offset</code>，任何通过符号取绝对地址的代码都会拿到旧值。修这件事的是 <code>__relocate_kernel</code>（<code>arch/arm64/kernel/head.S</code>），它把 <code>.rela</code> 段的重定位项逐条应用，让按符号算出来的地址重新对上运行时地址。只需记住：KASLR 下访问符号地址必须走重定位后的值。</p>
+<p>最后是 oops 的处理。log 里的函数地址是运行时地址，<code>addr2line</code> 要吃链接地址：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Virtual kernel memory layout:
+
+  vmalloc : 0xffffff8008000000 - 0xffffffbebfff0000   (   250 GB)
+    .text : 0xffffff80ae280000 - 0xffffff80af2e0000   ( 16768 KB)
+    .init : 0xffffff80afb60000 - 0xffffff80b01e0000   (  6656 KB)
+     .bss : 0xffffff80b044f200 - 0xffffffb0e18538     ( 10021 KB)
+  memory  : 0xffffffc000000000 - 0xffffffc0c0000000   (  3072 MB)
+</code></pre></div></code></pre>
+<p>换算公式 <code>addr_link = addr_run - .text_start + vmalloc_start + TEXT_OFFSET</code>，其中 <code>vmalloc_start</code> 就是 <code>KIMAGE_VADDR</code>，4.15 里等于 <code>VMALLOC_START</code> 也等于 <code>MODULES_END</code>。代入这份 dump：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>addr_link = addr_run - 0xffffff80ae280000 + 0xffffff8008000000 + 0x80000
+</code></pre></div></code></pre>
+<p>算出来的值丢给 <code>addr2line -e vmlinux</code> 就能定位到行。反推 offset 也简单：<code>0xffffff80ae280000 - 0xffffff8008080000 = 0xa6200000</code>，约 2.6G，落在 250G 的 vmalloc 段里。</p>
+<h2 id="十七kaslr-与内存布局的相互制约" tabindex="-1">十七、KASLR 与内存布局的相互制约 <a class="header-anchor" href="#十七kaslr-与内存布局的相互制约"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这两件事互为约束，谁也不能随便改：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">约束</th>
+<th style="text-align:left">谁提出</th>
+<th style="text-align:left">对另一方的限制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">启动只建一张 PUD</td>
+<td style="text-align:left"><code>__create_page_tables</code></td>
+<td style="text-align:left">offset 必须让 image 落在同一 PUD 内，第十六章第 7 行守这条</td>
+</tr>
+<tr>
+<td style="text-align:left">offset 2M 对齐</td>
+<td style="text-align:left">section mapping</td>
+<td style="text-align:left">随机粒度只到 2M，再细就退化成 page mapping</td>
+</tr>
+<tr>
+<td style="text-align:left">image 在 <code>KIMAGE_VADDR</code></td>
+<td style="text-align:left">4.15 布局宏</td>
+<td style="text-align:left"><code>KIMAGE_VADDR == VMALLOC_START == MODULES_END</code>，image 和 vmalloc 抢高位</td>
+</tr>
+<tr>
+<td style="text-align:left">线性区恰占 VA 空间一半</td>
+<td style="text-align:left"><code>linear_region_size = -(s64)PAGE_OFFSET</code></td>
+<td style="text-align:left"><code>__is_lm_address</code> 才能用一个 bit 判定，<code>BUILD_BUG_ON</code> 锁死</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>memstart_addr</code> 1G 对齐</td>
+<td style="text-align:left"><code>ARM64_MEMSTART_ALIGN</code></td>
+<td style="text-align:left">线性区随机化只到这个粒度</td>
+</tr>
+<tr>
+<td style="text-align:left">线性区装下全部物理内存</td>
+<td style="text-align:left">数学</td>
+<td style="text-align:left">超了就得从 RAM 末尾倒推基址，并把低端 remove 掉</td>
+</tr>
+</tbody>
+</table></div><pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> __init <span class="hljs-title function_">arm64_memblock_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	<span class="hljs-type">const</span> s64 linear_region_size = -(s64)PAGE_OFFSET;
+
+	BUILD_BUG_ON(linear_region_size != BIT(VA_BITS - <span class="hljs-number">1</span>));      <span class="hljs-comment">// ①</span>
+
+	memstart_addr = round_down(memblock_start_of_DRAM(),       <span class="hljs-comment">// ②</span>
+				   ARM64_MEMSTART_ALIGN);
+
+	memblock_remove(<span class="hljs-type">max_t</span>(u64, memstart_addr + linear_region_size,  <span class="hljs-comment">// ③</span>
+			      __pa_symbol(_end)), ULLONG_MAX);
+	<span class="hljs-keyword">if</span> (memstart_addr + linear_region_size &lt; memblock_end_of_DRAM()) {
+		memstart_addr = round_up(memblock_end_of_DRAM() - linear_region_size,
+					 ARM64_MEMSTART_ALIGN);    <span class="hljs-comment">// ④</span>
+		memblock_remove(<span class="hljs-number">0</span>, memstart_addr);                     <span class="hljs-comment">// ⑤</span>
+	}
+}
+</code></pre></div></code></pre>
+<p>① 编译期锁死「线性区 = VA 空间一半」，这是 <code>__is_lm_address</code> 单 bit 判定的前提。② 物理起点按 1G 对齐，对齐后的起点就是线性区的锚。③ 把线性区覆盖不到的高端物理内存摘掉——反正映射不了。④⑤ 物理内存太大、线性区装不下时，改成从 RAM 末尾倒推，再把低端 <code>[0, memstart_addr)</code> 摘掉，副作用很直白：<strong>低端那截物理内存内核用不了</strong>，这是位宽不够的代价。</p>
+<p>换算关系跟着分成两路：<code>__is_lm_address(addr)</code> 看 <code>bit(VA_BITS-1)</code>，为 1 走线性区减 <code>PAGE_OFFSET</code>，为 0 走 image 区减 <code>kimage_voffset</code>。而 <code>kimage_voffset</code> 本身是运行时算的：</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">ENTRY</span>(kimage_vaddr)
+	.quad	_text - TEXT_OFFSET
+
+<span class="hljs-symbol">__primary_switched:</span>
+	ldr_l	<span class="hljs-built_in">x4</span>, kimage_vaddr	<span class="hljs-comment">// 编译期的 image 虚拟地址</span>
+	<span class="hljs-keyword">sub</span>	<span class="hljs-built_in">x4</span>, <span class="hljs-built_in">x4</span>, <span class="hljs-built_in">x0</span>		<span class="hljs-comment">// x0 = __PHYS_OFFSET（物理）</span>
+	str_l	<span class="hljs-built_in">x4</span>, kimage_voffset, <span class="hljs-built_in">x5</span>
+	<span class="hljs-keyword">b</span>	start_kernel
+</code></pre></div></code></pre>
+<p>这是 KASLR 逼出来的一笔账：虚拟地址随机了，物理地址没变，两者的差只能运行时存起来。老内核里 <code>__virt_to_phys</code> 一句宏的事，4.15 之后得先判走哪条路，再减不同的基。</p>
+<h2 id="十八一次完整时序从-_start-到-free_area_init" tabindex="-1">十八、一次完整时序：从 _start 到 free_area_init <a class="header-anchor" href="#十八一次完整时序从-_start-到-free_area_init"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">#</th>
+<th style="text-align:left">阶段</th>
+<th style="text-align:left">入口函数</th>
+<th style="text-align:left">MMU</th>
+<th style="text-align:left">页表动作</th>
+<th style="text-align:left">账本动作</th>
+<th style="text-align:left">版本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">0</td>
+<td style="text-align:left">bootloader 交棒</td>
+<td style="text-align:left">—</td>
+<td style="text-align:left">off</td>
+<td style="text-align:left">无</td>
+<td style="text-align:left">无</td>
+<td style="text-align:left">通用</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">建启动页表</td>
+<td style="text-align:left"><code>__create_page_tables</code></td>
+<td style="text-align:left">off</td>
+<td style="text-align:left">idmap + image 两段，静态 6 页，前后各 invalidate 一次</td>
+<td style="text-align:left">无</td>
+<td style="text-align:left">4.4.6</td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:left">开 MMU</td>
+<td style="text-align:left"><code>__enable_mmu</code></td>
+<td style="text-align:left">off→on</td>
+<td style="text-align:left">只装寄存器，不建表</td>
+<td style="text-align:left">无</td>
+<td style="text-align:left">通用</td>
+</tr>
+<tr>
+<td style="text-align:left">3</td>
+<td style="text-align:left">进 C</td>
+<td style="text-align:left"><code>__primary_switched</code></td>
+<td style="text-align:left">on</td>
+<td style="text-align:left">无</td>
+<td style="text-align:left">存 <code>__fdt_pointer</code>；4.15 加算 <code>kimage_voffset</code></td>
+<td style="text-align:left">4.15 有增量</td>
+</tr>
+<tr>
+<td style="text-align:left">4</td>
+<td style="text-align:left">KASLR</td>
+<td style="text-align:left"><code>kaslr_early_init</code></td>
+<td style="text-align:left">on</td>
+<td style="text-align:left">fixmap 建 PUD/PMD/PTE</td>
+<td style="text-align:left">无</td>
+<td style="text-align:left">4.15</td>
+</tr>
+<tr>
+<td style="text-align:left">5</td>
+<td style="text-align:left">映射 DTB</td>
+<td style="text-align:left"><code>early_fixmap_init</code> → <code>__fixmap_remap_fdt</code></td>
+<td style="text-align:left">on</td>
+<td style="text-align:left"><code>FIX_FDT</code> 一条 2M section</td>
+<td style="text-align:left"><code>memblock_reserve(dt_phys)</code></td>
+<td style="text-align:left">4.4.6</td>
+</tr>
+<tr>
+<td style="text-align:left">6</td>
+<td style="text-align:left">定 memstart</td>
+<td style="text-align:left"><code>arm64_memblock_init</code></td>
+<td style="text-align:left">on</td>
+<td style="text-align:left">无</td>
+<td style="text-align:left">reserve image / initrd；<code>enforce_memory_limit</code></td>
+<td style="text-align:left">4.4.6</td>
+</tr>
+<tr>
+<td style="text-align:left">7</td>
+<td style="text-align:left">扫 DTB</td>
+<td style="text-align:left"><code>setup_machine_fdt</code></td>
+<td style="text-align:left">on</td>
+<td style="text-align:left">无</td>
+<td style="text-align:left"><code>memblock_add</code> 建 memory region</td>
+<td style="text-align:left">4.4.6</td>
+</tr>
+<tr>
+<td style="text-align:left">8</td>
+<td style="text-align:left">扫保留区</td>
+<td style="text-align:left"><code>early_init_fdt_scan_reserved_mem</code></td>
+<td style="text-align:left">on</td>
+<td style="text-align:left">无</td>
+<td style="text-align:left"><code>/memreserve/</code> + <code>reserved-memory</code> → reserve 或 remove</td>
+<td style="text-align:left">4.4.6</td>
+</tr>
+<tr>
+<td style="text-align:left">9</td>
+<td style="text-align:left">建线性映射</td>
+<td style="text-align:left"><code>paging_init</code> → <code>map_mem</code></td>
+<td style="text-align:left">on</td>
+<td style="text-align:left">逐 region 建表，1G/2M block 优先</td>
+<td style="text-align:left"><code>set_current_limit</code> 两次</td>
+<td style="text-align:left">4.4.6</td>
+</tr>
+<tr>
+<td style="text-align:left">10</td>
+<td style="text-align:left">页帧/zone</td>
+<td style="text-align:left"><code>free_area_init_nodes</code></td>
+<td style="text-align:left">on</td>
+<td style="text-align:left">vmemmap 落在已映射区内</td>
+<td style="text-align:left">遍历 memblock 算 <code>present_pages</code></td>
+<td style="text-align:left">通用</td>
+</tr>
+</tbody>
+</table></div><p>第 3、4 步的顺序容易记错：4.15 里 KASLR 在 <code>__primary_switched</code> 就跑了，比 <code>start_kernel</code> 和 <code>setup_arch</code> 都早，所以 fixmap 的最小可用性必须在进 <code>start_kernel</code> 之前达成。</p>
+<p>整条链的形状是三次「以映射换映射」：静态 6 页页表换一个能跑的世界，代价是虚拟世界只剩两段可见；fixmap 的 3 张静态表加 2M 槽位换看见 DTB，代价是 fixmap 总容量锁死在 2M；<code>memblock_alloc</code> 分页表换看见全部内存，代价是分配范围被限在 <code>SWAPPER_INIT_MAP_SIZE</code> 内。</p>
+<h2 id="十九易错点速查" tabindex="-1">十九、易错点速查 <a class="header-anchor" href="#十九易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<ul>
+<li><strong><code>create_table_entry</code> 的下一级表地址是硬编码的</strong>。<code>add \tmp2, \tbl, #PAGE_SIZE</code> 假定页表连续摆放，改 <code>IDMAP_DIR_SIZE</code>/<code>SWAPPER_DIR_SIZE</code> 就得同时改链接脚本。</li>
+<li><strong>idmap 的 VA 等于 PA，是要求不是巧合</strong>。<code>.idmap.text</code> 里的代码在 MMU 开关那一瞬间被两种翻译解释，必须是同一块内存。</li>
+<li><strong>清零就是置无效</strong>。bit0 是 valid 位，<code>stp xzr</code> 那串不需要额外构造 invalid 描述符；启动页表要 invalidate 两次，中间有 <code>dmb sy</code>。</li>
+<li><strong>4K 页 + section mapping 时 <code>PAGE_OFFSET</code> 必须 2M 对齐</strong>，<code>create_block_map</code> 的索引算法依赖它。</li>
+<li><strong><code>b.ls</code> 是闭区间</strong>。<code>create_block_map</code> 里 <code>end</code> 那项也会被填，等价 C 代码别写成 <code>while (start != end)</code>。</li>
+<li><strong>fixmap 只有 2M</strong>。只静态建到 PMD 一级，一张 PMD 表 512 项 × 4K，DTB 的 2M 上限就是这么来的。</li>
+<li><strong><code>FIX_BTMAP_BEGIN</code> 数值比 <code>FIX_BTMAP_END</code> 大，地址却更低</strong>。<code>__fix_to_virt</code> 是减法；永久槽位和临时槽位不能互借。</li>
+<li><strong><code>early_ioremap</code> 必须成对</strong>。漏一次 <code>early_iounmap</code>，7 个 slot 就少一个，且不报错，只在别处挂。</li>
+<li><strong>memblock 里全是物理地址</strong>。<code>reg-&gt;base</code> 不能直接解引用，要先 <code>__va()</code>；而 <code>__va()</code> 成立的前提是那段已有映射。</li>
+<li><strong><code>memblock_reserve</code> 和 <code>memblock_remove</code> 不等价</strong>。前者只在 reserved 记一笔，后者从两个数组里都摘掉，<code>no-map</code> 走后者。</li>
+<li><strong><code>map_mem</code> 的 limit 是防死锁的</strong>。不设 limit，<code>memblock_alloc</code> 会给一个还没映射的物理页，内核一写就飞。</li>
+<li><strong><code>if (start &gt;= end) break;</code> 用的是 break</strong>。原稿如此，看着像该写 <code>continue</code>，但 region 列表有序，后面只会更小，<code>break</code> 说得通。</li>
+<li><strong>大页优先不是优化，是省页表</strong>。<code>use_1G_block</code> 成立时连 PMD/PTE 表都不用分配，TLB 压力也小。</li>
+<li><strong>KASLR 随机化的是虚拟地址</strong>。物理地址不动，所以 <code>__virt_to_phys</code> 从一句宏变成两条分支，靠 <code>bit(VA_BITS-1)</code> 分流。</li>
+<li><strong><code>kaslr-seed</code> 缺失等于关 KASLR</strong>；oops 地址不能直接喂 addr2line，要先按 <code>.text</code> 起点和 <code>TEXT_OFFSET</code> 折回链接地址。</li>
+</ul>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+                <div class="rail-card rail-backlinks-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                      </svg>
+                      反向链接
+                    </span>
+                    <span class="rail-badge">3</span>
+                  </div>
+                  <ul class="backlinks-list">
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/地址空间与地址翻译/">地址空间与地址翻译</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/">物理内存管理：页、zone 与内存模型</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/">页表、TLB 与 mmap 的坑</a></li>
+                    
+                  </ul>
+                </div>
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一打开-mmu-之前内核面对的局面" data-toc-target="一打开-mmu-之前内核面对的局面">一、打开 MMU 之前：内核面对的局面</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二两段映射的由来identity-mapping-与-kernel-image-mapping" data-toc-target="二两段映射的由来identity-mapping-与-kernel-image-mapping">二、两段映射的由来：identity mapping 与 kernel image mapping</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三建页表的三个基础函数" data-toc-target="三建页表的三个基础函数">三、建页表的三个基础函数</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1create_table_entry填一个中间级描述符" data-toc-target="1create_table_entry填一个中间级描述符">1、create_table_entry：填一个中间级描述符</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2create_pgd_entry把中间级一路串下去" data-toc-target="2create_pgd_entry把中间级一路串下去">2、create_pgd_entry：把中间级一路串下去</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3create_block_map填最后一级的-block-描述符" data-toc-target="3create_block_map填最后一级的-block-描述符">3、create_block_map：填最后一级的 block 描述符</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四__create_page_tables-完整走读" data-toc-target="四__create_page_tables-完整走读">四、__create_page_tables 完整走读</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1准备阶段" data-toc-target="1准备阶段">1、准备阶段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2建立-identity-mapping" data-toc-target="2建立-identity-mapping">2、建立 identity mapping</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3建立-kernel-image-mapping4.4.6-里叫-kernel-direct-mapping" data-toc-target="3建立-kernel-image-mapping4.4.6-里叫-kernel-direct-mapping">3、建立 kernel image mapping（4.4.6 里叫 kernel direct mapping）</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五turn-on-mmu.idmap.text-与两次映射" data-toc-target="五turn-on-mmu.idmap.text-与两次映射">五、turn on MMU：.idmap.text 与两次映射</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六进-c-之后第一件事early-fixmap" data-toc-target="六进-c-之后第一件事early-fixmap">六、进 C 之后第一件事：early fixmap</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七fixmap-是什么为什么地址在编译期固定" data-toc-target="七fixmap-是什么为什么地址在编译期固定">七、fixmap 是什么，为什么地址在编译期固定</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八fixmap-用在哪dtbearly-ioremapdebug-uart" data-toc-target="八fixmap-用在哪dtbearly-ioremapdebug-uart">八、fixmap 用在哪：DTB、early ioremap、debug uart</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九memblock内核早期的内存账本" data-toc-target="九memblock内核早期的内存账本">九、memblock：内核早期的内存账本</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十memory-region-怎么建起来" data-toc-target="十memory-region-怎么建起来">十、memory region 怎么建起来</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一reserved-region-怎么建起来" data-toc-target="十一reserved-region-怎么建起来">十一、reserved region 怎么建起来</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二memblock-到伙伴系统的交接" data-toc-target="十二memblock-到伙伴系统的交接">十二、memblock 到伙伴系统的交接</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三paging_init为系统内存正式建映射" data-toc-target="十三paging_init为系统内存正式建映射">十三、paging_init：为系统内存正式建映射</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四逐级填表pgd--pud--pmd--pte" data-toc-target="十四逐级填表pgd--pud--pmd--pte">十四、逐级填表：PGD → PUD → PMD → PTE</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五kaslr随机化的到底是什么" data-toc-target="十五kaslr随机化的到底是什么">十五、KASLR：随机化的到底是什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六kaslr_early_init-逐行分析" data-toc-target="十六kaslr_early_init-逐行分析">十六、kaslr_early_init 逐行分析</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十七kaslr-与内存布局的相互制约" data-toc-target="十七kaslr-与内存布局的相互制约">十七、KASLR 与内存布局的相互制约</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十八一次完整时序从-_start-到-free_area_init" data-toc-target="十八一次完整时序从-_start-到-free_area_init">十八、一次完整时序：从 _start 到 free_area_init</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十九易错点速查" data-toc-target="十九易错点速查">十九、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","title":"ARM64 内存初始化：页表、memblock 与 KASLR","url":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","type":"current"},{"id":"/B.内核/03-内存管理/地址空间与地址翻译/","title":"地址空间与地址翻译","url":"/B.内核/03-内存管理/地址空间与地址翻译/","type":"outgoing"},{"id":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","title":"物理内存管理：页、zone 与内存模型","url":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","type":"outgoing"},{"id":"/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/","title":"页表、TLB 与 mmap 的坑","url":"/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/","type":"outgoing"},{"id":"/B.内核/03-内存管理/slab-与-slub-分配器/","title":"slab 与 slub 分配器","url":"/B.内核/03-内存管理/slab-与-slub-分配器/","type":"outgoing"},{"id":"/B.内核/03-内存管理/页面回收与逆向映射/","title":"页面回收与逆向映射","url":"/B.内核/03-内存管理/页面回收与逆向映射/","type":"outgoing"},{"id":"/A.硬件与固件/03-ARM架构与异常/ARM64-内核启动与页表建立/","title":"ARM64 内核启动与页表建立","url":"/A.硬件与固件/03-ARM架构与异常/ARM64-内核启动与页表建立/","type":"outgoing"},{"id":"/A.硬件与固件/03-ARM架构与异常/ARM64-地址翻译与页表宏定义/","title":"ARM64 地址翻译与页表宏定义","url":"/A.硬件与固件/03-ARM架构与异常/ARM64-地址翻译与页表宏定义/","type":"outgoing"}],"links":[{"source":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","target":"/B.内核/03-内存管理/地址空间与地址翻译/","type":"direct"},{"source":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","target":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","type":"direct"},{"source":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","target":"/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/","type":"direct"},{"source":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","target":"/B.内核/03-内存管理/slab-与-slub-分配器/","type":"direct"},{"source":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","target":"/B.内核/03-内存管理/页面回收与逆向映射/","type":"direct"},{"source":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","target":"/A.硬件与固件/03-ARM架构与异常/ARM64-内核启动与页表建立/","type":"direct"},{"source":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","target":"/A.硬件与固件/03-ARM架构与异常/ARM64-地址翻译与页表宏定义/","type":"direct"},{"source":"/B.内核/03-内存管理/地址空间与地址翻译/","target":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","type":"direct"},{"source":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","target":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","type":"direct"},{"source":"/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/","target":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","type":"direct"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

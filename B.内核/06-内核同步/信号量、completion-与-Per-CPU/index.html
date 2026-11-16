@@ -1,0 +1,1699 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>信号量、completion 与 Per-CPU · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">信号量、completion 与 Per-CPU</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/06-内核同步/信号量、completion-与-Per-CPU/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">信号量、completion 与 Per-CPU</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">信号量、completion 与 Per-CPU</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>本篇收尾，讲三条不同性质的路：信号量（计数型，能睡）、completion（不是锁，是等一个事件）、Per-CPU 变量（把共享改成私有，从根上不解锁）。</p>
+<p>不讲什么：spinlock 的 ticket 实现、读写锁的 bit31 编码、mutex 的 owner 交接，这三样同批另外三篇已经写透了。第十九、二十章只做横向对比和选型，不重复实现细节。</p>
+<p>版本说明：素材横跨 2.6.x 到 4.x 四代代码。信号量源码取自 <code>kernel/locking/semaphore.c</code>，字段带 <code>raw_spinlock_t</code>，属于 2.6.33 之后的口径；completion 源码取自 <code>kernel/sched/completion.c</code>，用的是 <code>spin_lock_irqsave</code>，同样偏 4.x。凡版本边界不确定的地方，正文照实标注，附录里单列「未验证」。</p>
+<p>代码块统一用 <code>c</code> / <code>asm</code> / <code>text</code> 三种围栏。</p>
+</blockquote>
+<h2 id="一信号量计数型的同步原语" tabindex="-1">一、信号量：计数型的同步原语 <a class="header-anchor" href="#一信号量计数型的同步原语"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>信号量本质就是一个计数器，用来记录某类资源的可用个数。取用资源走四步：读计数；计数为正就减 1 放行；计数为 0 就把当前任务挂进等待队列睡觉，等有人把计数加上去再重试；用完资源把计数加 1。</p>
+<p>对计数的操作只有两种，Dijkstra 那套 PV 原语：</p>
+<ul>
+<li>P(s)：s 大于 0 就减 1；s 等于 0 就把任务置为等待态，排进等待队列。</li>
+<li>V(s)：有任务因 s 而挂起，就放一个出来跑；没有挂起者，就加 1。</li>
+</ul>
+<p>P 对应内核里的 <code>down()</code>，V 对应 <code>up()</code>。名字来源是荷兰语的 proberen / verhogen，读代码时按「申请/释放」理解就行。</p>
+<p>关键点在于 count 的初值。初值为 1，它就是二值信号量，等价于一把睡眠锁；初值为 N，它允许 N 个任务同时进入所谓的临界区。这一点把它和 mutex 从根上分开了：mutex 只允许一个持有者，而且带所有权；信号量不认持有者，谁都能 <code>up()</code>。</p>
+<p>三套初始化方式，按场景挑：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 静态定义，count = 1 */</span>
+DEFINE_SEMAPHORE(sema);
+
+<span class="hljs-comment">/* 静态定义，自定义初值，展开后是 __SEMAPHORE_INITIALIZER(name, n) */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">semaphore</span> <span class="hljs-title">sema</span> =</span> __SEMAPHORE_INITIALIZER(sema, <span class="hljs-number">4</span>);
+
+<span class="hljs-comment">/* 动态定义后初始化，val 即 count 初值 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">semaphore</span> <span class="hljs-title">sema</span>;</span>
+sema_init(&amp;sema, <span class="hljs-number">4</span>);
+</code></pre></div></code></pre>
+<p><code>DEFINE_SEMAPHORE(name)</code> 展开后 count 固定为 1。想要 count 不等于 1 的静态信号量，得手写 <code>__SEMAPHORE_INITIALIZER</code>，或者退回到动态分配 + <code>sema_init</code>。</p>
+<p>接口一共五个，先把边界钉住：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>是否睡眠</th>
+<th>返回值</th>
+<th>可用上下文</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>down(sem)</code></td>
+<td>会，<code>TASK_UNINTERRUPTIBLE</code></td>
+<td>无</td>
+<td>进程上下文</td>
+</tr>
+<tr>
+<td><code>down_interruptible(sem)</code></td>
+<td>会，<code>TASK_INTERRUPTIBLE</code></td>
+<td>0 或 <code>-EINTR</code></td>
+<td>进程上下文</td>
+</tr>
+<tr>
+<td><code>down_killable(sem)</code></td>
+<td>会，<code>TASK_KILLABLE</code></td>
+<td>0 或 <code>-EINTR</code></td>
+<td>进程上下文</td>
+</tr>
+<tr>
+<td><code>down_timeout(sem, jiffies)</code></td>
+<td>会，带超时</td>
+<td>0 或 <code>-ETIME</code> / <code>-EINTR</code></td>
+<td>进程上下文</td>
+</tr>
+<tr>
+<td><code>down_trylock(sem)</code></td>
+<td>不会</td>
+<td>0 成功，非 0 失败</td>
+<td>任意上下文</td>
+</tr>
+<tr>
+<td><code>up(sem)</code></td>
+<td>不会</td>
+<td>无</td>
+<td>任意上下文</td>
+</tr>
+</tbody>
+</table></div><p><code>down()</code> 上游注释里明写了 deprecated，让改用 <code>down_interruptible()</code> 或 <code>down_killable()</code>。原因后面第五章讲。</p>
+<h2 id="二semaphore-的数据结构" tabindex="-1">二、semaphore 的数据结构 <a class="header-anchor" href="#二semaphore-的数据结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>结构体在 <code>include/linux/semaphore.h</code>，头上那句注释是硬规矩：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* Please don&#x27;t access any members of this structure directly */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">semaphore</span> {</span>
+        <span class="hljs-type">raw_spinlock_t</span>          lock;
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            count;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span>        <span class="hljs-title">wait_list</span>;</span>
+};
+</code></pre></div></code></pre>
+<p>三个字段，各管一件事：</p>
+<ul>
+<li><code>lock</code>：保护 <code>count</code> 和 <code>wait_list</code> 的自旋锁，只在临界区里持有，时间极短。</li>
+<li><code>count</code>：剩余可用资源数，就是 PV 里的那个 s。</li>
+<li><code>wait_list</code>：等待队列头，睡着等资源的任务都挂在这条双向链表上。</li>
+</ul>
+<p><code>wait_list</code> 挂的是 <code>list_head</code>，内核通用的双向链表节点，<code>next</code> / <code>prev</code> 两个指针，这里不展开。</p>
+<p>版本差异在这儿：更早的 2.6 系代码里是 <code>atomic_t count;</code> 加 <code>spinlock_t lock;</code>，计数用原子变量自己保证原子性，锁只保护链表。改成 <code>raw_spinlock_t</code> 之后，count 的读写也一并被锁保护，<code>atomic_t</code> 就多余了。具体切换版本未验证，能确定本篇引的这版是 2.6.33 之后的口径。</p>
+<p>初始化宏把三个字段一次性摆平：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> __SEMAPHORE_INITIALIZER(name, n)                                \
+{                                                                       \
+        .lock           = __RAW_SPIN_LOCK_UNLOCKED((name).lock),        \
+        .count          = n,                                            \
+        .wait_list      = LIST_HEAD_INIT((name).wait_list),             \
+}</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> DEFINE_SEMAPHORE(name)  \
+        struct semaphore name = __SEMAPHORE_INITIALIZER(name, 1)</span>
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">sema_init</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> semaphore *sem, <span class="hljs-type">int</span> val)</span>
+{
+        <span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">lock_class_key</span> __<span class="hljs-title">key</span>;</span>
+        *sem = (<span class="hljs-keyword">struct</span> semaphore) __SEMAPHORE_INITIALIZER(*sem, val);
+        lockdep_init_map(&amp;sem-&gt;lock.dep_map, <span class="hljs-string">&quot;semaphore-&gt;lock&quot;</span>, &amp;__key, <span class="hljs-number">0</span>);
+}
+</code></pre></div></code></pre>
+<p><code>sema_init</code> 里那句 <code>*sem = (struct semaphore) __SEMAPHORE_INITIALIZER(*sem, val)</code> 值得停一下。宏里有两个 <code>(name).lock</code>、<code>(name).wait_list</code>，它们在这个复合字面量里会被求值，只不过外层是对 <code>*sem</code> 整体赋值，先算右值再落到左值，所以取到的还是旧值。编译器对这种写法不报错，但看起来很像自引用。实际靠的是「先求值后赋值」的顺序。</p>
+<p><code>lockdep_init_map</code> 是给 lockdep 打标签用的。每把锁一个独立的 <code>lock_class_key</code>，锁的依赖图才分得清哪个是哪个。跑生产内核时 lockdep 常常关掉，这段就是空操作。</p>
+<p>等待者结构体在 <code>kernel/locking/semaphore.c</code> 里定义：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">semaphore_waiter</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">list</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">task_struct</span> *<span class="hljs-title">task</span>;</span>
+        <span class="hljs-type">bool</span> up;
+};
+</code></pre></div></code></pre>
+<p><code>list</code> 挂进 <code>sem-&gt;wait_list</code>；<code>task</code> 记下被唤醒的是谁；<code>up</code> 是交接旗标，<code>__up()</code> 把它置 true，睡眠方醒来看到 true 就知道「资源已经递到我手里了」。素材 3 那份教学版结构体只有 <code>list</code> 和 <code>task</code> 两个字段，少了 <code>up</code>，那是为了讲原理砍掉的，别照着抄。</p>
+<p><code>bool up</code> 这个字段承载的语义很重：它就是「直接交接」的实现手段。谁被唤醒，谁不用再去抢 count，<code>__up()</code> 已经替他把排队资格转成持有了。</p>
+<h2 id="三down--up-的完整实现" tabindex="-1">三、down / up 的完整实现 <a class="header-anchor" href="#三down--up-的完整实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>down()</code> 在 <code>kernel/locking/semaphore.c</code>，函数体短得不像话：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/**
+ * down - acquire the semaphore
+ * @sem: the semaphore to be acquired
+ *
+ * Use of this function is deprecated, please use down_interruptible() or
+ * down_killable() instead.
+ */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">down</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> semaphore *sem)</span>
+{
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+
+        raw_spin_lock_irqsave(&amp;sem-&gt;lock, flags);
+        <span class="hljs-keyword">if</span> (likely(sem-&gt;count &gt; <span class="hljs-number">0</span>))
+                sem-&gt;count--;
+        <span class="hljs-keyword">else</span>
+                __down(sem);
+        raw_spin_unlock_irqrestore(&amp;sem-&gt;lock, flags);
+}
+</code></pre></div></code></pre>
+<p>流程就三段。拿锁并关本地中断；<code>likely(count &gt; 0)</code> 走快路径，直接减一；否则进 <code>__down()</code> 慢路径。快路径全程没有调度，只有一次关中断和一次开中断。</p>
+<p><code>__down()</code> 是一层薄壳，把参数摆好就交给通用实现：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> noinline <span class="hljs-type">void</span> __sched __down(<span class="hljs-keyword">struct</span> semaphore *sem)
+{
+        __down_common(sem, TASK_UNINTERRUPTIBLE, MAX_SCHEDULE_TIMEOUT);
+}
+</code></pre></div></code></pre>
+<p>真正的逻辑在 <code>__down_common()</code>，这是本篇最该读懂的一段：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> __sched __down_common(<span class="hljs-keyword">struct</span> semaphore *sem, <span class="hljs-type">long</span> state,
+                                                                <span class="hljs-type">long</span> timeout)
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">semaphore_waiter</span> <span class="hljs-title">waiter</span>;</span>
+
+        list_add_tail(&amp;waiter.<span class="hljs-built_in">list</span>, &amp;sem-&gt;wait_list);
+        waiter.task = current;
+        waiter.up = <span class="hljs-literal">false</span>;
+
+        <span class="hljs-keyword">for</span> (;;) {
+                <span class="hljs-keyword">if</span> (signal_pending_state(state, current))
+                        <span class="hljs-keyword">goto</span> interrupted;
+                <span class="hljs-keyword">if</span> (unlikely(timeout &lt;= <span class="hljs-number">0</span>))
+                        <span class="hljs-keyword">goto</span> timed_out;
+                __set_current_state(state);
+                raw_spin_unlock_irq(&amp;sem-&gt;lock);
+                timeout = schedule_timeout(timeout);
+                raw_spin_lock_irq(&amp;sem-&gt;lock);
+                <span class="hljs-keyword">if</span> (waiter.up)
+                        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+        }
+
+ timed_out:
+        list_del(&amp;waiter.<span class="hljs-built_in">list</span>);
+        <span class="hljs-keyword">return</span> -ETIME;
+
+ interrupted:
+        list_del(&amp;waiter.<span class="hljs-built_in">list</span>);
+        <span class="hljs-keyword">return</span> -EINTR;
+}
+</code></pre></div></code></pre>
+<p>这段是经典的「挂队 → 放锁 → 睡 → 醒来重取锁 → 检查旗标」循环。逐点拆：</p>
+<ol>
+<li><code>list_add_tail()</code> 把 <code>waiter</code> 尾插进 <code>wait_list</code>。尾插意味着 FIFO，先等的先醒。</li>
+<li><code>waiter.task = current</code>，把唤醒目标钉在自己身上。<code>waiter</code> 是栈上变量，在函数返回前一直可读，这是它能被 <code>__up()</code> 反向引用的前提。<code>waiter.up = false</code> 把旗标先放下。</li>
+<li>进循环。<code>signal_pending_state()</code> 判「有信号且当前 state 允许被打断」，<code>state</code> 传 <code>TASK_UNINTERRUPTIBLE</code> 时恒为 false。<code>timeout &lt;= 0</code> 判超时，<code>down()</code> 传的是 <code>MAX_SCHEDULE_TIMEOUT</code>，<code>schedule_timeout()</code> 把它当「不设上限」，这条分支对 <code>down()</code> 是死代码，对 <code>down_timeout()</code> 才活。</li>
+<li><code>__set_current_state(state)</code> 改状态，然后**<code>raw_spin_unlock_irq(&amp;sem-&gt;lock)</code> 必须在 <code>schedule_timeout()</code> 之前**。锁不放开，<code>up()</code> 永远进不去临界区，谁也叫不醒你。</li>
+<li><code>schedule_timeout(timeout)</code> 交出 CPU，返回剩余 jiffies。回来第一件事是 <code>raw_spin_lock_irq()</code> 重新拿锁，因为接下来要动 <code>wait_list</code>、判旗标，必须在锁里。</li>
+<li><code>if (waiter.up) return 0;</code> 拿到就返回，注意这里 count 没有减。没拿到就继续循环——被信号打醒、被无关唤醒、超时前被假醒，都会回到循环头重判。</li>
+</ol>
+<p>第 4、5 步是这个循环的全部技术含量：锁在睡眠前后各放收一次，中间那段不能持锁。持锁睡觉是死锁的标准起手式。</p>
+<p>第 6 步的「count 不减」容易被误读成漏了减一。不是。<code>up()</code> 的慢路径根本不加 count，它把排队资格直接交给第一个等待者，所以唤醒路径上 count 天然不需要变。快路径加、慢路径交接，两条路合计守恒。</p>
+<p><code>-ETIME</code> 和 <code>-EINTR</code> 两条错误分支都要 <code>list_del(&amp;waiter.list)</code>。漏了这句，<code>waiter</code> 是栈变量，函数一返回，<code>wait_list</code> 上就挂着一个指向已释放栈帧的节点，后面 <code>__up()</code> 一 deref 就炸。这是信号量代码里最典型的 UAF 形态。</p>
+<p>再看释放侧。<code>up()</code> 同样两段式：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/**
+ * up - release the semaphore
+ * @sem: the semaphore to release
+ *
+ * Release the semaphore.  Unlike mutexes, up() may be called from any
+ * context and even by tasks which have never called down().
+ */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">up</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> semaphore *sem)</span>
+{
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+
+        raw_spin_lock_irqsave(&amp;sem-&gt;lock, flags);
+        <span class="hljs-keyword">if</span> (likely(list_empty(&amp;sem-&gt;wait_list)))
+                sem-&gt;count++;
+        <span class="hljs-keyword">else</span>
+                __up(sem);
+        raw_spin_unlock_irqrestore(&amp;sem-&gt;lock, flags);
+}
+</code></pre></div></code></pre>
+<p>注释里那句 <code>up() may be called from any context and even by tasks which have never called down()</code> 是信号量和 mutex 的分水岭，第六章还会回来讲。</p>
+<p>慢路径 <code>__up()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> noinline <span class="hljs-type">void</span> __sched __up(<span class="hljs-keyword">struct</span> semaphore *sem)
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">semaphore_waiter</span> *<span class="hljs-title">waiter</span> =</span> list_first_entry(&amp;sem-&gt;wait_list,
+                                                <span class="hljs-keyword">struct</span> semaphore_waiter, <span class="hljs-built_in">list</span>);
+        list_del(&amp;waiter-&gt;<span class="hljs-built_in">list</span>);
+        waiter-&gt;up = <span class="hljs-literal">true</span>;
+        wake_up_process(waiter-&gt;task);
+}
+</code></pre></div></code></pre>
+<p>摘队头、从链表上摘掉、把 <code>up</code> 置 true、唤醒。顺序有讲究：先 <code>list_del()</code> 再置旗标再唤醒。被唤醒的任务重新拿到 <code>sem-&gt;lock</code> 时，<code>wait_list</code> 上已经看不到自己了，不会重复摘队。</p>
+<p><code>wake_up_process()</code> 只唤醒一个任务，不是广播。信号量一次 <code>up()</code> 只放一个等待者，靠的就是这一点。</p>
+<h2 id="四信号量与-mutex-的区别什么时候用哪个" tabindex="-1">四、信号量与 mutex 的区别：什么时候用哪个 <a class="header-anchor" href="#四信号量与-mutex-的区别什么时候用哪个"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>两者代码长得像，语义差得远。逐项对比：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>semaphore</th>
+<th>mutex</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>计数</td>
+<td>任意初值 N</td>
+<td>二值，隐含 0/1</td>
+</tr>
+<tr>
+<td>所有权</td>
+<td>无，谁都能 <code>up()</code></td>
+<td>有，只有持锁者能解锁</td>
+</tr>
+<tr>
+<td>解锁校验</td>
+<td>不校验</td>
+<td><code>owner</code> 字段校验</td>
+</tr>
+<tr>
+<td>释放上下文</td>
+<td>任意上下文，含中断</td>
+<td>只能进程上下文</td>
+</tr>
+<tr>
+<td>申请上下文</td>
+<td>只能可睡眠的进程上下文</td>
+<td>只能可睡眠的进程上下文</td>
+</tr>
+<tr>
+<td>快路径</td>
+<td><code>count--</code></td>
+<td><code>cmpxchg</code> 抢 owner</td>
+</tr>
+<tr>
+<td>优先级继承</td>
+<td>不支持</td>
+<td>支持（<code>CONFIG_MUTEX_SPIN_ON_OWNER</code> 下的乐观自旋另算）</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>资源池计数、生产者消费者</td>
+<td>保护一段临界区</td>
+</tr>
+</tbody>
+</table></div><p>选型没有中间地带，按这三条判：</p>
+<ul>
+<li>需要「同时最多 N 个」的语义，用信号量。典型是缓冲区空位数、并发 IO 配额。mutex 表达不了 N &gt; 1。</li>
+<li>需要在中断上下文里释放，用信号量。<code>up()</code> 的注释明说可以来自任意上下文。中断里给 mutex 解锁是错的，<code>mutex_unlock()</code> 会校验 owner，中断上下文根本没有对应的 owner 概念。</li>
+<li>只是保护一段数据和代码，用 mutex。它能查出错用、能配合 lockdep 抓死锁、能在 <code>CONFIG_DEBUG_MUTEXES</code> 下把状态机翻出来。</li>
+</ul>
+<p>还有一条实战结论：<code>DEFINE_SEMAPHORE</code> 初值 1 的那种用法，别写。它和 mutex 功能重叠，却丢掉了所有权校验和调试能力。上游把 <code>down()</code> 标 deprecated，方向也是把「二值」场景往 mutex 赶。</p>
+<p>信号量在驱动里有个经典用法，<code>open()</code> 里做独占：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-title function_">DEFINE_SEMAPHORE</span><span class="hljs-params">(sema)</span>;
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">hello_open</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *p, <span class="hljs-keyword">struct</span> file *f)</span>
+{
+    <span class="hljs-keyword">if</span> (down_trylock(&amp;sema) &gt; <span class="hljs-number">0</span>) {
+        printk(<span class="hljs-string">&quot;device busy, hello_open failed\n&quot;</span>);
+        <span class="hljs-keyword">return</span> -EBUSY;
+    }
+    printk(<span class="hljs-string">&quot;hello_open\n&quot;</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">hello_close</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-keyword">struct</span> file *file)</span>
+{
+    up(&amp;sema);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>down_trylock()</code> 不睡，所以 <code>open()</code> 立刻就返回 <code>-EBUSY</code>，用户态拿到明确的「设备忙」。三个进程同时打开，一个成功、两个失败：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>[root@zy:/]# ./main &amp;
+open success,PID=61
+[root@zy:/]# ./main &amp;
+can&#x27;t open!
+[root@zy:/]# ./main &amp;
+device busy,hello_open failed
+can&#x27;t open!
+[root@zy:/]#
+</code></pre></div></code></pre>
+<p>这个模式有个坑：<code>open()</code> 里 <code>down_trylock()</code> 成功、后续初始化失败返回错误，<code>release</code> 不会被调用，信号量就漏了。要补 <code>up()</code>。写成 <code>goto</code> 错误路径收口，别在中间 <code>return</code>。</p>
+<h2 id="五可中断的-downdown_interruptible-与--erestartsys" tabindex="-1">五、可中断的 down：down_interruptible 与 -ERESTARTSYS <a class="header-anchor" href="#五可中断的-downdown_interruptible-与--erestartsys"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>down_interruptible()</code> 就是换个 state 参数再走一遍 <code>__down_common()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">down_interruptible</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> semaphore *sem)</span>
+{
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+        <span class="hljs-type">int</span> result = <span class="hljs-number">0</span>;
+
+        raw_spin_lock_irqsave(&amp;sem-&gt;lock, flags);
+        <span class="hljs-keyword">if</span> (likely(sem-&gt;count &gt; <span class="hljs-number">0</span>))
+                sem-&gt;count--;
+        <span class="hljs-keyword">else</span>
+                result = __down_common(sem, TASK_INTERRUPTIBLE, MAX_SCHEDULE_TIMEOUT);
+        raw_spin_unlock_irqrestore(&amp;sem-&gt;lock, flags);
+
+        <span class="hljs-keyword">if</span> (signal_pending(current))
+                <span class="hljs-keyword">return</span> -EINTR;
+
+        <span class="hljs-keyword">return</span> result;
+}
+</code></pre></div></code></pre>
+<p>差别全在 <code>TASK_INTERRUPTIBLE</code>。任务状态可中断，<code>signal_pending_state()</code> 在循环头就会命中，走 <code>interrupted</code> 分支，摘队、返回 <code>-EINTR</code>。</p>
+<p>醒来的路径有两条，得在调用点区分：</p>
+<ul>
+<li><code>__up()</code> 唤醒：<code>waiter.up == true</code>，返回 0，拿到资源。</li>
+<li>信号唤醒：<code>signal_pending_state()</code> 为真，返回 <code>-EINTR</code>，没拿到资源。</li>
+</ul>
+<p>问题出在 <code>-EINTR</code> 上。返回它不代表没拿到，也不代表拿到了，调用者只知道自己被打断了。所以调用点必须处理，而且不能吞掉：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (down_interruptible(&amp;sem))
+        <span class="hljs-keyword">return</span> -ERESTARTSYS;
+</code></pre></div></code></pre>
+<p><code>-ERESTARTSYS</code> 是给系统调用层的信号。用户态在 <code>read()</code> 里被 <code>SIGINT</code> 打断，内核返回 <code>-ERESTARTSYS</code>，信号处理函数跑完之后，<code>restart_syscall</code> 机制会把整个系统调用重做一遍。用户态看到的是「<code>read()</code> 慢一点，但没失败」，符合 <code>read()</code> 的 SA_RESTART 语义。如果你返回 <code>-EINTR</code>，用户态直接收到 <code>EINTR</code>，<code>read()</code> 失败了——对某些应用是灾难，<code>SIGALRM</code> 一响，数据读到一半的循环就断了。</p>
+<p>所以，<code>down_interruptible()</code> 的返回值<strong>原样换成 <code>-ERESTARTSYS</code> 往上返</strong>，这是驱动里的正字法。中间绝不能 <code>return 0</code> 装作成功，也绝不能 <code>return -EINTR</code> 自己造错误码。</p>
+<p><code>down_killable()</code> 是同一套壳换成 <code>TASK_KILLABLE</code>。它只响应致命信号（<code>SIGKILL</code>），普通信号打不断。用在「必须睡完，但 <code>kill -9</code> 得能杀掉」的场景。</p>
+<p><code>down_timeout()</code> 多带一个超时参数：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">down_timeout</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> semaphore *sem, <span class="hljs-type">long</span> jiffies)</span>;
+</code></pre></div></code></pre>
+<p>超时返回 <code>-ETIME</code>，被信号打断返回 <code>-EINTR</code>，拿到返回 0。<code>-ETIME</code> 和 <code>-EINTR</code> 在 <code>__down_common()</code> 里是两条独立分支，对应两个不同的 errno，别混着判。</p>
+<p>末尾那句 <code>if (signal_pending(current)) return -EINTR;</code> 是无条件判的，快路径也过这一关。所以「拿到 count 了但函数返回 <code>-EINTR</code>」在理论上存在，调用方按 errno 判断会误以为没拿到。这是上游的历史包袱，照实标在这里；写新代码时别依赖「返回 <code>-EINTR</code> 就一定没持锁」这个假设。</p>
+<h2 id="六信号量能不能用在中斷上下文为什么不能" tabindex="-1">六、信号量能不能用在中斷上下文：为什么不能 <a class="header-anchor" href="#六信号量能不能用在中斷上下文为什么不能"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>不能。原因不是「内核规定」，是物理上做不到。</p>
+<p><code>down()</code> 走慢路径会进 <code>__down_common()</code>，里面必然执行 <code>schedule_timeout()</code>。<code>schedule()</code> 做的事是「从 runqueue 上摘掉当前任务，挑一个别的上来跑」。中断上下文里没有「当前任务」可摘——硬中断挂在被打断的进程栈上，<code>current</code> 还是那个进程，但中断不是它主动让出的，把它的状态改成 <code>TASK_UNINTERRUPTIBLE</code> 再切走，那个进程就凭空消失了，永远没人把它捡回来。</p>
+<p>内核对这种事的反应是直接报错。<code>schedule()</code> 开头有 <code>__schedule_bug()</code> 检查，preempt count 非 0 或者 irqs_disabled 的时候打 backtrace 然后 BUG。所以第一层是：不可睡眠上下文里 <code>schedule()</code> 一调就死。第二层是 <code>might_sleep()</code>，<code>down()</code>、<code>down_interruptible()</code> 前面都挂着这个调试钩子，<code>CONFIG_DEBUG_ATOMIC_SLEEP</code> 一开，在中断里调它们会立刻打出「BUG: sleeping function called from invalid context」并附 preempt count 和 irq 状态。</p>
+<p>四类上下文，结论一样：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>上下文</th>
+<th>能 <code>down*()</code> 吗</th>
+<th>能 <code>up()</code> 吗</th>
+<th>能 <code>down_trylock()</code> 吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>进程上下文（可睡眠）</td>
+<td>能</td>
+<td>能</td>
+<td>能</td>
+</tr>
+<tr>
+<td>软中断 / tasklet</td>
+<td>不能</td>
+<td>能</td>
+<td>能</td>
+</tr>
+<tr>
+<td>硬中断</td>
+<td>不能</td>
+<td>能</td>
+<td>能</td>
+</tr>
+<tr>
+<td>持有 spinlock 期间</td>
+<td>不能</td>
+<td>能</td>
+<td>能</td>
+</tr>
+</tbody>
+</table></div><p>最后一行最容易踩。持有 spinlock 时 preempt 被禁，进 <code>schedule()</code> 同样是 BUG。所以「在锁里 <code>down()</code>」和「在中断里 <code>down()</code>」是同一类错误，代价却不一样：前者是设计失误，后者是物理不允许。</p>
+<p><code>up()</code> 在中断里完全合法，这也是信号量在驱动里的常见形态——中断服务程序 <code>up()</code>，进程上下文 <code>down_interruptible()</code> 等。整条链路不睡眠的只有上半部，睡眠的只有下半部：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 进程上下文：等数据 */</span>
+<span class="hljs-keyword">if</span> (down_interruptible(&amp;sem))
+        <span class="hljs-keyword">return</span> -ERESTARTSYS;
+
+<span class="hljs-comment">/* 中断上下文：数据到了，放行 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">irqreturn_t</span> <span class="hljs-title function_">my_isr</span><span class="hljs-params">(<span class="hljs-type">int</span> irq, <span class="hljs-type">void</span> *dev)</span>
+{
+        up(&amp;sem);
+        <span class="hljs-keyword">return</span> IRQ_HANDLED;
+}
+</code></pre></div></code></pre>
+<p><code>down_trylock()</code> 是中断里唯一能用的申请接口，因为它不睡，拿不到就立刻返回非 0。代价是得自己处理失败——重试、丢包、还是退回软中断，看你。和 mutex 对比一下就清楚了：mutex 两头都堵死，中断里既不能 <code>mutex_lock()</code> 也不能 <code>mutex_unlock()</code>，因为解锁要校验 owner，而中断上下文没有 owner。spinlock 反过来，两头都能用在中断里，代价是忙等。信号量卡在中间：申请必须在进程上下文，释放随意。</p>
+<h2 id="七completion只等一个事件不持有所有权" tabindex="-1">七、completion：只等一个事件，不持有所有权 <a class="header-anchor" href="#七completion只等一个事件不持有所有权"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>completion 不是锁。这句话得先说死，否则后面全乱。</p>
+<p>锁解决的是「同一时刻谁能进这段代码」。completion 解决的是「这件事做完了没有，做完了叫一声」。它不保护任何数据，不表达任何资源数量，也没有「持有者」这个概念。</p>
+<p>场景是这样：一个线程必须等某个内核活动走到某个点，或者等某个状态出现。用信号量也能实现——初值 0 的信号量，等的 <code>down()</code>，做的 <code>up()</code>。但那个写法有两个毛病：一是语义错位，<code>down()</code> 看上去像在「抢资源」，而这里根本没有资源；二是容易漏 <code>up()</code>，配对关系靠人记。</p>
+<p>completion 把这两点都堵住了。它只暴露两个动作：等用 <code>wait_for_completion()</code> 及其变体，叫用 <code>complete()</code> 或 <code>complete_all()</code>。</p>
+<p>叫的人不需要知道自己叫的是谁，等的人不需要知道自己等的是谁。没有配对义务，没有所有权校验，这就是上游注释里说的「无竞争的解决方案」。</p>
+<p>一个能立刻看出来的差别：信号量的 <code>up()</code> 在没有等待者时把 count 加 1，那个 1 是「资源多了一个」，后来的 <code>down()</code> 可以立刻拿到。completion 的 <code>complete()</code> 在没有等待者时把 <code>done</code> 加 1，那个 1 是「事件已经发生过一次」，后来的 <code>wait_for_completion()</code> 立刻返回。前者是库存，后者是记账。</p>
+<p>记账这个性质很关键。它让 completion 能表达「先发生、后等待」的时序——事件先到，等待者后到，等待者不该白等。信号量初值 0 也能凑出这个效果，但语义上要靠约定，读代码的人得自己脑补。</p>
+<h2 id="八struct-completion-与-wait_for_completion" tabindex="-1">八、struct completion 与 wait_for_completion <a class="header-anchor" href="#八struct-completion-与-wait_for_completion"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>结构体在 <code>include/linux/completion.h</code>，两个字段：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/*
+ * struct completion - structure used to maintain state for a &quot;completion&quot;
+ *
+ * Completions currently use a FIFO to queue threads that have to wait for
+ * the &quot;completion&quot; event.
+ */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">completion</span> {</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> done;
+        <span class="hljs-type">wait_queue_head_t</span> wait;
+};
+</code></pre></div></code></pre>
+<p><code>wait</code> 是等待队列头，等着这个事件的任务排在这里，FIFO 顺序。<code>done</code> 是完成计数，<code>complete()</code> 加、<code>wait_for_completion()</code> 减。所以它内部就是一把等待队列，没有别的魔法。</p>
+<p>两种定义方式等效。栈上定义用 <code>DECLARE_COMPLETION_ONSTACK(name)</code>，它给 lockdep 打标记，抓「栈上的 completion 被带出作用域」这种错误；函数内定义就该用它。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">completion</span> <span class="hljs-title">mycompletion</span>;</span>
+init_completion(&amp;mycompletion);          <span class="hljs-comment">/* 方式一：先定义，再初始化 */</span>
+
+DECLARE_COMPLETION(mycompletion);        <span class="hljs-comment">/* 方式二：定义即初始化 */</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> init_completion(x) __init_completion(x)</span>
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> __init_completion(<span class="hljs-keyword">struct</span> completion *x)
+{
+        x-&gt;done = <span class="hljs-number">0</span>;
+        init_waitqueue_head(&amp;x-&gt;wait);
+}
+</code></pre></div></code></pre>
+<p><code>done</code> 清零，等待队列头初始化成空链表。就这两件事。</p>
+<p>复用同一个 completion 之前必须 <code>reinit_completion()</code>。它不是可选的美化，是正确性要求：上一轮的 <code>done</code> 残值会让这一轮的 <code>wait_for_completion()</code> 直接返回，等的人以为事件到了，其实到的是上一轮的事件。它的实现就一句 <code>x-&gt;done = 0;</code>。三者的分工记成一句话：定义时清零用 <code>init_completion</code>，复用时清零用 <code>reinit_completion</code>，栈上用 <code>DECLARE_COMPLETION_ONSTACK</code>。</p>
+<p>等待侧的核心在 <code>kernel/sched/completion.c</code>，是 <code>do_wait_for_common()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">long</span> __sched
+<span class="hljs-title function_">do_wait_for_common</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> completion *x,
+                   <span class="hljs-type">long</span> (*action)(<span class="hljs-type">long</span>), <span class="hljs-type">long</span> timeout, <span class="hljs-type">int</span> state)</span>
+{
+        <span class="hljs-keyword">if</span> (!x-&gt;done) {
+                DECLARE_WAITQUEUE(wait, current);
+
+                __add_wait_queue_entry_tail_exclusive(&amp;x-&gt;wait, &amp;wait);
+                <span class="hljs-keyword">do</span> {
+                        <span class="hljs-keyword">if</span> (signal_pending_state(state, current)) {
+                                timeout = -ERESTARTSYS;
+                                <span class="hljs-keyword">break</span>;
+                        }
+                        __set_current_state(state);
+                        spin_unlock_irq(&amp;x-&gt;wait.lock);
+                        timeout = action(timeout);
+                        spin_lock_irq(&amp;x-&gt;wait.lock);
+                } <span class="hljs-keyword">while</span> (!x-&gt;done &amp;&amp; timeout);
+                __remove_wait_queue(&amp;x-&gt;wait, &amp;wait);
+                <span class="hljs-keyword">if</span> (!x-&gt;done)
+                        <span class="hljs-keyword">return</span> timeout;
+        }
+        <span class="hljs-keyword">if</span> (x-&gt;done != UINT_MAX)
+                x-&gt;done--;
+        <span class="hljs-keyword">return</span> timeout ?: <span class="hljs-number">1</span>;
+}
+</code></pre></div></code></pre>
+<p>骨架和信号量的 <code>__down_common()</code> 一模一样：挂队、放锁、睡、醒来重取锁、检查条件。差别在三处：</p>
+<ol>
+<li>判据是 <code>x-&gt;done</code>，不是 <code>count &gt; 0</code>。<code>done</code> 非 0 就算条件满足。</li>
+<li>醒来后不做「交接」，直接 <code>x-&gt;done--</code> 消费一次记账。<code>UINT_MAX</code> 是例外，见第九章。</li>
+<li>等待队列项用的是 <code>DECLARE_WAITQUEUE</code> + <code>__add_wait_queue_entry_tail_exclusive</code>，独占唤醒。<code>complete()</code> 只叫一个，靠的就是 exclusive 标记。</li>
+</ol>
+<p><code>__add_wait_queue_entry_tail_exclusive</code> 里的 exclusive 意思是「这个等待项只接受一次唤醒」。<code>__wake_up_locked()</code> 带 <code>nr_exclusive = 1</code> 时，叫到第一个 exclusive 项就停。一堆任务等同一个 completion，<code>complete()</code> 只放一个，符合「一次 complete 对应一次 wait」。</p>
+<p><code>action</code> 是函数指针，指向 <code>schedule_timeout()</code>。超时就是这么插进来的——<code>wait_for_completion_timeout()</code> 传的 <code>action</code> 一样，只是 <code>timeout</code> 有值。返回值那句 <code>return timeout ?: 1;</code> 是 GNU 扩展的三目简写：<code>timeout</code> 非 0 返回剩余 jiffies，否则返回 1。</p>
+<p>两个最常用的变体，都在这层壳上面：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> __sched <span class="hljs-title function_">wait_for_completion</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> completion *x)</span>
+{
+        wait_for_common(x, MAX_SCHEDULE_TIMEOUT, TASK_UNINTERRUPTIBLE);
+}
+
+<span class="hljs-type">int</span> __sched <span class="hljs-title function_">wait_for_completion_interruptible</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> completion *x)</span>
+{
+        <span class="hljs-type">long</span> t = wait_for_common(x, MAX_SCHEDULE_TIMEOUT, TASK_INTERRUPTIBLE);
+        <span class="hljs-keyword">if</span> (t == -ERESTARTSYS)
+                <span class="hljs-keyword">return</span> t;
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>wait_for_completion()</code> 不可中断、无超时。上游注释写得很直白：<code>It is NOT interruptible and there is no timeout.</code> 一旦进去，只有 <code>complete()</code> 能救它，<code>kill -9</code> 都杀不掉。用在线程里要确认这条路径一定会有人叫醒，否则就是永久 D 状态。</p>
+<p><code>wait_for_completion_interruptible()</code> 返回 0 表示完成，返回 <code>-ERESTARTSYS</code> 表示被信号打断。它把 <code>-ERESTARTSYS</code> 直接透传，没有转成 <code>-EINTR</code>——理由和信号量那章一样，让系统调用层决定是重启还是返回错误。</p>
+<p>API 全表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>可中断</th>
+<th>超时</th>
+<th>返回</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wait_for_completion(x)</code></td>
+<td>否</td>
+<td>无</td>
+<td>无（void）</td>
+</tr>
+<tr>
+<td><code>wait_for_completion_interruptible(x)</code></td>
+<td>是</td>
+<td>无</td>
+<td>0 / <code>-ERESTARTSYS</code></td>
+</tr>
+<tr>
+<td><code>wait_for_completion_killable(x)</code></td>
+<td>仅致命信号</td>
+<td>无</td>
+<td>0 / <code>-ERESTARTSYS</code></td>
+</tr>
+<tr>
+<td><code>wait_for_completion_timeout(x, t)</code></td>
+<td>否</td>
+<td>有</td>
+<td>剩余 jiffies / 0</td>
+</tr>
+<tr>
+<td><code>wait_for_completion_interruptible_timeout(x, t)</code></td>
+<td>是</td>
+<td>有</td>
+<td>剩余 jiffies / 0 / <code>-ERESTARTSYS</code></td>
+</tr>
+<tr>
+<td><code>completion_done(x)</code></td>
+<td>—</td>
+<td>—</td>
+<td>0 有等待者 / 1 无等待者</td>
+</tr>
+</tbody>
+</table></div><p>超时类接口的返回值要看清：返回 0 是超时（没等到），返回正数是「等到了，还剩这么多 jiffies」。所以判断写法是 <code>if (!wait_for_completion_timeout(&amp;c, HZ))</code> 表示超时，不是相反。</p>
+<p><code>completion_done()</code> 判「有没有人在等」：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">bool</span> <span class="hljs-title function_">completion_done</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> completion *x)</span>
+{
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+
+        <span class="hljs-keyword">if</span> (!READ_ONCE(x-&gt;done))
+                <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+
+        <span class="hljs-comment">/*
+         * If -&gt;done, we need to wait for complete() to release -&gt;wait.lock
+         * otherwise we can end up freeing the completion before complete()
+         * is done referencing it.
+         */</span>
+        spin_lock_irqsave(&amp;x-&gt;wait.lock, flags);
+        spin_unlock_irqrestore(&amp;x-&gt;wait.lock, flags);
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+}
+</code></pre></div></code></pre>
+<p>返回值方向容易记反：0 表示有等待者（<code>wait_for_completion()</code> 正在进行），1 表示没人在等。函数名问的是「完成了吗」，返回真表示「完成已记账、没人还在等」。</p>
+<p>中间那次空转的加解锁不是为了改数据，是为了同步。<code>done</code> 非 0 时，<code>complete()</code> 释放 <code>wait.lock</code> 之后才算真正收工；这里抢一次锁再放开，等于等它收工，否则调用者一 <code>kfree()</code> 掉 completion，<code>complete()</code> 还在用。所以 <code>completion_done()</code> 判完之后 <code>free</code> 的写法仍有竞态，别把它当「安全释放」的许可证，它的正经用途是「还剩多少活没干完」这种统计。</p>
+<h2 id="九complete-与-complete_all" tabindex="-1">九、complete 与 complete_all <a class="header-anchor" href="#九complete-与-complete_all"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>complete()</code> 负责叫醒一个：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">complete</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> completion *x)</span>
+{
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+
+        spin_lock_irqsave(&amp;x-&gt;wait.lock, flags);
+
+        <span class="hljs-keyword">if</span> (x-&gt;done != UINT_MAX)
+                x-&gt;done++;
+        __wake_up_locked(&amp;x-&gt;wait, TASK_NORMAL, <span class="hljs-number">1</span>);
+        spin_unlock_irqrestore(&amp;x-&gt;wait.lock, flags);
+}
+</code></pre></div></code></pre>
+<p>三步。<code>done</code> 加 1，加之前挡一下 <code>UINT_MAX</code>；<code>__wake_up_locked()</code> 唤醒，最后一个参数 1 是 <code>nr_exclusive</code>，表示「最多叫醒一个独占等待者」；放锁。<code>done</code> 加 1 发生在唤醒之前，这个顺序不能反。先记账再叫人，被叫醒的任务重取锁时能看到 <code>done &gt; 0</code>，条件成立，消费掉。反过来先叫人再记账，醒来的人看到 <code>done == 0</code>，回去接着睡，这次唤醒就丢了。</p>
+<p><code>__wake_up_locked</code> 的 <code>_locked</code> 后缀表示「调用者已经持有 <code>wait.lock</code>」。等待队列那套 API 有无锁版本和持锁版本两套，用混了就是双锁或漏锁。</p>
+<p><code>complete_all()</code> 负责叫醒全部：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">complete_all</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> completion *x)</span>
+{
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+
+        spin_lock_irqsave(&amp;x-&gt;wait.lock, flags);
+        x-&gt;done = UINT_MAX;
+        __wake_up_locked(&amp;x-&gt;wait, TASK_NORMAL, <span class="hljs-number">0</span>);
+        spin_unlock_irqrestore(&amp;x-&gt;wait.lock, flags);
+}
+</code></pre></div></code></pre>
+<p>两处差别。<code>done</code> 被直接置成 <code>UINT_MAX</code>，不是加 1；<code>nr_exclusive</code> 传 0，表示「独占项也全叫」。</p>
+<p><code>UINT_MAX</code> 是这套机制里的「无穷大」。回看 <code>do_wait_for_common()</code> 里那句 <code>if (x-&gt;done != UINT_MAX) x-&gt;done--;</code>，饱和了就不再减。效果是：<code>complete_all()</code> 之后，不管是已经在等的、还是之后才来的，<code>wait_for_completion()</code> 都立刻返回，且 <code>done</code> 永远不减到 0。这个 completion 就永久变成「已触发」状态，只能靠 <code>reinit_completion()</code> 复位。</p>
+<p>饱和语义换来一个明确后果：<code>complete_all()</code> 之后调 <code>completion_done()</code> 永远返回 1。注释里也写了：<code>Note, this will always return true if complete_all() was called on @X.</code> 因为 <code>done</code> 不为 0，而 <code>completion_done()</code> 第一句就是判 <code>done</code>。</p>
+<p>选择规则很短：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>语义</th>
+<th>用哪个</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一次事件对应一个等待者，逐个交付</td>
+<td><code>complete()</code></td>
+</tr>
+<tr>
+<td>广播：所有等待者同时放行</td>
+<td><code>complete_all()</code></td>
+</tr>
+<tr>
+<td>一次性 gate，开了就一直开着</td>
+<td><code>complete_all()</code> + 永不复位</td>
+</tr>
+<tr>
+<td>反复使用的循环等待点</td>
+<td><code>complete()</code> + <code>wait_for_completion()</code> 配对</td>
+</tr>
+</tbody>
+</table></div><p><code>complete()</code> 配 N 个等待者是最容易写错的组合。<code>complete()</code> 只放一个，N 个等待者就得有 N 次 <code>complete()</code>。写成一次 <code>complete()</code> 加 N 个 <code>wait_for_completion()</code>，剩下的 N-1 个会一直睡。这种 bug 在压测里才暴露，靠代码审查很难看出来。</p>
+<h2 id="十completion-的典型场景驱动-probe-等硬件就绪" tabindex="-1">十、completion 的典型场景：驱动 probe 等硬件就绪 <a class="header-anchor" href="#十completion-的典型场景驱动-probe-等硬件就绪"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>最典型的形态是「A 路径等 B 路径把事办完」。驱动里到处是这种结构：<code>probe</code> 等硬件上电完成、<code>read</code> 等 DMA 搬运完成、<code>ioctl</code> 等固件加载完成。</p>
+<p>举个能跑的最小例子。字符设备，两个 ioctl 命令：命令 0 等，命令 1 叫。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/module.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/fs.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/cdev.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/completion.h&gt;</span></span>
+
+DECLARE_COMPLETION(mycompletion);
+
+<span class="hljs-type">static</span> <span class="hljs-type">long</span> <span class="hljs-title function_">hello_ioctl</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *file, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> cmd, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> arg)</span>
+{
+        <span class="hljs-keyword">switch</span> (_IOC_NR(cmd)) {
+        <span class="hljs-keyword">case</span> <span class="hljs-number">0</span>:
+                pr_info(<span class="hljs-string">&quot;i am waiting\n&quot;</span>);
+                wait_for_completion(&amp;mycompletion);
+                pr_info(<span class="hljs-string">&quot;haha, i get the message\n&quot;</span>);
+                <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">case</span> <span class="hljs-number">1</span>:
+                pr_info(<span class="hljs-string">&quot;complete\n&quot;</span>);
+                complete(&amp;mycompletion);
+                <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">default</span>:
+                pr_info(<span class="hljs-string">&quot;default\n&quot;</span>);
+        }
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>用户态两个线程，先起线程 A 发命令 0 阻塞住，<code>sleep(2)</code> 后起线程 B 发命令 1 放行。输出顺序就是时序证据：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>write start
+read start
+write end
+read end
+main exit
+</code></pre></div></code></pre>
+<p><code>write start</code> 之后卡了两秒才出现 <code>read start</code>——那就是 <code>wait_for_completion()</code> 在睡。<code>read start</code> 一到，<code>complete()</code> 立刻把 A 放出来，于是 <code>write end</code> 出现。</p>
+<p>这个例子故意用了不可中断版本，因为它把「没人叫就永久 D 状态」的风险摆在明面上。真实驱动里这条路径要加超时：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (!wait_for_completion_timeout(&amp;mycompletion, msecs_to_jiffies(<span class="hljs-number">500</span>))) {
+        dev_err(dev, <span class="hljs-string">&quot;hardware not ready after 500ms\n&quot;</span>);
+        <span class="hljs-keyword">return</span> -ETIMEDOUT;
+}
+</code></pre></div></code></pre>
+<p><code>probe</code> 里的用法更常见。硬件上电、PLL 锁定、固件握手这类事必须等，但等的对象是中断，不是同一个执行流：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_dev</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">completion</span> <span class="hljs-title">hw_ready</span>;</span>
+};
+
+<span class="hljs-type">static</span> <span class="hljs-type">irqreturn_t</span> <span class="hljs-title function_">my_isr</span><span class="hljs-params">(<span class="hljs-type">int</span> irq, <span class="hljs-type">void</span> *data)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_dev</span> *<span class="hljs-title">d</span> =</span> data;
+
+        complete(&amp;d-&gt;hw_ready);          <span class="hljs-comment">/* 硬件就绪，记账 */</span>
+        <span class="hljs-keyword">return</span> IRQ_HANDLED;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">my_probe</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> platform_device *pdev)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_dev</span> *<span class="hljs-title">d</span> =</span> devm_kzalloc(&amp;pdev-&gt;dev, <span class="hljs-keyword">sizeof</span>(*d), GFP_KERNEL);
+
+        <span class="hljs-keyword">if</span> (!d)
+                <span class="hljs-keyword">return</span> -ENOMEM;
+
+        init_completion(&amp;d-&gt;hw_ready);
+
+        <span class="hljs-keyword">if</span> (devm_request_irq(&amp;pdev-&gt;dev, irq, my_isr, <span class="hljs-number">0</span>, <span class="hljs-string">&quot;my&quot;</span>, d))
+                <span class="hljs-keyword">return</span> -EINVAL;
+
+        my_hw_start(d);                  <span class="hljs-comment">/* 触发硬件，然后等它回话 */</span>
+
+        <span class="hljs-keyword">if</span> (!wait_for_completion_timeout(&amp;d-&gt;hw_ready, HZ))
+                <span class="hljs-keyword">return</span> -ETIMEDOUT;
+
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>三个要点。<code>init_completion()</code> 必须在 <code>request_irq()</code> 之前，否则中断先到、<code>complete()</code> 撞上一个没初始化的 <code>wait.lock</code>。等待必须带超时，硬件不回应的时候内核不能陪它一起挂。<code>my_hw_start()</code> 与 <code>wait_for_completion_timeout()</code> 的先后不能反，先起硬件再等回话。</p>
+<p><code>completion</code> 放在 <code>struct my_dev</code> 里而不是全局，是因为它和这个设备实例绑定。全局 completion 在多个设备实例时会串台——设备 A 的中断放行了等设备 B 的线程，这种 bug 极难查。</p>
+<h2 id="十一completion-与信号量的关系" tabindex="-1">十一、completion 与信号量的关系 <a class="header-anchor" href="#十一completion-与信号量的关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>两者都是「睡在这里等人叫」，但语义层不同。摆一起看：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>semaphore</th>
+<th>completion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>核心字段</td>
+<td><code>count</code> + <code>wait_list</code></td>
+<td><code>done</code> + <code>wait</code></td>
+</tr>
+<tr>
+<td>计数语义</td>
+<td>可用资源个数</td>
+<td>事件发生次数</td>
+</tr>
+<tr>
+<td>有所有权</td>
+<td>无</td>
+<td>无</td>
+</tr>
+<tr>
+<td>一次释放叫几个</td>
+<td>1 个</td>
+<td><code>complete()</code> 叫 1 个，<code>complete_all()</code> 叫全部</td>
+</tr>
+<tr>
+<td>计数上限</td>
+<td>无</td>
+<td><code>UINT_MAX</code> 饱和</td>
+</tr>
+<tr>
+<td>可重复使用</td>
+<td>是</td>
+<td>是，需配对消费或 <code>reinit</code></td>
+</tr>
+<tr>
+<td>典型对象</td>
+<td>资源池</td>
+<td>事件 / 时序屏障</td>
+</tr>
+<tr>
+<td>用在中断里</td>
+<td>只能 <code>up()</code></td>
+<td>只能 <code>complete*()</code></td>
+</tr>
+<tr>
+<td>主要接口</td>
+<td><code>down*()</code> / <code>up()</code></td>
+<td><code>wait_for_completion*()</code> / <code>complete*()</code></td>
+</tr>
+</tbody>
+</table></div><p>一句话分界：<strong>问「还有几个」，用信号量；问「好了没有」，用 completion。</strong></p>
+<p>把初值 0 的信号量改写成 completion，是纯粹的语义升级，代码量还少一点：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 旧写法：初值 0 的信号量 */</span>
+<span class="hljs-type">static</span> <span class="hljs-title function_">DEFINE_SEMAPHORE</span><span class="hljs-params">(done_sem)</span>;   <span class="hljs-comment">/* 注意：DEFINE_SEMAPHORE 初值固定为 1，这里不适用 */</span>
+</code></pre></div></code></pre>
+<p>这条注释本身是个坑，值得展开。<code>DEFINE_SEMAPHORE(name)</code> 展开是 <code>__SEMAPHORE_INITIALIZER(name, 1)</code>，初值写死 1。想要初值 0 的静态信号量，得手写：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">semaphore</span> <span class="hljs-title">done_sem</span> =</span> __SEMAPHORE_INITIALIZER(done_sem, <span class="hljs-number">0</span>);
+</code></pre></div></code></pre>
+<p>或者退回动态分配加 <code>sema_init(&amp;done_sem, 0)</code>。网上大量示例直接写 <code>DEFINE_SEMAPHORE(done_sem)</code> 当「初值 0 用」，那是错的，那个信号量一上来就能被 <code>down()</code> 拿到。</p>
+<p>换成 completion 之后，这段就没有了：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-title function_">DECLARE_COMPLETION</span><span class="hljs-params">(done_evt)</span>;
+
+<span class="hljs-comment">/* 等的一方 */</span>
+wait_for_completion(&amp;done_evt);
+
+<span class="hljs-comment">/* 叫的一方 */</span>
+complete(&amp;done_evt);
+</code></pre></div></code></pre>
+<p>不用管初值，不用管配对，不用解释「这个 0 是什么意思」。这就是 completion 存在的理由——它把「等事件」这件事从「抢资源」里摘出来了。</p>
+<p>反过来也有一条：<code>completion</code> 不能替代 <code>N &gt; 1</code> 的信号量。<code>done</code> 虽然也是计数，但它没有「取走一个资源就少一个」的库存语义，只有「事件发生过几次」的记账语义。资源池必须用信号量。</p>
+<h2 id="十二per-cpu-变量为什么它可以不用锁" tabindex="-1">十二、Per-CPU 变量：为什么它可以不用锁 <a class="header-anchor" href="#十二per-cpu-变量为什么它可以不用锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面所有机制都在解决同一个问题：多个执行流抢同一份内存。spinlock 让它们排队，信号量让它们睡觉，completion 让它们等事件。Per-CPU 走的完全是另一条路：既然抢是因为共享，那就别共享。</p>
+<p>给每个 CPU 一份私有副本，CPU 0 的 <code>counter</code> 和 CPU 1 的 <code>counter</code> 是两个不同的地址，物理上不相邻。CPU 0 改自己的那份，不需要问 CPU 1 的意见，也不需要任何原子指令。多个 CPU 之间的并发在数据层面被消掉了。</p>
+<p>这里的分界线要划清：Per-CPU 消掉的是 CPU 之间的并发，不是同一个 CPU 上的并发。同一个 CPU 上被抢占，两个执行流还是会同时碰同一份副本。所以内核在访问 Per-CPU 变量时做的是 <code>preempt_disable()</code>。</p>
+<p>素材里的说法很准：preempt disable 也是一种锁，只不过代价比较小。它不碰内存、不发总线事务、不睡眠，只把当前任务的 <code>preempt_count</code> 加 1。任务因此不会被调度到别的 CPU 上去。一旦被调度到别的 CPU，<code>this_cpu_ptr</code> 算出来的地址就变了，你摸到的就是别人家那份副本。这就是为什么 Per-CPU 的「锁」必须锁住的是「CPU 亲和性」，而不是内存。</p>
+<h2 id="十三lock-bus-带来的性能问题" tabindex="-1">十三、lock bus 带来的性能问题 <a class="header-anchor" href="#十三lock-bus-带来的性能问题"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Per-CPU 的存在理由，得从原子指令的成本说起。</p>
+<p>ARMv6 之前，共享内存的原子访问靠 SWP / SWPB：</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">SWP</span> &lt;Rt&gt;, &lt;Rt2&gt;, [&lt;Rn&gt;]
+</code></pre></div></code></pre>
+<p><code>Rn</code> 是要操作的内存地址。这条指令把 <code>Rn</code> 指向的内容读进 <code>Rt</code>，同时把 <code>Rt2</code> 的值写回 <code>Rn</code>。从程序员视角看它是原子的——读和写之间不会被任何异步事件打断。</p>
+<p>硬件怎么做到的？执行期间给总线发一个 lock signal，告诉总线「这段内存访问不可被中断」，两次内存访问做完再 clear。</p>
+<p>问题就在这儿。<strong>被 lock 的是总线，不是那块内存。</strong></p>
+<p>多核系统里，一个 CPU 锁总线的时候，其他所有 processor 对那条 memory bus 的访问全被 hold 住。哪怕它们访问的是完全无关的地址。这就是 lock bus 的成本：它把并行变成了串行，代价和「有多少个核在同时干活」成正比。</p>
+<p>ARMv6 之后改用 LDREX / STREX，软硬件结合，独占监视器只盯一条 cache line，不再锁整条总线。看起来 Per-CPU 的存在基础被抽掉了。</p>
+<p>但没抽干净。因为还有 cache。</p>
+<h2 id="十四cache-行争抢per-cpu-要解决的第二个问题" tabindex="-1">十四、cache 行争抢：Per-CPU 要解决的第二个问题 <a class="header-anchor" href="#十四cache-行争抢per-cpu-要解决的第二个问题"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>假设多核系统的 cache 层次是这样：每个 CPU 有自己的 L1（含 data cache 和 instruction cache），所有 CPU 共享 L2，再往下是 main memory。L1/L2/内存的访问速度差距极大，最好的情况永远是 L1 hit。</p>
+<p>再看共享内存的情况。CPU 0 改了共享变量，硬件必须把所有其他 CPU 的 L1 上对应的 cache line 置为 invalid，否则它们会读到脏数据。这不是可选的优化，是 cache 一致性的硬要求。</p>
+<p>后果是：一个被频繁写的共享变量，会让所有 CPU 上那条 cache line 反复失效、反复回内存重载。变量本身只有 4 字节，被打扰的却是整条 cache line（典型 64 字节）。这叫伪共享（false sharing），比 lock bus 隐蔽，但同样吃性能。</p>
+<p>换个角度就明白了：把共享内存变成 Per-CPU 内存，本质是<strong>拿内存换性能</strong>。一个变量变成 N 份，多占了 <code>(N-1) × sizeof</code> 的内存；换来的是每个 CPU 只碰自己那条 cache line，写操作不会让别人的 line 失效，全程没有总线事务。对现代 CPU 来说这笔交易很划算——内存几条 cache line 不值钱，cache line 来回失效值钱。</p>
+<p>有一类变量天然适合这条路：计数器。<code>vmstat</code> 的每一项、网络栈的收发计数、调度器的统计量，全是「每个 CPU 各记各的，要总数的时候加起来」。这类变量没有任何跨 CPU 的因果依赖，是 Per-CPU 的典型用户。</p>
+<h2 id="十五静态声明与访问的-api" tabindex="-1">十五、静态声明与访问的 API <a class="header-anchor" href="#十五静态声明与访问的-api"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>静态声明有一套家族，按「放哪个 section、怎么对齐、SMP 和 UP 怎么处理」分化：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>宏</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEFINE_PER_CPU(type, name)</code></td>
+<td>最常用，普通 Per-CPU 变量</td>
+</tr>
+<tr>
+<td><code>DEFINE_PER_CPU_FIRST(type, name)</code></td>
+<td>放在 percpu section 最前面</td>
+</tr>
+<tr>
+<td><code>DEFINE_PER_CPU_SHARED_ALIGNED(type, name)</code></td>
+<td>SMP 下按 cache line 对齐</td>
+</tr>
+<tr>
+<td><code>DEFINE_PER_CPU_ALIGNED(type, name)</code></td>
+<td>按 cache line 对齐（UP 也生效）</td>
+</tr>
+<tr>
+<td><code>DEFINE_PER_CPU_PAGE_ALIGNED(type, name)</code></td>
+<td>按 page 对齐</td>
+</tr>
+<tr>
+<td><code>DEFINE_PER_CPU_READ_MOSTLY(type, name)</code></td>
+<td>读多写少，可落独立副本策略</td>
+</tr>
+</tbody>
+</table></div><p>声明侧对应一套 <code>DECLARE_PER_CPU*</code>，只声明不定义，用于跨文件引用，比如 <code>DECLARE_PER_CPU(int, my_counter);</code>。</p>
+<p>素材原文里这两张表在网页抓取时丢了，上表按 <code>include/linux/percpu-defs.h</code> 的宏名重建，宏名本身可靠；每个宏对应的 section 名和具体对齐字节数未逐条验证。</p>
+<p>分化的四个维度就是素材列的那四条：变量在 section 中的位置、对齐方式、SMP 与 UP 的差异处理、访问形态。举两个用法：要求按 page 对齐，用 <code>DEFINE_PER_CPU_PAGE_ALIGNED</code>；只要求在 SMP 下对齐到 cache line，用 <code>DEFINE_PER_CPU_SHARED_ALIGNED</code>。后者名字里的 SHARED 指「SMP 共享对齐要求」，不是「共享变量」。</p>
+<p>静态定义的变量不能当普通变量用。<code>my_counter++</code> 编译得过，但改的是原始模板，不是任何 CPU 的副本。必须走访问接口：<code>get_cpu_var(var)</code> / <code>put_cpu_var(var)</code>，这两个已经内嵌了 preempt disable/enable，成对使用即可。如果当前环境已经是 preempt disabled（比如持有 spinlock、或者在中断处理里），用无锁版本 <code>__get_cpu_var(var)</code>，它不带 preempt 操作，因为假定调用者已经保证了 CPU 亲和性。</p>
+<p>2.6.33 起多了一套 <code>this_cpu_*</code> 接口，这是访问 Per-CPU 变量最省的方式：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>this_cpu_read(var)</code></td>
+<td>读本 CPU 副本</td>
+</tr>
+<tr>
+<td><code>this_cpu_write(var, val)</code></td>
+<td>写本 CPU 副本</td>
+</tr>
+<tr>
+<td><code>this_cpu_add(var, val)</code></td>
+<td>加</td>
+</tr>
+<tr>
+<td><code>this_cpu_sub(var, val)</code></td>
+<td>减</td>
+</tr>
+<tr>
+<td><code>this_cpu_inc(var)</code> / <code>this_cpu_dec(var)</code></td>
+<td>自增 / 自减</td>
+</tr>
+<tr>
+<td><code>this_cpu_ptr(ptr)</code></td>
+<td>取本 CPU 副本的指针</td>
+</tr>
+</tbody>
+</table></div><p><code>this_cpu_*</code> 的关键在于<strong>它把「取地址 + 访存」做成了一条指令</strong>。x86 上可以编译成带 <code>%gs</code> 段前缀的单条 <code>add</code>，ARM 上也能省掉一次地址计算。所以它是原子的（相对本 CPU 而言），不需要额外的 preempt 包裹。</p>
+<p><code>this_cpu_*</code> 是 2.6.33 引入的，版本点记牢。更早的代码里只有 <code>get_cpu_var</code> / <code>__get_cpu_var</code> 那一套。</p>
+<h2 id="十六动态分配与访问的-api" tabindex="-1">十六、动态分配与访问的 API <a class="header-anchor" href="#十六动态分配与访问的-api"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>静态定义要求编译期知道变量。运行时才知道要多少份、或者要按 CPU 数量分配，走动态接口：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>alloc_percpu(type)</code></td>
+<td>分配 type 类型的 Per-CPU 变量，返回指针</td>
+</tr>
+<tr>
+<td><code>alloc_percpu_gfp(type, gfp)</code></td>
+<td>同上，指定分配标志</td>
+</tr>
+<tr>
+<td><code>__alloc_percpu(size, align)</code></td>
+<td>底层接口，指定大小和对齐</td>
+</tr>
+<tr>
+<td><code>free_percpu(ptr)</code></td>
+<td>释放</td>
+</tr>
+<tr>
+<td><code>per_cpu_ptr(ptr, cpu)</code></td>
+<td>取指定 CPU 的副本指针</td>
+</tr>
+<tr>
+<td><code>this_cpu_ptr(ptr)</code></td>
+<td>取本 CPU 的副本指针</td>
+</tr>
+<tr>
+<td><code>get_cpu_ptr(ptr)</code> / <code>put_cpu_ptr(ptr)</code></td>
+<td>带 preempt 保护的本 CPU 指针</td>
+</tr>
+<tr>
+<td><code>per_cpu(var, cpu)</code></td>
+<td>直接取指定 CPU 的副本值</td>
+</tr>
+</tbody>
+</table></div><p><code>alloc_percpu()</code> 返回的是<strong>原始指针</strong>，不是任何 CPU 的副本地址。这是最常见的误解。想访问必须再过一层：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> __percpu *pc = alloc_percpu(<span class="hljs-type">int</span>);
+<span class="hljs-type">int</span> *p;
+
+<span class="hljs-keyword">if</span> (!pc)
+        <span class="hljs-keyword">return</span> -ENOMEM;
+
+p = per_cpu_ptr(pc, <span class="hljs-number">2</span>);          <span class="hljs-comment">/* 取 CPU 2 的副本 */</span>
+*p = <span class="hljs-number">42</span>;
+
+p = this_cpu_ptr(pc);            <span class="hljs-comment">/* 取本 CPU 的副本 */</span>
+free_percpu(pc);
+</code></pre></div></code></pre>
+<p><code>per_cpu_ptr(ptr, cpu)</code> 的 <code>cpu</code> 参数是运行时 CPU 编号，可以来自 <code>smp_processor_id()</code>、<code>get_cpu()</code>，或者遍历 <code>for_each_possible_cpu()</code>。遍历求和是动态 Per-CPU 的典型用法，读的是别人的副本、没有加锁：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>for_each_possible_cpu(cpu)
+        total += *per_cpu_ptr(pc, cpu);
+</code></pre></div></code></pre>
+<p>安全性靠的是「计数器只增不减、读到的稍微旧一点无所谓」。如果被统计的量会跨越有意义的边界，这种无锁求和就不成立。</p>
+<h2 id="十七per-cpu-的实现段与偏移" tabindex="-1">十七、Per-CPU 的实现：段与偏移 <a class="header-anchor" href="#十七per-cpu-的实现段与偏移"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>以 <code>DEFINE_PER_CPU</code> 为例，一层层展开：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> DEFINE_PER_CPU(type, name)                    \
+        DEFINE_PER_CPU_SECTION(type, name, <span class="hljs-string">&quot;&quot;</span>)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> DEFINE_PER_CPU_SECTION(type, name, sec)                \
+        __PCPU_ATTRS(sec) PER_CPU_DEF_ATTRIBUTES            \
+        __typeof__(type) name</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __PCPU_ATTRS(sec)                        \
+        __percpu __attribute__((section(PER_CPU_BASE_SECTION sec)))    \
+        PER_CPU_ATTRIBUTES</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">ifndef</span> PER_CPU_BASE_SECTION</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_SMP</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> PER_CPU_BASE_SECTION <span class="hljs-string">&quot;.data..percpu&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> PER_CPU_BASE_SECTION <span class="hljs-string">&quot;.data&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+</code></pre></div></code></pre>
+<p>结果就是把变量塞进 <code>.data..percpu</code> 段。<code>PER_CPU_DEF_ATTRIBUTES</code> 由 arch 层定义，arch 不定义就为空（<code>include/asm-generic/percpu.h</code>）。</p>
+<p>Per-CPU 的软件分三层。<code>include/linux/percpu.h</code> 是 arch-independent 接口，其他模块就 include 它；<code>include/asm-generic/percpu.h</code> 是 arch-general 层，各 arch 长得一样的东西抽出来放这，不直接 include，由上一层带进来；<code>arch/arm/include/asm/percpu.h</code> 是 arch-specific 层，ARM 平台的具体实现。</p>
+<p>为什么要分这么多 section？普通变量编译链接后进 <code>.data</code> 或 <code>.bss</code>，初始化时一次搞定。Per-CPU 变量不行，它得先有一份「原始模板」，再给每个 CPU 复制一份。</p>
+<p>原始模板落在 <code>__per_cpu_start</code> 和 <code>__per_cpu_end</code> 之间。链接脚本 <code>vmlinux.lds.h</code> 里 <code>PERCPU_INPUT</code> 决定排列：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> PERCPU_INPUT(cacheline)                        \
+        VMLINUX_SYMBOL(__per_cpu_start) = .;                \
+        *(.data..percpu..first)                        \
+        . = ALIGN(PAGE_SIZE);                        \
+        *(.data..percpu..page_aligned)                    \
+        . = ALIGN(cacheline);                        \
+        *(.data..percpu..readmostly)                    \
+        . = ALIGN(cacheline);                        \
+        *(.data..percpu)                        \
+        *(.data..percpu..shared_aligned)                \
+        VMLINUX_SYMBOL(__per_cpu_end) = .;</span>
+</code></pre></div></code></pre>
+<p>对齐是这里的设计核心。<code>first</code> 段里有东西，后面就得按 <code>PAGE_SIZE</code> 对齐——防止 <code>page_aligned</code> 的变量被 <code>first</code> 段挤到非页边界的偏移上。<code>readmostly</code> 和 <code>shared_aligned</code> 前各插一次 <code>ALIGN(cacheline)</code>，目的是让它们从新 cache line 开始，不和其他变量共用一条 line。这也解释了为什么要有那么多 <code>DEFINE_PER_CPU_*</code> 变体：它们只是选择了不同的 section，而 section 决定了对齐和位置，对齐和位置决定了会不会和邻居抢 cache line。</p>
+<p>有了模板，还得建副本。直接静态定义一个 <code>NR_CPUS</code> 长度的数组行不行？不行。<code>NR_CPUS</code> 是「系统支持的最大 processor 数」，不是「实际有几个」，为不存在的 CPU 分配内存是纯浪费。而且 NUMA 下要求更硬：每个 CPU 的副本得放在它访问最快的 memory 上，各 CPU 的副本会散布在整个地址空间、彼此之间有空洞。所以副本的分配归内存管理子系统管：为每个 CPU 分配一大块 memory，UMA 下就是普通内存，NUMA 下挑离该 CPU 最近的那块。</p>
+<p>分配动作发生在 <code>setup_per_cpu_areas()</code>，把 <code>__per_cpu_start</code> 到 <code>__per_cpu_end</code> 那段模板按同样大小复制进每个 CPU 的 chunk。</p>
+<p>副本和模板之间的地址关系是本篇第二个关键点：<strong>它是线性关系，差一个固定偏移</strong>。所以访问副本只要「模板地址 + 本 CPU 偏移」：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> SHIFT_PERCPU_PTR(ptr, offset) ((void *)((unsigned long)(ptr) + (offset)))</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __my_cpu_offset per_cpu_offset(raw_smp_processor_id())</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">ifndef</span> __per_cpu_offset</span>
+<span class="hljs-keyword">extern</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> __per_cpu_offset[NR_CPUS];
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> per_cpu_offset(x) (__per_cpu_offset[x])</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> this_cpu_ptr(ptr) __this_cpu_ptr(ptr)</span>
+<span class="hljs-comment">/* ARM 平台没定义 __this_cpu_ptr，走 asm-generic 版本 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __this_cpu_ptr(ptr) SHIFT_PERCPU_PTR(ptr, __my_cpu_offset)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> get_cpu_var(var) (*({                \
+        preempt_disable();                \
+        &amp;__get_cpu_var(var); }))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __get_cpu_var(var) (*this_cpu_ptr(&amp;(var)))</span>
+</code></pre></div></code></pre>
+<p><code>__per_cpu_offset[]</code> 是一张表，下标是 CPU 编号，值是该 CPU chunk 相对模板的偏移。<code>raw_smp_processor_id()</code> 拿到本 CPU 编号，查表，加偏移，得到副本地址。</p>
+<p>ARMv6K 和 ARMv7 有专门的 <code>TPIDRPRW</code> 寄存器直接存这个偏移，省掉查表。arch 层如果定义了 <code>__per_cpu_offset</code> 宏，通用版的那张数组就不参与编译。</p>
+<p><code>get_cpu_var</code> 在最外层套 preempt。<code>({ ... })</code> 是 GCC 的语句表达式扩展，整个块的值是最后一个表达式，所以 <code>get_cpu_var(x)</code> 展开成「关抢占，返回 <code>x</code> 在本 CPU 副本上的左值」。它能当左值用，也能当右值用。</p>
+<h2 id="十八per-cpu-的边界什么时候还是得加锁" tabindex="-1">十八、Per-CPU 的边界：什么时候还是得加锁 <a class="header-anchor" href="#十八per-cpu-的边界什么时候还是得加锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Per-CPU 只解决「不同 CPU 之间」。以下四种情况它管不了。</p>
+<p><strong>一、同一 CPU 上的并发。</strong> 抢占关了能挡住进程之间的切换，挡不住中断。中断服务程序插进 <code>this_cpu_*</code> 序列中间，摸的是同一份副本。这时候要额外 <code>local_irq_disable()</code>，或者用 <code>local_lock</code>。所以「Per-CPU 不用锁」严格说是「不用跨 CPU 的锁」。</p>
+<p><strong>二、要在 CPU 之间迁移数据。</strong> 生产者在本 CPU 上产生数据、消费者在另一个 CPU 上取走，这就是跨 CPU 的因果依赖，逃避不了同步。内核里的做法多是「Per-CPU 队列 + 一次真正的跨 CPU 通知」。</p>
+<p><strong>三、需要一个全局一致的值。</strong> 遍历所有副本求和时，读到的是「各 CPU 在各自时刻的值」，拼起来不一定对应任何一个真实时刻。要做精确快照，还是得加全局锁。</p>
+<p><strong>四、指针本身是共享的。</strong> <code>alloc_percpu()</code> 返回的 <code>pc</code> 指针如果被多个 CPU 同时读写（比如重新分配），那个指针就需要保护。被保护的只是指针，不是它指向的 N 份副本。</p>
+<p>一句话收口：Per-CPU 把「数据竞争」换成了「数据分布」，但没换来「无条件的并发安全」。它换掉的锁是 CPU 之间的那把，同一 CPU 内部的那把还在。</p>
+<h2 id="十九四种同步机制的横向对比" tabindex="-1">十九、四种同步机制的横向对比 <a class="header-anchor" href="#十九四种同步机制的横向对比"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>四种机制摆一起。这一节只做对比，实现细节在同批另外三篇。</p>
+<p><strong>spin lock</strong>：两个计数 <code>next</code> 和 <code>owner</code>，申请时取号，<code>next++</code> 后再比 <code>owner</code>；释放时 <code>owner++</code>。ARM64 上自旋用 <code>WFE</code> 让核进低功耗，释放用 <code>SEV</code> 广播。特点是不睡、忙等、临界区必须极短、可以在中断里用。用在「等的时间比调度开销还短」的场合。</p>
+<p><strong>信号量</strong>：一个 <code>count</code> 加一条 <code>wait_list</code>。<code>count &gt; 0</code> 直接减一，否则挂队、<code>schedule_timeout()</code> 睡过去。<code>up()</code> 时若有人在等，直接把资源交接给队头。特点是可以睡、可计数、无所有权、申请只能在进程上下文。用在「资源池」和「等的时间远大于调度开销」的场合。</p>
+<p><strong>读写锁</strong>：一个 <code>unsigned int</code>，bit31 标记有没有写者，低 31 位统计读者数。读锁加计数，写锁置 bit31。特点是在读多写少时让读者并发进入。坑是写者会饿死——素材里的例子，A、B、C 在读者临界区里，D 等写锁，出去之前又来了 F、G，D 就一直等。</p>
+<p><strong>mutex</strong>：一个 <code>owner</code> 加一条 <code>wait_list</code>。没有 owner 就抢，有就挂队睡。释放时校验 owner 是当前进程。特点是有所有权、有优先级继承、有 lockdep 加持。用在「保护一段临界区」的绝大多数场合。</p>
+<p>一张表压住：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>spin lock</th>
+<th>信号量</th>
+<th>读写锁</th>
+<th>mutex</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>等待方式</td>
+<td>忙等</td>
+<td>睡眠</td>
+<td>忙等（spin 型）</td>
+<td>睡眠</td>
+</tr>
+<tr>
+<td>计数能力</td>
+<td>无</td>
+<td>N 个</td>
+<td>读者计数</td>
+<td>无</td>
+</tr>
+<tr>
+<td>所有权</td>
+<td>无</td>
+<td>无</td>
+<td>无</td>
+<td>有</td>
+</tr>
+<tr>
+<td>中断上下文</td>
+<td>能用</td>
+<td>只能 <code>up()</code></td>
+<td>能用</td>
+<td>不能用</td>
+</tr>
+<tr>
+<td>临界区长度</td>
+<td>极短</td>
+<td>长</td>
+<td>短到中</td>
+<td>中到长</td>
+</tr>
+<tr>
+<td>写者饿死</td>
+<td>不适用</td>
+<td>不适用</td>
+<td>会</td>
+<td>不适用</td>
+</tr>
+<tr>
+<td>主要开销</td>
+<td>CPU 空转</td>
+<td>两次调度</td>
+<td>CPU 空转</td>
+<td>两次调度</td>
+</tr>
+<tr>
+<td>优先级继承</td>
+<td>无</td>
+<td>无</td>
+<td>无</td>
+<td>有</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>短临界区、中断共享数据</td>
+<td>资源池</td>
+<td>读多写少</td>
+<td>通用互斥</td>
+</tr>
+</tbody>
+</table></div><p>再说 Per-CPU，它不是同一维度的东西，得单列：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>Per-CPU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>等待方式</td>
+<td>不等</td>
+</tr>
+<tr>
+<td>消除的并发</td>
+<td>CPU 之间</td>
+</tr>
+<tr>
+<td>残留的并发</td>
+<td>同一 CPU 的抢占与中断</td>
+</tr>
+<tr>
+<td>成本</td>
+<td>多占内存</td>
+</tr>
+<tr>
+<td>前提</td>
+<td>数据可以按 CPU 切分</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>计数器、每 CPU 缓存、统计量</td>
+</tr>
+</tbody>
+</table></div><h2 id="二十怎么选一张决策表" tabindex="-1">二十、怎么选：一张决策表 <a class="header-anchor" href="#二十怎么选一张决策表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>按顺序问自己，第一个「是」就是答案。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>顺序</th>
+<th>问题</th>
+<th>答案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>数据能按 CPU 切开，各 CPU 各管一份？</td>
+<td>Per-CPU</td>
+</tr>
+<tr>
+<td>2</td>
+<td>只是等某个事件发生，不涉及资源数量？</td>
+<td>completion</td>
+</tr>
+<tr>
+<td>3</td>
+<td>需要「同时最多 N 个」的语义？</td>
+<td>信号量</td>
+</tr>
+<tr>
+<td>4</td>
+<td>需要在中断上下文里申请？</td>
+<td>spin lock</td>
+</tr>
+<tr>
+<td>5</td>
+<td>读多写少，且写者饿死可接受？</td>
+<td>读写锁</td>
+</tr>
+<tr>
+<td>6</td>
+<td>以上都不是，就是保护一段临界区？</td>
+<td>mutex</td>
+</tr>
+</tbody>
+</table></div><p>补几条判据：</p>
+<ul>
+<li><strong>能在中断里用吗</strong>：只有 spin lock 和 <code>down_trylock()</code> 能申请。mutex 两头都不行，信号量只有释放侧行。</li>
+<li><strong>临界区有多长</strong>：比两次上下文切换短，用 spin lock；长了，用 mutex 或信号量。spin lock 在单核上退化成「关抢占」，多核上退化成「烧 CPU」。</li>
+<li><strong>要不要睡眠</strong>：任何会跑在中断上下文的路径，一律不能睡。这一条比性能优先。</li>
+<li><strong>有没有所有权语义</strong>：需要「谁锁谁解」的约束，用 mutex。不需要，且要跨上下文释放，用信号量。</li>
+<li><strong>是不是纯计数</strong>：纯计数且能按 CPU 切，直接 Per-CPU。不能切（比如要精确全局值），退回去用原子变量或 spin lock 保护。</li>
+</ul>
+<p>最后一条经验：<strong>能用 mutex 就用 mutex</strong>。它的调试支持最全，<code>CONFIG_DEBUG_MUTEXES</code> 能抓出「重复解锁」「非持有者解锁」「自己锁自己」。只有在它明确不行的场景（中断上下文、N &gt; 1、跨上下文释放）才换别的。</p>
+<h2 id="二十一易错点速查" tabindex="-1">二十一、易错点速查 <a class="header-anchor" href="#二十一易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>信号量侧：</p>
+<ul>
+<li><code>DEFINE_SEMAPHORE(name)</code> 的 count 固定为 1。想要 0 或 N，手写 <code>__SEMAPHORE_INITIALIZER</code> 或 <code>sema_init()</code>。</li>
+<li><code>down()</code> 已 deprecated。新代码用 <code>down_interruptible()</code> 或 <code>down_killable()</code>。</li>
+<li><code>down_interruptible()</code> 返回非 0 时，返回 <code>-ERESTARTSYS</code>，不要吞掉，也不要自己转 <code>-EINTR</code>。</li>
+<li><code>open()</code> 里 <code>down_trylock()</code> 成功后走错误路径，必须补 <code>up()</code>，因为 <code>release</code> 不会被调用。</li>
+<li><code>-ETIME</code> 和 <code>-EINTR</code> 是两个不同的错误，别混判。</li>
+<li><code>up()</code> 可以来自任何上下文，包括中断；<code>down()</code> 不行。</li>
+</ul>
+<p>completion 侧：</p>
+<ul>
+<li>completion 不是锁，不保护数据，别拿它当互斥用。</li>
+<li>复用前必须 <code>reinit_completion()</code>，残留的 <code>done</code> 会让等待立刻返回假成功。</li>
+<li><code>complete()</code> 只叫一个。N 个等待者要 N 次 <code>complete()</code>，或者改用 <code>complete_all()</code>。</li>
+<li><code>complete_all()</code> 把 <code>done</code> 置成 <code>UINT_MAX</code>，之后永远饱和，只能靠 <code>reinit_completion()</code> 复位。</li>
+<li><code>wait_for_completion()</code> 不可中断、无超时。用在线程里必须确认一定有人叫。</li>
+<li>超时类接口返回 0 才是超时，返回正数是「等到了，还剩这么多 jiffies」。别写反。</li>
+<li><code>completion_done()</code> 返回 0 表示有等待者，1 表示没有。</li>
+<li><code>init_completion()</code> 必须在 <code>request_irq()</code> 之前，否则中断先到会撞未初始化的 <code>wait.lock</code>。</li>
+<li>函数内定义 completion 用 <code>DECLARE_COMPLETION_ONSTACK</code>。</li>
+</ul>
+<p>Per-CPU 侧：</p>
+<ul>
+<li>Per-CPU 变量不能直接当普通变量读写，必须走 <code>this_cpu_*</code> / <code>get_cpu_var</code> / <code>per_cpu_ptr</code>。</li>
+<li><code>this_cpu_*</code> 是 2.6.33 才有的，更早的内核只有 <code>get_cpu_var</code> 那一套。</li>
+<li><code>alloc_percpu()</code> 返回的是原始指针，不是任何 CPU 的副本地址。</li>
+<li><code>per_cpu_ptr(ptr, cpu)</code> 要传运行时 CPU 编号，传常量 0 就是只访问 CPU 0。</li>
+<li>已经 preempt disabled（持 spinlock、在中断里）时用 <code>__get_cpu_var</code>，别重复关抢占。</li>
+<li>关了抢占挡不住中断。中断也会摸同一份副本，必要时补 <code>local_irq_disable()</code>。</li>
+<li>遍历所有副本求和不是原子快照，读到的是各 CPU 各自时刻的值。</li>
+<li>对齐宏的选择影响 cache line 争抢。<code>SHARED_ALIGNED</code> 里的 SHARED 指对齐要求，不是共享变量。</li>
+</ul>
+<h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="章节出处" tabindex="-1">章节出处 <a class="header-anchor" href="#章节出处"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>本篇章节</th>
+<th>素材出处</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一 ~ 六</td>
+<td><code>04-互斥锁信号量与completion/linux同步机制-信号量.md</code>（355 行）</td>
+</tr>
+<tr>
+<td>七 ~ 十一</td>
+<td><code>04-互斥锁信号量与completion/linux同步机制-completion.md</code>（500 行）</td>
+</tr>
+<tr>
+<td>十二 ~ 十八</td>
+<td><code>05-抢占与上下文/Linux内核同步机制之二Per-CPU变量.md</code>（212 行）</td>
+</tr>
+<tr>
+<td>十九 ~ 二十</td>
+<td><code>04-互斥锁信号量与completion/Linux中常见同步机制设计原理.md</code>（311 行），仅取对比结论</td>
+</tr>
+<tr>
+<td>二十一</td>
+<td>全部四篇的易错点汇总</td>
+</tr>
+</tbody>
+</table></div><p>素材 3 的原实现部分（spin lock 的 ticket 编码、读写锁的 bit31 布局、mutex 的教学版代码）本篇不重复，只在第十九章提结论。那四组「原理 + 实现」在同批 spinlock、读写锁、qspinlock/mutex 三篇里。</p>
+<h3 id="修正的错误" tabindex="-1">修正的错误 <a class="header-anchor" href="#修正的错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ol>
+<li><strong><code>DEFINE_SEAMPHORE</code> 拼写</strong>。素材 1 里写的是 <code>DEFINE_SEAMPHORE(name)</code>，正确拼写是 <code>DEFINE_SEMAPHORE</code>。本篇已改正。</li>
+<li><strong><code>DEFINE_SEAMPHORE</code> 的语义被漏掉了</strong>。素材 1 只说「设置信号量的值为 1」，没点明这是硬编码。<code>DEFINE_SEMAPHORE(name)</code> 展开是 <code>__SEMAPHORE_INITIALIZER(name, 1)</code>，想定义初值 0 或 N 的静态信号量必须手写宏。本篇第四、十一章点明，并给了正确写法。</li>
+<li><strong>素材 1 说 <code>down()</code> 导致 <code>TASK_UNINTERRUPTIBLE</code> 但没说明为什么不可用</strong>。补上：<code>__down_common()</code> 传的 state 是 <code>TASK_UNINTERRUPTIBLE</code>，<code>signal_pending_state()</code> 恒假，<code>kill -9</code> 都杀不掉。这是它被标 deprecated 的直接原因，也是新代码该用 <code>down_interruptible()</code> 的理由。</li>
+<li><strong>素材 3 的 <code>struct semaphore</code> 少了 <code>lock</code> 字段</strong>。教学版写的是 <code>count</code> + <code>wait_list</code> 两字段，真实内核是三字段（带 <code>raw_spinlock_t lock</code>）。素材 3 自己也说明了是精简版，本篇第二章按真实定义写。</li>
+<li><strong>素材 3 的 <code>struct semaphore_waiter</code> 少了 <code>up</code> 字段</strong>。教学版只有 <code>list</code> + <code>task</code>，真实定义还有 <code>bool up</code>，它是「直接交接」的实现手段。本篇第二章补上并解释了语义。</li>
+<li><strong>素材 1 的 <code>__down_common()</code> 里 <code>list_add_tail()</code> 在 <code>waiter.task</code> 赋值之前</strong>。这条不算错——上游原文本就是先入队再填 <code>task</code> / <code>up</code>，因为整段都在 <code>sem-&gt;lock</code> 里，链表挂上也不会被并发遍历。但教学代码照抄这个顺序，读者容易以为「入队即发布」。本篇第三章保留了原文的代码块，同时在拆解里点明：入队靠锁兜底，字段赋值和入队之间不存在窗口。</li>
+<li><strong>素材 1 说 <code>down()</code> 的返回值是 <code>int</code> 但示例里 <code>return 0</code></strong>。<code>down()</code> 实际返回 <code>void</code>，素材 1 的声明 <code>int down(struct semaphore * sem)</code> 是早期口径。本篇按 <code>void down(struct semaphore *sem)</code> 写。</li>
+<li><strong>素材 2 的 <code>wait_for_completion_interruptible()</code> 返回值表述含糊</strong>。素材说「返回 <code>-ERESTARTSYS</code> 表示被打断」，这句话对，但漏了它把 <code>wait_for_common()</code> 的其他返回值（正数、0）都映射成 0。本篇第八章写明「0 表示完成」。</li>
+<li><strong>素材 2 只说 <code>completion_done()</code> 返回 0/1，没说方向容易记反</strong>。本篇标注了：0 是有等待者，1 是没有。</li>
+<li><strong>素材 2 的 <code>complete()</code> 代码缺 <code>if (x-&gt;done != UINT_MAX)</code> 的解释</strong>。素材列了这行但没说为什么。本篇第九章解释了饱和语义，并串到 <code>complete_all()</code> 和 <code>do_wait_for_common()</code> 里那句 <code>if (x-&gt;done != UINT_MAX) x-&gt;done--</code>。</li>
+<li><strong>素材 2 的 <code>do_wait_for_common()</code> 用了 <code>spin_lock_irq</code>，而 <code>complete()</code> 用 <code>spin_lock_irqsave</code></strong>。这个不一致在真实代码里是刻意的：<code>do_wait_for_common()</code> 在已经关中断的上下文里跑，可以直接用 <code>_irq</code> 版本。素材没解释，读者容易以为是笔误。</li>
+<li><strong>素材 4 的四张 API 表在网页抓取时全部丢失</strong>。原文明写「注：原文此处配有一张……表格，在网页抓取过程中丢失」，共四处：静态声明 API 表、动态分配 API 表、访问动态分配 API 表，另有六幅 section 安排示意图丢失。本篇第十五、十六章的表格按 <code>include/linux/percpu-defs.h</code> 和 <code>include/linux/percpu.h</code> 的宏名重建，非从素材誊抄。section 示意图丢失，第十七章改用链接脚本 <code>PERCPU_INPUT</code> 的原文代替。</li>
+<li><strong>素材 4 说 <code>DEFINE_PER_CPU_SHARED_ALIGNED</code> 用于「SMP 情况下对齐到 cache line」</strong>。这句话对，但名字里的 SHARED 容易被读成「共享变量」。本篇第十五章加了辨析。</li>
+<li><strong>素材 4 的 <code>get_cpu_var</code> 宏缺 <code>put_cpu_var</code></strong>。素材只给了 <code>get_cpu_var</code> 的实现，没给 <code>put_cpu_var</code>。本篇按 API 对照关系补齐，但 <code>put_cpu_var</code> 的宏体未逐字验证。</li>
+<li><strong>素材 4 说 <code>this_cpu_*</code> 时没给版本号</strong>。素材原文没有提 <code>this_cpu_*</code> 的引入版本。本篇标注为 2.6.33 引入（依据是上游 percpu 子系统的重做时间线，准确到哪个 rc 未逐条查证），这一条素材里没有，属补充。</li>
+<li><strong>素材 3 的读写锁「写者饿死」只描述现象没给机制</strong>。素材说「A、B、C 在读者临界区，D 等写锁，退出前又来 F、G，D 饿死」。机制是 <code>arch_write_lock()</code> 的条件是 <code>rw-&gt;lock == 0</code>，新读者只要看到 bit31 为 0 就能进，写者没有排队位。本篇第十九章保留结论，机制细节留给读写锁那篇。</li>
+</ol>
+<h3 id="未验证项" tabindex="-1">未验证项 <a class="header-anchor" href="#未验证项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li><strong><code>struct semaphore</code> 从 <code>atomic_t count</code> + <code>spinlock_t lock</code> 切到 <code>raw_spinlock_t lock</code> 的具体版本</strong>。能确定本篇引的这版（带 <code>raw_spinlock_t</code>）是 2.6.33 之后的口径，但切换的准确 commit 和版本未查证。</li>
+<li><strong><code>DEFINE_PER_CPU_ALIGNED</code> 与 <code>DEFINE_PER_CPU_SHARED_ALIGNED</code> 的对齐字节数</strong>。两者都对齐到 cache line，但 UP 下的行为差异（前者生效、后者不生效）来自宏名和注释推断，未逐条对照 <code>percpu-defs.h</code> 原文。</li>
+<li><strong><code>PER_CPU_DEF_ATTRIBUTES</code> 在 ARM 上是否为空</strong>。素材说「如果 arch specific 没定义，general 版定义为空」，本篇沿用了这个说法，但没验证 <code>arch/arm/include/asm/percpu.h</code> 是否真的没定义。</li>
+<li><strong><code>put_cpu_var</code> 的宏展开</strong>。素材未给，本篇按 <code>preempt_enable()</code> 补齐，未逐字验证。</li>
+<li><strong><code>-ERESTARTSYS</code> 在 <code>wait_for_completion_interruptible()</code> 路径上的重启行为</strong>。本篇按 <code>restart_syscall</code> 通用机制解释，未针对 completion 单独验证。</li>
+<li><strong><code>DECLARE_COMPLETION_ONSTACK</code> 的 lockdep 相关实现</strong>。本篇说它「给 lockdep 打标记」，依据是宏名和上游注释口径，未读实现。</li>
+<li><strong><code>local_lock</code> 的引入版本</strong>。第十八章提到它作为「同一 CPU 上防中断」的手段，未标注版本，因为素材和本篇都没有覆盖它，只是提名字。用之前请自行确认目标内核版本是否有这个接口。</li>
+<li><strong><code>setup_per_cpu_areas()</code> 的具体复制流程</strong>。素材说「分配 chunk 并 copy 模板」，本篇照此表述，未读 <code>mm/percpu.c</code> 实现。</li>
+<li>素材原文参考资料里的 <code>wowotech.net</code> 链接和几篇中文博客，本篇未逐一回访核对。</li>
+</ul>
+<h3 id="行数与结构" tabindex="-1">行数与结构 <a class="header-anchor" href="#行数与结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>素材合计 1378 行，本篇压缩合并后按章节树重组。素材 1 的完整字符设备示例、素材 2 的 kfifo + poll 完整示例，属于演示代码，篇幅占比过大且和机制讲解重叠度低，本篇未整段保留，只留能说明机制的最小片段（第四章的 <code>open()</code> 独占、第十章的双 ioctl 时序）。完整示例请回原素材。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一信号量计数型的同步原语" data-toc-target="一信号量计数型的同步原语">一、信号量：计数型的同步原语</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二semaphore-的数据结构" data-toc-target="二semaphore-的数据结构">二、semaphore 的数据结构</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三down--up-的完整实现" data-toc-target="三down--up-的完整实现">三、down / up 的完整实现</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四信号量与-mutex-的区别什么时候用哪个" data-toc-target="四信号量与-mutex-的区别什么时候用哪个">四、信号量与 mutex 的区别：什么时候用哪个</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五可中断的-downdown_interruptible-与--erestartsys" data-toc-target="五可中断的-downdown_interruptible-与--erestartsys">五、可中断的 down：down_interruptible 与 -ERESTARTSYS</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六信号量能不能用在中斷上下文为什么不能" data-toc-target="六信号量能不能用在中斷上下文为什么不能">六、信号量能不能用在中斷上下文：为什么不能</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七completion只等一个事件不持有所有权" data-toc-target="七completion只等一个事件不持有所有权">七、completion：只等一个事件，不持有所有权</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八struct-completion-与-wait_for_completion" data-toc-target="八struct-completion-与-wait_for_completion">八、struct completion 与 wait_for_completion</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九complete-与-complete_all" data-toc-target="九complete-与-complete_all">九、complete 与 complete_all</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十completion-的典型场景驱动-probe-等硬件就绪" data-toc-target="十completion-的典型场景驱动-probe-等硬件就绪">十、completion 的典型场景：驱动 probe 等硬件就绪</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一completion-与信号量的关系" data-toc-target="十一completion-与信号量的关系">十一、completion 与信号量的关系</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二per-cpu-变量为什么它可以不用锁" data-toc-target="十二per-cpu-变量为什么它可以不用锁">十二、Per-CPU 变量：为什么它可以不用锁</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三lock-bus-带来的性能问题" data-toc-target="十三lock-bus-带来的性能问题">十三、lock bus 带来的性能问题</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四cache-行争抢per-cpu-要解决的第二个问题" data-toc-target="十四cache-行争抢per-cpu-要解决的第二个问题">十四、cache 行争抢：Per-CPU 要解决的第二个问题</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五静态声明与访问的-api" data-toc-target="十五静态声明与访问的-api">十五、静态声明与访问的 API</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六动态分配与访问的-api" data-toc-target="十六动态分配与访问的-api">十六、动态分配与访问的 API</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十七per-cpu-的实现段与偏移" data-toc-target="十七per-cpu-的实现段与偏移">十七、Per-CPU 的实现：段与偏移</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十八per-cpu-的边界什么时候还是得加锁" data-toc-target="十八per-cpu-的边界什么时候还是得加锁">十八、Per-CPU 的边界：什么时候还是得加锁</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十九四种同步机制的横向对比" data-toc-target="十九四种同步机制的横向对比">十九、四种同步机制的横向对比</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十怎么选一张决策表" data-toc-target="二十怎么选一张决策表">二十、怎么选：一张决策表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十一易错点速查" data-toc-target="二十一易错点速查">二十一、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#章节出处" data-toc-target="章节出处">章节出处</a>
+                    
+                    <a class="toc-item toc-lv3" href="#修正的错误" data-toc-target="修正的错误">修正的错误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#未验证项" data-toc-target="未验证项">未验证项</a>
+                    
+                    <a class="toc-item toc-lv3" href="#行数与结构" data-toc-target="行数与结构">行数与结构</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","title":"信号量、completion 与 Per-CPU","url":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","type":"current"},{"id":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","title":"RCU：从 classic 到 sleepable 的实现演进","url":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","type":"neighbor"},{"id":"/B.内核/06-内核同步/RCU：原理、API-与使用/","title":"RCU：原理、API 与使用","url":"/B.内核/06-内核同步/RCU：原理、API-与使用/","type":"neighbor"},{"id":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","title":"spinlock：自旋锁的原理、实现与陷阱","url":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","type":"neighbor"},{"id":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","title":"原子操作与内存屏障：内核的底层保证","url":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","type":"neighbor"}],"links":[{"source":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","target":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","type":"neighbor"},{"source":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","target":"/B.内核/06-内核同步/RCU：原理、API-与使用/","type":"neighbor"},{"source":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","target":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","type":"neighbor"},{"source":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","target":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

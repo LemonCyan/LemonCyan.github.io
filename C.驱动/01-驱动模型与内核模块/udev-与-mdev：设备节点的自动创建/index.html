@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>udev 与 mdev：设备节点的自动创建 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">udev 与 mdev：设备节点的自动创建</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/C.驱动/01-驱动模型与内核模块/udev-与-mdev：设备节点的自动创建/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">udev 与 mdev：设备节点的自动创建</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">udev 与 mdev：设备节点的自动创建</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <p>往开发板上移植好文件系统、各种设备驱动也移植好了，启动开发板、用串口工具进去看 <code>/dev</code> 目录，往往会发现里面空荡荡——顶多只有 <code>null</code>、<code>console</code> 等几个系统必需的设备文件，其余什么都没有。</p>
+<p>那我们移植好的那些设备驱动，设备文件去哪了？难道每用一个设备就要手动 <code>mknod</code> 建一次节点？设备文件系统就是为了解决这个问题：它能在系统初始化时<strong>动态</strong>在 <code>/dev</code> 下创建好各种设备文件节点，也能在设备卸载后<strong>自动删除</strong>对应节点（这对热插拔设备极有用——插上自动创建、拔掉自动删除）。它还带来一个附带好处：写驱动时不必再为设备指定主设备号，注册时用 <code>0</code> 让内核动态分配即可。</p>
+<p><strong>本文覆盖</strong>：udev 是什么、与 devfs 的区别、udev 借助 sysfs 建节点的流程、嵌入式侧用 mdev 的完整配置（busybox、fstab、rcS、驱动侧 class/device、mdev.conf）、符号链接与固定设备名的做法、<code>class_create</code>/<code>device_create</code> 的内核源码实现。</p>
+<p><strong>本文不覆盖</strong>：<code>struct class</code> 结构体的完整字段与设备类架构见《struct_class设备类架构详解》；内核侧的 uevent 与 kobject 机制见《Linux 字符设备与驱动模型总览》第六章与 <code>B.内核/08-总线与设备模型</code>；字符设备注册本身见《cdev 与设备号》。</p>
+<h2 id="一udev-是什么" tabindex="-1">一、udev 是什么 <a class="header-anchor" href="#一udev-是什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1.1-2.4-时代的-devfs-及其缺陷" tabindex="-1">1.1 2.4 时代的 devfs 及其缺陷 <a class="header-anchor" href="#1.1-2.4-时代的-devfs-及其缺陷"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>2.4 内核使用 <strong>devfs</strong>（设备文件系统）在设备初始化时创建设备文件，设备驱动程序可以指定设备号、所有者、用户空间等信息。devfs 运行在内核环境中，有不少缺点：</p>
+<ul>
+<li>可能出现主/辅设备号不够；</li>
+<li>命名不灵活，不能指定设备名称；</li>
+<li>不确定的设备映射——同一设备映射出的设备文件可能不同，比如你的 U 盘这次是 <code>sda</code>，下次变成 <code>sdb</code>。</li>
+</ul>
+<h3 id="1.2-2.6-起的-sysfs--udev" tabindex="-1">1.2 2.6 起的 sysfs + udev <a class="header-anchor" href="#1.2-2.6-起的-sysfs--udev"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>自 2.6 内核开始引入了 <strong>sysfs</strong> 文件系统。sysfs 把连接在系统上的设备和总线组织成一个分级的文件，并提供给用户空间存取使用。</p>
+<p><strong>udev 运行在用户模式，而非内核中</strong>。udev 的初始化脚本在系统启动时创建设备节点；并且当插入新设备、加入驱动模块、在 sysfs 上注册新数据后，udev 会创建新的设备节点。</p>
+<p>udev 是一个工作在用户空间的工具，它能根据系统中硬件设备的状态<strong>动态更新设备文件</strong>——包括设备文件的创建、删除、权限等。这些文件通常定义在 <code>/dev</code> 下，但也可以在配置文件中指定。</p>
+<p>udev 必须得到内核中 <strong>sysfs 和 tmpfs</strong> 的支持：<strong>sysfs 为 udev 提供设备入口和 uevent 通道，tmpfs 为 udev 的设备文件提供存放空间</strong>。</p>
+<h3 id="1.3-关键认识udev-不改变内核行为" tabindex="-1">1.3 关键认识：udev 不改变内核行为 <a class="header-anchor" href="#1.3-关键认识udev-不改变内核行为"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>注意，udev 是通过对内核产生的设备文件<strong>修改或增加别名</strong>来达到自定义设备文件的目的。但 udev 是用户模式程序，<strong>它不会更改内核行为</strong>。</p>
+<p>也就是说：内核仍然会创建 <code>sda</code>、<code>sdb</code> 这些设备文件；udev 则根据设备的唯一信息区分不同设备，并产生新的设备文件（或链接）。在用户的应用程序中，只要使用新产生的设备文件即可。</p>
+<h2 id="二udev-与-devfs-的区别" tabindex="-1">二、udev 与 devfs 的区别 <a class="header-anchor" href="#二udev-与-devfs-的区别"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>udev</th>
+<th>devfs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>能实现 devfs 的全部功能</td>
+<td>功能被 udev 完全覆盖</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>运行在用户模式</strong></td>
+<td>运行在内核中</td>
+</tr>
+<tr>
+<td>3</td>
+<td>在<strong>设备被发现</strong>时加载模块</td>
+<td>打开一个并不存在的 <code>/dev</code> 节点时<strong>自动加载驱动</strong></td>
+</tr>
+<tr>
+<td>4</td>
+<td>内核行为不变，只增别名/链接</td>
+<td>直接在内核里创建设备文件</td>
+</tr>
+</tbody>
+</table></div><p>第 3 条值得展开。devfs 的&quot;打开即加载&quot;听起来很方便，但对一台配置正确的计算机是<strong>多余的</strong>：系统中所有设备都应该产生 hotplug 事件、加载恰当的驱动，udev 会注意到这点并为它创建对应节点。如果你不想让所有设备驱动常驻内存，应该用别的东西管理模块（脚本、<code>modules.conf</code> 等）。而 devfs 那套方法导致了<strong>大量无用的 modprobe 尝试</strong>——每个试探性探测都新建一个运行 modprobe 的进程，而几乎全是白费。</p>
+<h3 id="2.1-用符号链接固定设备名" tabindex="-1">2.1 用符号链接固定设备名 <a class="header-anchor" href="#2.1-用符号链接固定设备名"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>由于 udev 只加别名不改内核行为，内核依然会我行我素地产生 <code>sda</code>、<code>sdb</code> 这类设备名。udev 可以根据设备的其他信息（总线 bus、生产商 vendor 等）区分不同设备，并产生设备文件——<strong>只要为这个设备文件取一个固定的文件名就能解决命名漂移问题</strong>。</p>
+<p>为了保证最大限度的兼容，新设备名一般作为<strong>对内核自动产生的设备名的符号链接</strong>使用。</p>
+<p>举例：内核产生了 <code>sda</code>，而根据信息判断这是内置硬盘，就可以制定 udev 规则，让 udev 除了产生 <code>/dev/sda</code> 外，再创建一个符号链接 <code>/dev/internalHD</code>。这样在 <code>fstab</code> 里就可以用 <code>/dev/internalHD</code> 代替 <code>/dev/sda</code>。下次由于某些原因，这块硬盘在内核里变成 <code>sdb</code> 了也不用慌——udev 会照样自动产生 <code>/dev/internalHD</code> 并指向正确的 <code>/dev/sdb</code>，<code>fstab</code> 之类的文件一概不用改。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># /etc/udev/rules.d/ 下的一条规则示意</span>
+SUBSYSTEM==<span class="hljs-string">&quot;block&quot;</span>, ATTRS{serial}==<span class="hljs-string">&quot;XXXX&quot;</span>, SYMLINK+=<span class="hljs-string">&quot;internalHD&quot;</span>
+</code></pre></div></code></pre>
+<h2 id="三udev-如何建立设备文件" tabindex="-1">三、udev 如何建立设备文件 <a class="header-anchor" href="#三udev-如何建立设备文件"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>设备文件系统 udev 的工作过程依赖于 sysfs。udev 在用户空间工作，根据 sysfs 导出的信息（设备号 <code>dev</code> 等）动态建立和删除设备文件。sysfs 把这些设备和总线组织成分级目录与文件，可以由用户空间存取，向用户空间导出内核数据结构及它们的属性——其中包括设备的主次设备号。</p>
+<h3 id="3.1-对于已编译进内核的驱动" tabindex="-1">3.1 对于已编译进内核的驱动 <a class="header-anchor" href="#3.1-对于已编译进内核的驱动"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>当设备被内核检测到时，驱动会直接在 sysfs 中注册其对象；对于编译成模块的驱动，则在模块载入时这样做。一旦挂载了 sysfs（挂到 <code>/sys</code>），内建驱动在 sysfs 注册的数据就可以被用户空间进程使用，并提供给 udev 创建设备节点。</p>
+<p>udev 初始化脚本负责在 Linux 启动时创建设备节点。该脚本首先把 <code>/sbin/udevsend</code> 注册为热插拔事件处理程序——热插拔事件本不该在这个阶段发生，注册只是为了以防万一。</p>
+<p>然后 <code>udevstart</code> 遍历 <code>/sys</code> 文件系统（其属性文件 <code>dev</code> 中记录着主设备号与次设备号），在 <code>/dev</code> 下创建符合描述的设备文件。</p>
+<p>例如 <code>/sys/class/tty/vcs/dev</code> 里含有 <code>&quot;7:0&quot;</code> 字符串，<code>udevstart</code> 就据此创建主设备号 7、次设备号 0 的 <code>/dev/vcs</code>。每个设备的名字和权限由 <code>/etc/udev/rules.d/</code> 下的规则文件指定；<strong>如果 udev 找不到对应的权限规则文件，就把权限设为缺省的 660，所有者为 <code>root:root</code></strong>。</p>
+<h3 id="3.2-对于编译成模块的驱动" tabindex="-1">3.2 对于编译成模块的驱动 <a class="header-anchor" href="#3.2-对于编译成模块的驱动"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>内核检测到新设备连接时会产生热插拔事件，并在 <code>/proc/sys/kernel/hotplug</code> 文件里查找处理设备连接的用户空间程序。udev 初始化脚本把 <code>udevsend</code> 注册为该处理程序。产生热插拔事件时，内核让 udev 到 <code>/sys</code> 里检测新设备的相关信息，并为新设备在 <code>/dev</code> 里创建项目。</p>
+<p>这里有个坑：大多数 Linux 发行版通过 <code>/etc/modules.conf</code> 处理模块加载，即&quot;对某个设备节点的访问导致相应内核模块被加载&quot;。<strong>对 udev 这条路行不通</strong>，因为模块加载前设备节点根本不存在。</p>
+<p>解决办法是在 LFS-Bootscripts 软件包里加入 <code>modules</code> 启动脚本以及 <code>/etc/sysconfig/modules</code> 文件：在 <code>modules</code> 文件里添加模块名，系统启动时就加载这些模块，这样 udev 才能检测到设备并创建节点。如果插入的设备有驱动模块但尚未加载，<strong>Hotplug 软件包</strong>就有用了——它响应内核总线驱动热插拔事件并加载相应模块、为其创建设备节点，设备就可以用了。</p>
+<h2 id="四嵌入式侧创建和配置-mdev" tabindex="-1">四、嵌入式侧：创建和配置 mdev <a class="header-anchor" href="#四嵌入式侧创建和配置-mdev"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>mdev 是 udev 的简化版本，是 busybox 自带的程序，<strong>最适合嵌入式系统</strong>；udev 一般用在 PC 上的 Linux，相对复杂些。</p>
+<h3 id="4.1-基本认识" tabindex="-1">4.1 基本认识 <a class="header-anchor" href="#4.1-基本认识"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>不管是 udev 还是 mdev，<strong>它们就是一个应用程序</strong>，跟其他应用程序（比如 Boa 服务）一样，配置了就能用。为方便起见，就直接用 busybox 自带的 mdev：配置编译 busybox 时把 mdev 的支持选项选上，编译后就包含了 mdev 设备文件系统的应用（当然也可以下载 udev 源码自行编译移植）。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">cd</span> busybox-1.13.0/
+make menuconfig
+<span class="hljs-comment"># Linux System Utilities ---&gt;</span>
+<span class="hljs-comment">#     [*] mdev</span>
+<span class="hljs-comment">#     [*]   Support /etc/mdev.conf</span>
+<span class="hljs-comment">#     [*]     Support subdirs/symlinks</span>
+<span class="hljs-comment">#     [*]       Support regular expressions substitutions when renaming device</span>
+<span class="hljs-comment">#     [*]     Support command execution at device addition/removal</span>
+</code></pre></div></code></pre>
+<h3 id="4.2-挂载-sysfs-与-tmpfs" tabindex="-1">4.2 挂载 sysfs 与 tmpfs <a class="header-anchor" href="#4.2-挂载-sysfs-与-tmpfs"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>udev 或 mdev 都需要内核 sysfs 和 tmpfs 虚拟文件系统的支持。在 <code>/etc/fstab</code> 中添加：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code># device        mount-point     type      options    dump    fsck order
+#-----------------------------------------------------------------------
+procfs          /proc           proc      defaults   0       0
+sysfs           /sys            sysfs     defaults   0       0
+tmpfs           /dev/shm        tmpfs     defaults   0       0
+usbfs           /proc/bus/usb   usbfs     defaults   0       0
+ramfs           /dev            ramfs     defaults   0       0
+none            /dev/pts        devpts    mode=0622  0       0
+</code></pre></div></code></pre>
+<blockquote>
+<p>嵌入式设备上 <code>/dev</code> 常用 <code>tmpfs</code> 而非 <code>ramfs</code>（<code>ramfs</code> 不限制大小，易被写爆内存）。上面沿用的是素材原文的 <code>ramfs</code> 写法，实际项目建议改成 <code>tmpfs /dev tmpfs defaults 0 0</code>。</p>
+</blockquote>
+<h3 id="4.3-在-rcs-中启动-mdev" tabindex="-1">4.3 在 rcS 中启动 mdev <a class="header-anchor" href="#4.3-在-rcs-中启动-mdev"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>在系统初始化配置文件 <code>/etc/init.d/rcS</code> 中挂载 sysfs 与 tmpfs，然后启动 <code>/sbin/mdev</code> 对系统设备进行搜索：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#!/bin/sh</span>
+
+<span class="hljs-comment">## Mount virtual filesystem</span>
+/bin/mount -t proc       procfs  /proc
+/bin/mount -n -t sysfs   sysfs   /sys
+/bin/mount -n -t usbfs   usbfs   /proc/bus/usb
+/bin/mount -t ramfs      ramfs   /dev
+/bin/mount -n -t tmpfs   tmpfs   /dev/shm
+
+<span class="hljs-comment">## Make dir</span>
+/bin/mkdir -p /dev/pts
+/bin/mkdir -p /dev/shm
+/bin/mkdir -p /var/log
+/bin/mount -n -t devpts none  /dev/pts -o mode=0622
+
+<span class="hljs-comment">## Make device node</span>
+<span class="hljs-built_in">echo</span> /sbin/mdev &gt; /proc/sys/kernel/hotplug
+/sbin/mdev -s
+</code></pre></div></code></pre>
+<p>这两条命令是整个机制的核心，值得逐字理解：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>命令</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mdev -s</code></td>
+<td>扫描 <code>/sys</code> 中所有的类设备目录，如果目录中有名为 <code>dev</code> 的文件且其中包含设备号，就据此在 <code>/dev</code> 下创建设备节点</td>
+</tr>
+<tr>
+<td><code>echo /sbin/mdev &gt; /proc/sys/kernel/hotplug</code></td>
+<td>注册热插拔处理程序。产生热插拔事件时内核调用 <code>/sbin/mdev</code>，mdev 通过环境变量 <code>ACTION</code> 与 <code>DEVPATH</code> 确定事件动作以及影响了 <code>/sys</code> 中哪个目录，再看该目录下是否有 <code>dev</code> 属性文件，有就据此建节点</td>
+</tr>
+</tbody>
+</table></div><h3 id="4.4-驱动侧要做什么" tabindex="-1">4.4 驱动侧要做什么 <a class="header-anchor" href="#4.4-驱动侧要做什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>驱动的加载和卸载函数里要实现设备文件的创建与销毁。以按键驱动为例：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/device.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> device_major = DEVICE_MAJOR;   <span class="hljs-comment">// 保存系统动态生成的主设备号</span>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-keyword">class</span> *<span class="hljs-title">button_class</span>;</span>        <span class="hljs-comment">// 定义一个类</span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> __init <span class="hljs-title function_">button_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-comment">/* 注册字符设备：DEVICE_MAJOR 传 0，让系统动态分配主设备号 */</span>
+    device_major = register_chrdev(DEVICE_MAJOR, DEVICE_NAME, &amp;buttons_fops);
+    <span class="hljs-keyword">if</span> (device_major &lt; <span class="hljs-number">0</span>) {
+        printk(DEVICE_NAME <span class="hljs-string">&quot; register failed!\n&quot;</span>);
+        <span class="hljs-keyword">return</span> device_major;
+    }
+
+    <span class="hljs-comment">/* 注册一个设备类，使 mdev 可以在 /dev/ 下建立设备节点 */</span>
+    button_class = class_create(THIS_MODULE, DEVICE_NAME);
+    <span class="hljs-keyword">if</span> (IS_ERR(button_class)) {
+        printk(DEVICE_NAME <span class="hljs-string">&quot; create class failed!\n&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    <span class="hljs-comment">/* 创建设备节点，取名为 DEVICE_NAME（即 my2440_buttons）
+       注意：2.6 内核较早版本的函数名是 class_device_create，现改为 device_create */</span>
+    device_create(button_class, <span class="hljs-literal">NULL</span>, MKDEV(device_major, <span class="hljs-number">0</span>), <span class="hljs-literal">NULL</span>, DEVICE_NAME);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> __exit <span class="hljs-title function_">button_exit</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-comment">/* 注销字符设备 */</span>
+    unregister_chrdev(device_major, DEVICE_NAME);
+    <span class="hljs-comment">/* 删除设备节点：老版本为 class_device_destroy */</span>
+    device_destroy(button_class, MKDEV(device_major, <span class="hljs-number">0</span>));
+    <span class="hljs-comment">/* 注销类 */</span>
+    class_destroy(button_class);
+}
+</code></pre></div></code></pre>
+<h3 id="4.5-mdev-的配置文件" tabindex="-1">4.5 mdev 的配置文件 <a class="header-anchor" href="#4.5-mdev-的配置文件"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>/etc/mdev.conf</code> 可有可无，只是设定设备文件的一些规则，留空也能正常工作。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code># /etc/mdev.conf 语法：&lt;设备名正则&gt; &lt;属主&gt;:&lt;属组&gt; &lt;权限&gt; [@|$|* 命令]
+# 例：把 my2440_buttons 的属主属组设为 root，权限 660
+my2440_buttons   root:root  660
+</code></pre></div></code></pre>
+<h3 id="4.6-验证" tabindex="-1">4.6 验证 <a class="header-anchor" href="#4.6-验证"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>完成以上步骤后，重新编译文件系统、下载到开发板、启动，再进 <code>/dev</code> 目录查看——里面会产生大量系统设备节点，可以直接使用了。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">ls</span> /dev
+<span class="hljs-built_in">cat</span> /proc/devices
+</code></pre></div></code></pre>
+<h2 id="五udevmdev-与-devfs-三者对照" tabindex="-1">五、udev、mdev 与 devfs 三者对照 <a class="header-anchor" href="#五udevmdev-与-devfs-三者对照"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th></th>
+<th>devfs</th>
+<th>udev</th>
+<th>mdev</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>位置</td>
+<td>内核</td>
+<td>用户空间</td>
+<td>用户空间</td>
+</tr>
+<tr>
+<td>依赖</td>
+<td>无（自带）</td>
+<td>sysfs + tmpfs</td>
+<td>sysfs + tmpfs</td>
+</tr>
+<tr>
+<td>适用</td>
+<td>2.4 及以前</td>
+<td>PC / 发行版</td>
+<td><strong>嵌入式 / busybox</strong></td>
+</tr>
+<tr>
+<td>规则</td>
+<td>内核代码内指定</td>
+<td><code>/etc/udev/rules.d/</code></td>
+<td><code>/etc/mdev.conf</code></td>
+</tr>
+<tr>
+<td>现状</td>
+<td><strong>已从内核移除</strong></td>
+<td>现行</td>
+<td>现行（轻量）</td>
+</tr>
+</tbody>
+</table></div><h2 id="六class_create-与-device_create-的内核实现" tabindex="-1">六、class_create 与 device_create 的内核实现 <a class="header-anchor" href="#六class_create-与-device_create-的内核实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>4.4 节用了这两个函数，这里看看它们内部到底做了什么。</p>
+<h3 id="6.1-class_create" tabindex="-1">6.1 class_create <a class="header-anchor" href="#6.1-class_create"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>现代内核里 <code>class_create</code> 只是个薄包装：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> class_create(owner, name)       \
+({                                      \
+    static struct lock_class_key __key; \
+    __class_create(owner, name, &amp;__key); \
+})</span>
+</code></pre></div></code></pre>
+<p>它真正干活的是 <code>__class_create</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-keyword">class</span> *__<span class="hljs-title">class_create</span>(<span class="hljs-keyword">struct</span> <span class="hljs-title">module</span> *<span class="hljs-title">owner</span>, <span class="hljs-title">const</span> <span class="hljs-title">char</span> *<span class="hljs-title">name</span>,
+                             <span class="hljs-keyword">struct</span> <span class="hljs-title">lock_class_key</span> *<span class="hljs-title">key</span>)
+{</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-keyword">class</span> *<span class="hljs-title">cls</span>;</span>
+    <span class="hljs-type">int</span> retval;
+
+    cls = kzalloc(<span class="hljs-keyword">sizeof</span>(*cls), GFP_KERNEL);
+    <span class="hljs-keyword">if</span> (!cls) {
+        retval = -ENOMEM;
+        <span class="hljs-keyword">goto</span> error;
+    }
+
+    cls-&gt;name = name;
+    cls-&gt;owner = owner;
+    cls-&gt;class_release = class_create_release;
+
+    retval = __class_register(cls, key);
+    <span class="hljs-keyword">if</span> (retval)
+        <span class="hljs-keyword">goto</span> error;
+
+    <span class="hljs-keyword">return</span> cls;
+
+error:
+    kfree(cls);
+    <span class="hljs-keyword">return</span> ERR_PTR(retval);
+}
+EXPORT_SYMBOL_GPL(__class_create);
+</code></pre></div></code></pre>
+<p>四步：分配 <code>struct class</code> → 记录名字与所属模块 → 指定释放回调 → <code>__class_register()</code> 把它挂进 <code>sysfs</code>。这就是 <code>/sys/class/&lt;name&gt;</code> 目录的由来。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>owner</code></td>
+<td>一般为 <code>THIS_MODULE</code></td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>类名，即 <code>/sys/class/</code> 下的目录名</td>
+</tr>
+</tbody>
+</table></div><p>配套销毁函数：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">class_destroy</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> class *cls)</span>
+{
+    <span class="hljs-keyword">if</span> ((cls == <span class="hljs-literal">NULL</span>) || (IS_ERR(cls)))
+        <span class="hljs-keyword">return</span>;
+    class_unregister(cls);
+}
+</code></pre></div></code></pre>
+<p>注意它<strong>做了空指针与错误指针保护</strong>，所以 <code>class_destroy(NULL)</code> 是安全的；但它只做 <code>class_unregister</code>，真正的内存释放要等引用计数归零后由 <code>class_release</code> 回调完成。</p>
+<blockquote>
+<p>现代内核（5.x 起）的 <code>class_create</code> 已简化为单参数 <code>class_create(const char *name)</code>，<code>owner</code> 由框架自己填。</p>
+</blockquote>
+<h3 id="6.2-device_create" tabindex="-1">6.2 device_create <a class="header-anchor" href="#6.2-device_create"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">struct</span> device *<span class="hljs-title function_">device_create</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> class *class, <span class="hljs-keyword">struct</span> device *parent,
+                             <span class="hljs-type">dev_t</span> devt, <span class="hljs-type">void</span> *drvdata, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *fmt, ...)</span>
+{
+    va_list vargs;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device</span> *<span class="hljs-title">dev</span>;</span>
+
+    va_start(vargs, fmt);
+    dev = device_create_vargs(class, parent, devt, drvdata, fmt, vargs);
+    va_end(vargs);
+    <span class="hljs-keyword">return</span> dev;
+}
+</code></pre></div></code></pre>
+<p>它用可变参数解析出设备名，然后转给 <code>device_create_vargs</code>，后者再转到 <code>device_create_groups_vargs</code>——<strong>属性组版本</strong>，再往下就不在本篇展开了。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>含义</th>
+<th>常见取值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>class</code></td>
+<td>类</td>
+<td>上一步 <code>class_create</code> 的返回值</td>
+</tr>
+<tr>
+<td><code>parent</code></td>
+<td>父设备</td>
+<td><code>NULL</code></td>
+</tr>
+<tr>
+<td><code>devt</code></td>
+<td>设备号</td>
+<td><code>MKDEV(major, minor)</code></td>
+</tr>
+<tr>
+<td><code>drvdata</code></td>
+<td>驱动私有数据</td>
+<td><code>NULL</code></td>
+</tr>
+<tr>
+<td><code>fmt</code></td>
+<td>设备名格式（支持 <code>%d</code> 等）</td>
+<td><code>&quot;hello&quot;</code></td>
+</tr>
+</tbody>
+</table></div><p>返回值：<code>struct device *</code>，失败时是 <code>ERR_PTR()</code> 编码的错误指针，<strong>必须用 <code>IS_ERR()</code> 判断</strong>，不能直接 <code>== NULL</code>。</p>
+<p>配套销毁函数：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">device_destroy</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> class *class, <span class="hljs-type">dev_t</span> devt)</span>;
+</code></pre></div></code></pre>
+<h3 id="6.3-三个名字的对应关系" tabindex="-1">6.3 三个名字的对应关系 <a class="header-anchor" href="#6.3-三个名字的对应关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>驱动加载后，三个名字分别落在三个位置，容易搞混：</p>
+<pre><code><div class="code-block"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>class_create(THIS_MODULE, &quot;myclass&quot;)        →  /sys/class/myclass/
+device_create(cls, NULL, devno, NULL, &quot;hello&quot;) →  /dev/hello
+                                                 └─ 同时生成 /sys/class/myclass/hello → (符号链接，指回 /sys/devices/virtual/myclass/hello)
+
+设备号 MKDEV(major, minor)                   →  cat /proc/devices 里可见
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>名字</th>
+<th>出现在哪</th>
+<th>由谁决定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类名 <code>&quot;myclass&quot;</code></td>
+<td><code>/sys/class/myclass/</code></td>
+<td><code>class_create</code> 的第二参数</td>
+</tr>
+<tr>
+<td>设备名 <code>&quot;hello&quot;</code></td>
+<td><code>/dev/hello</code></td>
+<td><code>device_create</code> 的 <code>fmt</code></td>
+</tr>
+<tr>
+<td>设备名 <code>&quot;hello&quot;</code></td>
+<td><code>/proc/devices</code></td>
+<td>注册设备号时传给 <code>register_chrdev_region</code> 的 <code>name</code></td>
+</tr>
+</tbody>
+</table></div><blockquote>
+<p>类名与设备名<strong>可以不同</strong>，<code>/dev</code> 下生成的是<strong>设备名</strong>，类名只决定 <code>/sys/class/&lt;类名&gt;/</code> 这层目录。很多人误以为 <code>/dev</code> 下会是类名，这是常见困惑点。</p>
+</blockquote>
+<h2 id="素材来源与勘误" tabindex="-1">素材来源与勘误 <a class="header-anchor" href="#素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>本篇由两份素材合并：原 <code>udev：设备节点的自动创建与删除.md</code>（256 行，14.5 KB）为主体，原 <code>Linux 字符设备驱动结构（二）—— 自动创建设备节点.md</code>（5.2 KB）的源码解析并入第六章。</p>
+<p><strong>严重问题与处理</strong>：</p>
+<ol>
+<li><strong>一段按键驱动代码被整段误粘到文末且被行号污染</strong>。原 <code>udev</code> 素材第 182~256 行把《Linux 字符设备驱动结构（二）—— 自动创建设备节点》里的 <code>button_init</code> / <code>button_exit</code> 代码原样贴入，但被网页抓取拆得七零八落——中间插入 <code>1.</code> 到 <code>33.</code> 的行号、函数体被 <code>5、至于mdev的配置文件…</code> 这样的正文段落拦腰截断、<code>staticint</code>/<code>return-1</code>/<code>__exitbutton_exit</code> 等关键字粘连。本篇已重建为 4.4 中完整可读的代码块，并重新插回&quot;驱动侧要做什么&quot;这个本来的位置。</li>
+<li><strong>没有任何代码围栏</strong>。原文全部代码（busybox 配置、fstab、rcS 脚本、C 代码）都是裸文本，与正文混排。本篇全部改为带语言标注的围栏代码块。</li>
+<li><strong>4.3 节的 rcS 脚本与 mdev 说明原本错位</strong>：<code>/bin/mount tmpfs</code> 和 <code>mdev -s</code> 两行出现在第 4 小节中间，而解释它们的 a/b 两条却在前面。本篇重排为&quot;脚本 → 命令逐条解释&quot;的顺序。</li>
+<li><strong>原文 a/b 两条中的 &quot;红色部分&quot; 指代失效</strong>：原始网页用红色高亮标示重点行，抓取成纯文本后指代悬空。本篇改用表格逐条解释，不再依赖颜色。</li>
+<li><code>class_create</code> 失败分支只写了一半（缺右括号），且 <code>register_chrdev</code> 失败后未回滚已分配的设备号；本篇补齐了大括号并保持与原文一致的语义（未额外添加副作用回滚，以免与 4.4 的示例定位冲突）。</li>
+<li>原文&quot;3.、在系统初始化配置文件…&quot;序号写成 <code>3.、</code>，且与前面的 <code>1、</code> <code>2、</code> 编号风格不一致，本篇统一为 4.1~4.6 小节。</li>
+<li><code>/etc/fstab</code> 里 <code>/dev</code> 用的是 <code>ramfs</code>，本篇保留原文但在 4.2 末尾加了改为 <code>tmpfs</code> 的建议（<code>ramfs</code> 无容量上限，嵌入式上容易写爆内存）。</li>
+<li>原文开头&quot;在之前篇幅中讲的各种设备驱动的移植都是这样&quot;与 4.4 处的交叉引用指向已重命名的旧篇名，本篇统一指到现行篇名。</li>
+<li>原「udev 的工作流程图」一节只有一句&quot;下面先看一张流程图&quot;，<strong>图片在抓取时丢失</strong>，正文无实际内容，本篇未保留该节，改用第三章的分情况叙述。</li>
+</ol>
+<p><strong>第六章（由《自动创建设备节点》并入）的勘误</strong>：</p>
+<ol>
+<li><strong>该素材 126 处行号噪声</strong>（<code>1.</code> ~ <code>12.</code>，中途还重新从 <code>1.</code> 计数到 <code>49.</code> 再重启），代码块被切成碎片。已全部重建。</li>
+<li><strong>代码 token 粘连</strong>：<code>staticint</code>、<code>staticdev_t</code>、<code>staticstructclass</code>、<code>structclass</code>、<code>constchar</code>、<code>va_list</code> 等，全部修正。</li>
+<li><strong>实例代码的块顺序错乱</strong>：<code>hello.c</code> 的 <code>hello_exit</code> 尾部、<code>test.c</code>、<code>makefile</code> 三块的下标互相穿插，<code>hello_init</code> 的函数体被甩到 <code>test.c</code> 之后。本篇只取其中的源码解析部分（第四、六章内容），未搬入该实例——<strong>完整可编译实例见《cdev 与设备号》第六章</strong>，避免两处重复。</li>
+<li>该素材的实例使用 <strong><code>register_chrdev()</code>（老接口）</strong>，而它自身正文又在讲 <code>class_create</code>/<code>device_create</code>，两者混用会让读者以为必须搭配使用。本篇在 6.1 明确了两者的分工。</li>
+<li>原文&quot;下面是两个函数的解析：1、class_create(...) 函数&quot;这一句<strong>只有标题没有正文</strong>，<code>class_destroy</code> 被插在源码中间。本篇按&quot;函数 → 源码 → 参数表 → 同类函数&quot;重排。</li>
+<li>原文一句&quot;现在就不继续往下跟了，大家可以继续往下跟&quot;为论坛体口语，未保留；<code>device_create_groups_vargs</code> 以下确实超出本篇范围，改为明确说明。</li>
+<li>原文页眉残留「Linux 文件系统与设备文件系统 —— udev 设备文件系统」与被当作正文插入的章节标题，已删除。</li>
+</ol>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一udev-是什么" data-toc-target="一udev-是什么">一、udev 是什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.1-2.4-时代的-devfs-及其缺陷" data-toc-target="1.1-2.4-时代的-devfs-及其缺陷">1.1 2.4 时代的 devfs 及其缺陷</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.2-2.6-起的-sysfs--udev" data-toc-target="1.2-2.6-起的-sysfs--udev">1.2 2.6 起的 sysfs + udev</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.3-关键认识udev-不改变内核行为" data-toc-target="1.3-关键认识udev-不改变内核行为">1.3 关键认识：udev 不改变内核行为</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二udev-与-devfs-的区别" data-toc-target="二udev-与-devfs-的区别">二、udev 与 devfs 的区别</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.1-用符号链接固定设备名" data-toc-target="2.1-用符号链接固定设备名">2.1 用符号链接固定设备名</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三udev-如何建立设备文件" data-toc-target="三udev-如何建立设备文件">三、udev 如何建立设备文件</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.1-对于已编译进内核的驱动" data-toc-target="3.1-对于已编译进内核的驱动">3.1 对于已编译进内核的驱动</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.2-对于编译成模块的驱动" data-toc-target="3.2-对于编译成模块的驱动">3.2 对于编译成模块的驱动</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四嵌入式侧创建和配置-mdev" data-toc-target="四嵌入式侧创建和配置-mdev">四、嵌入式侧：创建和配置 mdev</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.1-基本认识" data-toc-target="4.1-基本认识">4.1 基本认识</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.2-挂载-sysfs-与-tmpfs" data-toc-target="4.2-挂载-sysfs-与-tmpfs">4.2 挂载 sysfs 与 tmpfs</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.3-在-rcs-中启动-mdev" data-toc-target="4.3-在-rcs-中启动-mdev">4.3 在 rcS 中启动 mdev</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.4-驱动侧要做什么" data-toc-target="4.4-驱动侧要做什么">4.4 驱动侧要做什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.5-mdev-的配置文件" data-toc-target="4.5-mdev-的配置文件">4.5 mdev 的配置文件</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.6-验证" data-toc-target="4.6-验证">4.6 验证</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五udevmdev-与-devfs-三者对照" data-toc-target="五udevmdev-与-devfs-三者对照">五、udev、mdev 与 devfs 三者对照</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六class_create-与-device_create-的内核实现" data-toc-target="六class_create-与-device_create-的内核实现">六、class_create 与 device_create 的内核实现</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.1-class_create" data-toc-target="6.1-class_create">6.1 class_create</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.2-device_create" data-toc-target="6.2-device_create">6.2 device_create</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.3-三个名字的对应关系" data-toc-target="6.3-三个名字的对应关系">6.3 三个名字的对应关系</a>
+                    
+                    <a class="toc-item toc-lv2" href="#素材来源与勘误" data-toc-target="素材来源与勘误">素材来源与勘误</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/C.驱动/01-驱动模型与内核模块/udev-与-mdev：设备节点的自动创建/","title":"udev 与 mdev：设备节点的自动创建","url":"/C.驱动/01-驱动模型与内核模块/udev-与-mdev：设备节点的自动创建/","type":"current"},{"id":"/C.驱动/01-驱动模型与内核模块/Linux-驱动并发控制/","title":"Linux 驱动并发控制","url":"/C.驱动/01-驱动模型与内核模块/Linux-驱动并发控制/","type":"neighbor"},{"id":"/C.驱动/01-驱动模型与内核模块/Linux-驱动开发：从模块到字符设备框架/","title":"Linux 驱动开发：从模块到字符设备框架","url":"/C.驱动/01-驱动模型与内核模块/Linux-驱动开发：从模块到字符设备框架/","type":"neighbor"},{"id":"/C.驱动/01-驱动模型与内核模块/内核模块：传参与符号导出/","title":"内核模块：传参与符号导出","url":"/C.驱动/01-驱动模型与内核模块/内核模块：传参与符号导出/","type":"neighbor"}],"links":[{"source":"/C.驱动/01-驱动模型与内核模块/udev-与-mdev：设备节点的自动创建/","target":"/C.驱动/01-驱动模型与内核模块/Linux-驱动并发控制/","type":"neighbor"},{"source":"/C.驱动/01-驱动模型与内核模块/udev-与-mdev：设备节点的自动创建/","target":"/C.驱动/01-驱动模型与内核模块/Linux-驱动开发：从模块到字符设备框架/","type":"neighbor"},{"source":"/C.驱动/01-驱动模型与内核模块/udev-与-mdev：设备节点的自动创建/","target":"/C.驱动/01-驱动模型与内核模块/内核模块：传参与符号导出/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

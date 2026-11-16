@@ -1,0 +1,2348 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>块设备驱动基础：从 bio 到 gendisk · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">块设备驱动基础：从 bio 到 gendisk</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/C.驱动/09-存储与块设备/块设备驱动基础：从-bio-到-gendisk/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">块设备驱动基础：从 bio 到 gendisk</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">块设备驱动基础：从 bio 到 gendisk</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>本篇讲块设备驱动的骨架：<code>bio</code> 怎么进内核、怎么变成 <code>request</code>、怎么落到 <code>gendisk</code> 和 <code>block_device_operations</code> 上，以及块设备与字符设备到底差在哪。</p>
+<p>不讲的部分：blk-mq 的两层队列（<code>blk_mq_ctx</code> / <code>blk_mq_hw_ctx</code>）、tag 分配和派发细节，在《blk-mq 多队列与实战》里；NOR/NAND 走 MTD 子系统，在《MTD 子系统与 Flash》；SD 卡在《SD/MMC 子系统》；eMMC 在《Linux MMC 子系统与 eMMC 驱动调试》。本篇只在需要交代上下文时点到为止。</p>
+<p>内核版本口径：结构体与函数以 Linux 5.2.8 为基准（素材的原始调试环境），每个接口都标了它适用的版本区间。<strong>blk-mq 在 5.0 成为唯一路径</strong>，这一点在第三章、第七章、第十章反复标注；拿 2.6/3.x 的教程套 5.x 写驱动，编译都过不去。标了 <code>未验证</code> 的条目没有拿到源码或提交记录，别当结论用。</p>
+</blockquote>
+<h2 id="一块设备与字符设备的本质差别" tabindex="-1">一、块设备与字符设备的本质差别 <a class="header-anchor" href="#一块设备与字符设备的本质差别"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Linux 把外设分成三类：字符设备、块设备、网络设备。块设备管的是机械硬盘、SSD、SD/TF 卡、eMMC、U 盘、RamDisk 这类存储介质。</p>
+<p>从用户态看，块设备和字符设备没什么区别：都是 <code>/dev/sda1</code>、<code>/dev/mtdblock0</code> 这样的设备文件，都能 <code>open</code>/<code>close</code>/<code>read</code>/<code>write</code>。差别全在驱动内部。</p>
+<p>字符设备像字节流。串口收数据就是一个字节一个字节来，驱动内部爱用多大的环形缓冲区都行，串口本身不管。你在驱动里实现 <code>open</code>、<code>release</code>、<code>read</code>、<code>write</code>，应用顺着设备文件调进去，链路就到头了。</p>
+<p>块设备不一样，它多了一层内核里的消费者：文件系统。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>字符设备</th>
+<th>块设备</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读写基本单位</td>
+<td>字节（Byte）</td>
+<td>块（Block），典型 512B / 1KB / 4KB</td>
+</tr>
+<tr>
+<td>访问模式</td>
+<td>顺序访问，不能前后跳跃</td>
+<td>随机访问，可任意寻址</td>
+</tr>
+<tr>
+<td>典型设备</td>
+<td>LED、按键、串口、USB 鼠标键盘</td>
+<td>HDD、SSD、SD/TF、eMMC、NAND/NOR Flash</td>
+</tr>
+<tr>
+<td>驱动操作集</td>
+<td><code>struct file_operations</code></td>
+<td><code>struct block_device_operations</code></td>
+</tr>
+<tr>
+<td>有没有 read/write 回调</td>
+<td>有</td>
+<td><strong>没有</strong></td>
+</tr>
+<tr>
+<td>往上层提供的接口</td>
+<td>只面向用户态</td>
+<td>用户态接口 + 内核接口（可挂文件系统）</td>
+</tr>
+<tr>
+<td>缓存机制</td>
+<td>驱动自己决定</td>
+<td>页缓存 + 缓冲区 + 请求队列统一处理</td>
+</tr>
+<tr>
+<td>设备号</td>
+<td>最多 2^20 个从设备号（12:20 拆分）</td>
+<td>主设备号用于块类，次设备号按 <code>minors</code> 划给磁盘/分区</td>
+</tr>
+<tr>
+<td>数据组织</td>
+<td>无固定格式要求</td>
+<td>由文件系统定义格式（ext4、FAT、yaffs…）</td>
+</tr>
+</tbody>
+</table></div><p>这张表里最关键的一行是「没有 read/write 回调」。块设备的操作函数集只有 <code>open</code>、<code>release</code>、<code>ioctl</code>、<code>getgeo</code>、<code>check_events</code> 这些，数据实际怎么搬，走的是另一条路：上层攒出 <code>bio</code>，通用块层拼成 <code>request</code>，驱动实现 <code>queue_rq</code> 或 <code>submit_bio</code> 把数据搬到介质上。第九章会把这条路走一遍。</p>
+<p>两类设备的分类也不是绝对的。网络设备就两头都不像：说它是字符设备，它的 I/O 却是成块的（报文、包、帧）；说它是块设备，它的块又不固定大小，几字节到几千字节都有。UNIX 给网络接口分配 <code>eth0</code> 这种名字，但 <code>/dev</code> 下没有对应节点，内核和网卡驱动之间传的是 sk_buff，不是 open/read/write。</p>
+<p>再就是介质本身的物理差异，它直接决定了要不要 I/O 调度：</p>
+<ul>
+<li>SD 卡、eMMC、NAND Flash 没有机械部件，任意扇区都能直接读写，寻道开销为 0；</li>
+<li>机械硬盘要动磁头，换盘面、换磁道都要等磁头挪过去。把杂乱的访问按位置重排，一次寻道能多带几百 KB，性能差距就在这。</li>
+</ul>
+<p>前一类设备上跑电梯算法纯属浪费 CPU；后一类设备上不排序，吞吐直接掉一半。第十节讲合并与调度时会回到这个分界。</p>
+<h2 id="二扇区块与段的层级关系" tabindex="-1">二、扇区、块与段的层级关系 <a class="header-anchor" href="#二扇区块与段的层级关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>三个概念经常被混用，它们的单位和归属是分开的。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>概念</th>
+<th>单位</th>
+<th>由谁定义</th>
+<th>谁在用它</th>
+<th>数据结构</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>扇区 Sector</td>
+<td>硬件最小传输单位，经典值 512 字节</td>
+<td>硬件接口</td>
+<td>块层与驱动之间的地址单位</td>
+<td><code>sector_t</code></td>
+</tr>
+<tr>
+<td>块 Block</td>
+<td>文件系统最小分配单位，2^n 字节</td>
+<td>文件系统</td>
+<td>VFS 与页缓存的映射粒度</td>
+<td><code>bd_block_size</code>、<code>i_blkbits</code></td>
+</tr>
+<tr>
+<td>段 Segment</td>
+<td>页内一段连续内存（可以是一整页）</td>
+<td>内存管理</td>
+<td>DMA 描述一次传输的物理缓冲</td>
+<td><code>struct bio_vec</code></td>
+</tr>
+</tbody>
+</table></div><p>往下拆：</p>
+<ul>
+<li>扇区是硬件的单位。驱动向上层暴露的地址一律以扇区计数，所以你会到处看到 <code>&gt;&gt; 9</code>、<code>&lt;&lt; 9</code> 这类移位。</li>
+<li>块是文件系统的单位。它必须是 2 的 n 次方，必须是扇区的整数倍，常见值 512B / 1KB / 4KB，不能大于一个内存页。内核里块的换算靠 <code>set_blocksize()</code> 和 <code>i_blkbits</code>。</li>
+<li>段是内存侧的单位，由若干个相邻的块组成，落在同一个内存页里。一个 <code>bio</code> 由若干个 <code>bio_vec</code> 组成，每个 <code>bio_vec</code> 描述一页里的一段。</li>
+</ul>
+<p>为什么需要一个「段」的概念？因为磁盘上一段连续的扇区，在内存里往往散落在好几个不连续的页上。一次 I/O 的磁盘侧是连续的，内存侧不连续，那就得用数组把每页中那一段记下来，这个数组就是 <code>bio_vec[]</code>。段的数量取决于这段连续磁盘空间映射了多少块不连续内存，上层构 bio 时一般只有一段。</p>
+<p>那么为什么写一个 txt 文件里的几十字节，会引发一整个扇区的读改写？因为硬件只认扇区。内核的做法是引入缓冲区：把包含目标位置的整块读进内存，改内存，再整块写回。写多次小数据就会反复读扇区、写扇区。请求队列存在的意义就在这里——一个进程在跑，它的写请求可以先攒着，合并、排序之后一次性下发。</p>
+<h2 id="三linux-块子系统的层次架构" tabindex="-1">三、Linux 块子系统的层次架构 <a class="header-anchor" href="#三linux-块子系统的层次架构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一次 <code>write()</code> 在内核里的落点，按层往下是这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>用户态 write()/read()
+   |
+   v
+VFS 虚拟文件系统        统一 file 接口，屏蔽具体文件系统
+   |
+   v
+磁盘页缓存 Page Cache   预读 + 回写，命中就直接返回
+   |
+   v
+映射层 Mapping Layer    查 inode，算出数据落在哪些逻辑块（LBA）
+   |
+   v
+通用块层 Generic Block  把请求封装成 bio，submit_bio 入口
+   |
+   v
+I/O 调度层 Scheduler    合并、排序，把 bio 变成 request
+   |
+   v
+块设备驱动               queue_rq / submit_bio，向控制器发指令
+   |
+   v
+硬件磁盘控制器
+</code></pre></div></code></pre>
+<p>逐层交代职责：</p>
+<ol>
+<li><strong>VFS</strong>：抽象文件系统差异，向上给应用统一接口，<code>sys_write</code>、<code>sys_read</code> 都从这里进。</li>
+<li><strong>页缓存</strong>：读写先看内存里有没有，命中不进块层。同时负责预读，检测到顺序访问就提前把后续数据读进来。</li>
+<li><strong>映射层</strong>：具体文件系统查 inode，把文件内的偏移换算成磁盘上的逻辑块地址。</li>
+<li><strong>通用块层</strong>：定义统一的数据模型。上层不管下面挂的是 SATA 盘还是 eMMC，都只负责发出 <code>bio</code>。</li>
+<li><strong>I/O 调度层</strong>：接收通用块层的请求，按算法合并相邻、重排顺序，再把请求交给驱动。</li>
+<li><strong>块设备驱动</strong>：从队列取请求，向控制器发物理指令。</li>
+</ol>
+<p>页缓存和写回这两层看着和驱动无关，排查性能问题时绕不开：写操作先进脏页，内核按负载决定什么时候刷出去，所以你看到的不一定是驱动慢，而是回写线程还没轮到。</p>
+<p>历史分岔点必须在这里说清楚。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>内核版本</th>
+<th>块层形态</th>
+<th>驱动要实现的回调</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.6 ~ 4.x</td>
+<td>单队列 blk-sq 与 blk-mq 并存</td>
+<td><code>request_fn</code>（队列调度）或 <code>make_request_fn</code>（自行处理 bio）</td>
+</tr>
+<tr>
+<td>3.13 / 3.16</td>
+<td>blk-mq 合入主线 / 成为完整特性</td>
+<td>开始出现 <code>mrq</code>、<code>blk_mq_init_queue</code></td>
+</tr>
+<tr>
+<td><strong>5.0</strong></td>
+<td><strong>blk-sq 代码及其调度器被完整移除，blk-mq 成为唯一路径</strong></td>
+<td><strong><code>blk_mq_ops.queue_rq</code></strong></td>
+</tr>
+<tr>
+<td>5.9</td>
+<td><code>make_request_fn</code> 从 <code>request_queue</code> 移到 <code>block_device_operations</code>，改名 <code>submit_bio</code>；<code>generic_make_request</code> 改名 <code>submit_bio_noacct</code></td>
+<td><code>bdev_ops.submit_bio</code>（仅 bio 型驱动用）</td>
+</tr>
+<tr>
+<td>5.11</td>
+<td>新增 <code>blk_mq_alloc_disk</code> / <code>blk_cleanup_disk</code>，磁盘与队列一起分配</td>
+<td><code>blk_mq_alloc_disk</code> + <code>add_disk</code></td>
+</tr>
+<tr>
+<td>5.16</td>
+<td><code>alloc_disk</code>/<code>alloc_disk_node</code> 宏移除；<code>blk_mq_init_sq_queue</code> 移除</td>
+<td>只剩 <code>blk_mq_alloc_disk</code> / <code>blk_alloc_disk</code></td>
+</tr>
+<tr>
+<td>5.18 起（提交日期 2022-03）</td>
+<td><code>REQ_OP_SECURE_ERASE</code> 与 <code>BLKSECDISCARD</code> 被移除</td>
+<td>不用再处理 secure erase</td>
+</tr>
+</tbody>
+</table></div><p>按这张表，<strong>5.x 之后写块设备驱动，只有一条路</strong>：填 <code>blk_mq_ops</code>，用 <code>blk_mq_alloc_disk</code> 拿 <code>gendisk</code>，<code>add_disk</code> 注册。素材里那些 <code>blk_init_queue(my_request_fn, &amp;lock)</code> + <code>blk_queue_make_request()</code> 的写法，在 5.0 以后编译不过，在 4.x 上还能跑。</p>
+<h2 id="四四大核心数据结构总览" tabindex="-1">四、四大核心数据结构总览 <a class="header-anchor" href="#四四大核心数据结构总览"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>通用块层和驱动之间靠四个结构承载数据：<code>gendisk</code>、<code>block_device_operations</code>、<code>request_queue</code>、<code>bio</code>，外加两个配角 <code>request</code> 和 <code>bio_vec</code>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>结构</th>
+<th>一句话职责</th>
+<th>生命周期</th>
+<th>谁分配</th>
+<th>谁释放</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>struct gendisk</code></td>
+<td>一块磁盘的整体抽象</td>
+<td>驱动 probe 到 remove</td>
+<td><code>blk_mq_alloc_disk</code> / <code>blk_alloc_disk</code></td>
+<td><code>del_gendisk</code> + <code>put_disk</code></td>
+</tr>
+<tr>
+<td><code>struct block_device_operations</code></td>
+<td>驱动回调表</td>
+<td>静态常量</td>
+<td>驱动定义</td>
+<td>不用释放</td>
+</tr>
+<tr>
+<td><code>struct request_queue</code></td>
+<td>挂在这块盘上的请求队列</td>
+<td>跟 disk 一起</td>
+<td><code>blk_mq_alloc_disk</code>（内含）</td>
+<td><code>blk_cleanup_disk</code> / <code>blk_cleanup_queue</code></td>
+</tr>
+<tr>
+<td><code>struct bio</code></td>
+<td>一次块 I/O 的基本单位</td>
+<td>每次 I/O 一份</td>
+<td>上层的 <code>bio_alloc</code></td>
+<td>完成后 <code>bio_endio</code> 回收</td>
+</tr>
+<tr>
+<td><code>struct request</code></td>
+<td>调度后的一个任务单元，装一个或多个 bio</td>
+<td>队列固定预分配</td>
+<td>blk-mq 初始化时按深度分好</td>
+<td>队列销毁时才释放</td>
+</tr>
+<tr>
+<td><code>struct bio_vec</code></td>
+<td>一页内的一段连续内存</td>
+<td>随 bio</td>
+<td>随 bio</td>
+<td>随 bio</td>
+</tr>
+</tbody>
+</table></div><p>完整的包含关系：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gendisk  ──1:1──&gt;  request_queue
+                       │ 存放
+                       v
+                   request  ──1:N──&gt;  bio  ──1:N──&gt;  bio_vec
+                                                            │
+                                                            v
+                                                          struct page
+</code></pre></div></code></pre>
+<p>一条 <code>request_queue</code> 由若干 <code>request</code> 组成；一个 <code>request</code> 装多个被合并的 <code>bio</code>；一个 <code>bio</code> 在内存侧由若干 <code>bio_vec</code> 描述。</p>
+<p>为什么中间要插一个 <code>request</code>？光有 <code>bio</code> 也能下发，但 <code>bio</code> 是上层视角的「我要读这段」，没法排序。<code>request</code> 是「调度视角的一个任务单元」，它在队列里可以被移动、合并、重排。多绕这一层，换来的是调度能力。</p>
+<h2 id="五gendisk一个磁盘的抽象" tabindex="-1">五、gendisk：一个磁盘的抽象 <a class="header-anchor" href="#五gendisk一个磁盘的抽象"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>struct gendisk</code> 描述一块磁盘，地位类似字符设备的 <code>struct cdev</code>。定义位置随版本漂移：5.2.8 在 <code>include/linux/genhd.h</code>，5.11 之后磁盘结构逐步搬进 <code>include/linux/blk_types.h</code>（<code>未验证</code>具体搬移版本）。</p>
+<p><code>struct gendisk</code> 的完整字段（5.2.8，<code>include/linux/genhd.h</code>）分四组：设备号与名字（<code>major</code> / <code>first_minor</code> / <code>minors</code> / <code>disk_name</code> / <code>devnode</code>）、分区（<code>part_tbl</code> / <code>part0</code>）、驱动挂载点（<code>fops</code> / <code>queue</code> / <code>private_data</code>）、状态与杂项（<code>flags</code> / <code>lookup_sem</code> / <code>slave_dir</code> / <code>random</code> / <code>sync_io</code> / <code>ev</code> / <code>integrity_kobj</code> / <code>node_id</code> / <code>bb</code> / <code>lockdep_map</code>）。真正要写的只有前三个组里那几个：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>注意事项</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>major</code></td>
+<td>主设备号，由 <code>register_blkdev</code> 申请</td>
+<td>注释写明「仅作输入参数，别直接读」，读要用 <code>disk_devt()</code></td>
+</tr>
+<tr>
+<td><code>first_minor</code></td>
+<td>本盘第一个次设备号，一般 0</td>
+<td>分区从 <code>first_minor + 1</code> 开始</td>
+</tr>
+<tr>
+<td><code>minors</code></td>
+<td>次设备号总数 = 分区数 + 1</td>
+<td>最小 1，表示不分区；大于 1 时可分区数为 <code>minors - 1</code></td>
+</tr>
+<tr>
+<td><code>disk_name</code></td>
+<td>磁盘名，注册后出现在 <code>/dev</code> 和 <code>/sys/block</code></td>
+<td>长度 <code>DISK_NAME_LEN</code>（32）</td>
+</tr>
+<tr>
+<td><code>devnode</code></td>
+<td>自定义设备节点名</td>
+<td>不用就给 NULL</td>
+</tr>
+<tr>
+<td><code>part_tbl</code></td>
+<td>指向分区表 <code>disk_part_tbl</code></td>
+<td>RCU 保护，通过 helper 访问</td>
+</tr>
+<tr>
+<td><code>part0</code></td>
+<td>内嵌的 0 号分区，代表整块盘</td>
+<td>没有单独分配，就长在 <code>gendisk</code> 里</td>
+</tr>
+<tr>
+<td><code>fops</code></td>
+<td>回调表 <code>block_device_operations</code></td>
+<td>必须填 <code>owner</code></td>
+</tr>
+<tr>
+<td><code>queue</code></td>
+<td>绑定的请求队列</td>
+<td><strong>5.11 起不手工赋值</strong>，由 alloc 时传入</td>
+</tr>
+<tr>
+<td><code>private_data</code></td>
+<td>驱动私有数据</td>
+<td>随便用，典型放设备结构体</td>
+</tr>
+<tr>
+<td><code>flags</code></td>
+<td><code>GENHD_FL_*</code> 位</td>
+<td><code>GENHD_FL_UP</code> 由 <code>add_disk</code> 置位</td>
+</tr>
+<tr>
+<td><code>lookup_sem</code></td>
+<td>读写信号量，保护磁盘查找</td>
+<td>由 <code>__alloc_disk_node</code> 初始化</td>
+</tr>
+<tr>
+<td><code>node_id</code></td>
+<td>NUMA 节点</td>
+<td><code>alloc_disk</code> 宏固定传 <code>NUMA_NO_NODE</code></td>
+</tr>
+</tbody>
+</table></div><p><code>queue</code> 这一条要展开。5.2.8 时代是两步：先 <code>alloc_disk(1)</code> 拿 gendisk，再 <code>blk_mq_init_sq_queue()</code> 拿队列，最后 <code>disk-&gt;queue = q</code> 手工挂上。5.11 的提交「block: pass a request_queue to __blk_alloc_disk」把 <code>disk-&gt;queue = q</code> 挪进了 <code>__alloc_disk_node()</code> 内部，目的就是保证 <code>gendisk</code> 的 <code>-&gt;queue</code> 始终指向一个活着的队列；同期把 <code>scsi/sd.c</code>、<code>scsi/sr.c</code> 里的 <code>gd-&gt;queue = ...</code> 全删了。所以 5.11 之后的驱动代码里再写 <code>disk-&gt;queue = q</code>，会编译报错或者根本不生效（<code>未验证</code>具体报错形态，取决于那个版本的字段可见性）。</p>
+<p>再往下的分区对象，5.2.8 是这样：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">disk_part_tbl</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_head</span> <span class="hljs-title">rcu_head</span>;</span>
+        <span class="hljs-type">int</span> len;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hd_struct</span> __<span class="hljs-title">rcu</span> *<span class="hljs-title">last_lookup</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hd_struct</span> __<span class="hljs-title">rcu</span> *<span class="hljs-title">part</span>[];</span>  <span class="hljs-comment">/* 指针数组，每个成员是 struct hd_struct * */</span>
+};
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hd_struct</span> {</span>
+        <span class="hljs-type">sector_t</span> start_sect;
+        <span class="hljs-type">sector_t</span> nr_sects;
+        <span class="hljs-type">seqcount_t</span> nr_sects_seq;
+        <span class="hljs-type">sector_t</span> alignment_offset;
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> discard_alignment;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device</span> __<span class="hljs-title">dev</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">kobject</span> *<span class="hljs-title">holder_dir</span>;</span>
+        <span class="hljs-type">int</span> policy, partno;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">partition_meta_info</span> *<span class="hljs-title">info</span>;</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_FAIL_MAKE_REQUEST</span>
+        <span class="hljs-type">int</span> make_it_fail;
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> stamp;
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span>  CONFIG_SMP</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">disk_stats</span> __<span class="hljs-title">percpu</span> *<span class="hljs-title">dkstats</span>;</span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">disk_stats</span> <span class="hljs-title">dkstats</span>;</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">percpu_ref</span> <span class="hljs-title">ref</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_work</span> <span class="hljs-title">rcu_work</span>;</span>
+};
+</code></pre></div></code></pre>
+<p><code>hd_struct</code> 存一个分区的起始扇区、扇区数和对应的 <code>device</code>。5.11 之后引入 <code>struct block_device</code> 与分区的合并重构，<code>hd_struct</code> 被取消（<code>未验证</code>具体版本），所以看 6.x 代码会发现这个结构不见了，别慌。</p>
+<h2 id="六block_device_operations驱动要实现的回调" tabindex="-1">六、block_device_operations：驱动要实现的回调 <a class="header-anchor" href="#六block_device_operations驱动要实现的回调"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>块设备的回调表和字符设备的 <code>file_operations</code> 是一对，但内容完全不同。5.2.8 的完整定义在 <code>include/linux/blkdev.h</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">block_device_operations</span> {</span>
+        <span class="hljs-type">int</span> (*open) (<span class="hljs-keyword">struct</span> block_device *, <span class="hljs-type">fmode_t</span>);
+        <span class="hljs-type">void</span> (*release) (<span class="hljs-keyword">struct</span> gendisk *, <span class="hljs-type">fmode_t</span>);
+        <span class="hljs-type">int</span> (*rw_page)(<span class="hljs-keyword">struct</span> block_device *, <span class="hljs-type">sector_t</span>, <span class="hljs-keyword">struct</span> page *, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>);
+        <span class="hljs-type">int</span> (*ioctl) (<span class="hljs-keyword">struct</span> block_device *, <span class="hljs-type">fmode_t</span>, <span class="hljs-type">unsigned</span>, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>);
+        <span class="hljs-type">int</span> (*compat_ioctl) (<span class="hljs-keyword">struct</span> block_device *, <span class="hljs-type">fmode_t</span>, <span class="hljs-type">unsigned</span>, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>);
+        <span class="hljs-type">unsigned</span> <span class="hljs-title function_">int</span> <span class="hljs-params">(*check_events)</span> <span class="hljs-params">(<span class="hljs-keyword">struct</span> gendisk *disk,
+                                      <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> clearing)</span>;
+        <span class="hljs-comment">/* -&gt;media_changed() is DEPRECATED, use -&gt;check_events() instead */</span>
+        <span class="hljs-type">int</span> (*media_changed) (<span class="hljs-keyword">struct</span> gendisk *);
+        <span class="hljs-type">void</span> (*unlock_native_capacity) (<span class="hljs-keyword">struct</span> gendisk *);
+        <span class="hljs-type">int</span> (*revalidate_disk) (<span class="hljs-keyword">struct</span> gendisk *);
+        <span class="hljs-type">int</span> (*getgeo)(<span class="hljs-keyword">struct</span> block_device *, <span class="hljs-keyword">struct</span> hd_geometry *);
+        <span class="hljs-comment">/* this callback is with swap_lock and sometimes page table lock held */</span>
+        <span class="hljs-type">void</span> (*swap_slot_free_notify) (<span class="hljs-keyword">struct</span> block_device *, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>);
+        <span class="hljs-type">int</span> (*report_zones)(<span class="hljs-keyword">struct</span> gendisk *, <span class="hljs-type">sector_t</span> sector,
+                            <span class="hljs-keyword">struct</span> blk_zone *zones, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> *nr_zones,
+                            <span class="hljs-type">gfp_t</span> gfp_mask);
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">module</span> *<span class="hljs-title">owner</span>;</span>
+        <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">pr_ops</span> *<span class="hljs-title">pr_ops</span>;</span>
+};
+</code></pre></div></code></pre>
+<p>逐个回调交代什么时候被调、要不要实现：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>回调</th>
+<th>触发时机</th>
+<th>必须实现</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>owner</code></td>
+<td>—</td>
+<td><strong>是</strong></td>
+<td>填 <code>THIS_MODULE</code>，否则模块计数不对，卸载会崩</td>
+</tr>
+<tr>
+<td><code>open</code></td>
+<td>打开设备节点时</td>
+<td>否</td>
+<td>返回 <code>-ERESTARTSYS</code> 会让块层重试（磁盘正在删除的竞态）</td>
+</tr>
+<tr>
+<td><code>release</code></td>
+<td>关闭设备节点时</td>
+<td>否</td>
+<td>只在最后一次 close 时调</td>
+</tr>
+<tr>
+<td><code>ioctl</code></td>
+<td><code>ioctl(2)</code></td>
+<td>否</td>
+<td>私有命令走这里</td>
+</tr>
+<tr>
+<td><code>compat_ioctl</code></td>
+<td>32 位应用跑在 64 位内核</td>
+<td>否</td>
+<td>不填时 32 位应用调 ioctl 直接失败</td>
+</tr>
+<tr>
+<td><code>getgeo</code></td>
+<td><code>HDIO_GETGEO</code></td>
+<td>否</td>
+<td>填 <code>hd_geometry</code>，老工具和 fdisk 会看</td>
+</tr>
+<tr>
+<td><code>check_events</code></td>
+<td>轮询介质变化</td>
+<td>否</td>
+<td>可移动设备要填，用来上报插拔</td>
+</tr>
+<tr>
+<td><code>media_changed</code></td>
+<td>同上</td>
+<td>否</td>
+<td>已废弃，用 <code>check_events</code></td>
+</tr>
+<tr>
+<td><code>revalidate_disk</code></td>
+<td>重扫分区之前</td>
+<td>否</td>
+<td>容量变了在这里更新</td>
+</tr>
+<tr>
+<td><code>rw_page</code></td>
+<td>直接读写单个页</td>
+<td>否</td>
+<td>极少数驱动用</td>
+</tr>
+<tr>
+<td><code>unlock_native_capacity</code></td>
+<td>分区表超出 EOD</td>
+<td>否</td>
+<td>破解 HPA 隐藏容量</td>
+</tr>
+<tr>
+<td><code>report_zones</code></td>
+<td>主机管理型 zoned 设备</td>
+<td>否</td>
+<td>普通设备不用管</td>
+</tr>
+<tr>
+<td><code>swap_slot_free_notify</code></td>
+<td>swap 释放槽位</td>
+<td>否</td>
+<td>掉电内存类设备用</td>
+</tr>
+</tbody>
+</table></div><p>最小可用版本就两行：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">block_device_operations</span> <span class="hljs-title">my_fops</span> =</span> {
+        .owner = THIS_MODULE,
+};
+</code></pre></div></code></pre>
+<p>注意到没有：<strong>没有 <code>read</code>，没有 <code>write</code></strong>。数据搬运走 <code>blk_mq_ops</code>（或 5.9 之前的 <code>make_request_fn</code>），不在这个表里。读到这里的第一个反应应该是：那 <code>open</code> 里的 <code>bdev</code> 和 <code>release</code> 里的 <code>disk</code> 参数为什么不统一？历史包袱。<code>open</code> 拿的是具体的块设备（分区或整盘），<code>release</code> 给的是整块盘。</p>
+<p><code>getgeo</code> 是老接口，但在 RamDisk 这类没有真实几何的设备上仍然有用，因为 fdisk 分区要靠它算柱面。第十三章会给一个具体例子，<code>heads=2, cylinders=32</code> 直接决定 fdisk 里只能建 2 个主分区。</p>
+<h2 id="七request_queue-与请求队列" tabindex="-1">七、request_queue 与请求队列 <a class="header-anchor" href="#七request_queue-与请求队列"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>struct request_queue</code> 是挂在一块盘上的请求队列。5.2.8 的完整定义在 <code>include/linux/blkdev.h</code>，字段近 100 个，下面按「你实际会碰到的」分组交代：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>分组</th>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>请求链与合并</td>
+<td><code>queue_head</code>、<code>last_merge</code></td>
+<td>请求链头；第一个有机会被合并的请求</td>
+</tr>
+<tr>
+<td>调度</td>
+<td><code>elevator</code></td>
+<td>当前 I/O 调度器，没开调度就是 NULL</td>
+</tr>
+<tr>
+<td>提交入口</td>
+<td><code>make_request_fn</code></td>
+<td>bio 提交回调，blk-mq 下是 <code>blk_mq_make_request</code>；5.9 移到 <code>block_device_operations.submit_bio</code></td>
+</tr>
+<tr>
+<td>驱动回调</td>
+<td><code>mq_ops</code></td>
+<td><code>blk_mq_ops</code>，驱动实现 <code>queue_rq</code> 的地方</td>
+</tr>
+<tr>
+<td>软件队列</td>
+<td><code>queue_ctx</code>、<code>nr_queues</code></td>
+<td>per-CPU 的 <code>blk_mq_ctx</code>，数量等于 CPU 数</td>
+</tr>
+<tr>
+<td>硬件队列</td>
+<td><code>queue_hw_ctx</code>、<code>nr_hw_queues</code></td>
+<td>对应设备真实队列数，多数设备是 1</td>
+</tr>
+<tr>
+<td>深度</td>
+<td><code>queue_depth</code>、<code>nr_requests</code></td>
+<td>队列能挂起的请求上限</td>
+</tr>
+<tr>
+<td>排队</td>
+<td><code>requeue_list</code>、<code>requeue_lock</code>、<code>requeue_work</code></td>
+<td>驱动忙时把请求挂回这里</td>
+</tr>
+<tr>
+<td>限制</td>
+<td><code>limits</code></td>
+<td><code>queue_limits</code>，最大扇区数、对齐、粒度都在这</td>
+</tr>
+<tr>
+<td>统计与节流</td>
+<td><code>stats</code>、<code>rq_qos</code>、<code>td</code></td>
+<td>IO 记账与限速</td>
+</tr>
+<tr>
+<td>生命周期</td>
+<td><code>q_usage_counter</code>、<code>mq_freeze_depth</code>、<code>kobj</code></td>
+<td>引用计数、冻结、sysfs</td>
+</tr>
+</tbody>
+</table></div><p>版本提示：<code>make_request_fn</code> 这个字段 <strong>5.9 就不在 <code>request_queue</code> 里了</strong>，被移进 <code>block_device_operations</code> 并改名 <code>submit_bio</code>（Christoph Hellwig 的 20 篇系列，[PATCH 16/20] 就是这步）。同一系列还砍掉了 <code>direct_make_request</code> 这条旁路。看到某份资料写 <code>blk_queue_make_request(q, my_fn)</code>，先确认它是 5.9 之前的。</p>
+<p><code>request_queue</code> 不是驱动自己乱造的，5.x 的分配方式三选一：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 5.11+：一步拿到 gendisk 和内部的 request_queue，推荐 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">gendisk</span> *<span class="hljs-title">disk</span> =</span> blk_mq_alloc_disk(&amp;tag_set, queuedata);
+
+<span class="hljs-comment">/* 5.11+：bio 全程自定义处理的驱动 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">gendisk</span> *<span class="hljs-title">disk</span> =</span> blk_alloc_disk(NUMA_NO_NODE);
+
+<span class="hljs-comment">/* 5.2.8 的写法：先队列后磁盘，两步走 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request_queue</span> *<span class="hljs-title">q</span> =</span> blk_mq_init_sq_queue(&amp;tag_set, &amp;mq_ops, <span class="hljs-number">16</span>,
+                                                BLK_MQ_F_SHOULD_MERGE);
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">gendisk</span> *<span class="hljs-title">disk</span> =</span> alloc_disk(<span class="hljs-number">1</span>);
+disk-&gt;<span class="hljs-built_in">queue</span> = q;
+</code></pre></div></code></pre>
+<p><code>blk_mq_init_sq_queue</code> 在 5.16 被删除（提交说明：<code>All users are gone now</code>），<code>alloc_disk</code> 宏也在 5.16 消失。所以第三行那种写法只适用于 5.11 ~ 5.15。</p>
+<p><code>request</code> 就是队列里的节点，5.2.8 定义在 <code>include/linux/blkdev.h</code>。几个字段是排查问题的切入口：<code>__sector</code> 是起始扇区，<code>__data_len</code> 是字节数，<code>tag</code> 是硬件队列槽位号（没分配时是 -1），<code>nr_phys_segments</code> 是物理段数（合并后的真实 DMA 段数），<code>end_io</code> 是完成回调。</p>
+<p><code>request</code> 是队列初始化时<strong>预先分配</strong>的，不是每次 I/O 现要现给。深度由 <code>queue_depth</code> 决定，这些 <code>request</code> 早就躺在硬件队列的 <code>static_rqs[]</code> 数组里，用哪个由 tag 决定。为什么这么设计？因为 I/O 路径上不能 <code>kmalloc(GFP_KERNEL)</code>，也不能在里面等锁。</p>
+<h2 id="八bioio-的基本单位" tabindex="-1">八、bio：I/O 的基本单位 <a class="header-anchor" href="#八bioio-的基本单位"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>struct bio</code> 描述一次进行中的块 I/O，记录这次 I/O 需要的一切：数据在内存哪里、磁盘起始扇区在哪、读还是写、完成了叫谁。字段在 <code>include/linux/blk_types.h</code>，要盯的只有这几个：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bi_next</code></td>
+<td>链到下一个 bio，合并时用</td>
+</tr>
+<tr>
+<td><code>bi_disk</code></td>
+<td>这次 I/O 发往哪块盘（5.11 前是 <code>bi_bdev</code>，指向 <code>block_device</code>）</td>
+</tr>
+<tr>
+<td><code>bi_opf</code></td>
+<td>低 8 位是操作码 <code>REQ_OP_*</code>，高 24 位是标志 <code>REQ_*</code></td>
+</tr>
+<tr>
+<td><code>bi_partno</code></td>
+<td>分区号，0 表示整块盘</td>
+</tr>
+<tr>
+<td><code>bi_iter</code></td>
+<td>当前遍历到的位置（扇区、剩余字节、第几个段）</td>
+</tr>
+<tr>
+<td><code>bi_phys_segments</code></td>
+<td>物理合并后的段数</td>
+</tr>
+<tr>
+<td><code>bi_end_io</code></td>
+<td>I/O 完成回调，驱动/堆叠层都要调</td>
+</tr>
+<tr>
+<td><code>bi_private</code></td>
+<td>完成回调的私有数据</td>
+</tr>
+<tr>
+<td><code>bi_vcnt</code></td>
+<td>当前 <code>bio_vec</code> 个数</td>
+</tr>
+<tr>
+<td><code>bi_max_vecs</code></td>
+<td>容量上限</td>
+</tr>
+<tr>
+<td><code>bi_io_vec</code></td>
+<td>段数组，指向实际内存页</td>
+</tr>
+<tr>
+<td><code>bi_inline_vecs</code></td>
+<td>内联的小数组，省一次额外分配，<strong>必须是最后一个成员</strong></td>
+</tr>
+</tbody>
+</table></div><p><code>bi_disk</code> 这一项要留意版本：5.2.8 里是 <code>struct gendisk *bi_disk</code>；更早（4.x）是 <code>struct block_device *bi_bdev</code>；后续又有变化。写跨版本驱动时这行是要加宏的（<code>未验证</code>具体在哪一版切回）。</p>
+<p><code>bio_vec</code> 描述一页里的一段：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/*
+ * was unsigned short, but we might as well be ready for &gt; 64kB I/O pages
+ */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">bio_vec</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">page</span>     *<span class="hljs-title">bv_page</span>;</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>    bv_len;
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>    bv_offset;
+};
+</code></pre></div></code></pre>
+<ul>
+<li><code>bv_page</code>：数据所在页的页描述符；</li>
+<li><code>bv_len</code>：这一段多少字节；</li>
+<li><code>bv_offset</code>：页内起始偏移。</li>
+</ul>
+<p>遍历它靠 <code>bvec_iter</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">bvec_iter</span> {</span>
+        <span class="hljs-type">sector_t</span>                bi_sector;      <span class="hljs-comment">/* device address in 512 byte sectors */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            bi_size;        <span class="hljs-comment">/* residual I/O count */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            bi_idx;         <span class="hljs-comment">/* current index into bvl_vec */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            bi_bvec_done;   <span class="hljs-comment">/* number of bytes completed in current bvec */</span>
+};
+</code></pre></div></code></pre>
+<ul>
+<li><code>bi_sector</code>：本次 I/O 的起始扇区（512 字节为单位）；</li>
+<li><code>bi_size</code>：还差多少字节没传完；</li>
+<li><code>bi_idx</code>：当前处理到第几个 <code>bio_vec</code>；</li>
+<li><code>bi_bvec_done</code>：当前 <code>bio_vec</code> 里已经处理掉多少字节。</li>
+</ul>
+<p>这四个字段合起来就是「数据源 + 数据长度 + 数据目的地」里的磁盘侧地址和数据长度；<code>bi_io_vec[]</code> 给出内存侧地址。驱动遍历 bio 的标准姿势是 <code>bio_for_each_segment(bvec, bio, iter)</code>，它在遍历过程中自动维护 <code>iter</code>，你只管按 <code>bv_len</code> 搬。</p>
+<p>操作码在 <code>enum req_opf</code> 里（<code>include/linux/blk_types.h</code>），8 位编码：<code>REQ_OP_BITS 8</code>、<code>REQ_FLAG_BITS 24</code>，<code>bi_opf</code> / <code>cmd_flags</code> 的低 8 位是 op、高 24 位是 flag。要认的只有这几个：<code>REQ_OP_READ = 0</code>、<code>REQ_OP_WRITE = 1</code>、<code>REQ_OP_FLUSH = 2</code>（刷易失写缓存）、<code>REQ_OP_DISCARD = 3</code>、<code>REQ_OP_ZONE_RESET = 6</code>、<code>REQ_OP_WRITE_SAME = 7</code>、<code>REQ_OP_WRITE_ZEROES = 9</code>；32 以上留给透传（<code>REQ_OP_SCSI_IN/OUT</code>、<code>REQ_OP_DRV_IN/OUT</code>）。最省事的是直接用 <code>bio_op(bio)</code> / <code>req_op(rq)</code> 取 op、<code>op_is_write()</code> / <code>op_is_flush()</code> 判方向，别自己移位。
+常用标志：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>标志</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>REQ_FAILFAST_DEV</code></td>
+<td>设备错误不重试</td>
+</tr>
+<tr>
+<td><code>REQ_FAILFAST_TRANSPORT</code></td>
+<td>传输错误不重试</td>
+</tr>
+<tr>
+<td><code>REQ_FAILFAST_DRIVER</code></td>
+<td>驱动错误不重试</td>
+</tr>
+<tr>
+<td><code>REQ_SYNC</code></td>
+<td>同步 I/O</td>
+</tr>
+<tr>
+<td><code>REQ_META</code></td>
+<td>元数据 I/O</td>
+</tr>
+<tr>
+<td><code>REQ_PRIO</code></td>
+<td>提高优先级</td>
+</tr>
+<tr>
+<td><code>REQ_NOMERGE</code></td>
+<td>这个请求不许合并</td>
+</tr>
+<tr>
+<td><code>REQ_INTEGRITY</code></td>
+<td>带完整性负载</td>
+</tr>
+<tr>
+<td><code>REQ_FUA</code></td>
+<td>写完必须落盘</td>
+</tr>
+<tr>
+<td><code>REQ_PREFLUSH</code></td>
+<td>I/O 前先刷盘</td>
+</tr>
+<tr>
+<td><code>REQ_RAHEAD</code></td>
+<td>预读，失败无所谓</td>
+</tr>
+<tr>
+<td><code>REQ_BACKGROUND</code></td>
+<td>后台 I/O</td>
+</tr>
+<tr>
+<td><code>REQ_NOWAIT</code></td>
+<td>不等待，拿不到就返回</td>
+</tr>
+<tr>
+<td><code>REQ_HIPRI</code></td>
+<td>高优先级，走 poll 队列</td>
+</tr>
+</tbody>
+</table></div><p><code>REQ_OP_SECURE_ERASE</code> 已经被移除（2022 年 3 月 Christoph Hellwig 的补丁，理由是 blk-lib 按 discard 粒度对齐会漏掉区间，且只有 eMMC 一种硬件真支持），对应的 <code>BLKSECDISCARD</code> ioctl 和 <code>QUEUE_FLAG_SECERASE</code> 一并删掉。素材里出现 <code>REQ_OP_SECURE_ERASE</code> 的代码，直接删掉分支。</p>
+<p>改方向的老接口在 5.2.8 还能用，但已废弃：早期 <code>bio_rw(bio)</code> 返回 <code>READ</code>/<code>WRITE</code>/<code>READA</code>，现在用 <code>bio_data_dir(bio)</code> 返回 <code>READ</code>/<code>WRITE</code>，或者用 <code>op_is_write(bio_op(bio))</code>。要素材里那段 <code>switch (bio_rw(bio))</code> 的代码原封不动贴到 5.x，编译不过。</p>
+<h2 id="九从文件系统到驱动的完整路径" tabindex="-1">九、从文件系统到驱动的完整路径 <a class="header-anchor" href="#九从文件系统到驱动的完整路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把前面的结构串起来，一次读写的落点是这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>write()/read()
+  -&gt; VFS -&gt; 具体文件系统（ext4 等）决定要读写哪个块
+  -&gt; submit_bio(bio)                       block/blk-core.c
+  -&gt; submit_bio_noacct / generic_make_request   （5.9 前叫 generic_make_request）
+  -&gt; q-&gt;make_request_fn(q, bio)             = blk_mq_make_request()
+        |
+        +-- 尝试合并进当前进程 plug list
+        +-- 尝试合并进 I/O 调度器队列 / 软件队列
+        +-- 拿不到就分配 tag，把 bio 变成 request
+        +-- 按场景派发：直接下发 / 挂 plug / 进调度器队列
+        |
+  -&gt; blk_mq_ops.queue_rq(hctx, bd)           ← 驱动在这里干活
+  -&gt; 驱动搬数据，完成后 blk_mq_end_request() 或 bio_endio()
+</code></pre></div></code></pre>
+<p><code>submit_bio()</code> 只做两件事：记账（<code>bio_has_data()</code> 为真时按读写分别打 <code>PGPGOUT</code> / <code>PGPGIN</code>，<code>task_io_account_read()</code> 记读量，<code>block_dump</code> 非零时打一行调试日志），然后 <code>return generic_make_request(bio);</code> 原样转手。它不返回 I/O 结果，只给一个 <code>blk_qc_t</code> cookie。</p>
+<p><code>generic_make_request()</code>（5.9 起改名 <code>submit_bio_noacct()</code>）的目标是给堆叠设备留一条递归通路：先 <code>generic_make_request_checks()</code> 校验，然后判断 <code>current-&gt;bio_list</code> 是否为 NULL——非 NULL 说明当前进程已经在一个 <code>make_request_fn</code> 里，新 bio 直接挂到 <code>current-&gt;bio_list[0]</code> 尾部返回，避免递归加深栈；为 NULL 则初始化 <code>bio_list_on_stack</code>，进 <code>do {} while</code> 循环，<code>blk_queue_enter()</code> 成功后调 <code>q-&gt;make_request_fn(q, bio)</code>，再把回调过程中新产生的 bio 按「下层优先」排序，最后 <code>blk_queue_exit()</code>。普通单层设备这一轮循环只跑一次。</p>
+<p>看这段有两个要点：</p>
+<ol>
+<li>它不返回 I/O 结果，只返回一个 <code>blk_qc_t</code> cookie。成功/失败通过 <code>bio-&gt;bi_end_io</code> 异步通知。</li>
+<li>真正干活的是 <code>q-&gt;make_request_fn(q, bio)</code>。blk-mq 下这个指针在 <code>blk_mq_init_allocated_queue</code> 里被设成 <code>blk_mq_make_request</code>。5.9 之后这个回调搬到 <code>block_device_operations.submit_bio</code>。</li>
+</ol>
+<p><code>blk_mq_make_request()</code> 的三段骨架（5.2.8，<code>block/blk-mq.c</code>）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">blk_qc_t</span> <span class="hljs-title function_">blk_mq_make_request</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> request_queue *q, <span class="hljs-keyword">struct</span> bio *bio)</span>
+{
+        <span class="hljs-type">const</span> <span class="hljs-type">int</span> is_sync = op_is_sync(bio-&gt;bi_opf);
+        <span class="hljs-type">const</span> <span class="hljs-type">int</span> is_flush_fua = op_is_flush(bio-&gt;bi_opf);
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_alloc_data</span> <span class="hljs-title">data</span> =</span> { .flags = <span class="hljs-number">0</span> };
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request</span> *<span class="hljs-title">rq</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request</span> *<span class="hljs-title">same_queue_rq</span> =</span> <span class="hljs-literal">NULL</span>;
+        <span class="hljs-type">blk_qc_t</span> cookie;
+
+        blk_queue_bounce(q, &amp;bio);
+        blk_queue_split(q, &amp;bio);
+        <span class="hljs-keyword">if</span> (!bio_integrity_prep(bio))
+                <span class="hljs-keyword">return</span> BLK_QC_T_NONE;
+
+        <span class="hljs-comment">/* 1. 先试着合并 */</span>
+        <span class="hljs-keyword">if</span> (!is_flush_fua &amp;&amp; !blk_queue_nomerges(q) &amp;&amp;
+            blk_attempt_plug_merge(q, bio, &amp;same_queue_rq))
+                <span class="hljs-keyword">return</span> BLK_QC_T_NONE;
+        <span class="hljs-keyword">if</span> (blk_mq_sched_bio_merge(q, bio))
+                <span class="hljs-keyword">return</span> BLK_QC_T_NONE;
+
+        <span class="hljs-comment">/* 2. 合并不了就分配一个 request */</span>
+        rq_qos_throttle(q, bio);
+        data.cmd_flags = bio-&gt;bi_opf;
+        rq = blk_mq_get_request(q, bio, &amp;data);
+        <span class="hljs-keyword">if</span> (unlikely(!rq))
+                <span class="hljs-keyword">return</span> BLK_QC_T_NONE;
+        cookie = <span class="hljs-type">request_to_qc_t</span>(data.hctx, rq);
+
+        <span class="hljs-comment">/* 3. 按场景派发 */</span>
+        <span class="hljs-keyword">if</span> (unlikely(is_flush_fua)) {
+                blk_mq_put_ctx(data.ctx);
+                blk_mq_bio_to_request(rq, bio);
+                blk_insert_flush(rq);
+                blk_mq_run_hw_queue(data.hctx, <span class="hljs-literal">true</span>);
+        } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (current-&gt;plug) {
+                blk_mq_bio_to_request(rq, bio);
+                blk_add_rq_to_plug(current-&gt;plug, rq);
+        } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> ((q-&gt;nr_hw_queues &gt; <span class="hljs-number">1</span> &amp;&amp; is_sync) ||
+                   (!q-&gt;elevator &amp;&amp; !data.hctx-&gt;dispatch_busy)) {
+                blk_mq_put_ctx(data.ctx);
+                blk_mq_bio_to_request(rq, bio);
+                blk_mq_try_issue_directly(data.hctx, rq, &amp;cookie);
+        } <span class="hljs-keyword">else</span> {
+                blk_mq_put_ctx(data.ctx);
+                blk_mq_bio_to_request(rq, bio);
+                blk_mq_sched_insert_request(rq, <span class="hljs-literal">false</span>, <span class="hljs-literal">true</span>, <span class="hljs-literal">true</span>);
+        }
+
+        <span class="hljs-keyword">return</span> cookie;
+}
+</code></pre></div></code></pre>
+<p>驱动在整条链路的末端做两件事：从 <code>bd-&gt;rq</code> 拿到请求，搬数据，然后 <code>blk_mq_end_request(rq, status)</code> 或者对 bio 型驱动调 <code>bio_endio(bio)</code>。</p>
+<p>另外，bio 是「上层视角」，request 是「调度视角」，bio 到 request 的转换动作叫 <code>blk_mq_bio_to_request()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">blk_mq_bio_to_request</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> request *rq, <span class="hljs-keyword">struct</span> bio *bio)</span>
+{
+        blk_rq_bio_prep(rq, bio);
+
+        <span class="hljs-comment">/* This can&#x27;t fail, since GFP_NOIO includes __GFP_DIRECT_RECLAIM. */</span>
+        blk_rq_prep_clone(rq, bio);
+}
+</code></pre></div></code></pre>
+<p>转换时干了什么：<code>rq-&gt;__sector = bio-&gt;bi_iter.bi_sector</code>、<code>rq-&gt;__data_len = bio-&gt;bi_iter.bi_size</code>、<code>rq-&gt;bio = rq-&gt;biotail = bio</code>、<code>rq-&gt;nr_phys_segments</code> 从 bio 继承。合并进来的 bio 挂到 <code>biotail-&gt;bi_next</code>，<code>biotail</code> 往后挪。所以一个 request 的 <code>__sector</code> 永远是最靠前的那个 bio 的起点。</p>
+<h2 id="十请求的合并与调度" tabindex="-1">十、请求的合并与调度 <a class="header-anchor" href="#十请求的合并与调度"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>合并是整个块层最省钱的优化。两个 bio 描述的磁盘空间正好首尾相接，打给硬件就是一次请求，而不是两次。</p>
+<p>合并分两个位置：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位置</th>
+<th>函数</th>
+<th>特点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>进程 plug list</td>
+<td><code>blk_attempt_plug_merge</code></td>
+<td>不加锁，只有本进程能碰</td>
+</tr>
+<tr>
+<td>I/O 调度器队列</td>
+<td><code>elevator</code> 的 <code>bio_merge</code></td>
+<td>需要 <code>q-&gt;elevator</code> 存在</td>
+</tr>
+<tr>
+<td>软件队列</td>
+<td><code>blk_mq_bio_list_merge</code></td>
+<td>无调度器时用，有 <code>ctx-&gt;lock</code></td>
+</tr>
+</tbody>
+</table></div><p>plug 机制是「攒一攒再一起发」：进程提交一个 bio 后，紧接着往往还有下一个，这些 request 先挂在 <code>plug-&gt;mq_list</code> 里，等攒够量或者进程主动 unplug 时统一推给块层。好处是不用每次去抢 <code>request_queue</code> 的锁。要注意 <code>struct blk_plug</code> 从 5.x 起合并了原来单队列和多队列两套（<code>list</code> 与 <code>mq_list</code> 合并为 <code>mq_list</code>），素材里两种叫法都出现过，是版本差异，不是笔误。</p>
+<p><code>blk_attempt_plug_merge</code> 的实现很短，值得看：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">bool</span> <span class="hljs-title function_">blk_attempt_plug_merge</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> request_queue *q, <span class="hljs-keyword">struct</span> bio *bio,
+                            <span class="hljs-keyword">struct</span> request **same_queue_rq)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_plug</span> *<span class="hljs-title">plug</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request</span> *<span class="hljs-title">rq</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> *<span class="hljs-title">plug_list</span>;</span>
+
+        plug = current-&gt;plug;
+        <span class="hljs-keyword">if</span> (!plug)
+                <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+
+        plug_list = &amp;plug-&gt;mq_list;
+
+        list_for_each_entry_reverse(rq, plug_list, queuelist) {
+                <span class="hljs-type">bool</span> merged = <span class="hljs-literal">false</span>;
+
+                <span class="hljs-keyword">if</span> (rq-&gt;q == q &amp;&amp; same_queue_rq) {
+                        *same_queue_rq = rq;
+                }
+
+                <span class="hljs-keyword">if</span> (rq-&gt;q != q || !blk_rq_merge_ok(rq, bio))
+                        <span class="hljs-keyword">continue</span>;
+
+                <span class="hljs-keyword">switch</span> (blk_try_merge(rq, bio)) {
+                <span class="hljs-keyword">case</span> ELEVATOR_BACK_MERGE:
+                        merged = bio_attempt_back_merge(q, rq, bio);
+                        <span class="hljs-keyword">break</span>;
+                <span class="hljs-keyword">case</span> ELEVATOR_FRONT_MERGE:
+                        merged = bio_attempt_front_merge(q, rq, bio);
+                        <span class="hljs-keyword">break</span>;
+                <span class="hljs-keyword">case</span> ELEVATOR_DISCARD_MERGE:
+                        merged = bio_attempt_discard_merge(q, rq, bio);
+                        <span class="hljs-keyword">break</span>;
+                <span class="hljs-keyword">default</span>:
+                        <span class="hljs-keyword">break</span>;
+                }
+
+                <span class="hljs-keyword">if</span> (merged)
+                        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+        }
+
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+}
+</code></pre></div></code></pre>
+<p>三种合并方向：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">bool</span> <span class="hljs-title function_">bio_attempt_back_merge</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> request_queue *q, <span class="hljs-keyword">struct</span> request *req,
+                            <span class="hljs-keyword">struct</span> bio *bio)</span>
+{
+        <span class="hljs-type">const</span> <span class="hljs-type">int</span> ff = bio-&gt;bi_opf &amp; REQ_FAILFAST_MASK;
+
+        <span class="hljs-keyword">if</span> (!ll_back_merge_fn(q, req, bio))
+                <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+
+        trace_block_bio_backmerge(q, req, bio);
+
+        <span class="hljs-keyword">if</span> ((req-&gt;cmd_flags &amp; REQ_FAILFAST_MASK) != ff)
+                blk_rq_set_mixed_merge(req);
+
+        req-&gt;biotail-&gt;bi_next = bio;             <span class="hljs-comment">/* 接到尾部 */</span>
+        req-&gt;biotail = bio;
+        req-&gt;__data_len += bio-&gt;bi_iter.bi_size;
+
+        blk_account_io_start(req, <span class="hljs-literal">false</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+}
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">bool</span> <span class="hljs-title function_">bio_attempt_front_merge</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> request_queue *q, <span class="hljs-keyword">struct</span> request *req,
+                             <span class="hljs-keyword">struct</span> bio *bio)</span>
+{
+        <span class="hljs-type">const</span> <span class="hljs-type">int</span> ff = bio-&gt;bi_opf &amp; REQ_FAILFAST_MASK;
+
+        <span class="hljs-keyword">if</span> (!ll_front_merge_fn(q, req, bio))
+                <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+
+        trace_block_bio_frontmerge(q, req, bio);
+
+        <span class="hljs-keyword">if</span> ((req-&gt;cmd_flags &amp; REQ_FAILFAST_MASK) != ff)
+                blk_rq_set_mixed_merge(req);
+
+        bio-&gt;bi_next = req-&gt;bio;              <span class="hljs-comment">/* 插到头部 */</span>
+        req-&gt;bio = bio;
+
+        req-&gt;__sector = bio-&gt;bi_iter.bi_sector;
+        req-&gt;__data_len += bio-&gt;bi_iter.bi_size;
+
+        blk_account_io_start(req, <span class="hljs-literal">false</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+}
+</code></pre></div></code></pre>
+<p>前合并和后合并的区别不只是挂头挂尾：前合并要改 <code>__sector</code>，因为请求的起点往前挪了；后合并只改 <code>biotail</code> 和长度。</p>
+<p>不是所有 bio 都能合。合并前要过 <code>blk_rq_merge_ok()</code>：设备得是同一个、操作码得一致、<code>REQ_NOMERGE</code> 得没有、FLUSH/FUA 不能混、物理段数不能超 <code>max_segments</code>。无调度器路径上还限制只往回看 8 个请求，避免在合并上耗太多时间：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">bool</span> <span class="hljs-title function_">blk_mq_bio_list_merge</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> request_queue *q, <span class="hljs-keyword">struct</span> list_head *<span class="hljs-built_in">list</span>,
+                           <span class="hljs-keyword">struct</span> bio *bio)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request</span> *<span class="hljs-title">rq</span>;</span>
+        <span class="hljs-type">int</span> checked = <span class="hljs-number">8</span>;
+
+        list_for_each_entry_reverse(rq, <span class="hljs-built_in">list</span>, queuelist) {
+                <span class="hljs-type">bool</span> merged = <span class="hljs-literal">false</span>;
+
+                <span class="hljs-keyword">if</span> (!checked--)
+                        <span class="hljs-keyword">break</span>;
+
+                <span class="hljs-keyword">if</span> (!blk_rq_merge_ok(rq, bio))
+                        <span class="hljs-keyword">continue</span>;
+
+                <span class="hljs-keyword">switch</span> (blk_try_merge(rq, bio)) {
+                ...
+                }
+
+                <span class="hljs-keyword">return</span> merged;
+        }
+
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+}
+</code></pre></div></code></pre>
+<p>调度器这边用 <code>blk_mq_sched_bio_merge</code>，它先看有没有 <code>e-&gt;type-&gt;ops.bio_merge</code>，有就交给调度器；没有就退化成往当前 CPU 的软件队列里试合并（要求 <code>hctx-&gt;flags &amp; BLK_MQ_F_SHOULD_MERGE</code>，这也是 <code>blk_mq_init_sq_queue</code> 那个参数的作用）。</p>
+<p>调度算法的世代更替：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>版本</th>
+<th>可用调度器</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.6 ~ 4.x 单队列</td>
+<td>noop、deadline、cfq</td>
+<td>cfq 面向桌面公平性</td>
+</tr>
+<tr>
+<td>4.x blk-mq</td>
+<td>none、mq-deadline、bfq、kyber</td>
+<td>只有 mq- 系列能配 blk-mq</td>
+</tr>
+<tr>
+<td><strong>5.0+</strong></td>
+<td><strong>none、mq-deadline、bfq、kyber</strong></td>
+<td>单队列调度器随 blk-sq 一起删掉，CFQ 退场，BFQ 接棒</td>
+</tr>
+</tbody>
+</table></div><p>选哪个由设备特性决定：</p>
+<ul>
+<li>机械硬盘：<code>mq-deadline</code> 或 <code>bfq</code>，排序和合并能显著减少寻道；</li>
+<li>SSD / eMMC / RamDisk：<code>none</code>，随机访问没有 seek 成本，调度器的红黑树和链表操作纯属开销；</li>
+<li>交互式桌面：<code>bfq</code>，按 cgroup 做带宽公平。</li>
+</ul>
+<p>查看和切换：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 看当前设备支持哪些调度器，方括号是当前生效的</span>
+<span class="hljs-built_in">cat</span> /sys/block/sda/queue/scheduler
+
+<span class="hljs-comment"># 切到 none</span>
+<span class="hljs-built_in">echo</span> none &gt; /sys/block/sda/queue/scheduler
+
+<span class="hljs-comment"># 内核启动参数里指定</span>
+<span class="hljs-comment"># 在 cmdline 里加 elevator=mq-deadline</span>
+</code></pre></div></code></pre>
+<h2 id="十一扇区与偏移的换算" tabindex="-1">十一、扇区与偏移的换算 <a class="header-anchor" href="#十一扇区与偏移的换算"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一节全是坑，单独拎出来。</p>
+<p><strong>基本单位</strong>：块层内部地址一律用 <code>sector_t</code>，单位 512 字节，和硬件的物理扇区大小无关。一个 4Kn 盘（物理扇区 4096），在块层眼里仍然是 8 个 512 字节的「扇区」。所以换算常量永远是 9：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> SECTOR_SHIFT            9</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SECTOR_SIZE             (1 &lt;&lt; SECTOR_SHIFT)     <span class="hljs-comment">/* 512 */</span></span>
+</code></pre></div></code></pre>
+<p>常用换算：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>从</th>
+<th>到</th>
+<th>写法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>扇区</td>
+<td>字节</td>
+<td><code>sector &lt;&lt; 9</code></td>
+<td>等价 <code>sector * 512</code></td>
+</tr>
+<tr>
+<td>字节</td>
+<td>扇区</td>
+<td><code>bytes &gt;&gt; 9</code></td>
+<td>必须保证是 512 的整数倍，否则丢余数</td>
+</tr>
+<tr>
+<td>容量（字节）</td>
+<td>容量（扇区）</td>
+<td><code>set_capacity(disk, bytes &gt;&gt; 9)</code></td>
+<td><code>set_capacity</code> 收的是扇区数</td>
+</tr>
+<tr>
+<td>磁盘偏移</td>
+<td>扇区</td>
+<td><code>(offset &gt;&gt; 9) + part-&gt;start_sect</code></td>
+<td>分区必须加起始扇区</td>
+</tr>
+<tr>
+<td>页数</td>
+<td>扇区</td>
+<td><code>pages &lt;&lt; (PAGE_SHIFT - 9)</code></td>
+<td>4K 页 = 8 个扇区</td>
+</tr>
+</tbody>
+</table></div><p>三个必须记住的细节：</p>
+<ol>
+<li><strong><code>&gt;&gt; 9</code> 只能用于 512 对齐的数</strong>。用户态 <code>dd bs=1000</code> 这种非对齐偏移，块层会先做 splice，塞进缓冲区再对齐下发。驱动里如果自己算偏移，务必校验 <code>% 512 == 0</code>。</li>
+<li><strong>分区要加偏移</strong>。<code>bio</code> 里的 <code>bi_sector</code> 是相对分区的，但很多驱动拿到的是整盘视角的 request —— 具体是哪一种取决于 <code>request-&gt;part</code> 和驱动写法。稳妥做法是统一用整盘偏移，把 <code>hd_struct-&gt;start_sect</code> 加进去。</li>
+<li><strong><code>loff_t</code> 别用 int</strong>。容量超过 2GB 之后 <code>int &lt;&lt; 9</code> 直接溢出。<code>bd_set_size(bdev, (loff_t)get_capacity(disk) &lt;&lt; 9)</code> 里那个强制转换不是装饰。</li>
+</ol>
+<p>一个常见写法，来自 RamDisk 驱动，检查越界：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> ((bio-&gt;bi_sector &lt;&lt; <span class="hljs-number">9</span>) + bio-&gt;bi_size &gt; DISK_BYTES) {
+        printk(KERN_ERR <span class="hljs-string">&quot;bad request: block=%llu, count=%u\n&quot;</span>,
+               (<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-type">long</span>)bio-&gt;bi_sector, bio-&gt;bi_size);
+        bio_endio(bio, -EIO);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-comment">/* 转成设备内存里的指针 */</span>
+dsk_mem = disk_buf + (bio-&gt;bi_sector &lt;&lt; <span class="hljs-number">9</span>);
+</code></pre></div></code></pre>
+<p>注意 <code>bio-&gt;bi_sector</code> 是 <code>sector_t</code>，64 位，打印要用 <code>%llu</code> 加 <code>(unsigned long long)</code> 强转，否则在 32 位平台上是未定义行为。</p>
+<p>请求视角的写法，来自 <code>z2_queue_rq</code> 那一类驱动，逐段推进：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> start = blk_rq_pos(req) &lt;&lt; <span class="hljs-number">9</span>;   <span class="hljs-comment">/* 起始扇区 -&gt; 字节地址 */</span>
+<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> len = blk_rq_cur_bytes(req);    <span class="hljs-comment">/* 当前段要传的字节数 */</span>
+
+<span class="hljs-keyword">while</span> (len) {
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> addr = start &amp; CHUNKMASK;       <span class="hljs-comment">/* 切片内偏移 */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> size = CHUNKSIZE - addr;        <span class="hljs-comment">/* 本切片还能放多少 */</span>
+        <span class="hljs-type">void</span> *buffer = bio_data(req-&gt;bio);
+
+        <span class="hljs-keyword">if</span> (len &lt; size)
+                size = len;
+
+        addr += <span class="hljs-built_in">map</span>[start &gt;&gt; CHUNKSHIFT];             <span class="hljs-comment">/* 切片基址 + 偏移 */</span>
+        <span class="hljs-keyword">if</span> (rq_data_dir(req) == READ)
+                <span class="hljs-built_in">memcpy</span>(buffer, (<span class="hljs-type">char</span> *)addr, size);
+        <span class="hljs-keyword">else</span>
+                <span class="hljs-built_in">memcpy</span>((<span class="hljs-type">char</span> *)addr, buffer, size);
+
+        start += size;
+        len -= size;
+}
+</code></pre></div></code></pre>
+<p>三个移位各管一件事：<code>&lt;&lt; 9</code> 是扇区到字节，<code>&gt;&gt; CHUNKSHIFT</code>（16）是字节到 64KB 切片序号，<code>&amp; CHUNKMASK</code> 是切片内偏移。任何一处写错，表现都是「数据能读出来，但整体错位一个固定量」。</p>
+<h2 id="十二驱动的注册add_disk-与-del_gendisk" tabindex="-1">十二、驱动的注册：add_disk 与 del_gendisk <a class="header-anchor" href="#十二驱动的注册add_disk-与-del_gendisk"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>注册一块盘要做的事，按顺序排开是这么一张表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>步骤</th>
+<th>函数</th>
+<th>作用</th>
+<th>5.x 变化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>register_blkdev(major, name)</code></td>
+<td>申请块主设备号，<code>major=0</code> 让内核分配</td>
+<td>仍然可用，但对有固定 major 的驱动可省</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>blk_mq_alloc_disk(&amp;tag_set, queuedata)</code></td>
+<td>一次拿到 gendisk + request_queue</td>
+<td>5.11 才有；之前是 <code>alloc_disk</code> + <code>blk_mq_init_sq_queue</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>填 <code>major</code> / <code>first_minor</code> / <code>disk_name</code> / <code>fops</code></td>
+<td>描述这块盘</td>
+<td><code>queue</code> 不再手工赋值</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>set_capacity(disk, sectors)</code></td>
+<td>设容量，单位扇区</td>
+<td>不变</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>add_disk(disk)</code></td>
+<td>注册到 device model、sysfs、<code>/dev</code>、扫分区</td>
+<td>不变</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>del_gendisk(disk)</code></td>
+<td>反向操作</td>
+<td>不变</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>put_disk(disk)</code> / <code>blk_cleanup_disk(disk)</code></td>
+<td>释放引用</td>
+<td>5.11 起用 <code>blk_cleanup_disk</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>unregister_blkdev(major, name)</code></td>
+<td>注销主设备号</td>
+<td>不变</td>
+</tr>
+</tbody>
+</table></div><p><code>register_blkdev</code> 本质上只是<strong>分配一个主设备号</strong>，不碰任何设备状态。<code>register_blkdev()</code> 的逻辑很短：拿 <code>block_class_lock</code> 互斥锁；<code>major == 0</code> 时从 <code>major_names[]</code> 尾部往前找第一个空槽，找到就把它当返回的主设备号，找不到返回 <code>-EBUSY</code>；<code>major &gt;= BLKDEV_MAJOR_MAX</code> 返回 <code>-EINVAL</code>；否则 <code>kmalloc</code> 一个 <code>struct blk_major_name</code>，<code>strlcpy</code> 名字，链进 <code>major_names[major % 255]</code> 的链表，撞号返回 <code>-EBUSY</code>。全程只在维护一张哈希表：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> BLKDEV_MAJOR_HASH_SIZE 255</span>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_major_name</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_major_name</span> *<span class="hljs-title">next</span>;</span>
+        <span class="hljs-type">int</span> major;
+        <span class="hljs-type">char</span> name[<span class="hljs-number">16</span>];
+} *major_names[BLKDEV_MAJOR_HASH_SIZE];
+</code></pre></div></code></pre>
+<p>要点：</p>
+<ul>
+<li><code>major=0</code> 时从高位往低位找空槽，返回分配到的号；指定主设备号时成功返回 0，失败返回负值；</li>
+<li>注册成功后在 <code>/proc/devices</code> 的 Block devices 段能看到这个名字；</li>
+<li>名字字段是 <code>char name[16]</code>，超过会被 <code>strlcpy</code> 截断；</li>
+<li>素材里写「块设备主设备号理论上有 2^32 个，不必小于 255」不够准确：<code>register_blkdev</code> 的入参上限是 <code>BLKDEV_MAJOR_MAX</code>，而被索引的哈希表只有 255 个槽位。具体上限以那个版本的 <code>include/linux/kdev_t.h</code> 为准（<code>未验证</code> 5.2.8 的确切数值）。</li>
+</ul>
+<p>注销是反操作：</p>
+<p>注销是反操作：按 <code>major % 255</code> 找到链表，比对 major 和 name，都匹配才摘链并 <code>kfree</code>，名字对不上就 <code>WARN_ON(1)</code>（照样返回，属于「调用者写错了」的防御）。
+名字对不上会 <code>WARN_ON(1)</code> 但照样返回，这属于「调用者写错了」的防御。</p>
+<p><strong><code>add_disk</code> 做了什么</strong>，这是整章最值得看清的一段。5.2.8 里 <code>add_disk</code> 是 <code>device_add_disk(parent, disk, groups)</code> 的包装，实际逻辑在 <code>__device_add_disk()</code>。按顺序拆成八步：</p>
+<ol>
+<li><code>GENHD_FL_UP</code> 置位——之后 <code>__blkdev_get</code> 会检查这个标志，没置位就打不开；</li>
+<li><code>blk_alloc_devt()</code> 给 0 号分区分配设备号，回填 <code>major</code> 和 <code>first_minor</code>。所以驱动里不一定非要自己算设备号，<code>major</code> 填 0、<code>first_minor</code> 填 0 让它分配也是可行写法；</li>
+<li>隐藏盘（<code>GENHD_FL_HIDDEN</code>）跳过 sysfs 与扫描，同时打上 <code>GENHD_FL_NO_PART_SCAN</code>；</li>
+<li><code>blk_register_region()</code> 建立「设备号 → gendisk」的映射，落在 <code>bdev_map</code> 里；</li>
+<li><code>register_disk()</code> 把 0 号分区的 device 加进 sysfs，然后<strong>首次打开整盘块设备并扫描分区表</strong>；</li>
+<li><code>blk_register_queue()</code> 建 <code>/sys/block/&lt;name&gt;/queue/</code> 子目录；</li>
+<li>补一次 <code>blk_get_queue()</code> 引用，保证队列活得和 disk 一样久；</li>
+<li>注册磁盘事件（<code>disk_add_events</code>）与完整性信息（<code>blk_integrity_add</code>）。</li>
+</ol>
+<p><code>device_add_disk()</code> 只是带着 <code>register_queue = true</code> 调它一次，没有别的逻辑。</p>
+<p><code>register_disk()</code> 里最关键的两步：<code>bdev-&gt;bd_invalidated = 1</code> 强制标脏，然后 <code>blkdev_get(bdev, FMODE_READ, NULL)</code> 首次打开触发 <code>rescan_partitions()</code>，最后 <code>dev_set_uevent_suppress(ddev, 0)</code> 才放开 uevent 上报。<strong>分区扫描是被「打开」这个动作触发的</strong>，不是 <code>add_disk</code> 直接去读扇区。这也是为什么 <code>set_capacity()</code> 必须放在 <code>add_disk()</code> 前面——扫分区要发真实 I/O，容量为 0 时 <code>register_disk()</code> 直接 <code>goto exit</code> 跳过扫描。</p>
+<p>这里有个容易忽略的前提：<code>register_disk()</code> 在 <code>device_add(ddev)</code> 之后才建 <code>holders</code> / <code>slaves</code> 两个 kobject 目录，分区节点的父设备就是 <code>disk_to_dev(disk)</code>。所以 <code>add_disk</code> 之后 <code>/sys/block/&lt;name&gt;/</code> 下的目录结构已经全了，udev 拿到 <code>KOBJ_ADD</code> 就能直接用。</p>
+<p><strong><code>del_gendisk</code> 做反向拆除</strong>：</p>
+<p><code>del_gendisk()</code> 倒着拆：先删所有分区（<code>disk_part_iter</code> 反向遍历 + <code>invalidate_partition</code> + <code>bdev_unhash_inode</code> + <code>delete_partition</code>），再处理 0 号分区，<code>set_capacity(disk, 0)</code>，清掉 <code>GENHD_FL_UP</code>（此后打开返回 <code>-ENXIO</code>）；接着注销 bdi、<code>blk_unregister_queue()</code>、<code>blk_unregister_region()</code> 撤设备号映射、<code>blk_invalidate_devt()</code>，最后 <code>device_del(disk_to_dev(disk))</code>。整段在 <code>disk-&gt;lookup_sem</code> 写锁里完成，为的是等在途的磁盘查找退出，所以它不能在 I/O 上下文里调。</p>
+<p><code>del_gendisk</code> 不释放 <code>gendisk</code> 本身，它只是「下线」。内存回收靠 <code>put_disk()</code>（减引用）或 5.11 起的 <code>blk_cleanup_disk()</code>（减引用 + 清队列）。<strong>只调 <code>del_gendisk</code> 不调 <code>put_disk</code> 就是泄漏</strong>，这是卸载后 <code>rmmod</code> 卡住、重装报 <code>-EBUSY</code> 的头号原因。</p>
+<p>设备号到 <code>gendisk</code> 的映射靠 <code>bdev_map</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">kobj_map</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">probe</span> {</span>
+                <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">probe</span> *<span class="hljs-title">next</span>;</span>
+                <span class="hljs-type">dev_t</span> dev;
+                <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> range;
+                <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">module</span> *<span class="hljs-title">owner</span>;</span>
+                <span class="hljs-type">kobj_probe_t</span> *get;
+                <span class="hljs-type">int</span> (*lock)(<span class="hljs-type">dev_t</span>, <span class="hljs-type">void</span> *);
+                <span class="hljs-type">void</span> *data;
+        } *probes[<span class="hljs-number">255</span>];
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">mutex</span> *<span class="hljs-title">lock</span>;</span>
+};
+</code></pre></div></code></pre>
+<p>每个 <code>probe</code> 记一个设备号区间（<code>dev</code> + <code>range</code>）和对应数据（<code>data</code>，指向 <code>gendisk</code>），链在 <code>probes[major % 255]</code> 上，按 <code>range</code> 升序排列，这样子区间可以覆盖父区间。查表就是 <code>bdev_map</code> → <code>probes[]</code> → 链 → 找到 <code>gendisk</code>。</p>
+<h2 id="十三分区与磁盘几何" tabindex="-1">十三、分区与磁盘几何 <a class="header-anchor" href="#十三分区与磁盘几何"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>分区的数据结构在第五章给过（<code>disk_part_tbl</code> / <code>hd_struct</code>）。这里说流程和几何。</p>
+<p><strong>扫描流程</strong>走 <code>rescan_partitions()</code>：</p>
+<p><code>rescan_partitions()</code> 的顺序：删旧分区（<code>drop_partitions</code>）→ 调 <code>revalidate_disk</code> 给驱动一次更新容量的机会 → <code>check_disk_size_change</code> 校正 <code>i_size</code> → 清 <code>bd_invalidated</code> → <code>check_partition()</code> 读分区表 → 越界检查（<code>from &gt;= get_capacity</code>、<code>from + size &gt; get_capacity</code>、zoned 对齐）→ <code>add_partition()</code> 逐个建 → 发 <code>KOBJ_CHANGE</code> uevent。越界本身不致命，<code>size</code> 会被裁到 <code>get_capacity(disk) - from</code>，分区表写坏的盘也能挂上一部分；但起始扇区越界（<code>from &gt;= get_capacity</code>）那一项直接 <code>continue</code> 跳过。</p>
+<p><code>check_partition()</code> 遍历 <code>check_part[]</code> 数组（<code>check_part_dos()</code>、<code>check_part_gpt()</code> 等），每个 check 函数都去读第 0 扇区或 LBA1 验证魔数。所以<strong>分区表识别失败的根因多数在第 0 扇区读不到</strong>：驱动有 bug、容量设 0、或者 <code>minors=1</code> 根本不允许扫。</p>
+<p><code>add_partition()</code> 给每个分区建 <code>hd_struct</code>、<code>device_initialize</code>、<code>device_add</code>，设备名按规则生成：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>dname = dev_name(ddev);
+<span class="hljs-keyword">if</span> (<span class="hljs-built_in">isdigit</span>(dname[<span class="hljs-built_in">strlen</span>(dname) - <span class="hljs-number">1</span>]))
+        dev_set_name(pdev, <span class="hljs-string">&quot;%sp%d&quot;</span>, dname, partno);   <span class="hljs-comment">/* mmcblk0 -&gt; mmcblk0p1 */</span>
+<span class="hljs-keyword">else</span>
+        dev_set_name(pdev, <span class="hljs-string">&quot;%s%d&quot;</span>, dname, partno);    <span class="hljs-comment">/* sda -&gt; sda1 */</span>
+</code></pre></div></code></pre>
+<p>这条规则解释了为什么 eMMC 分区叫 <code>mmcblk0p1</code> 而 SATA 盘叫 <code>sda1</code>。</p>
+<p><strong>磁盘几何</strong>只在实现了 <code>getgeo</code> 的设备上才有意义。RamDisk 的例子：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">ramdisk_getgeo</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> block_device *bdev, <span class="hljs-keyword">struct</span> hd_geometry *geo)</span>
+{
+        geo-&gt;heads = <span class="hljs-number">2</span>;
+        geo-&gt;cylinders = <span class="hljs-number">32</span>;
+        geo-&gt;sectors = RAMDISK_SIZE / (<span class="hljs-number">2</span> * <span class="hljs-number">32</span> * SECTOR_SIZE);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>heads=2</code>、<code>cylinders=32</code>，2MB 的盘算出来每柱面 64 个扇区。这个几何直接决定 fdisk 的行为：柱面只有 1~32，最多只能划 2 个主分区，第 3 个直接失败；分区边界也不落在物理柱面边界上，fdisk 会打 <code>Partition 1 does not end on cylinder boundary</code> 警告。这不是驱动写错了，是几何填得不合理。真实磁盘驱动从硬盘的 identify 信息里取几何，不用自己编。</p>
+<p><strong>分区数的硬限制</strong>是 <code>minors</code>：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th><code>alloc_disk(n)</code> 的 minors</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>只有 0 号分区，不能分区，可分区数为 0</td>
+</tr>
+<tr>
+<td>2</td>
+<td>只能有 1 个分区</td>
+</tr>
+<tr>
+<td>16</td>
+<td>最多 15 个分区，MBR 的经典配置</td>
+</tr>
+<tr>
+<td>0</td>
+<td>交给内核用 <code>GENHD_FL_EXT_DEVT</code> 动态分配设备号</td>
+</tr>
+</tbody>
+</table></div><p>素材里那个 fdisk <code>w</code> 保存失败的案例，根因就是 <code>alloc_disk(1)</code>，改成大于 2 的值立刻恢复。</p>
+<h2 id="十四完整的-sbull-实例" tabindex="-1">十四、完整的 sbull 实例 <a class="header-anchor" href="#十四完整的-sbull-实例"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>下面这个 RamDisk 驱动来自素材，是 2.6 ~ 3.x 时代的 <code>make_request</code> 写法。它最大的价值是让你看见「驱动只要处理 bio，其余都归块层」这件事。<strong>这段代码在现代内核上编译不过</strong>，第 3 点给出改写路线。</p>
+<p><strong>1）头文件和全局状态</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/module.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/moduleparam.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/init.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/sched.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/kernel.h&gt;</span>       <span class="hljs-comment">/* printk() */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/slab.h&gt;</span>         <span class="hljs-comment">/* kmalloc() */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/fs.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/errno.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/timer.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/types.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/fcntl.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/hdreg.h&gt;</span>        <span class="hljs-comment">/* HDIO_GETGEO */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/kdev_t.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/vmalloc.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/genhd.h&gt;</span>        <span class="hljs-comment">/* gendisk */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/blkdev.h&gt;</span>       <span class="hljs-comment">/* 块设备接口 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/buffer_head.h&gt;</span>  <span class="hljs-comment">/* invalidate_bdev */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/bio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/version.h&gt;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SBULL_DEVICEMAJOR   COMPAQ_SMART2_MAJOR</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SBULL_DISKNAME      <span class="hljs-string">&quot;sbull&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SBULL_BYTES         (16 * 1024 * 1024)</span>
+
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request_queue</span> *<span class="hljs-title">sbull_queue</span>;</span>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">gendisk</span> *<span class="hljs-title">sbull_disk</span>;</span>
+<span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> sbull_data[SBULL_BYTES];
+</code></pre></div></code></pre>
+<p><strong>2）核心处理函数</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">sbull_make_request</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> request_queue *q, <span class="hljs-keyword">struct</span> bio *bio)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">bio_vec</span> *<span class="hljs-title">bvec</span>;</span>
+        <span class="hljs-type">int</span> i;
+        <span class="hljs-type">void</span> *dsk_mem;
+
+        <span class="hljs-comment">/* 越界检查：起始偏移 + 长度 不能超过设备容量 */</span>
+        <span class="hljs-keyword">if</span> ((bio-&gt;bi_sector &lt;&lt; <span class="hljs-number">9</span>) + bio-&gt;bi_size &gt; SBULL_BYTES) {
+                printk(KERN_ERR SBULL_DISKNAME
+                        <span class="hljs-string">&quot;: bad request: block=%llu, count=%u\n&quot;</span>,
+                        (<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-type">long</span>)bio-&gt;bi_sector, bio-&gt;bi_size);
+                bio_endio(bio, -EIO);
+                <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+        }
+
+        dsk_mem = sbull_data + (bio-&gt;bi_sector &lt;&lt; <span class="hljs-number">9</span>);
+
+        bio_for_each_segment(bvec, bio, i) {
+                <span class="hljs-type">void</span> *iovec_mem
+                        = kmap(bvec-&gt;bv_page) + bvec-&gt;bv_offset;
+
+                <span class="hljs-keyword">if</span> (bio_rw(bio) == WRITE)
+                        <span class="hljs-built_in">memcpy</span>(dsk_mem, iovec_mem, bvec-&gt;bv_len);
+                <span class="hljs-keyword">else</span>
+                        <span class="hljs-built_in">memcpy</span>(iovec_mem, dsk_mem, bvec-&gt;bv_len);
+
+                kunmap(bvec-&gt;bv_page);
+                dsk_mem += bvec-&gt;bv_len;
+        }
+
+        bio_endio(bio, <span class="hljs-number">0</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>这段是全文最值得逐行读的代码。它做了一个块设备驱动的最小数据通路：</p>
+<ul>
+<li><code>bio-&gt;bi_sector &lt;&lt; 9</code> 得到字节偏移，直接当 RAM 数组下标；</li>
+<li><code>bio_for_each_segment</code> 遍历内存段，逐段 <code>memcpy</code>；</li>
+<li>读完/写完调 <code>bio_endio(bio, 0)</code>，块层收到通知继续往上走。</li>
+</ul>
+<p><code>kmap</code> / <code>kunmap</code> 这对操作在 32 位时代是必须的（高端内存需要临时映射），64 位内核上 <code>page_address()</code> 就够，但为了兼容低端/高端内存混用，用 <code>kmap</code> 不会错。<code>bio_for_each_segment</code> 的第三个参数在 2.6 是 <code>int i</code>，3.x 之后要传 <code>struct bvec_iter iter</code>。</p>
+<p><strong>3）迁移到 5.x 的改写路线</strong></p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>旧写法</th>
+<th>新写法</th>
+<th>生效版本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>blk_alloc_queue(GFP_KERNEL)</code></td>
+<td><code>blk_mq_alloc_disk()</code> 或 <code>blk_alloc_disk()</code></td>
+<td>5.11 起推荐新 API</td>
+</tr>
+<tr>
+<td><code>blk_queue_make_request(q, fn)</code></td>
+<td><code>blk_mq_ops.queue_rq</code>，或 5.9+ 的 <code>bdev_ops.submit_bio</code></td>
+<td>5.9</td>
+</tr>
+<tr>
+<td><code>int fn(struct request_queue *, struct bio *)</code></td>
+<td><code>blk_qc_t submit_bio(struct bio *)</code></td>
+<td>5.9</td>
+</tr>
+<tr>
+<td><code>bio_endio(bio, 0)</code></td>
+<td><code>bio_endio(bio)</code></td>
+<td>4.3 起</td>
+</tr>
+<tr>
+<td><code>bio_rw(bio)</code></td>
+<td><code>bio_data_dir(bio)</code> / <code>op_is_write(bio_op(bio))</code></td>
+<td>4.3 起废弃</td>
+</tr>
+<tr>
+<td><code>bio-&gt;bi_sector</code></td>
+<td><code>bio-&gt;bi_iter.bi_sector</code></td>
+<td>4.14 起重构</td>
+</tr>
+<tr>
+<td><code>bio-&gt;bi_size</code></td>
+<td><code>bio-&gt;bi_iter.bi_size</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>page_address(page)</code></td>
+<td>沿用，或 <code>kmap_local_page()</code></td>
+<td>5.11 起逐步替代 <code>kmap</code></td>
+</tr>
+<tr>
+<td><code>alloc_disk(1)</code></td>
+<td><code>blk_mq_alloc_disk()</code> / <code>blk_alloc_disk()</code></td>
+<td>5.16 移除</td>
+</tr>
+</tbody>
+</table></div><p>一个 5.15+ 能编译的骨架（<strong>未在真机验证</strong>，只保证接口对齐）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/module.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/blk-mq.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/blkdev.h&gt;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> RAM_BYTES   (16 * 1024 * 1024)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> RAM_NAME    <span class="hljs-string">&quot;sbull&quot;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *ram_data;
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_tag_set</span> <span class="hljs-title">tag_set</span>;</span>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">gendisk</span> *<span class="hljs-title">ram_disk</span>;</span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">blk_status_t</span> <span class="hljs-title function_">ram_queue_rq</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_hw_ctx *hctx,
+                                 <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> blk_mq_queue_data *bd)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request</span> *<span class="hljs-title">rq</span> =</span> bd-&gt;rq;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">req_iterator</span> <span class="hljs-title">iter</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">bio_vec</span> <span class="hljs-title">bvec</span>;</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> pos = blk_rq_pos(rq) &lt;&lt; <span class="hljs-number">9</span>;
+        <span class="hljs-type">int</span> dir = rq_data_dir(rq);
+
+        blk_mq_start_request(rq);
+
+        rq_for_each_segment(bvec, rq, iter) {
+                <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *buf = kmap_local_page(bvec.bv_page) + bvec.bv_offset;
+
+                <span class="hljs-keyword">if</span> (pos + bvec.bv_len &gt; RAM_BYTES) {
+                        kunmap_local(buf);
+                        blk_mq_end_request(rq, BLK_STS_IOERR);
+                        <span class="hljs-keyword">return</span> BLK_STS_OK;
+                }
+
+                <span class="hljs-keyword">if</span> (dir == WRITE)
+                        <span class="hljs-built_in">memcpy</span>(ram_data + pos, buf, bvec.bv_len);
+                <span class="hljs-keyword">else</span>
+                        <span class="hljs-built_in">memcpy</span>(buf, ram_data + pos, bvec.bv_len);
+
+                kunmap_local(buf);
+                pos += bvec.bv_len;
+        }
+
+        blk_mq_end_request(rq, BLK_STS_OK);
+        <span class="hljs-keyword">return</span> BLK_STS_OK;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_ops</span> <span class="hljs-title">ram_mq_ops</span> =</span> {
+        .queue_rq = ram_queue_rq,
+};
+
+<span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">block_device_operations</span> <span class="hljs-title">ram_fops</span> =</span> {
+        .owner = THIS_MODULE,
+};
+</code></pre></div></code></pre>
+<p>初始化路径：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> __init <span class="hljs-title function_">ram_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+        <span class="hljs-type">int</span> ret;
+
+        ram_data = vzalloc(RAM_BYTES);
+        <span class="hljs-keyword">if</span> (!ram_data)
+                <span class="hljs-keyword">return</span> -ENOMEM;
+
+        tag_set.ops = &amp;ram_mq_ops;
+        tag_set.nr_hw_queues = <span class="hljs-number">1</span>;
+        tag_set.queue_depth = <span class="hljs-number">128</span>;
+        tag_set.numa_node = NUMA_NO_NODE;
+        tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
+
+        ret = blk_mq_alloc_tag_set(&amp;tag_set);
+        <span class="hljs-keyword">if</span> (ret)
+                <span class="hljs-keyword">goto</span> err_free;
+
+        ram_disk = blk_mq_alloc_disk(&amp;tag_set, <span class="hljs-literal">NULL</span>);
+        <span class="hljs-keyword">if</span> (IS_ERR(ram_disk)) {
+                ret = PTR_ERR(ram_disk);
+                <span class="hljs-keyword">goto</span> err_tag;
+        }
+
+        ram_disk-&gt;fops = &amp;ram_fops;
+        strscpy(ram_disk-&gt;disk_name, RAM_NAME, DISK_NAME_LEN);
+        set_capacity(ram_disk, RAM_BYTES &gt;&gt; <span class="hljs-number">9</span>);   <span class="hljs-comment">/* 必须在 add_disk 之前 */</span>
+
+        ret = add_disk(ram_disk);
+        <span class="hljs-keyword">if</span> (ret)
+                <span class="hljs-keyword">goto</span> err_disk;
+
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+err_disk:
+        put_disk(ram_disk);
+err_tag:
+        blk_mq_free_tag_set(&amp;tag_set);
+err_free:
+        vfree(ram_data);
+        <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<p>差异清单，注意这几处：</p>
+<ul>
+<li>用 <code>rq_for_each_segment</code> 遍历<strong>请求</strong>的段，而不是 <code>bio_for_each_segment</code> 遍历 bio 的段。因为一个 request 里能装好几个 bio，后者只覆盖第一个；</li>
+<li><code>set_capacity</code> 必须在 <code>add_disk</code> 之前，否则扫分区时容量是 0，直接跳过；</li>
+<li><code>blk_mq_alloc_disk</code> 之后不再有 <code>disk-&gt;queue = q</code> 这一行；</li>
+<li><code>add_disk</code> 在 5.11 之后有返回值（<code>int</code>），旧版本是 <code>void</code>，所以 <code>ret = add_disk(...)</code> 这行跨版本要加判断。</li>
+</ul>
+<p><strong>4）测试流程</strong></p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 编译（Makefile 交给内核构建系统）</span>
+<span class="hljs-comment"># obj-m += ram_disk.o</span>
+<span class="hljs-comment"># make -C /lib/modules/$(uname -r)/build M=$PWD modules</span>
+
+<span class="hljs-comment"># 加载</span>
+insmod ram_disk.ko
+lsblk                        <span class="hljs-comment"># 应该能看到 sbull 16M</span>
+<span class="hljs-built_in">ls</span> -l /dev/sbull             <span class="hljs-comment"># 主设备号 + 0 号次设备号</span>
+
+<span class="hljs-comment"># 格式化并挂载</span>
+mkfs.vfat /dev/sbull
+mount /dev/sbull /mnt
+<span class="hljs-built_in">echo</span> <span class="hljs-string">&quot;hello&quot;</span> &gt; /mnt/1.txt
+<span class="hljs-built_in">cat</span> /mnt/1.txt
+
+<span class="hljs-comment"># 卸载</span>
+umount /mnt
+<span class="hljs-built_in">cat</span> /dev/sbull &gt; /tmp/dump.bin   <span class="hljs-comment"># 整盘读，用来观察段数量</span>
+rmmod ram_disk
+</code></pre></div></code></pre>
+<p>素材里的调试日志很有信息量，摘一段：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>[root@zy:/]# mkdosfs /dev/ramdisk
+every chunk size 4096,chunk count 512
+device major 37, minor 0
+open block device success
+read from disk address 0,length 4096,bio segment count 1;disk mapping ram c30b1000
+read from disk address 4096,length 4096,bio segment count 1;disk mapping ram c30b0000
+...
+write to disk address 0,length 4096,bio segment count 1;disk mapping ram c30b1000
+release block device success
+</code></pre></div></code></pre>
+<p>三个可读的点：</p>
+<ol>
+<li><code>mkdosfs</code> 先顺序读 8 个 4KB 块（共 32KB），再回写第 0 扇区。读 32KB 是在探测介质，写第 0 扇区才是写引导记录。</li>
+<li><code>mount</code> 时先读 1024 字节，那是 FAT 卷的 BPB 探测，之后才正式读超级块。</li>
+<li><code>cat /dev/sbull</code> 那批日志里出现 <code>bio segment count 19</code>、<code>4</code>、<code>2</code>，说明整盘顺序读时一个 bio 里挂了很多段。这些段在磁盘上连续、在内存里不连续，正是第八章讲的场景。</li>
+</ol>
+<p>还有个容易看漏的现象：访问 <code>/dev/ramdisk1</code>（分区）时，日志打的是 <code>device major 37, minor 0</code>。原因是分区的 <code>open</code> 先落到整盘块设备上，<code>bd_contains</code> 指向整盘，<code>__blkdev_get</code> 递归打开父设备。素材里那句「读写的都是整个磁盘」描述的就是这个，不是驱动写错了。</p>
+<h2 id="十五错误处理与热插拔" tabindex="-1">十五、错误处理与热插拔 <a class="header-anchor" href="#十五错误处理与热插拔"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><strong>错误从哪一层返回</strong>，要分清三处：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位置</th>
+<th>表达方式</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>queue_rq</code> 返回 <code>BLK_STS_RESOURCE</code> / <code>BLK_STS_DEV_RESOURCE</code></td>
+<td>状态码</td>
+<td>资源忙，块层把请求挂回 <code>hctx-&gt;dispatch</code> 或软队列重试</td>
+</tr>
+<tr>
+<td><code>queue_rq</code> 返回 <code>BLK_STS_IOERR</code></td>
+<td>状态码</td>
+<td>硬错误，直接失败</td>
+</tr>
+<tr>
+<td><code>blk_mq_end_request(rq, status)</code></td>
+<td>状态码</td>
+<td>完成并上报结果</td>
+</tr>
+<tr>
+<td><code>bio_endio(bio)</code> / <code>bio_endio(bio, -EIO)</code></td>
+<td>errno</td>
+<td>bio 型驱动专用，4.3 前要额外传 <code>bio-&gt;bi_size</code></td>
+</tr>
+<tr>
+<td><code>fops-&gt;open()</code> 返回 <code>-ENXIO</code></td>
+<td>errno</td>
+<td>设备不在（介质被拔）</td>
+</tr>
+<tr>
+<td><code>fops-&gt;open()</code> 返回 <code>-ERESTARTSYS</code></td>
+<td>errno</td>
+<td>告诉块层重试打开</td>
+</tr>
+</tbody>
+</table></div><p>最常踩的是返回码用错。<code>queue_rq</code> 不能返回 <code>-EIO</code>（那是 errno），必须返回 <code>blk_status_t</code>。返回 <code>-EIO</code> 会被当成一个无意义的状态值，块层行为不确定。</p>
+<p><strong>越界检查</strong>是所有 RamDisk/自定义驱动的必修课，两种位置各有讲究：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* bio 型 */</span>
+<span class="hljs-keyword">if</span> ((bio-&gt;bi_sector &lt;&lt; <span class="hljs-number">9</span>) + bio-&gt;bi_size &gt; DISK_BYTES)
+        bio_endio(bio, -EIO);
+
+<span class="hljs-comment">/* request 型 */</span>
+<span class="hljs-keyword">if</span> ((blk_rq_pos(rq) &lt;&lt; <span class="hljs-number">9</span>) + blk_rq_bytes(rq) &gt; DISK_BYTES)
+        blk_mq_end_request(rq, BLK_STS_IOERR);
+</code></pre></div></code></pre>
+<p>第二个用的是 <code>blk_rq_bytes(rq)</code>（整个请求），有驱动用 <code>blk_rq_cur_bytes(rq)</code>（当前段），后者只检查一段，请求尾部越界查不出来。</p>
+<p><strong>错误注入</strong>：内核自带 <code>CONFIG_FAIL_MAKE_REQUEST</code>，可以按比例让下发直接失败，用来验证上层文件系统和应用有没有正确处理 I/O 错误。这是测错误路径最省事的办法，比拔盘强（<code>未验证</code> 该配置在 5.9 之后的 debugfs 路径名）。</p>
+<p><strong>热插拔</strong>分两种场景：</p>
+<p><em>介质可换</em>（U 盘、SD 卡、光驱）。设备本身在，介质换了：</p>
+<ol>
+<li>驱动在 <code>check_events()</code> 里检测到介质变化，调 <code>bdev_disk_changed(disk, false)</code>；</li>
+<li>内核去调 <code>revalidate_disk()</code> 让驱动更新容量；</li>
+<li>触发 <code>rescan_partitions()</code>；</li>
+<li>老的分区 device 全部删掉、新的加进来，uevent 上报。</li>
+</ol>
+<p><em>设备消失</em>（USB 拔掉、SD 控制器移除）：</p>
+<ol>
+<li>停止队列，让新请求快速失败；</li>
+<li><code>del_gendisk(disk)</code> 下线；</li>
+<li><code>put_disk()</code> 减引用。</li>
+</ol>
+<p><code>add_disk</code> 之后有 I/O 在跑的时候不能直接 <code>put_disk</code>，<code>del_gendisk</code> 会先拿 <code>lookup_sem</code> 写锁，这就是它要持写锁的原因。</p>
+<p><strong>udev 与分区自动挂载</strong>：<code>add_disk</code> 里 <code>dev_set_uevent_suppress(ddev, 1)</code> 把 uevent 压到分区扫完再发，这样 uevent 处理器拿到 <code>/dev/sdX</code> 的时候分区节点已经齐了。如果驱动自己提前 <code>kobject_uevent(KOBJ_ADD)</code>，用户态就会拿到一个还没有分区的设备，自动挂载工具白跑一次。</p>
+<h2 id="十六调试手段与常见故障" tabindex="-1">十六、调试手段与常见故障 <a class="header-anchor" href="#十六调试手段与常见故障"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><strong>先看设备在不在</strong>：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">cat</span> /proc/devices              <span class="hljs-comment"># Block devices 段有没有你的名字和主设备号</span>
+<span class="hljs-built_in">cat</span> /proc/partitions           <span class="hljs-comment"># 磁盘和分区的扇区数</span>
+lsblk                          <span class="hljs-comment"># 树状，带 SIZE / TYPE / MOUNTPOINT</span>
+<span class="hljs-built_in">ls</span> -l /dev/sd*                 <span class="hljs-comment"># 设备节点，&#x27;b&#x27; 开头表示块设备</span>
+<span class="hljs-built_in">cat</span> /sys/block/sbull/queue/scheduler   <span class="hljs-comment"># 当前调度器</span>
+<span class="hljs-built_in">cat</span> /sys/block/sbull/size      <span class="hljs-comment"># 容量，单位 512 字节扇区</span>
+</code></pre></div></code></pre>
+<p><code>/sys/block/&lt;dev&gt;/size</code> 是最快的容量核对手段：值等于 <code>bytes &gt;&gt; 9</code>。如果它是 0，<code>set_capacity</code> 那一行没生效或者放错了位置。</p>
+<p><strong>动态调试</strong>：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 块层的 debugfs</span>
+<span class="hljs-built_in">ls</span> /sys/kernel/debug/block/
+<span class="hljs-built_in">cat</span> /sys/kernel/debug/block/sda/state
+<span class="hljs-built_in">cat</span> /sys/kernel/debug/block/sda/hctx0/tags
+
+<span class="hljs-comment"># 动态开 printk</span>
+<span class="hljs-built_in">echo</span> <span class="hljs-string">&#x27;file blk-mq.c +p&#x27;</span> &gt; /sys/kernel/debug/dynamic_debug/control
+
+<span class="hljs-comment"># 追一次具体 I/O</span>
+blktrace -d /dev/sbull -o trace
+blkparse trace
+</code></pre></div></code></pre>
+<p><strong>ftrace 追调用链</strong>：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">cd</span> /sys/kernel/debug/tracing
+<span class="hljs-built_in">echo</span> submit_bio_noacct &gt; set_graph_function
+<span class="hljs-built_in">echo</span> function_graph &gt; current_tracer
+<span class="hljs-built_in">cat</span> trace_pipe
+</code></pre></div></code></pre>
+<p><strong>常见故障对照表</strong>：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>常见原因</th>
+<th>查法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>insmod</code> 成功但 <code>/dev</code> 下没节点</td>
+<td><code>add_disk</code> 没调 / 返回错误被忽略</td>
+<td><code>dmesg</code> 看 <code>register_disk</code> 有没有走完</td>
+</tr>
+<tr>
+<td><code>/proc/partitions</code> 有，<code>/dev</code> 没有</td>
+<td>udev 没收到 uevent，或 <code>GENHD_FL_HIDDEN</code> 置了</td>
+<td><code>udevadm monitor</code></td>
+</tr>
+<tr>
+<td><code>fdisk -l</code> 显示 0 字节</td>
+<td><code>set_capacity</code> 放到 <code>add_disk</code> 后面</td>
+<td><code>cat /sys/block/X/size</code></td>
+</tr>
+<tr>
+<td><code>fdisk</code> 保存分区表失败</td>
+<td><code>minors</code> 太小</td>
+<td>看 <code>alloc_disk</code> 的参数</td>
+</tr>
+<tr>
+<td><code>mkfs</code> 报 <code>No space left</code></td>
+<td>分区 <code>nr_sects</code> 为 0 或越界</td>
+<td><code>dmesg</code> 里搜 <code>beyond EOD</code></td>
+</tr>
+<tr>
+<td><code>mount</code> 报 <code>wrong fs type</code></td>
+<td>分区表没扫到，或 <code>getgeo</code> 给的几何离谱</td>
+<td><code>dmesg</code> + <code>blkid</code></td>
+</tr>
+<tr>
+<td>读写数据错位</td>
+<td><code>bi_sector</code> / <code>bi_size</code> 没走 <code>bi_iter</code>，或段偏移算错</td>
+<td>在驱动里打印首尾扇区</td>
+</tr>
+<tr>
+<td><code>rmmod</code> 卡住</td>
+<td>没 <code>del_gendisk</code>，或没 <code>put_disk</code></td>
+<td><code>lsmod</code> 看 refcount</td>
+</tr>
+<tr>
+<td>重装报 <code>-EBUSY</code></td>
+<td>上次卸载没走完，主设备号没注销</td>
+<td><code>/proc/devices</code> 找残留</td>
+</tr>
+<tr>
+<td>大量读写后 OOM</td>
+<td>队列深度太大，或 <code>bio_inline_vecs</code> 用错</td>
+<td><code>dmesg</code> 看 slab 增长</td>
+</tr>
+<tr>
+<td><code>task blocked for more than 120s</code></td>
+<td>请求没调 <code>blk_mq_end_request</code></td>
+<td><code>echo w &gt; /proc/sysrq-trigger</code> 看栈</td>
+</tr>
+</tbody>
+</table></div><p><strong><code>bio_endio</code> 少调一次</strong>的典型症状就是 <code>task blocked for more than 120 seconds</code>，栈卡在 <code>io_schedule</code> 上。块层在等完成通知，驱动在某个错误分支里直接 <code>return</code> 了。写驱动的铁律：<strong>无论走哪条路出去，都必须有一次且仅有一次完成通知</strong>。</p>
+<h2 id="十七易错点速查" tabindex="-1">十七、易错点速查 <a class="header-anchor" href="#十七易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>坑</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>拿 5.0 之前的教程照抄 <code>blk_init_queue</code> / <code>make_request_fn</code></td>
+<td>5.0 起只用 blk-mq：填 <code>blk_mq_ops.queue_rq</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>bio_endio(bio, 0)</code> 两参数写法</td>
+<td>4.3 起是 <code>bio_endio(bio)</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>bio-&gt;bi_sector</code> / <code>bio-&gt;bi_size</code></td>
+<td>4.14 起重构成 <code>bio-&gt;bi_iter.bi_sector</code> / <code>.bi_size</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>bio_rw(bio)</code> 返回 <code>READ</code>/<code>WRITE</code>/<code>READA</code></td>
+<td>用 <code>bio_data_dir(bio)</code> 或 <code>op_is_write(bio_op(bio))</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>disk-&gt;queue = q</code>（5.11+）</td>
+<td>队列在 <code>blk_mq_alloc_disk</code> 内部挂好，别再赋</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>set_capacity</code> 放在 <code>add_disk</code> 之后</td>
+<td>必须在之前，否则扫分区时容量是 0</td>
+</tr>
+<tr>
+<td>7</td>
+<td>容量按字节传</td>
+<td><code>set_capacity</code> 收扇区数：<code>bytes &gt;&gt; 9</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>用 <code>int</code> 装 <code>bytes &lt;&lt; 9</code></td>
+<td>用 <code>loff_t</code> / <code>sector_t</code>，超过 2GB 必溢出</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>alloc_disk(1)</code> 之后去 <code>fdisk</code> 分区</td>
+<td><code>minors</code> 至少 2 才能有 1 个分区，16 是常规配置</td>
+</tr>
+<tr>
+<td>10</td>
+<td>只调 <code>del_gendisk</code> 不调 <code>put_disk</code></td>
+<td>两个都要调，否则 <code>rmmod</code> 卡死</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>queue_rq</code> 返回 errno（<code>-EIO</code>）</td>
+<td>返回 <code>blk_status_t</code>（<code>BLK_STS_IOERR</code>）</td>
+</tr>
+<tr>
+<td>12</td>
+<td>错误分支里直接 <code>return</code> 不调完成</td>
+<td>每条路径都要 <code>blk_mq_end_request</code> / <code>bio_endio</code></td>
+</tr>
+<tr>
+<td>13</td>
+<td>用 <code>bio_for_each_segment</code> 遍历 request</td>
+<td>request 型驱动用 <code>rq_for_each_segment</code></td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>bio_for_each_segment(bv, bio, int i)</code></td>
+<td>第三个参数是 <code>struct bvec_iter</code>，不是 <code>int</code></td>
+</tr>
+<tr>
+<td>15</td>
+<td>越界检查用 <code>blk_rq_cur_bytes</code></td>
+<td>用 <code>blk_rq_bytes</code> 检查整个请求</td>
+</tr>
+<tr>
+<td>16</td>
+<td>分区访问忘了加 <code>start_sect</code></td>
+<td>分区偏移要加上分区起始扇区</td>
+</tr>
+<tr>
+<td>17</td>
+<td><code>REQ_OP_SECURE_ERASE</code> 分支照抄</td>
+<td>2022 年 3 月后的内核已删掉这个操作码</td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>register_blkdev</code> 返回值当成功判断</td>
+<td>指定 major 时返回 0 是成功，<code>major=0</code> 时返回分配到的号</td>
+</tr>
+<tr>
+<td>19</td>
+<td>在驱动里期待自己扫分区</td>
+<td>分区由 <code>register_disk</code> 打开设备时触发扫描</td>
+</tr>
+<tr>
+<td>20</td>
+<td><code>unsigned char data[16MB]</code> 定义成静态数组</td>
+<td>模块 data 段太大，用 <code>vmalloc</code> / <code>vzalloc</code></td>
+</tr>
+<tr>
+<td>21</td>
+<td>用 <code>%d</code> 打印 <code>sector_t</code></td>
+<td>用 <code>%llu</code> 加 <code>(unsigned long long)</code></td>
+</tr>
+<tr>
+<td>22</td>
+<td>fops 忘了 <code>.owner = THIS_MODULE</code></td>
+<td>必填，否则模块引用计数错乱</td>
+</tr>
+</tbody>
+</table></div><h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="章节出处对照" tabindex="-1">章节出处对照 <a class="header-anchor" href="#章节出处对照"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>本篇章节</th>
+<th>主要来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一、块设备与字符设备的本质差别</td>
+<td>素材 1 第一节（设备分类）、素材 2 第一节（对比）</td>
+</tr>
+<tr>
+<td>二、扇区、块与段的层级关系</td>
+<td>素材 1 第二节、素材 2 第一节</td>
+</tr>
+<tr>
+<td>三、Linux 块子系统的层次架构</td>
+<td>素材 1 第二节、素材 2 第二节；版本表来自内核提交记录</td>
+</tr>
+<tr>
+<td>四、四大核心数据结构总览</td>
+<td>素材 2 第三节</td>
+</tr>
+<tr>
+<td>五、gendisk</td>
+<td>素材 1 第二、三、四节（<code>gendisk</code> / <code>disk_part_tbl</code> / <code>hd_struct</code> 全文）</td>
+</tr>
+<tr>
+<td>六、block_device_operations</td>
+<td>素材 1 第三节（<code>block_device_operations</code> 全文）</td>
+</tr>
+<tr>
+<td>七、request_queue 与请求队列</td>
+<td>素材 1 第三节、素材 4 第一节（<code>request_queue</code> / <code>request</code> 全文）</td>
+</tr>
+<tr>
+<td>八、bio</td>
+<td>素材 4 第一节（<code>bio</code> / <code>bio_vec</code> / <code>bvec_iter</code> / <code>req_opf</code> 全文）</td>
+</tr>
+<tr>
+<td>九、从文件系统到驱动的完整路径</td>
+<td>素材 4 第四、五节（<code>submit_bio</code> / <code>generic_make_request</code> / <code>blk_mq_make_request</code>）</td>
+</tr>
+<tr>
+<td>十、请求的合并与调度</td>
+<td>素材 4 第五节（<code>blk_attempt_plug_merge</code> 与三种合并函数）</td>
+</tr>
+<tr>
+<td>十一、扇区与偏移的换算</td>
+<td>素材 2 第五节、素材 3、素材 4（<code>&lt;&lt; 9</code> 各处）</td>
+</tr>
+<tr>
+<td>十二、驱动的注册</td>
+<td>素材 1 第三节（<code>register_blkdev</code> / <code>__device_add_disk</code> / <code>register_disk</code> / <code>del_gendisk</code> 全文）</td>
+</tr>
+<tr>
+<td>十三、分区与磁盘几何</td>
+<td>素材 1 第四节（<code>rescan_partitions</code> / <code>add_partition</code> 全文）、素材 3（<code>getgeo</code>）</td>
+</tr>
+<tr>
+<td>十四、完整的 sbull 实例</td>
+<td>素材 3（sbull 全文）、素材 4（RamDisk 骨架）、素材 3 的运行日志</td>
+</tr>
+<tr>
+<td>十五、错误处理与热插拔</td>
+<td>素材 1、素材 3 的 <code>-EIO</code> 分支与日志</td>
+</tr>
+<tr>
+<td>十六、调试手段与常见故障</td>
+<td>素材 1 的 <code>lsblk</code> / <code>fdisk -l</code> 输出、素材 3 的完整运行日志</td>
+</tr>
+<tr>
+<td>十七、易错点速查</td>
+<td>汇总前述各章</td>
+</tr>
+</tbody>
+</table></div><p>素材编号说明：<strong>素材 1</strong> = <code>linux驱动移植-linux块设备驱动基础.md</code>；<strong>素材 2</strong> = <code>9块设备.md</code>；<strong>素材 3</strong> = <code>块设备驱动.md</code>，并与同目录 <code>linux驱动移植-linux块设备驱动z2ram.md</code> 第六节（RamDisk 实例）互为印证；<strong>素材 4</strong> = 同目录 <code>linux驱动移植-linux块设备驱动blk-mq.md</code> 第一、四、五节。素材 3 本身只有 163 行纯代码，没有章节结构，本篇按内容拆进第五、六、十四、十五章；它的碎片段（重复的 <code>switch</code> 分支、被围栏打断的 <code>z2_queue_rq</code> 尾部）已按语义重建，未保留原碎片。</p>
+<h3 id="修正的错误" tabindex="-1">修正的错误 <a class="header-anchor" href="#修正的错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ol>
+<li><strong>素材 2 的 <code>request_queue</code> / <code>make_request_fn</code> 用法过时</strong>。原文「方式 A：<code>blk_init_queue(my_request_fn, &amp;my_lock)</code>」「方式 B：<code>blk_alloc_queue</code> + <code>blk_queue_make_request</code>」这套 API 在 5.0 之后已不存在，<code>make_request_fn</code> 字段本身在 5.9 被移出 <code>request_queue</code>。已在第三章、第七章给出替代路径。</li>
+<li><strong>素材 2 的 <code>bio_endio(bio, 0)</code> 参数过时</strong>。4.3 起 <code>bio_endio()</code> 只收一个 <code>struct bio *</code>；原文 <code>my_make_request_fn</code> 的签名 <code>static void f(struct request_queue *q, struct bio *bio)</code> 也过时（应为返回 <code>blk_qc_t</code>）。</li>
+<li><strong>素材 2 的 <code>bio_for_each_segment(bvec, bio, iter)</code> 中第三个参数未声明</strong>，且 <code>iter.bi_sector</code> 的用法容易误读：<code>iter</code> 是遍历器，<code>bi_sector</code> 是本次 I/O 的起点，遍历中变化的是内存侧段指针而不是 <code>bi_sector</code>。本篇把「磁盘侧偏移」和「内存侧段指针」拆成两个局部变量写清楚。</li>
+<li><strong>素材 1 对 <code>gendisk-&gt;queue</code> 的注释「可通过 <code>blk_mq_init_sq_queue</code> 函数分配」</strong> 只适用于一个很窄的版本窗口。5.11 起队列由 <code>blk_mq_alloc_disk</code> 内部创建并自动挂到 <code>disk-&gt;queue</code>，驱动不该再赋值；5.16 起 <code>blk_mq_init_sq_queue</code> 被删除。</li>
+<li><strong>素材 1 的 <code>alloc_disk</code> 说明缺版本边界</strong>。<code>minors</code> 最小值为 1 这条正确，但 5.16 之后这个宏已移除。</li>
+<li><strong>素材 1 里「块设备的主设备号理论上有 2^32 个，而不是必须小于 255」表述不准</strong>。<code>register_blkdev</code> 的入参上限是 <code>BLKDEV_MAJOR_MAX</code>，哈希表 <code>major_names[]</code> 只有 <code>BLKDEV_MAJOR_HASH_SIZE</code>（255）个槽位、按 <code>major % 255</code> 索引。原表述把「设备号编码空间」和「这个函数的入参范围」混成了一件事。</li>
+<li><strong>素材 1 的 <code>hd_struct</code> 与 <code>disk_part_tbl</code> 在后续内核被移除</strong>，原文没有标注。看 6.x 源码找不到这两个结构不是笔误。</li>
+<li><strong>素材 3 的 <code>bio_rw(bio)</code> 三分支写法已废弃</strong>（<code>READ</code>/<code>WRITE</code>/<code>READA</code>），本篇易错点表 #4 标出。原文那两段 <code>#if LINUX_VERSION_CODE &lt; KERNEL_VERSION(2, 6, 24)</code> 的条件编译只对 2.6.24 之前有意义，可以直接删掉。</li>
+<li><strong>素材 3 的 <code>simp_blkdev_data[16 * 1024 * 1024]</code> 静态数组</strong>会进模块的 <code>.bss</code>，16MB 的模块 data 在很多配置下加载失败。本篇改写骨架里改用 <code>vzalloc</code>。</li>
+<li><strong>素材 3 的 <code>#define SIMP_BLKDEV_DEVICEMAJOR COMPAQ_SMART2_MAJOR</code></strong> 是借用别家的主设备号，只适合实验环境。生产驱动应当 <code>register_blkdev(0, name)</code> 让内核分配，或申请正式号段。</li>
+<li><strong>素材 4 的 <code>REQ_OP_SECURE_ERASE</code> 枚举项</strong>已在 2022 年 3 月被补丁移除，同时删掉 <code>BLKSECDISCARD</code> ioctl、<code>QUEUE_FLAG_SECERASE</code>、<code>blk_queue_secure_erase()</code>，以及 <code>drivers/mmc/core/block.c</code> 里整段安全擦除实现。第八章枚举表保留该项并加注。</li>
+<li><strong>素材 4 的 <code>request_queue.make_request_fn</code> 字段位置在 5.9 变了</strong>：移到 <code>block_device_operations.submit_bio</code>，签名从 <code>(struct request_queue *, struct bio *)</code> 变成 <code>(struct bio *)</code> 返回 <code>blk_qc_t</code>。同一系列还把 <code>generic_make_request()</code> 改名 <code>submit_bio_noacct()</code>，并删除了 <code>direct_make_request</code> 旁路。</li>
+<li><strong>素材 4「在 Linux-5.0 中 blk-sq 代码（包括基于 blk-sq 的 I/O 调度器）已被完全移除」这一条正确</strong>，本篇保留并在第三章版本表中强化。CFQ 随之退场，BFQ 接手桌面公平调度。</li>
+<li><strong>素材 4 的 <code>struct blk_plug</code> 有 <code>list</code> 与 <code>mq_list</code> 两套叫法</strong>，前后不一致。5.x 里两者已合并为 <code>mq_list</code>，本篇按 5.2.8 的 <code>mq_list</code> 统一。</li>
+<li><strong>素材 1 / 素材 4 的分隔线与 CSDN 行号残留</strong>已清除，代码块按 <code>c</code> / <code>text</code> / <code>bash</code> 重新标注围栏语言。原素材中被截断的代码块（<code>z2_queue_rq</code> 的 <code>while (len)</code> 循环被一段 <code>makefile</code> 围栏打断、fdisk 交互部分缺输出）已按上下文补齐语义，未虚构新的代码逻辑。</li>
+<li><strong>素材 1 关于 <code>fs/block_dev.c</code> 中 <code>bdget()</code> / <code>__blkdev_get()</code> 的全文引用</strong> 属于「打开块设备」链路，与本篇主线（bio 到 gendisk）重合度不高，只保留结论，不贴全文。</li>
+</ol>
+<h3 id="未验证项" tabindex="-1">未验证项 <a class="header-anchor" href="#未验证项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ol>
+<li><code>gendisk</code> 从 <code>include/linux/genhd.h</code> 迁到 <code>include/linux/blk_types.h</code> 的确切版本未核实。5.2.8 在 <code>genhd.h</code>；6.x 的头文件组织已重组。</li>
+<li><code>hd_struct</code> / <code>disk_part_tbl</code> 被移除、分区信息并入 <code>block_device</code> 的确切版本未核实，只确认 5.11 的补丁系列动了分区结构。</li>
+<li><code>bio-&gt;bi_disk</code> 与 <code>bio-&gt;bi_bdev</code> 来回切换的确切版本未核实。5.2.8 是 <code>bi_disk</code>（<code>struct gendisk *</code>），4.x 是 <code>bi_bdev</code>（<code>struct block_device *</code>）。</li>
+<li>第十四章的 5.15+ <code>blk_mq</code> 骨架只做了接口对齐，<strong>没有在真机编译运行</strong>。<code>kmap_local_page</code> 在 5.11 引入，<code>strscpy</code> 在 4.3 引入，具体到某个 LTS 能否直接编译要实测。</li>
+<li><code>BLKDEV_MAJOR_MAX</code> 的具体数值未查证源码常量，只确认 <code>register_blkdev</code> 里有这个上限检查。</li>
+<li><code>blk_mark_disk_dead()</code> 的引入版本未查证提交记录，正文中提到时不带版本号。</li>
+<li>第十五章错误注入的 <code>fail_make_request</code> 在 5.9 之后随 <code>make_request_fn</code> 改名是否仍用这个 debugfs 路径，未核实。</li>
+<li>素材 3 日志里 <code>bio segment count</code> 打印的是 <code>req-&gt;bio-&gt;bi_vcnt</code>，即<strong>第一个 bio 的段数</strong>，不是整个 request 的段数。原文注释把它和 <code>blk_rq_cur_bytes</code>（当前段字节数）混在一句里说，本篇按语义拆开，但未找到原作者确认。</li>
+</ol>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一块设备与字符设备的本质差别" data-toc-target="一块设备与字符设备的本质差别">一、块设备与字符设备的本质差别</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二扇区块与段的层级关系" data-toc-target="二扇区块与段的层级关系">二、扇区、块与段的层级关系</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三linux-块子系统的层次架构" data-toc-target="三linux-块子系统的层次架构">三、Linux 块子系统的层次架构</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四四大核心数据结构总览" data-toc-target="四四大核心数据结构总览">四、四大核心数据结构总览</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五gendisk一个磁盘的抽象" data-toc-target="五gendisk一个磁盘的抽象">五、gendisk：一个磁盘的抽象</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六block_device_operations驱动要实现的回调" data-toc-target="六block_device_operations驱动要实现的回调">六、block_device_operations：驱动要实现的回调</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七request_queue-与请求队列" data-toc-target="七request_queue-与请求队列">七、request_queue 与请求队列</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八bioio-的基本单位" data-toc-target="八bioio-的基本单位">八、bio：I/O 的基本单位</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九从文件系统到驱动的完整路径" data-toc-target="九从文件系统到驱动的完整路径">九、从文件系统到驱动的完整路径</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十请求的合并与调度" data-toc-target="十请求的合并与调度">十、请求的合并与调度</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一扇区与偏移的换算" data-toc-target="十一扇区与偏移的换算">十一、扇区与偏移的换算</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二驱动的注册add_disk-与-del_gendisk" data-toc-target="十二驱动的注册add_disk-与-del_gendisk">十二、驱动的注册：add_disk 与 del_gendisk</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三分区与磁盘几何" data-toc-target="十三分区与磁盘几何">十三、分区与磁盘几何</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四完整的-sbull-实例" data-toc-target="十四完整的-sbull-实例">十四、完整的 sbull 实例</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五错误处理与热插拔" data-toc-target="十五错误处理与热插拔">十五、错误处理与热插拔</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六调试手段与常见故障" data-toc-target="十六调试手段与常见故障">十六、调试手段与常见故障</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十七易错点速查" data-toc-target="十七易错点速查">十七、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#章节出处对照" data-toc-target="章节出处对照">章节出处对照</a>
+                    
+                    <a class="toc-item toc-lv3" href="#修正的错误" data-toc-target="修正的错误">修正的错误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#未验证项" data-toc-target="未验证项">未验证项</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/C.驱动/09-存储与块设备/块设备驱动基础：从-bio-到-gendisk/","title":"块设备驱动基础：从 bio 到 gendisk","url":"/C.驱动/09-存储与块设备/块设备驱动基础：从-bio-到-gendisk/","type":"current"},{"id":"/C.驱动/09-存储与块设备/Linux-MMC-子系统与-eMMC-驱动调试/","title":"Linux MMC 子系统与 eMMC 驱动调试","url":"/C.驱动/09-存储与块设备/Linux-MMC-子系统与-eMMC-驱动调试/","type":"neighbor"},{"id":"/C.驱动/09-存储与块设备/MTD-子系统与-Flash：NOR、NAND-与-ONFI/","title":"MTD 子系统与 Flash：NOR、NAND 与 ONFI","url":"/C.驱动/09-存储与块设备/MTD-子系统与-Flash：NOR、NAND-与-ONFI/","type":"neighbor"},{"id":"/C.驱动/09-存储与块设备/SD-卡驱动开发：从协议到控制器/","title":"SD 卡驱动开发：从协议到控制器","url":"/C.驱动/09-存储与块设备/SD-卡驱动开发：从协议到控制器/","type":"neighbor"},{"id":"/C.驱动/09-存储与块设备/blk-mq-多队列：从请求队列到实际驱动/","title":"blk-mq 多队列：从请求队列到实际驱动","url":"/C.驱动/09-存储与块设备/blk-mq-多队列：从请求队列到实际驱动/","type":"neighbor"}],"links":[{"source":"/C.驱动/09-存储与块设备/块设备驱动基础：从-bio-到-gendisk/","target":"/C.驱动/09-存储与块设备/Linux-MMC-子系统与-eMMC-驱动调试/","type":"neighbor"},{"source":"/C.驱动/09-存储与块设备/块设备驱动基础：从-bio-到-gendisk/","target":"/C.驱动/09-存储与块设备/MTD-子系统与-Flash：NOR、NAND-与-ONFI/","type":"neighbor"},{"source":"/C.驱动/09-存储与块设备/块设备驱动基础：从-bio-到-gendisk/","target":"/C.驱动/09-存储与块设备/SD-卡驱动开发：从协议到控制器/","type":"neighbor"},{"source":"/C.驱动/09-存储与块设备/块设备驱动基础：从-bio-到-gendisk/","target":"/C.驱动/09-存储与块设备/blk-mq-多队列：从请求队列到实际驱动/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

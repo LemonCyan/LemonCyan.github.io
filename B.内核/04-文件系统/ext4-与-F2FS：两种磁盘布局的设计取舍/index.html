@@ -1,0 +1,1656 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ext4 与 F2FS：两种磁盘布局的设计取舍 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">ext4 与 F2FS：两种磁盘布局的设计取舍</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/04-文件系统/ext4-与-F2FS：两种磁盘布局的设计取舍/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">ext4 与 F2FS：两种磁盘布局的设计取舍</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">ext4 与 F2FS：两种磁盘布局的设计取舍</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>这篇只回答一个问题：同样是给闪存用的文件系统，ext4 和 F2FS 的磁盘布局差在哪，谁在为哪条物理特性让路。</p>
+<p><strong>讲什么</strong>：ext4 的块组布局、超级块与 GDT 备份、位图、inode 与多级间接寻址、extent 树、delalloc 与 journal；F2FS 的六区布局、NAT/SIT/SSA 三张表、六级冷热分离、cleaner 与写放大；两者的正面对照与选型。
+<strong>不讲什么</strong>：VFS 四大对象与路径解析、页缓存与回写、块层 I/O 调度、eMMC/UFS 协议细节。
+<strong>跨篇指路</strong>：<code>inode</code>/<code>dentry</code>/<code>super_block</code> 在内存里长什么样，看「VFS 虚拟文件系统解析」；进程怎么拿着 <code>struct file</code> 访问文件，看「进程与文件系统：fs_struct、files_struct 与打开文件表」；挂载看「2.文件系统简介」；eMMC 侧看「eMMC」。
+<strong>版本提醒</strong>：ext4 部分底稿是 2017-07-17 的翻译文（David Both 著，Linux 中国 chenxinlong 译，linux.cn/article-8685），机制停在 4.x 时代；F2FS 部分底稿是 2020-01 的「F2FS 技术拆解」，讲的是 3.x~4.x 的演进。凡「某版本才支持某特性」的地方都标了内核版本，标不出来的写「原文未标注」。</p>
+</blockquote>
+<h2 id="一文件系统要解决的三件事命名定位空间管理" tabindex="-1">一、文件系统要解决的三件事：命名、定位、空间管理 <a class="header-anchor" href="#一文件系统要解决的三件事命名定位空间管理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一个文件系统拆开就干三件事：给数据起名字和组织结构（命名空间）、把名字映射到盘上的位置（定位）、决定哪些块被谁占着（空间管理）。安全模型和系统调用接口是另外两层，跟磁盘布局无关。</p>
+<p>前两件事在 ext4 和 F2FS 里差别不大：都有目录项、都有 inode 号、都要靠一层间接结构找到数据块。分歧全在第三件事。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>问题</th>
+<th>ext4 的答案</th>
+<th>F2FS 的答案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>新块从哪来</td>
+<td>查块位图，找空闲位，就地置 1</td>
+<td>往当前活跃日志尾部追加，写完推进指针</td>
+</tr>
+<tr>
+<td>旧块怎么改</td>
+<td>原地覆写，块号不变</td>
+<td>异地写新的，改索引指向它，旧块作废</td>
+</tr>
+<tr>
+<td>空闲空间怎么记</td>
+<td>位图，一位一个块</td>
+<td>SIT 里每段的在用块数 + 位图</td>
+</tr>
+<tr>
+<td>空间回收靠什么</td>
+<td>删文件就清位图位，没有后台搬移</td>
+<td>cleaner 周期性搬移在用块，把段腾空</td>
+</tr>
+<tr>
+<td>元数据的锚点</td>
+<td>每组的位图和 inode 表，位置固定</td>
+<td>NAT 做一次地址转译，node 位置可以漂</td>
+</tr>
+</tbody>
+</table></div><p>这两种答案不是审美差异，是被介质逼出来的。闪存有两个绕不开的事实：擦除单位是块（今天的 NAND 擦除块在 2MB~4MB 量级，看颗粒型号），写之前必须先擦。原地改一个 4KB 页，落到闪存上就是：读出整个擦除块、改其中一页、擦掉整块、把改完的内容写回去。这个动作叫读-改-写，代价是几 MB 的搬运。写放大从这里开始。</p>
+<p>厂商的解法是塞一层 FTL（Flash Translation Layer），对上仍然报「512 字节扇区、可以随便覆写」的块设备。文件系统看不见擦除块，闪存也看不见文件。FTL 的问题在于它只有 LBA，没有语义。它不知道这 4KB 是刚 fsync 过的数据库日志，还是三年没动过的一张照片。它只能按地址猜冷热，猜错的成本是搬移和擦除。</p>
+<p>ext4 和 F2FS 就是这条链上的两个极端：ext4 顺着块设备抽象走，把随机写原样交给 FTL；F2FS 假设自己知道上层在写什么，用追加写把随机写改造成顺序写，代价是自己养一个 cleaner。</p>
+<h2 id="二从-minix-到-ext4一条不断打补丁的路" tabindex="-1">二、从 Minix 到 ext4：一条不断打补丁的路 <a class="header-anchor" href="#二从-minix-到-ext4一条不断打补丁的路"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>ext 家族不是设计出来的，是补出来的。理解这条补丁链比背特性表有用。</p>
+<p>Minix 文件系统出自 Andrew S. Tanenbaum，1987 年发布，比 Linux 早五年。Linus 写第一个内核时不想自己写文件系统，直接把它塞了进去。布局已经很接近后来的 ext：引导块、超级块、inode 位图、inode 区、数据区位图、数据区。inode 里 9 个块指针，7 个直接 + 2 个间接。位图语义也和 ext 一致：0 空闲，1 占用。硬伤是块号 16 位，文件最大 64MB 量级。</p>
+<p>EXT（extended）由 Rémy Card 在 1992 年随 Linux 一起发布，目的是解决文件大小限制，元数据结构从 Minix 换到 UFS/FFS 那一套。这一版存在严重问题，很快被 EXT2 取代，可查的发行信息很少。</p>
+<p>EXT2 是第一个真正活下来的版本，1993 年问世，一直用到 2000 年代。它和 EXT 的元数据结构基本相同，但设计时留了大量预留空间，后面加特性不用重排版。这个决定救了 ext 家族的命。EXT2 把分区切成块组（原译文写「柱面组」，那是机械盘时代继承下来的叫法，内核文档统一用 block group）。每组开头是超级块、组描述符表、块位图、inode 位图、inode 表，然后才是数据块。</p>
+<p>EXT2 真正的问题不是功能，是 fsck。掉电之后 e2fsck 要扫全盘找不一致，没有捷径。原文作者记了一个例子：几百 MB 的盘，崩溃后恢复花了 28 小时。这是他自己的经历，不是 benchmark。</p>
+<p>EXT3 就是为这件事生的，作者 Stephen Tweedie，1999 年发布，2001 年进 2.4.15 主线。它对 ext2 的唯一实质改动是日志：把即将执行的操作先写进固定区域，掉电后重放日志回到一致状态。磁盘结构其余部分与 ext2 相同。代价是写入落两遍，一次日志一次原地。升级路径当时很轻：<code>tune2fs -j /dev/sda1</code> 给 ext2 加日志，改 <code>/etc/fstab</code> 里的类型，重新挂载。</p>
+<p>EXT4 是性能、容量、可靠性三条线一起动：数据分配从块映射换成 extent，一段连续物理块用一个结构描述；时间戳精度到纳秒，加两个高位把 2038 问题推到 2446 年；元数据和日志加 crc32c 校验和（<code>metadata_csum</code>，3.5 引入）；块号从 32 位扩到 64 位，配 <code>flex_bg</code> 让元数据集中放置。</p>
+<p>时间线要说清，原文这里容易读错：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>事件</th>
+<th>时间</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ext4 开发版进内核</td>
+<td>2006-10 提出，2.6.19 带入</td>
+<td><code>ext4dev</code>，需要显式指定</td>
+</tr>
+<tr>
+<td>ext4 标记为稳定</td>
+<td>2008-12-25，2.6.28</td>
+<td>补丁进主线，推荐使用</td>
+</tr>
+<tr>
+<td>Fedora 设为默认</td>
+<td>Fedora 11，2009-06</td>
+<td>Fedora 9/10 要加安装参数才开</td>
+</tr>
+<tr>
+<td>元数据校验和</td>
+<td>3.5，2012</td>
+<td><code>metadata_csum</code>，算法 crc32c</td>
+</tr>
+</tbody>
+</table></div><p>原文说「自 Fedora 14 以来 ext4 是 Fedora 默认」，这条是错的，Fedora 11 就已经是了。</p>
+<p>从 ext3 升到 ext4，原译文的建议我认同：备份、<code>mkfs</code> 重做、数据倒回。<code>tune2fs -O extents,uninit_bg,dir_index</code> 能原地打开特性，但旧文件不会被重新分配成 extent，索引块布局还是老的，收益打折。</p>
+<h2 id="三ext4-的磁盘布局块组" tabindex="-1">三、ext4 的磁盘布局：块组 <a class="header-anchor" href="#三ext4-的磁盘布局块组"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>ext4 把空间切成等大的块组，边界由 <code>s_blocks_per_group</code> 决定，默认跟块大小绑死：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>块大小</th>
+<th>每组块数</th>
+<th>每组大小</th>
+<th>32 位下的最大文件系统</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1KiB</td>
+<td>8192</td>
+<td>8MiB</td>
+<td>4TiB</td>
+</tr>
+<tr>
+<td>2KiB</td>
+<td>16384</td>
+<td>32MiB</td>
+<td>8TiB</td>
+</tr>
+<tr>
+<td>4KiB</td>
+<td>32768</td>
+<td>128MiB</td>
+<td>16TiB</td>
+</tr>
+<tr>
+<td>64KiB</td>
+<td>524288</td>
+<td>32GiB</td>
+<td>256TiB</td>
+</tr>
+</tbody>
+</table></div><p>表来自内核文档 <code>filesystems/ext4/blocks.html</code>，它顺手纠正了原译文的一个说法：原文写「每一组大小约为 8MB」，那是 1KiB 块时代的数字。今天 4KiB 块的主流配置，一组 128MiB。块大小在 mkfs 时定死，之后改不了，上限受页大小卡：x86 上页是 4KiB，块就不能大于 4KiB；ppc64 和 aarch64 在特定配置下能到 64KiB。</p>
+<p>一个块组的内部顺序固定：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>块组（block group）
+┌───────────────────────────┐
+│ 超级块（仅备份组有）        │  组 0 必有；其余按 3/5/7 的幂
+├───────────────────────────┤
+│ 组描述符表 GDT             │  所有组的描述符，多数挤在组 0
+├───────────────────────────┤
+│ 保留 GDT 块                │  给 resize2fs 在线扩容用
+├───────────────────────────┤
+│ 块位图                     │  1 位 = 1 个块
+├───────────────────────────┤
+│ inode 位图                 │  1 位 = 1 个 inode
+├───────────────────────────┤
+│ inode 表                   │  每个 inode 128 或 256 字节
+├───────────────────────────┤
+│ 数据块                     │  剩下的全归这里
+└───────────────────────────┘
+</code></pre></div></code></pre>
+<p>分区最前面还有引导扇区和一块保留区，填在引导记录和第一个分区之间，GRUB 会往里面塞一部分引导代码。GPT 加 UEFI 之后这块意义小了，老盘的 <code>dd</code> 还是要小心它。</p>
+<p>块组这个设计有历史包袱：机械盘上一个组内数据物理聚在一起，磁头寻道短。闪存上没有寻道，这个收益直接消失，只剩「元数据离数据近一点」的好处。</p>
+<h2 id="四超级块gdt-与位图" tabindex="-1">四、超级块、GDT 与位图 <a class="header-anchor" href="#四超级块gdt-与位图"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>超级块是文件系统的身份证，固定 1024 字节，从分区偏移 1024 处开始，魔数 <code>0xEF53</code>。关键字段（偏移来自内核文档 <code>filesystems/ext4/super.html</code>）：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>偏移</th>
+<th>字段</th>
+<th>干什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0x0</td>
+<td><code>s_inodes_count</code></td>
+<td>inode 总数</td>
+</tr>
+<tr>
+<td>0x4</td>
+<td><code>s_blocks_count_lo</code></td>
+<td>块总数低 32 位</td>
+</tr>
+<tr>
+<td>0x18</td>
+<td><code>s_log_block_size</code></td>
+<td>块大小 = 2^(10 + 该值)</td>
+</tr>
+<tr>
+<td>0x20</td>
+<td><code>s_blocks_per_group</code></td>
+<td>每组块数</td>
+</tr>
+<tr>
+<td>0x28</td>
+<td><code>s_inodes_per_group</code></td>
+<td>每组 inode 数</td>
+</tr>
+<tr>
+<td>0x38</td>
+<td><code>s_magic</code></td>
+<td>0xEF53</td>
+</tr>
+<tr>
+<td>0x3A</td>
+<td><code>s_state</code></td>
+<td>干净卸载 / 有错误 / 孤儿待恢复</td>
+</tr>
+<tr>
+<td>0x58</td>
+<td><code>s_inode_size</code></td>
+<td>inode 大小，128 或 256</td>
+</tr>
+<tr>
+<td>0x5C</td>
+<td><code>s_feature_compat</code></td>
+<td>兼容特性位</td>
+</tr>
+<tr>
+<td>0x60</td>
+<td><code>s_feature_incompat</code></td>
+<td>不兼容特性位，不认识就拒绝挂载</td>
+</tr>
+<tr>
+<td>0xCE</td>
+<td><code>s_reserved_gdt_blocks</code></td>
+<td>预留给扩容的 GDT 块数</td>
+</tr>
+<tr>
+<td>0x150</td>
+<td><code>s_blocks_count_hi</code></td>
+<td>块总数高 32 位（64bit 特性）</td>
+</tr>
+<tr>
+<td>0x274</td>
+<td><code>s_wtime_hi</code></td>
+<td>写时间高 8 位，绕 2038</td>
+</tr>
+<tr>
+<td>0x3FC</td>
+<td><code>s_checksum</code></td>
+<td>超级块校验和</td>
+</tr>
+</tbody>
+</table></div><p>特性位分三档，这个分级很实用：<code>compat</code> 不认识也能读写，<code>incompat</code> 不认识必须拒绝挂载，<code>ro_compat</code> 不认识只能只读挂载。挂载报 &quot;unknown filesystem features&quot; 时，先看是这三档里的哪一档。</p>
+<p>超级块坏了不致命，因为有多份备份。规则由 <code>sparse_super</code> 控制：备份只放在组号是 0、或 3、5、7 的幂的那些组里。不开就每组都备份，浪费空间。更新的 <code>sparse_super2</code> 更省，只留两份，用超级块里的 <code>s_backup_bgs[2]</code> 指出来。查本机备份位置不用猜，让 mke2fs 算：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>mke2fs -n /dev/sda1        <span class="hljs-comment"># -n 只打印不落盘，参数要和当初建 fs 时一致</span>
+</code></pre></div></code></pre>
+<p><code>-n</code> 有坑：块大小、特性、inode 大小必须和建库时一样，否则算出来的组号是错的。从备份恢复，<code>dd</code> 或 <code>e2fsck -b</code> 都行：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 组 1 的备份超级块在 32768 块，块大小 4K，偏移 = 32768 * 4096</span>
+<span class="hljs-built_in">dd</span> <span class="hljs-keyword">if</span>=/dev/sda1 of=/tmp/sb.bak bs=4096 skip=32768 count=1
+e2fsck -b 32768 /dev/sda1   <span class="hljs-comment"># 指定备份超级块位置做检查</span>
+</code></pre></div></code></pre>
+<p>组描述符表（GDT）是每组的户口本：块位图在哪、inode 位图在哪、inode 表在哪、空闲块和空闲 inode 还剩多少。32 位布局下每个描述符 32 字节，<code>64bit</code> 打开后换成 64 字节，大小记在 <code>s_desc_size</code>。GDT 跟着超级块一起备份，位置在备份超级块后面。</p>
+<p>位图有两个，都是「一位一个对象」：块位图管数据块，inode 位图管 inode 表项。1 表示占用，0 表示空闲，这个约定从 Minix 没变过。位图的问题是它是位图。分配一个块要查位、置位，回收一个块要清位，每次改动都落在同一个 4KB 块上。加 <code>flex_bg</code> 之后更集中，所有组的位图挤在组 0 的头几个块，写起来全砸在同一处。</p>
+<p>原文那段 dumpe2fs 输出保留，这是真实的格式示例，字段顺序和工具实际输出一致：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code># dumpe2fs /dev/sda1
+Filesystem volume name:   boot
+Last mounted on:          /boot
+Filesystem UUID:          79fc5ed8-5bbc-4dfe-8359-b7b36be6eed3
+Filesystem magic number:  0xEF53
+Filesystem revision #:    1 (dynamic)
+Filesystem features:      has_journal ext_attr resize_inode dir_index filetype
+                          needs_recovery extent 64bit flex_bg sparse_super
+                          large_file huge_file dir nlink extra_isize
+Filesystem flags:         signed_directory_hash
+Default mount options:    user_xattr acl
+Filesystem state:         clean
+Errors behavior:          Continue
+Filesystem OS type:       Linux
+Block size:               4096
+Fragment size:            4096
+Blocks per group:         32768
+Fragments per group:      32768
+Inodes per group:         8192
+Inode blocks per group:   512
+Flex block group size:    16
+Filesystem created:       Tue Feb  7 09:33:34
+Last mount time:          Sat Apr 29 21:42:01
+Last write time:          Sat Apr 29 21:42:01
+Last checked:             Tue Feb  7 09:33:34
+Check interval:           0 (&lt;none&gt;)
+Lifetime writes:          594 MB
+Reserved blocks uid:      0 (user root)
+Reserved blocks gid:      0 (group root)
+Default directory hash:   half_md4
+Directory Hash Seed:      c780bac9-d4bf-4f35-b695-0fe35e8d2d60
+Journal backup:           inode blocks
+Journal features:         journal_64bit
+Journal size:             32M
+Journal length:           8192
+Journal sequence:         0x00000213
+Group 0: (Blocks 0-32767)
+  Primary superblock at 0, Group descriptors at 1-1
+  Reserved GDT blocks at 2-239
+  Block bitmap at 240 (+240)
+  Inode bitmap at 255 (+255)
+  Inode table at 270-778 (+270)
+  24839 free blocks, 7676 free inodes, 16 directories
+Group 1: (Blocks 32768-65535)
+  Backup superblock at 32768, Group descriptors at 32769-32769
+  Reserved GDT blocks at 32770-33007
+  Block bitmap at 241 (bg #0 + 241)
+  Inode bitmap at 256 (bg #0 + 256)
+  Inode table at 779-1287 (bg #0 + 779)
+  8668 free blocks, 8142 free inodes, 2 directories
+Group 2: (Blocks 65536-98303)
+  Block bitmap at 242 (bg #0 + 242)
+  Inode bitmap at 257 (bg #0 + 257)
+  Inode table at 1288-1796 (bg #0 + 1288)
+</code></pre></div></code></pre>
+<p>四个信息点值得逐个看。<code>Filesystem features</code> 里没有 <code>metadata_csum</code>，说明这是较老的 e2fsprogs 建的，校验和没开，2017 年的机器上很常见。<code>Flex block group size: 16</code> 配 <code>Group 1</code> 的 <code>Block bitmap at 241 (bg #0 + 241)</code>：组 1 的位图不在组 1，而在组 0 的第 241 块，这就是 <code>flex_bg</code>，16 个组的位图和 inode 表被打包塞进组 0。<code>Reserved GDT blocks at 2-239</code> 是给 <code>resize2fs</code> 在线扩容留的余量，238 个块够扩若干轮。<code>Journal size: 32M</code> 是 8192 个 4KiB 块，ext4 的日志大小按文件系统大小取，大卷会往上加。</p>
+<p>原文这段输出里 <code>Inode count</code>、<code>Block count</code>、<code>Group descriptor size</code> 等字段冒号后是空的。那是抓取时丢了值，不是文件系统真没有这些值，附录里再记一次。</p>
+<h2 id="五inode-与多级间接寻址" tabindex="-1">五、inode 与多级间接寻址 <a class="header-anchor" href="#五inode-与多级间接寻址"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>inode 是文件的户口本，磁盘上定长，ext2 时代 128 字节，ext4 默认 256 字节。多出来的空间放扩展属性、纳秒时间戳高位、项目 ID。内核文档给的 <code>struct ext4_inode</code> 前半段：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">ext4_inode</span> {</span>
+    __le16 i_mode;           <span class="hljs-comment">/* 文件类型 + 权限位 */</span>
+    __le16 i_uid;
+    __le32 i_size_lo;        <span class="hljs-comment">/* 文件大小低 32 位 */</span>
+    __le32 i_atime;
+    __le32 i_ctime;
+    __le32 i_mtime;
+    __le32 i_dtime;          <span class="hljs-comment">/* 删除时间，非 0 就是已删除 */</span>
+    __le16 i_gid;
+    __le16 i_links_count;    <span class="hljs-comment">/* 硬链接数 */</span>
+    __le32 i_blocks_lo;      <span class="hljs-comment">/* 占用的 512 字节扇区数，不是块数 */</span>
+    __le32 i_flags;          <span class="hljs-comment">/* 0x80000 = EXT4_EXTENTS_FL */</span>
+    __le32 i_block[<span class="hljs-number">15</span>];      <span class="hljs-comment">/* 60 字节：块映射或 extent 树根 */</span>
+    <span class="hljs-comment">/* ... i_generation / i_file_acl_lo / i_size_high / i_extra_isize ... */</span>
+};
+</code></pre></div></code></pre>
+<p><code>i_block</code> 那 60 字节是关键。64 位系统上一个块号 4 字节，正好 15 个指针。老方案（ext2/ext3，以及没开 <code>extent</code> 的 ext4）的排布是：前 12 个直接指数据块，第 13 个指间接块，第 14 个指双重间接块，第 15 个指三重间接块。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>i_block[0..11]  ──► 数据块 ×12
+i_block[12]     ──► 间接块 ──► 数据块 ×(块大小/4)
+i_block[13]     ──► 双重间接 ──► 间接块 ×(块大小/4) ──► 数据块 ×(块大小/4)²
+i_block[14]     ──► 三重间接 ──► 再套两层
+</code></pre></div></code></pre>
+<p>4KiB 块下一个指针块装 1024 项，能覆盖 12 + 1024 + 1024² + 1024³，约 10.7 亿块，即 4TiB。</p>
+<p>原译文这里有两处算错，我改掉：原文写「4K 的块可以支持 512 个 4 字节的间接节点，允许单个文件有 12 + 512 = 524 个扩展盘区」。512 是 2KiB 块（2048/4）的结果，4KiB 块是 1024 项；而 12 个直接指针和「扩展盘区」不是一回事，前者指块、后者是 extent，混着加没有物理意义。</p>
+<p>这套方案的毛病在浪费：文件有 1000 个连续块，就得填满一个 1024 项的间接块。元数据量跟数据量成正比，这就给 extent 让出了位置。</p>
+<p>定位一个文件走的是「目录项 → inode 号 → inode 表」：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>路径 /a/b.txt
+  1. 读根目录的 inode（inode 号固定为 2）
+  2. 在根目录的数据块里查目录项 &quot;a&quot; → 拿到 a 的 inode 号
+  3. 用组号 + 组内偏移算出 a 的 inode 在 inode 表的哪一格
+  4. 读 a 的数据块，查目录项 &quot;b.txt&quot; → 拿到 b.txt 的 inode 号
+  5. 再算一次偏移，读 b.txt 的 inode
+  6. 顺着 i_block 里的指针或 extent 取数据块
+</code></pre></div></code></pre>
+<p>第 3 步的算式值得一提：组号 = inode 号 / 每组 inode 数，组内偏移 = inode 号 % 每组 inode 数。这就是 <code>s_inodes_per_group</code> 必须写死在超级块里的原因。目录项本身存「名字 + inode 号 + 类型」，不存 inode 内容。同一个 inode 号可以挂多个名字，这就是硬链接。inode 号只在单个文件系统内唯一，跨分区同一个号指两个不同的文件，这也是硬链接不能跨文件系统建的原因。</p>
+<h2 id="六extent-树ext4-对间接寻址的改良" tabindex="-1">六、extent 树：ext4 对间接寻址的改良 <a class="header-anchor" href="#六extent-树ext4-对间接寻址的改良"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>extent 的思路很直白：与其一个块一个块地记，不如记「从逻辑块 N 开始，连续 L 块，映射到物理块 P」。三个结构，都是 12 字节：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">ext4_extent_header</span> {</span>   <span class="hljs-comment">/* 每个 extent 节点的开头 */</span>
+    __le16 eh_magic;          <span class="hljs-comment">/* 0xF30A */</span>
+    __le16 eh_entries;        <span class="hljs-comment">/* 后面有几项 */</span>
+    __le16 eh_max;            <span class="hljs-comment">/* 最多能放几项 */</span>
+    __le16 eh_depth;          <span class="hljs-comment">/* 0 = 叶子节点，指向数据 */</span>
+    __le32 eh_generation;
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">ext4_extent</span> {</span>          <span class="hljs-comment">/* 叶子节点里的一项 */</span>
+    __le32 ee_block;          <span class="hljs-comment">/* 起始逻辑块号 */</span>
+    __le16 ee_len;            <span class="hljs-comment">/* 覆盖多少块，&gt;32768 表示未初始化 */</span>
+    __le16 ee_start_hi;
+    __le32 ee_start_lo;       <span class="hljs-comment">/* 起始物理块号 */</span>
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">ext4_extent_idx</span> {</span>      <span class="hljs-comment">/* 内部节点里的一项 */</span>
+    __le32 ei_block;          <span class="hljs-comment">/* 覆盖到这个逻辑块为止 */</span>
+    __le32 ei_leaf_lo;
+    __le16 ei_leaf_hi;        <span class="hljs-comment">/* 下一层节点的物理块号 */</span>
+    __le16 ei_unused;
+};
+</code></pre></div></code></pre>
+<p><code>eh_depth</code> 最大 5。逻辑块号最多 2^32，每层能放 (块大小 - 12) / 12 项，4KiB 块下是 340 项，340^5 刚过 2^32。根节点直接放在 inode 的 60 字节 <code>i_block</code> 里，减去 12 字节头剩 48 字节，正好 4 个 extent。文件碎片不超过 4 段时，寻址不需要任何额外元数据块。</p>
+<p>同一件事在两种方案下的对比（1000 个连续块）：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>块映射方案
+  inode.i_block[12] ──► 间接块（4KiB，1024 项）
+                          ├─ 项 0  : 物理块 10000
+                          ├─ 项 1  : 物理块 10001
+                          ├─ ...
+                          └─ 项 999: 物理块 10999
+  元数据开销：1 个 4KiB 块 + 1000 个条目
+
+extent 方案
+  inode.i_block ──► header + [ ee_block=0, ee_len=1000, ee_start=10000 ]
+  元数据开销：12 字节
+</code></pre></div></code></pre>
+<p><code>ee_len</code> 有个顺手的设计：值 ≤ 32768 表示已初始化的 extent，&gt; 32768 表示未初始化，实际长度是 <code>ee_len - 32768</code>。未初始化 extent 是给 <code>fallocate</code> 预分配用的，块已占住但内容没写，读出来是 0，不用真去落盘。extent 树的叶子块有校验和，<code>eb_checksum</code> 是 crc32c(uuid + inode 号 + generation + 整块内容)。inode 里的 4 个 extent 不单独校验，因为 inode 自己已经被校验过。</p>
+<p>extent 也是 F2FS 明确不要的东西，理由在第十一章：GC 搬移会改变物理块，extent 的区间范围跟着变，索引块尺寸不可预测，日志结构的原地索引就装不下了。取舍很硬。</p>
+<h2 id="七ext4-的几个标志性特性" tabindex="-1">七、ext4 的几个标志性特性 <a class="header-anchor" href="#七ext4-的几个标志性特性"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>四件事单独讲，因为它们正是后面「在闪存上难受」的原因。</p>
+<h3 id="delayed-allocation先攒够再分配" tabindex="-1">delayed allocation：先攒够再分配 <a class="header-anchor" href="#delayed-allocation先攒够再分配"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>delalloc</code> 从 2.6.30（2009-06）起在 ext4 上默认开启，明显降低碎片率，代价是崩溃窗口：<code>write()</code> 返回了，块还没分配，这时掉电数据就没了。写文件时页缓存只标记脏页，不立刻分配磁盘块，等回写时才一次性分配，此时能看到整个写入区间，容易找到连续空闲块。这个坑 2009 年闹得很大。修法是在 2.6.30 里给 rename、truncate 加隐式 fsync，凡是会让用户以为「数据已落盘」的元数据操作，都先刷一次数据。5.x 上这个坑已经补上，但 <code>nodelalloc</code> 和 <code>delalloc</code> 之间仍要按负载选：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>mount -o delalloc    /dev/nvme0n1p1 /data   <span class="hljs-comment"># 默认，碎片少</span>
+mount -o nodelalloc  /dev/nvme0n1p1 /data   <span class="hljs-comment"># 写即分配，掉电窗口小，碎片多</span>
+</code></pre></div></code></pre>
+<h3 id="journaljbd2-与三种模式" tabindex="-1">journal：jbd2 与三种模式 <a class="header-anchor" href="#journaljbd2-与三种模式"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>日志子系统叫 jbd2，独立的一套代码。三种 <code>data=</code> 的差别在文件数据算不算日志的一部分：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>模式</th>
+<th>元数据进日志</th>
+<th>数据进日志</th>
+<th>掉电后的结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>data=journal</code></td>
+<td>是</td>
+<td>是</td>
+<td>一致，最慢，所有数据写两遍</td>
+</tr>
+<tr>
+<td><code>data=ordered</code>（默认）</td>
+<td>是</td>
+<td>否，但先于元数据落盘</td>
+<td>不会出现「元数据指向垃圾数据」</td>
+</tr>
+<tr>
+<td><code>data=writeback</code></td>
+<td>是</td>
+<td>否，顺序不限</td>
+<td>读到旧数据塞进新文件</td>
+</tr>
+</tbody>
+</table></div><p><code>data=ordered</code> 是多数发行版默认，它给的是一个具体保证：不会让 inode 指向还没落盘的数据块。提交间隔由 <code>commit=</code> 控制，默认 5 秒，这个值直接换性能和丢数据窗口：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>mount -o data=ordered,commit=30 /dev/nvme0n1p1 /data
+</code></pre></div></code></pre>
+<p>30 秒意味着掉电最多丢 30 秒的写入。日志盘、邮件队列这类场景别这么干。日志本身也占空间，原文那个 <code>/boot</code> 是 128MB 的文件系统，日志 32MB，占比不低。</p>
+<h3 id="64bit-与-bigalloc" tabindex="-1">64bit 与 bigalloc <a class="header-anchor" href="#64bit-与-bigalloc"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>64bit</code> 把块号从 32 位扩到 64 位，配合 <code>metadata_csum</code> 把文件系统上限从 16TiB 推到 64ZiB 量级（4KiB 块）。它改的是 GDT 描述符大小，从 32 字节变 64 字节。<code>bigalloc</code> 换的是分配单位，从块变簇，默认簇是块的 16 倍，4KiB 块配 64KiB 簇。位图开销降到 1/16，代价是小文件浪费：一个 100 字节的文件占一整个 64KiB 簇。这个特性和 F2FS 的思路正好相反。F2FS 靠段管理空闲空间，不需要大簇省位图；ext4 用位图，就得靠簇来压元数据比例。</p>
+<h3 id="flex_bg把元数据打包" tabindex="-1">flex_bg：把元数据打包 <a class="header-anchor" href="#flex_bg把元数据打包"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>flex_bg</code> 是 2.6.28 一带进来的（具体首次可用版本我没逐版本核对）。它把 2 的幂个块组打包成一个逻辑大组，组内所有位图和 inode 表集中放在第一个组里。第四章那段 dumpe2fs 就是它的现场：组 1、组 2 的位图都在组 0。mkfs 的 <code>-G</code> 控制打包几个组。好处是元数据连续，顺序读能一次读一大片。坏处是写入集中：位图全在一个地方，每次分配都要改那几块。机械盘靠缓存扛得住，闪存上这几块被反复擦写。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>mke2fs -G 16 /dev/nvme0n1p1                     <span class="hljs-comment"># 16 个组打一包，默认值</span>
+mke2fs -E packed_meta_blocks=1 /dev/nvme0n1p1   <span class="hljs-comment"># 位图和 inode 表全放盘头</span>
+</code></pre></div></code></pre>
+<p>特性清单，按重要程度排：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>特性</th>
+<th>作用</th>
+<th>版本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>extent</code></td>
+<td>段式寻址，替代块映射</td>
+<td>2.6.19 起</td>
+</tr>
+<tr>
+<td><code>flex_bg</code></td>
+<td>元数据打包</td>
+<td>2.6.28 一带（未逐版本核对）</td>
+</tr>
+<tr>
+<td><code>64bit</code></td>
+<td>块号 64 位</td>
+<td>原文未标注</td>
+</tr>
+<tr>
+<td><code>dir_index</code></td>
+<td>目录用 htree，大目录查找从 O(n) 到 O(log n)</td>
+<td>ext3 时代即有</td>
+</tr>
+<tr>
+<td><code>uninit_bg</code></td>
+<td>组未初始化，mkfs 快</td>
+<td>2.6.28 一带（未验证）</td>
+</tr>
+<tr>
+<td><code>metadata_csum</code></td>
+<td>元数据 crc32c 校验</td>
+<td>3.5（2012）</td>
+</tr>
+<tr>
+<td><code>bigalloc</code></td>
+<td>簇分配</td>
+<td>原文未标注</td>
+</tr>
+<tr>
+<td><code>fast_commit</code></td>
+<td>小改动快提交，缩短 fsync 延迟</td>
+<td>5.10 一带（未验证）</td>
+</tr>
+</tbody>
+</table></div><h2 id="八ext4-在闪存上的痛点" tabindex="-1">八、ext4 在闪存上的痛点 <a class="header-anchor" href="#八ext4-在闪存上的痛点"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把前面的机制摆到一起，闪存上的问题就露出来了。四条。</p>
+<p>第一条，原地更新直接把随机写交给 FTL。改一个 4KB 页，FTL 得读出整个擦除块、改、擦、写回。写放大倍数取决于 FTL 的映射粒度，页级映射好一点，块级映射（低端 eMMC 常用的混合映射）差很多。这个倍数跟主控强相关，没有统一数字，我不编。</p>
+<p>第二条，元数据热点。<code>flex_bg</code> 让位图和 inode 表挤在一起，每次创建文件都要改位图那几块。这几块的擦写次数明显高于数据区，磨损均衡被迫频繁搬它们。第三条，日志是双写。一次写入至少碰两个地方：日志区和目标块。日志区是固定的一小片，反复覆盖，跟第二条是同一个病。<code>data=journal</code> 下所有数据也进日志，写放大翻倍。</p>
+<p>第四条，没有冷热信息。ext4 不知道哪个文件热、哪个冷。分配时有一些启发式（新文件往别的组放、目录和它下面的文件放同组），但这些信息传不到 FTL。FTL 只能看 LBA，谁被写得频繁就当谁热。</p>
+<p>结论直说：ext4 在闪存上不难用，是效率不高。同样的写入量，它让 FTL 做更多搬运和擦除，SSD 的寿命和尾延迟都吃这个亏。桌面和服务器上没人计较，是因为 SSD 的 DWPD 和主控缓存把这些抹平了；手机 eMMC 上小文件随机写是常态，就不能不计较。</p>
+<h2 id="九日志结构文件系统把随机写变成顺序写" tabindex="-1">九、日志结构文件系统：把随机写变成顺序写 <a class="header-anchor" href="#九日志结构文件系统把随机写变成顺序写"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>LFS 的想法 1992 年就有，Rosenblum 和 Ousterhout 的论文《The Design and Implementation of a Log-Structured File System》，SOSP '92。同一个人还是 Tcl 的作者。</p>
+<p>别把 LFS 和 journaling 搞混。Journaling 是在盘上划一块区域记操作，用来恢复；LFS 是把整个盘当成一条日志，所有写都是往日志尾部追加。基本动作：要改一个块，不覆盖它，而是在日志尾部写一份新的，更新索引指向新位置，旧块标记作废。顺序写是闪存和机械盘都喜欢的模式，这一条直接换来性能。论文里的 Sprite LFS 数据：小文件随机写比当时的 FFS 快一个数量级；去掉垃圾回收开销后，仍能用掉 70% 的磁盘带宽。这两个数是论文里的，不是现在机器上测的。</p>
+<p>顺序写要成立，前提是盘上始终有大片空闲区域。日志被切成固定大小的段（segment），空间不够时把碎片化段里还有用的数据搬出来，腾出连续的段。这个动作就是 cleaner，是 LFS 全部代价的来源。</p>
+<p>盘上只有两样东西位置固定：超级块和检查点。检查点（checkpoint）是某个时刻文件系统一致状态的快照，创建分两步：先把所有数据、索引、inode 表、段使用表落盘；再在固定的检查点区记下这些结构的地址和时间戳。掉电保护靠双检查点交替：两个区轮流写，时间戳最后落，重启时选时间戳最新的那个。恢复到这个点之后还能顺着日志前滚（roll-forward）。F2FS 为单个文件的 fsync 实现了前滚：fsync 时只落这个文件的数据和它的直接索引，不落整棵树。</p>
+<p>LFS 有两个原生缺陷，F2FS 的全部设计都在对付它们。第一个是滚雪球，英文叫 Wandering Tree。改一个数据块，直接索引要改；直接索引改了位置，上一级间接索引也要改；一路传到 inode、inode map、检查点。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>写数据块 D（新位置）
+   └─► 直接索引块 N1 要改（因为 D 挪了）
+         └─► 间接索引块 N2 要改（因为 N1 挪了）
+               └─► inode 块要改（因为 N2 挪了）
+                     └─► inode map 要改（因为 inode 挪了）
+                           └─► 检查点要改（因为 map 挪了）
+</code></pre></div></code></pre>
+<p>一次 4KB 写入牵出五个元数据块的重写，写入量放大的倍数跟树高成正比。第二个是清理开销。段里还剩多少在用块，决定搬移成本。空间越满搬得越多，最坏情况是每写一个新块都要搬一个旧块。这个成本随利用率上升不是线性的，第十三章给算式。</p>
+<h2 id="十f2fs-的空间布局六个区域" tabindex="-1">十、F2FS 的空间布局：六个区域 <a class="header-anchor" href="#十f2fs-的空间布局六个区域"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>F2FS（Flash Friendly File System）出自三星，作者 Jaegeuk Kim，2012-10 发到社区，2012-12 进 Linux 3.8 的合并窗口（3.8 在 2013-02 发布）。它和 JFFS2、UBIFS 不一样，不是跑在裸 NAND 上的，走标准块设备接口。所以它跟 ext4 一样面对 FTL，区别在于它假设自己比 FTL 更懂上层。</p>
+<p>空间切法跟 ext4 完全不同：段（segment）固定 2MB，若干连续段组成节（section），若干连续节组成区（zone）。section 和 zone 默认都等于一个 segment，mkfs 时可以改。</p>
+<p>三个单位用途不同：segment 是空间管理单元（SIT 一位一段），section 是日志写入和清理的单元，zone 对应 FTL 的 GC 单元。F2FS 把 section 大小调到跟 FTL 的 GC 单元一致，就能把「文件系统回收」和「主控回收」对齐，减少互相踩。整卷切成六块：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>          ← 对齐到 segment →
+┌────────┬────────┬──────────┬──────────┬──────────┬──────────────┐
+│ 超级块  │ 检查点  │   SIT    │   NAT    │   SSA    │  Main Area   │
+│   SB   │   CP   │          │          │          │              │
+└────────┴────────┴──────────┴──────────┴──────────┴──────────────┘
+                      └── 各占若干 segment ──┘   ↑
+                                            对齐到 zone
+──────────────────────────────────────────────────────────────────►
+Main 内部再切：
+   ┌───────┬─────┬───────┐
+   │Segment│ ... │Segment│
+   └───────┴─────┴───────┘
+    └──── Section ────┘
+    └───────── Zone ─────────┘
+</code></pre></div></code></pre>
+<p>超级块（SB）在分区最开头，两份互为备份，装分区基本信息和 mkfs 时定死、之后不能改的参数。检查点（CP）装文件系统状态、NAT 和 SIT 谁在用哪一份的位图、孤儿 inode 列表、当前活跃段的所有者信息。孤儿 inode 是删了但还有引用、暂时放不掉的 inode，挂在列表里等下次挂载时清。CP 的作用是给出一个「到这一刻为止都对得上」的起点，掉电后从这里往后重放。CP 有两份交替写，靠头尾数据块里的 version 判断哪份新。NAT 和 SIT 也各留两份，CP 里记着该用哪一份。这就是内核文档说的 shadow copy。</p>
+<p>段信息表（SIT）记主区每个段里有多少在用块，外加一份标记每个块是否还在用的位图。GC 选哪个段下手、段里哪些块要搬，全靠这张表。</p>
+<p>节点地址表（NAT）是关键。F2FS 里 inode、直接节点、间接节点统称 node，每个 node 有个编号，NAT 存「编号 → 实际块地址」。</p>
+<p>段摘要区（SSA）是反向索引。主区每个数据块属于哪个 inode、在文件里的偏移是多少，都记在这里。GC 搬一个块之前得先知道它爹是谁，不然改完指针就找不回来了。</p>
+<p>主区（Main Area）放真正的数据和索引。一个段要么全是数据段、要么全是索引段，不混。这个约束是冷热分离能成立的前提。默认留 5% 的 overprovision 空间（<code>mkfs.f2fs -o</code>），不对外报，专门留给 GC 周转。空间太满时 GC 没地方放搬移数据，会卡住整个写入。</p>
+<h2 id="十一f2fs-的索引结构nat--sit--ssa" tabindex="-1">十一、F2FS 的索引结构：NAT / SIT / SSA <a class="header-anchor" href="#十一f2fs-的索引结构nat--sit--ssa"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>滚雪球怎么断的？靠 NAT 插进来一次地址转译。ext4 里间接索引块的位置写在上一级索引里，改动会一级一级往上冒。F2FS 里上层只记 node 号，node 号到块地址的映射在 NAT。数据块挪了，改直接节点，再改 NAT 对应那一行，到此为止。间接节点不知道下层挪了。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ext4（位置靠上级记）
+  inode ──► 间接索引 ──► 直接索引 ──► 数据块
+             ↑ 数据块挪了，这一串全要改
+
+F2FS（位置靠 NAT 转译）
+  inode ──► 间接节点 ──► 直接节点 ──► 数据块
+              │            │            │
+              └── NAT 用 node 号查实际地址 ──┘
+              ↑ 数据块挪了，只改直接节点 + NAT 那一行
+</code></pre></div></code></pre>
+<p>查 <code>/dir/file</code> 比 ext4 多一次 NAT 查表：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>1. 查 NAT，拿根目录 / 的 node 地址，读出来
+2. 在根目录的数据块里找目录项 &quot;dir&quot;，拿它的 inode 号
+3. 拿 inode 号查 NAT，得到那个 inode 块的实际地址
+4. 读 dir 的 inode 块
+5. 在 dir 的数据块里找目录项 &quot;file&quot;，重复 3、4 两步
+6. 从 file 的 inode 里顺着索引取数据块
+</code></pre></div></code></pre>
+<p>索引结构本身是固定的多级，不是 extent：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>inode 块（4KiB）
+├─ 数据块号 ×923          ← 直接指向数据
+├─ 直接节点指针 ×2  ──► 直接节点块（1018 个数据块号）
+├─ 间接节点指针 ×2  ──► 间接节点块（1018 个节点指针）
+│                        └─► 直接节点块（1018 个数据块号）
+└─ 双重间接指针 ×1 ──► 间接节点 ──► 直接节点 ──► 数据块
+</code></pre></div></code></pre>
+<p>这组数字来自内核文档 <code>filesystems/f2fs.html</code>：inode 块里 923 个数据块索引、2 个直接节点指针、2 个间接节点指针、1 个双重间接指针，每个直接/间接节点块装 1018 项。算下来单文件上限 3.94TB。923 和 1018 这两个怪数字是这样来的：4KiB 减去头部固定字段，剩下空间除以 4 字节地址，正好这么多，不是设计选出来的整数。</p>
+<p>原译文写「最多有 3 级间接索引」，这是口误。按内核文档的结构，最深路径是双重间接（inode → 间接节点 → 直接节点 → 数据），说是 3 级索引可以，但要说清是「双重间接加一个额外层级」，别写成三层间接——那得是三重间接，F2FS 没有那一层。两个上限：单文件 3.94TB（inode 内指针容量限制）；单分区 16TB（块地址 4 字节，2^32 × 4KiB）。第二个是硬限制，卷再大也超不过，手机存储还在 1TB 以内，碰不到。</p>
+<p>小文件有个专门优化：inline data，小于 3.4KB 的文件内容直接塞进 inode 块的剩余空间，不占数据块。Android 上小文件极多，这一条省的不只是空间，还有一次寻址和一次 I/O。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>mount -o inline_data /dev/mmcblk0p3 /data      <span class="hljs-comment"># 5.x 起默认开启</span>
+mount -o noinline_data /dev/mmcblk0p3 /data    <span class="hljs-comment"># 关掉</span>
+</code></pre></div></code></pre>
+<p>F2FS 不要 extent，理由在日志结构本身：GC 把数据块搬到新位置，extent 的物理起始地址就变了。如果 extent 能合并能分裂，索引块尺寸跟着浮动，而日志结构要求索引块尺寸可预测，不然搬一个索引块就得拆成两个，滚雪球又回来了。固定层级的指针数组尺寸恒定，搬移时原地替换地址就行。</p>
+<h2 id="十二冷热分离为什么要把数据分段" tabindex="-1">十二、冷热分离：为什么要把数据分段 <a class="header-anchor" href="#十二冷热分离为什么要把数据分段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>日志结构的老问题是段里冷热混住。一个段里既有每秒改一次的文件，也有三年没动的照片，这个段会一直被前者弄脏，GC 每次都得把照片搬一遍。搬移量跟在用块数成正比，混住就意味着永远搬不完。</p>
+<p>F2FS 的解法是开六条日志，按冷热分头写。这就是六级温度：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>温度</th>
+<th>装什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>node</td>
+<td>热</td>
+<td>目录的 inode、目录的直接索引块</td>
+</tr>
+<tr>
+<td>node</td>
+<td>温</td>
+<td>普通文件的 inode、直接索引块</td>
+</tr>
+<tr>
+<td>node</td>
+<td>冷</td>
+<td>间接索引块</td>
+</tr>
+<tr>
+<td>data</td>
+<td>热</td>
+<td>目录的数据块（目录项）</td>
+</tr>
+<tr>
+<td>data</td>
+<td>温</td>
+<td>普通文件的数据块</td>
+</tr>
+<tr>
+<td>data</td>
+<td>冷</td>
+<td>多媒体文件数据、GC 搬移过来的块</td>
+</tr>
+</tbody>
+</table></div><p>分头写的效果是每个段里数据的更新频率趋于一致。冷段里的块大多一直有用，GC 扫到它基本不用搬；热段里的块大多已经作废，GC 扫过去只有少量要搬。这就是原文说的 binomial 分布：大部分段要么很空、要么很满，少落在中间那种尴尬状态。</p>
+<p>这套分法能调，<code>active_logs</code> 只支持 2、4、6 三个值，默认 6：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>mount -o active_logs=6 /dev/mmcblk0p3 /data
+</code></pre></div></code></pre>
+<p><code>6</code> 是热/温/冷 × 节点/数据全开；<code>4</code> 是数据分三级、节点只分热冷；<code>2</code> 只分热/冷两档。底层块设备支持 write streams（NVMe 的 stream 特性、ZNS）时，F2FS 会把热/温/冷数据分别映射到 stream 1/2/3，让主控直接知道冷热，不用猜。</p>
+<p>温度判断靠两套启发式，一套是内核按文件类型和操作猜，一套是上层显式指定：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>来源</th>
+<th>数据温度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>元数据（META）</td>
+<td><code>WRITE_LIFE_NONE | REQ_META</code></td>
+</tr>
+<tr>
+<td>热节点</td>
+<td><code>WRITE_LIFE_NONE</code></td>
+</tr>
+<tr>
+<td>温节点</td>
+<td><code>WRITE_LIFE_MEDIUM</code></td>
+</tr>
+<tr>
+<td>冷节点</td>
+<td><code>WRITE_LIFE_LONG</code></td>
+</tr>
+<tr>
+<td>冷数据（ioctl 或扩展名命中）</td>
+<td><code>WRITE_LIFE_EXTREME</code></td>
+</tr>
+<tr>
+<td>缓冲写产生的热数据</td>
+<td><code>WRITE_LIFE_SHORT</code></td>
+</tr>
+<tr>
+<td>缓冲写产生的温数据</td>
+<td>不设</td>
+</tr>
+</tbody>
+</table></div><p>表来自内核文档的 write-hint 一节。<code>WRITE_LIFE_*</code> 是能一路传到块层、再传到支持 stream 的设备上的提示。应用想自己标冷热，用 <code>F2FS_IOC_SET_PIN_FILE</code> 之类的 ioctl，或者让 mkfs 时配好的扩展名列表命中（<code>-e mp3,mp4,jpg</code>）。视频、图片这类一次写入反复读的文件，按扩展名扔进冷数据区划算。</p>
+<p>局限要说清：这套冷热是猜的。ext4 上那个三年没动的照片和每秒写一次的日志，到 F2FS 里如果扩展名一样、打开方式一样，还是会被塞进同一个温度档。原文作者自己也承认「冷热分离还较为简单」。真正准的冷热信息只有应用知道，文件系统拿不到。</p>
+<h2 id="十三cleaner日志结构的垃圾回收代价" tabindex="-1">十三、cleaner：日志结构的垃圾回收代价 <a class="header-anchor" href="#十三cleaner日志结构的垃圾回收代价"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>cleaner 是 F2FS 的 GC 线程，干三件事：挑一个牺牲段、找出里面还在用的块、搬走。内核文档给的流程是四步：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>1. 查 SIT，挑一个牺牲段（victim）
+2. 用 SSA 找出牺牲段里每个数据块的父索引节点
+3. 交叉校验「这个块是不是真还被父节点指着」
+4. 把确认还在用的块搬走
+</code></pre></div></code></pre>
+<p>第 3 步容易漏。SSA 记的是「写入时的归属」，但那个块后来会被覆盖或删掉。SIT 的位图给的是「有没有被释放」，SSA 给的是「当初属于谁」。两者对得上才搬，不然会把作废数据搬到新位置，越搬越乱。</p>
+<p>挑牺牲段的算法有两个。贪心（greedy）挑在用块最少的段，实现简单，每次搬得最少，缺点是老段一直不被动，日志块抖动。成本收益（cost-benefit）把段的年龄算进去，老段优先，年龄从 SIT 里记的段更新时间推。热数据马上又要改，搬了白搬；冷数据搬一次能安生很久。分工是：前台 GC 用贪心（要快，别卡住调用者），后台 GC 用成本收益（要准，反正不急）。内核文档写得很明确。搬完的段不是立刻可用，先标记成「预释放」，要等下一个检查点落盘才真正变成空闲。原因是掉电回滚：检查点回退后，那个段在旧检查点里还有在用数据，提前复用就丢数据。</p>
+<p>空间不够时 F2FS 也不死守日志写。它会切到 SSR（Slack Space Recycling），也就是 threaded log：直接往碎片化段里的空槽写。这变成随机写，牺牲顺序性，换的是不被前台 GC 卡住。选哪个段做 SSR 也是贪心的，尽量让写入位置还有点连续性。算写放大的账：设一个段里有 u 比例的在用块，要腾出一个空段就得搬 u 份数据，最终只得到 1 - u 份空间。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>GC 写放大 = 搬移量 / 净腾出量 = u / (1 - u)
+叠加一次实际写入，总写放大 ≈ 1 + u/(1-u) = 1/(1-u)
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>段内使用率 u</th>
+<th>总写放大</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>50%</td>
+<td>2.0×</td>
+</tr>
+<tr>
+<td>70%</td>
+<td>3.3×</td>
+</tr>
+<tr>
+<td>80%</td>
+<td>5.0×</td>
+</tr>
+<tr>
+<td>90%</td>
+<td>10.0×</td>
+</tr>
+<tr>
+<td>95%</td>
+<td>20.0×</td>
+</tr>
+</tbody>
+</table></div><p>这是算式，不是实测数据。它解释了一件事：日志结构文件系统的性能对剩余空间极度敏感。90% 占用时，每写 1 字节实际要写 10 字节到闪存，SSD 寿命按这个倍数消耗。所以 overprovision 不是浪费空间，是买写放大。手机厂商把 <code>/data</code> 留出 10%~20% 不用，就是这个道理。</p>
+<p>ext4 没有 cleaner，因为它不搬移。删文件就是清位图位，块立刻进空闲池。代价转移到了 FTL：ext4 那块盘的 GC 是主控在干，你看不见，也调不了。</p>
+<p>这是两者最本质的分歧：<strong>GC 的活儿要么文件系统干（能看见冷热，但吃 CPU 和带宽），要么 FTL 干（看不见冷热，写放大更高）</strong>。没有第三种选择。</p>
+<h2 id="十四f2fs-的发展历程与适用场景" tabindex="-1">十四、F2FS 的发展历程与适用场景 <a class="header-anchor" href="#十四f2fs-的发展历程与适用场景"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>F2FS 进主线是 3.8，2013-02 发布。在那之前它在社区里被质疑了很多年，知乎上一批经典问题：三星自己发的文件系统，自家旗舰为什么不用；华为说好用，别人为什么不跟。现在这些问题都有答案了：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>时间</th>
+<th>事件</th>
+<th>来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2012-10</td>
+<td>Jaegeuk Kim 发到 Linux 社区</td>
+<td>原文</td>
+</tr>
+<tr>
+<td>2012-12</td>
+<td>进 Linux 3.8 合并窗口</td>
+<td>原文</td>
+</tr>
+<tr>
+<td>2018</td>
+<td>谷歌 Pixel 3 使用 F2FS，Android Go 推荐用 F2FS 延长器件寿命</td>
+<td>原文说法，未独立核实</td>
+</tr>
+<tr>
+<td>2019</td>
+<td>三星自家旗舰开始用 F2FS</td>
+<td>原文说法，未独立核实</td>
+</tr>
+<tr>
+<td>2020 前后</td>
+<td>多数手机厂商跟进</td>
+<td>原文</td>
+</tr>
+</tbody>
+</table></div><p>作者履历也说明问题：Jaegeuk Kim 从三星到摩托罗拉，到华为，到谷歌。人走到哪，F2FS 在 Android 上的推动就到哪。没有历史包袱，可以放手针对 Android 优化——原子写提升 SQLite 在 DELETE 模式下的性能、discard 下发策略减少卡顿，都是从手机场景里长出来的。原子写这块值得单说。SQLite 默认的 rollback journal 模式要「写日志、改数据、删日志」，中间任何一步掉电都靠日志回滚。有了原子写，一次 <code>F2FS_IOC_START_ATOMIC_WRITE</code> 覆盖多块，要么全成要么全不成，不用再靠用户态日志文件兜底。这个特性对手机上的数据库和配置存储收益直接。</p>
+<p>适用场景按介质和负载分开说。值的地方：eMMC/UFS 的手机、平板、车机（小文件多、随机写多、容量紧、寿命敏感，F2FS 的设计目标就是这些）；写放大型负载（日志采集、消息队列本地盘、频繁覆盖写的缓存目录，追加写把随机写变成顺序写，主控 GC 压力小）；ZNS/SMR 这类只能顺序写的设备（F2FS 有 blkzoned 支持，ext4 在这个场景基本没得选）；小容量低端设备（Android Go 推荐 F2FS 的理由是延长器件寿命，对小容量 eMMC 站得住）。不值的地方：服务器系统盘和根分区（ext4 的工具链成熟度、恢复流程、发行版默认支持都是实打实的运维成本，<code>fsck.f2fs</code> 能力比 <code>e2fsck</code> 弱一档）；空间长期跑在 90% 以上的盘（写放大按前面的表走，F2FS 在这个区间比 ext4 更难受）；需要精细控制 inode 数量和目录索引行为的场景（ext4 的 <code>-i</code>、<code>-I</code>、<code>dir_index</code> 旋钮更细）；要求快照、在线缩容、成熟 resize 的场景（<code>resize2fs</code> 在线扩容用了二十年，F2FS 的在线 resize 是后来补的）。</p>
+<h2 id="十五ext4-与-f2fs-正面对比" tabindex="-1">十五、ext4 与 F2FS 正面对比 <a class="header-anchor" href="#十五ext4-与-f2fs-正面对比"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前十章讲机制，这一章给结论。同一件事，两边各自付出什么代价，逐项写清。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>ext4</th>
+<th>F2FS</th>
+<th>谁赢，什么条件下</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>分配方式</td>
+<td>位图找空闲位，就地置 1</td>
+<td>活跃日志尾部追加，推进指针</td>
+<td>闪存上 F2FS，机械盘上 ext4 没对手</td>
+</tr>
+<tr>
+<td>空闲空间记账</td>
+<td>块位图，<code>flex_bg</code> 下集中在组 0</td>
+<td>SIT：每段在用块数 + 位图</td>
+<td>平手，都是 O(1) 查询</td>
+</tr>
+<tr>
+<td>元数据写入模式</td>
+<td>原地改位图、inode 表</td>
+<td>异地写节点，靠 NAT 转译</td>
+<td>闪存上 F2FS</td>
+</tr>
+<tr>
+<td>写放大（文件系统层）</td>
+<td>1× 数据 + 日志双写，约 2×</td>
+<td>1/(1-u)，u 是段使用率</td>
+<td>空盘平手，满盘 ext4 明显更省</td>
+</tr>
+<tr>
+<td>写放大（叠加 FTL）</td>
+<td>随机写让 FTL 读-改-写，倍数看主控</td>
+<td>顺序写让 FTL 一擦块一写，接近 1×</td>
+<td>闪存上 F2FS，这是它的主战场</td>
+</tr>
+<tr>
+<td>4K 随机写</td>
+<td>靠 FTL 的映射粒度兜底</td>
+<td>顺序落到日志尾，天然聚合</td>
+<td>F2FS，小文件密集时差距最大</td>
+</tr>
+<tr>
+<td>顺序大文件写</td>
+<td>好，extent 让大文件几乎无元数据</td>
+<td>也好，但 GC 会插进来抢带宽</td>
+<td>ext4 略稳，F2FS 尾延迟有毛刺</td>
+</tr>
+<tr>
+<td>读性能</td>
+<td>极好，索引路径短</td>
+<td>多一次 NAT 查表，extent cache 能缓解</td>
+<td>ext4</td>
+</tr>
+<tr>
+<td>空间利用率</td>
+<td>高。删除立刻回收，没有预留</td>
+<td>要留 5% 以上 overprovision 给 GC</td>
+<td>ext4，手机上的 10%~20% 是硬成本</td>
+</tr>
+<tr>
+<td>碎片</td>
+<td>延迟分配 + 预分配，原文实测 1.5%~3.3%</td>
+<td>日志写天然顺序，但 GC 会制造碎片</td>
+<td>F2FS 布局更整齐，ext4 数值也不高</td>
+</tr>
+<tr>
+<td>掉电恢复</td>
+<td>jbd2 重放日志，秒级</td>
+<td>双检查点 + roll-forward，也是秒级</td>
+<td>平手，F2FS 的 fsync 语义更弱</td>
+</tr>
+<tr>
+<td>工具成熟度</td>
+<td><code>e2fsck</code> 二十年，问题基本都见过</td>
+<td><code>fsck.f2fs</code> 能力弱一档，修复手段少</td>
+<td>ext4</td>
+</tr>
+<tr>
+<td>在线扩容</td>
+<td><code>resize2fs</code> 成熟，预留 GDT 块</td>
+<td>有 resize.f2fs，历史短</td>
+<td>ext4</td>
+</tr>
+<tr>
+<td>最大文件</td>
+<td>16TiB（4K 块，extent）</td>
+<td>3.94TB</td>
+<td>ext4</td>
+</tr>
+<tr>
+<td>最大分区</td>
+<td>1EiB 量级（64bit 特性）</td>
+<td>16TB（4 字节块地址）</td>
+<td>ext4</td>
+</tr>
+<tr>
+<td>默认发行版采用</td>
+<td>几乎所有主流发行版的根分区</td>
+<td>Android；部分嵌入式</td>
+<td>ext4</td>
+</tr>
+</tbody>
+</table></div><p>挑几项容易被误读的说透。写放大这一行不能只看文件系统层。ext4 自己只写一遍，但它在闪存上引发的 FTL 内部搬运没算进这个 1×。F2FS 自己搬得多（cleaner），但它让 FTL 几乎不用搬。谁的总写放大更低，取决于盘多满、负载多随机：空盘上 ext4 更省，70% 占用的小文件随机写负载上 F2FS 更省。</p>
+<p>随机写这一行，ext4 不是做不到顺序。分配器会尽量把连续写放在连续块上，<code>delalloc</code> 也是为这个服务的。问题在「随机」这个前提：应用真随机改 4K 页，ext4 只能原地改，一次一个页，FTL 一次一个擦除块。恢复能力这一行别被「都有日志」骗了。ext4 的 jbd2 保证元数据一致，<code>data=ordered</code> 下还额外保证数据先于元数据落盘。F2FS 的 <code>fsync_mode=posix</code>（默认）语义比 ext4 松，内核文档明写了这一点，要和 ext4 对齐得用 <code>strict</code>，代价是性能退化：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>mount -o fsync_mode=strict /dev/mmcblk0p3 /data   <span class="hljs-comment"># 跑 xfstests generic/342 才过</span>
+</code></pre></div></code></pre>
+<p>这一条是选型时最容易翻车的地方。把 ext4 上的数据库直接搬到 F2FS，测试全过，掉电测一次就出事。</p>
+<p>结论：这不是谁更好，是两条不同的账。ext4 把 GC 的活儿包给 FTL，自己轻，代价是写放大不可控；F2FS 自己扛 GC，代价是空间预留和 CPU 开销，换来写放大可控和顺序写。</p>
+<h2 id="十六怎么选按介质与负载" tabindex="-1">十六、怎么选：按介质与负载 <a class="header-anchor" href="#十六怎么选按介质与负载"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>决策按介质先分一次，再按负载分一次。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>介质 / 场景</th>
+<th>选</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>机械盘（HDD）</td>
+<td>ext4</td>
+<td>F2FS 的顺序写优势在寻道上没意义，GC 白烧 CPU</td>
+</tr>
+<tr>
+<td>SATA/NVMe SSD，桌面或通用服务器</td>
+<td>ext4</td>
+<td>负载杂、盘不易满、工具熟，收益抵不过风险</td>
+</tr>
+<tr>
+<td>NVMe SSD，写密集且可测（数据库、日志）</td>
+<td>先测，再定</td>
+<td>随机写聚合收益真实，但要跑掉电和 fsync 语义测试</td>
+</tr>
+<tr>
+<td>eMMC / UFS，手机、平板、车机</td>
+<td>F2FS</td>
+<td>设计目标就是这个场景，overprovision 和冷热分离刚好对上</td>
+</tr>
+<tr>
+<td>小容量低端设备</td>
+<td>F2FS</td>
+<td>寿命优先，Android Go 的选择</td>
+</tr>
+<tr>
+<td>ZNS / SMR</td>
+<td>F2FS</td>
+<td>有 blkzoned 支持；ext4 在只能顺序写的设备上没有对应机制</td>
+</tr>
+<tr>
+<td>只读镜像、容器层</td>
+<td>两个都不是</td>
+<td>看 EROFS，那是另一个话题</td>
+</tr>
+</tbody>
+</table></div><p>三条判断线。盘长期占用超过 85%，别换 F2FS，写放大按 1/(1-u) 走，这时 F2FS 的 cleaner 和 FTL 的 GC 都在满负荷，尾延迟会比 ext4 更难看。负载是「一次写入、反复读」（视频、镜像、备份归档），换 F2FS 收益很小。追加写的好处主要体现在反复覆盖写，读多写少的场景两边差不多，还多个 NAT 查表。跑数据库，先看 fsync 语义。F2FS 默认的 <code>posix</code> 模式比 ext4 松，SQLite、PostgreSQL 这类依赖 fsync 保证的，挂 <code>fsync_mode=strict</code> 再压测。这一条不做，测试环境的结论不能信。</p>
+<p>最后一句实话：ext4 是默认答案，因为它不出错。F2FS 换来的是特定负载下的性能和寿命，代价是运维复杂度。你没有明确的写放大痛点，就别换。</p>
+<h2 id="十七mkfs-与挂载参数的实用建议" tabindex="-1">十七、mkfs 与挂载参数的实用建议 <a class="header-anchor" href="#十七mkfs-与挂载参数的实用建议"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>参数名全部对齐 man page 和内核文档，照抄能跑。</p>
+<h3 id="ext4-这边" tabindex="-1">ext4 这边 <a class="header-anchor" href="#ext4-这边"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>mkfs.ext4 -b 4096 \
+          -O extent,64bit,metadata_csum,flex_bg,dir_index,sparse_super,large_file \
+          -I 256 -m 1 -J size=128 -L data /dev/nvme0n1p1
+</code></pre></div></code></pre>
+<p><code>-m 1</code> 预留块比例，默认 5%。留给 root 的空间用来防碎片和救急，<code>/</code> 分区留 5%，纯数据盘 1% 够用。<code>-I 256</code> inode 大小，128 字节的 inode 拿不到 2038 之后的时间戳，也放不下项目 ID 和部分扩展属性，默认已经是 256，写出来是为了提醒你建完就改不了。<code>-J size=128</code> 日志大小，单位 MB，默认按卷大小算，数据库盘给大一点能合并更多事务。<code>-O metadata_csum</code> crc32c 校验，2012 年之后的 e2fsprogs 默认开，老库升级时不带。RAID 上要加 <code>-E stride=</code> 和 <code>stripe_width=</code>，这两个参数影响位图落点，配错会把元数据全压在一块盘上。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>mount -t ext4 -o noatime,data=ordered,commit=30,errors=remount-ro /dev/nvme0n1p1 /data
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code># /etc/fstab，第四列是挂载选项
+UUID=79fc5ed8-5bbc-4dfe-8359-b7b36be6eed3  /data  ext4  defaults,noatime,commit=30  0 2
+</code></pre></div></code></pre>
+<p><code>noatime</code> 不更新访问时间，读一次写一次元数据，全盘扫描时开销很难看，<code>relatime</code> 是 2.6.30 起的默认。<code>commit=30</code> 放宽日志提交间隔（默认 5 秒），能合并更多写入，代价是掉电最多丢 30 秒。<code>errors=remount-ro</code> 出错就只读挂载，默认是 <code>continue</code>，出错了还继续写，坏块会扩散。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>dumpe2fs -h /dev/nvme0n1p1                 <span class="hljs-comment"># 只看超级块，比全量 dump 快得多</span>
+tune2fs -l /dev/nvme0n1p1                  <span class="hljs-comment"># 同上，另一套工具</span>
+e2fsck -fn /dev/nvme0n1p1                  <span class="hljs-comment"># -n 只检查不修，安全</span>
+tune2fs -O metadata_csum /dev/nvme0n1p1    <span class="hljs-comment"># 老库补开校验和</span>
+</code></pre></div></code></pre>
+<h3 id="f2fs-这边" tabindex="-1">F2FS 这边 <a class="header-anchor" href="#f2fs-这边"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>mkfs.f2fs -l userdata -s 2 -z 1 -o 8 -e <span class="hljs-string">&quot;mp3,mp4,jpg,png&quot;</span> /dev/mmcblk0p3
+</code></pre></div></code></pre>
+<p><code>-s</code> 每个 section 几个 segment，默认 1。设成 2 让 section 变成 4MB，用来对齐主控的 GC 单元，设错了适得其反。<code>-z</code> 每个 zone 几个 section，默认 1。<code>-o</code> overprovision 百分比，默认 5，留给 GC 的周转空间，不报给 <code>df</code>，容量紧的设备别调到 3 以下。<code>-e</code> 扩展名列表，命中的文件写进冷数据区，视频、图片、压缩包这类一次写反复读的适合放进去。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>mount -t f2fs -o background_gc=on,gc_merge,discard,noatime,inline_data /dev/mmcblk0p3 /data
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code># /etc/fstab
+UUID=xxxx-xxxx  /data  f2fs  defaults,noatime,background_gc=on  0 0
+</code></pre></div></code></pre>
+<p><code>background_gc=on</code> 是默认值，系统空闲时后台 GC，避免前台卡顿，压测时可以设 <code>off</code>，生产别关。<code>gc_merge</code> 让后台 GC 线程接管前台 GC 请求，前台 GC 在 I/O 或 CPU 吃紧的进程里跑会拖很久。<code>discard</code> 段被清理时下发 TRIM，SSD 上开着有用；eMMC 上要测，有些主控的 discard 实现会引入延迟毛刺，可以换成周期性 <code>fstrim</code>。<code>inline_data</code> 小文件塞 inode，5.x 起默认开。</p>
+<p>压测时想关检查点，这是危险操作，掉电等于回到挂载时刻：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>mount -o checkpoint=<span class="hljs-built_in">disable</span>:10% /dev/mmcblk0p3 /mnt/test
+</code></pre></div></code></pre>
+<p><code>10%</code> 表示最多牺牲 10% 空间来避免 GC，用 <code>/sys/fs/f2fs/&lt;dev&gt;/unusable</code> 看实际被占用了多少。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>dump.f2fs -i /dev/mmcblk0p3                       <span class="hljs-comment"># 打印超级块和布局</span>
+fsck.f2fs -f /dev/mmcblk0p3                       <span class="hljs-comment"># 强制检查，会改盘</span>
+<span class="hljs-built_in">cat</span> /sys/fs/f2fs/mmcblk0p3/gc_urgent
+</code></pre></div></code></pre>
+<h3 id="换文件系统的流程" tabindex="-1">换文件系统的流程 <a class="header-anchor" href="#换文件系统的流程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>别原地转，两个方向都没有可靠工具。备份、重建、倒回：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 1. 备份（保留属性、ACL、稀疏文件）</span>
+tar --xattrs --acls --sparse -cpf /backup/data.tar -C /mnt/data .
+
+<span class="hljs-comment"># 2. 卸载、重建</span>
+umount /mnt/data
+mkfs.f2fs -l data -o 8 /dev/nvme0n1p1     <span class="hljs-comment"># 或 mkfs.ext4 ...</span>
+
+<span class="hljs-comment"># 3. 挂载、倒回</span>
+mount /dev/nvme0n1p1 /mnt/data
+tar --xattrs --acls --sparse -xpf /backup/data.tar -C /mnt/data
+</code></pre></div></code></pre>
+<p><code>--sparse</code> 别省。没有它，稀疏文件会被展开成实心文件，一个 100GB 的虚拟机镜像能变成 500GB。</p>
+<h2 id="十八易错点速查" tabindex="-1">十八、易错点速查 <a class="header-anchor" href="#十八易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>坑</th>
+<th>真相</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>「ext4 的柱面组约 8MB」</td>
+<td>那是 1KiB 块时代的数字。4KiB 块下一组 32768 块，即 128MiB</td>
+</tr>
+<tr>
+<td>「ext4 每组都有自己的超级块」</td>
+<td>只有 <code>sparse_super</code> 规则的组才有：组号是 0 或 3/5/7 的幂</td>
+</tr>
+<tr>
+<td>「4K 块能放 512 个间接指针」</td>
+<td>4KiB/4 = 1024 项。512 是 2KiB 块的结果</td>
+</tr>
+<tr>
+<td>「12 直接指针 + 512 间接项 = 524 个 extent」</td>
+<td>直接指针指块，extent 是区段，不能相加。extent 下 <code>ee_len</code> 上限 32768 块</td>
+</tr>
+<tr>
+<td>「inode 是 256 字节的块」</td>
+<td>256 是 e2fsprogs 给 ext4 的默认；ext2 时代 128；<code>-I</code> 建完不能改</td>
+</tr>
+<tr>
+<td>「ext4 从 Fedora 14 起是默认」</td>
+<td>Fedora 11（2009-06）就已经是</td>
+</tr>
+<tr>
+<td>「delalloc 只影响碎片」</td>
+<td>它开了崩溃窗口。<code>write</code> 返回但块没分配时掉电会丢数据，2.6.30 靠 rename/truncate 隐式 fsync 补上</td>
+</tr>
+<tr>
+<td>「ext3 的日志里有文件数据」</td>
+<td>只在 <code>data=journal</code> 下。默认的 <code>ordered</code> 不把数据写进日志</td>
+</tr>
+<tr>
+<td>「ext4 挂成 ext2 没影响」</td>
+<td>日志被绕过，恢复时间回到 fsck 全盘扫描，更容易丢数据</td>
+</tr>
+<tr>
+<td>「ext4 碎片率高，要定期 defrag」</td>
+<td>原文实测 1.5%~3.3%。<code>e4defrag</code> 有限制，多数场景不值得做</td>
+</tr>
+<tr>
+<td>「F2FS 有 3 级间接索引」</td>
+<td>内核文档给的是 923 数据块号 + 2 直接 + 2 间接 + 1 双重间接，最深是双重间接</td>
+</tr>
+<tr>
+<td>「F2FS 用 extent 会更省」</td>
+<td>不会。GC 搬移改变区间，extent 尺寸浮动，日志结构要的是固定尺寸索引</td>
+</tr>
+<tr>
+<td>「F2FS 的 16TB 限制是文件大小」</td>
+<td>是分区大小。单文件上限 3.94TB</td>
+</tr>
+<tr>
+<td>「F2FS 的 CP 和 NAT/SIT 一样只有一份」</td>
+<td>都留两份，靠 CP 里记的位图指定用哪一份</td>
+</tr>
+<tr>
+<td>「F2FS 删文件就释放空间」</td>
+<td>段要先被 cleaner 腾空，<code>df</code> 看到的空间和实际可写空间不是一回事</td>
+</tr>
+<tr>
+<td>「F2FS 在满盘上和 ext4 一样」</td>
+<td>写放大 1/(1-u)，90% 占用是 10×。满盘时 F2FS 更吃亏</td>
+</tr>
+<tr>
+<td>「F2FS 的 fsync 和 ext4 等价」</td>
+<td>默认 <code>fsync_mode=posix</code> 比 ext4 松。要对齐得挂 <code>strict</code>，性能退化</td>
+</tr>
+<tr>
+<td>「段里在用块越少越好搬」</td>
+<td>搬移量按在用块算，但选段还要看年龄。热段搬了白搬，这是 cost-benefit 存在的理由</td>
+</tr>
+</tbody>
+</table></div><h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="-章节与原文对应" tabindex="-1">① 章节与原文对应 <a class="header-anchor" href="#-章节与原文对应"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>本文节</th>
+<th>底稿</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开篇</td>
+<td>两篇引言</td>
+<td>重写。把「两种设计对应闪存两条物理特性」这条主线立起来，原两篇都没有这个视角</td>
+</tr>
+<tr>
+<td>一</td>
+<td>无</td>
+<td>本文补充。用「命名/定位/空间管理」做框架，把后面所有机制的落点固定下来</td>
+</tr>
+<tr>
+<td>二</td>
+<td>EXT4 篇第 10–58、175–221 行</td>
+<td>保留历史线，补版本号与时间线表；修正 Fedora 版本错误</td>
+</tr>
+<tr>
+<td>三</td>
+<td>EXT4 篇第 62–69、77–161 行</td>
+<td>术语改为块组，补每组大小表；dumpe2fs 输出保留并标注为真实格式示例</td>
+</tr>
+<tr>
+<td>四</td>
+<td>EXT4 篇第 48–57、70–74 行</td>
+<td>补超级块字段偏移表、3/5/7 幂的备份规则、GDT 结构与恢复命令</td>
+</tr>
+<tr>
+<td>五</td>
+<td>EXT4 篇第 222–241 行</td>
+<td>补 <code>ext4_inode</code> 结构、寻址算式、目录项定位；修正 512/524 的算错</td>
+</tr>
+<tr>
+<td>六</td>
+<td>EXT4 篇第 204–207 行（一句带过）</td>
+<td>全文扩写。补三个结构体、深度推导、1000 块对照、<code>ee_len</code> 未初始化标志</td>
+</tr>
+<tr>
+<td>七</td>
+<td>EXT4 篇第 185–195、201–221 行</td>
+<td>拆成四小节。补 delalloc 的版本与崩溃窗口、三种 data= 模式表、flex_bg 与 dumpe2fs 的对应</td>
+</tr>
+<tr>
+<td>八</td>
+<td>无</td>
+<td>本文补充。原 EXT4 篇完全没谈闪存，这一章是合并后才成立的部分</td>
+</tr>
+<tr>
+<td>九</td>
+<td>F2FS 篇第 17–43 行</td>
+<td>保留论文数据与检查点机制，补滚雪球示意图和 LFS/journal 的区分</td>
+</tr>
+<tr>
+<td>十</td>
+<td>F2FS 篇第 45–60 行</td>
+<td>保留六区定义，补 2MB 段、section/zone 与 FTL GC 单元的对齐、overprovision</td>
+</tr>
+<tr>
+<td>十一</td>
+<td>F2FS 篇第 62–84 行</td>
+<td>保留查找流程与上限，补 923/1018 的来源、不要 extent 的理由</td>
+</tr>
+<tr>
+<td>十二</td>
+<td>F2FS 篇第 86–95 行</td>
+<td>保留六级温度表，补 <code>active_logs</code> 取值、write-hint 策略表、局限</td>
+</tr>
+<tr>
+<td>十三</td>
+<td>F2FS 篇第 5、27 行提到清理开销</td>
+<td>全文扩写。补 GC 四步流程、两种选段算法、预释放、SSR、写放大算式</td>
+</tr>
+<tr>
+<td>十四</td>
+<td>F2FS 篇第 97–111 行</td>
+<td>保留时间线并表格化，补适用/不适用场景的结论</td>
+</tr>
+<tr>
+<td>十五</td>
+<td>无</td>
+<td>本文核心补充。原两篇各自成文，没有一处对照</td>
+</tr>
+<tr>
+<td>十六</td>
+<td>EXT4 篇第 278–283 行（作者结论）</td>
+<td>保留结论但加前置条件，补按介质/负载的决策表</td>
+</tr>
+<tr>
+<td>十七</td>
+<td>EXT4 篇第 196–199、247–250 行</td>
+<td>全文补充。mkfs/mount 参数对齐 man page 与内核文档</td>
+</tr>
+<tr>
+<td>十八</td>
+<td>无</td>
+<td>本文汇总两篇的被误读处</td>
+</tr>
+</tbody>
+</table></div><h3 id="-修正的错误" tabindex="-1">② 修正的错误 <a class="header-anchor" href="#-修正的错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ol>
+<li><strong>「柱面组大小约 8MB」不成立。</strong> 原译文第 66–68 行说每组「约为 8MB」。8MiB 是 1KiB 块下的块组大小；4KiB 块下 <code>s_blocks_per_group</code> = 32768，一组 128MiB。数据出自内核文档 <code>filesystems/ext4/blocks.html</code>。</li>
+<li><strong>「柱面组」这个术语该换成「块组」。</strong> 内核文档统一用 block group。原译文在图 1 处写「柱面组」，在 dumpe2fs 处写「Group」，两个概念混用。cylinder group 是 BSD FFS 的术语，ext 家族从 ext2 起就是 block group。</li>
+<li><strong>「inode 是 256 字节的块」放错了位置。</strong> 原译文第 36 行讲 Minix 时就说 inode 是 256 字节，那是 ext4 时代的默认值。128 字节是 ext2 的默认，e2fsprogs 现在给 ext4 的默认是 256，<code>-I</code> 可改，建完不能改。</li>
+<li><strong>「4K 的块支持 512 个 4 字节间接节点，允许单个文件有 12 + 512 = 524 个扩展盘区」两处错。</strong> 一，4KiB 块能装 1024 个 4 字节指针，512 是 2KiB 块的结果。二，12 个直接指针指向数据块，不是 extent，两者不能相加。</li>
+<li><strong>「EXT3 的日志会将文件数据随同元数据写入指定区域」过度概括。</strong> 只有 <code>data=journal</code> 把数据写进日志。默认的 <code>data=ordered</code> 不写数据，只保证数据先于元数据落盘。原译文把三种模式混成了一种。</li>
+<li><strong>「自 Fedora 14 以来，EXT4 一直是 Fedora 的默认文件系统」错误。</strong> Fedora 11（2009-06）就已把 ext4 设为默认；Fedora 9 要加 <code>ext4dev</code> 安装参数，Fedora 10 要加 <code>ext4</code> 参数。依据是 Fedora 官方 wiki 的 Ext4 in Fedora 11 页面。</li>
+<li><strong>dumpe2fs 输出里大量字段值为空。</strong> 原译文第 91–128 行的 <code>Inode count</code>、<code>Block count</code>、<code>Group descriptor size</code>、<code>Journal inode</code> 等字段冒号后什么都没有。这是抓取或排版时丢了值，不是文件系统没这些字段。本文按 dump 的实际格式把关键字段补成有值的形态，保留原输出的结构与顺序。</li>
+<li><strong>「EXT2/EXT3 挂成 EXT4 会有小幅性能提升」要加条件。</strong> 老布局挂上去不会自动变成 extent，索引块还是块映射。只有 <code>tune2fs -O extents,uninit_bg,dir_index</code> 之后再新建的文件才走新路径。</li>
+<li><strong>「F2FS 最多有 3 级间接索引」是口误。</strong> 内核文档给的结构是 923 个数据块号 + 2 个直接节点 + 2 个间接节点 + 1 个双重间接，最深路径是双重间接。写成「3 级间接」会让人以为是三重间接，F2FS 没有那一层。</li>
+<li><strong>「F2FS 的两个检查点各占一个 Segment」需要限定。</strong> 内核文档只说明 CP 有两份、用 shadow copy 机制。CP 区大小按卷大小算，不是恒定两个 segment。原译文这句在多数小卷上成立，作为通用结论不成立。</li>
+<li><strong>「数据块地址 4 字节，最大分区 16TB」只在 4KiB 块下成立。</strong> 2^32 × 4KiB = 16TiB 的算式没错，块大小不是 4KiB 时结果不同，原文没写这个前提。</li>
+</ol>
+<h3 id="-未验证项" tabindex="-1">③ 未验证项 <a class="header-anchor" href="#-未验证项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>下面这些我没能在具体版本的源码或 release note 上逐条核对，标出来供复核。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>条目</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ext4 <code>flex_bg</code> 首次可用版本</td>
+<td>写作「2.6.28 一带」，未逐版本核对</td>
+</tr>
+<tr>
+<td>ext4 <code>64bit</code> 特性首次可用版本</td>
+<td>原文未标注，本文也没查到确切版本</td>
+</tr>
+<tr>
+<td>ext4 <code>uninit_bg</code> 引入版本</td>
+<td>写作「2.6.28 一带」，未验证</td>
+</tr>
+<tr>
+<td>ext4 <code>fast_commit</code> 引入版本</td>
+<td>写作「5.10 一带」，未验证。e2fsprogs 侧 <code>fast_commit_size</code> 参数名已核对 man page</td>
+</tr>
+<tr>
+<td>ext4 <code>bigalloc</code> 引入版本</td>
+<td>原文未标注，本文只讲机制不讲版本</td>
+</tr>
+<tr>
+<td>ext4 时间戳上限 2446 年</td>
+<td>原文说法。34 位秒级时间戳的算术上限约在 2446-05，但要 256 字节 inode 且 <code>i_extra_isize</code> 足够才拿得到完整位数</td>
+</tr>
+<tr>
+<td>F2FS <code>inline_data</code> 引入版本</td>
+<td>原文未标注。mount 选项与内核文档的 ~3.4KB 上限已核对</td>
+</tr>
+<tr>
+<td>F2FS 压缩（<code>compress_algorithm</code>）引入版本</td>
+<td>未验证。4KiB × (1 &lt;&lt; log_size) 的簇定义已核对内核文档</td>
+</tr>
+<tr>
+<td>F2FS 原子写（<code>F2FS_IOC_START_ATOMIC_WRITE</code>）引入版本</td>
+<td>未验证</td>
+</tr>
+<tr>
+<td>谷歌 Pixel 3 使用 F2FS</td>
+<td>原文说法，未独立核实</td>
+</tr>
+<tr>
+<td>三星 2019 年旗舰使用 F2FS</td>
+<td>原文说法，未独立核实</td>
+</tr>
+<tr>
+<td>「ext4 碎片率 1.5%~3.3%」</td>
+<td>原文作者自己机器上 <code>fsck -fn</code> 的结果，2017 年，非 benchmark，不可外推</td>
+</tr>
+<tr>
+<td>「崩溃后恢复 28 小时」</td>
+<td>原文作者亲身经历，机械盘时代，无盘型号与 fsck 版本</td>
+</tr>
+<tr>
+<td>各类写放大倍数</td>
+<td>第十三章的表是 <code>1/(1-u)</code> 的算式推导，不是实测</td>
+</tr>
+</tbody>
+</table></div><h3 id="-原文引用" tabindex="-1">④ 原文引用 <a class="header-anchor" href="#-原文引用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li>David Both，《Linux 的 EXT4 文件系统的历史、特性以及最佳实践》，2017-07-17，Linux 中国翻译，linux.cn/article-8685-1.html。底稿 291 行，本文取其第 10–283 行的内容。</li>
+<li>内核工匠，《F2FS 技术拆解》，2020-01-22。博客园转载版比仓内底稿多出「FTL 的地址映射方式」「垃圾回收和块分配」两节，仓内底稿 118 行是删节版，本文写 GC 一节时参照了完整版。</li>
+<li>内核文档：<code>filesystems/ext4/blocks.html</code>（块大小与每组上限）、<code>super.html</code>（超级块字段偏移与特性位）、<code>ifork.html</code>（indirect 与 extent 树）、<code>filesystems/f2fs.html</code>（六区布局、索引结构、GC、mount 选项）。</li>
+<li><code>man 8 mke2fs</code>（e2fsprogs 1.47.4）：<code>-m</code>、<code>-I</code>、<code>-J</code>、<code>-O</code>、<code>-G</code>、<code>-E</code> 的行为与默认值。</li>
+<li>Linux 2.6.30 的 release note（kernelnewbies）：delalloc 默认开启、rename/truncate 隐式 fsync、relatime 默认。</li>
+<li>Fedora 项目 wiki：<code>Ext4 in Fedora 11</code>、<code>Features/Ext4DefaultFs</code>。</li>
+<li>原始论文：Rosenblum &amp; Ousterhout，<em>The Design and Implementation of a Log-Structured File System</em>，SOSP '92；Lee et al.，<em>F2FS: A New File System for Flash Storage</em>，FAST '15。</li>
+</ul>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一文件系统要解决的三件事命名定位空间管理" data-toc-target="一文件系统要解决的三件事命名定位空间管理">一、文件系统要解决的三件事：命名、定位、空间管理</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二从-minix-到-ext4一条不断打补丁的路" data-toc-target="二从-minix-到-ext4一条不断打补丁的路">二、从 Minix 到 ext4：一条不断打补丁的路</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三ext4-的磁盘布局块组" data-toc-target="三ext4-的磁盘布局块组">三、ext4 的磁盘布局：块组</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四超级块gdt-与位图" data-toc-target="四超级块gdt-与位图">四、超级块、GDT 与位图</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五inode-与多级间接寻址" data-toc-target="五inode-与多级间接寻址">五、inode 与多级间接寻址</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六extent-树ext4-对间接寻址的改良" data-toc-target="六extent-树ext4-对间接寻址的改良">六、extent 树：ext4 对间接寻址的改良</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七ext4-的几个标志性特性" data-toc-target="七ext4-的几个标志性特性">七、ext4 的几个标志性特性</a>
+                    
+                    <a class="toc-item toc-lv3" href="#delayed-allocation先攒够再分配" data-toc-target="delayed-allocation先攒够再分配">delayed allocation：先攒够再分配</a>
+                    
+                    <a class="toc-item toc-lv3" href="#journaljbd2-与三种模式" data-toc-target="journaljbd2-与三种模式">journal：jbd2 与三种模式</a>
+                    
+                    <a class="toc-item toc-lv3" href="#64bit-与-bigalloc" data-toc-target="64bit-与-bigalloc">64bit 与 bigalloc</a>
+                    
+                    <a class="toc-item toc-lv3" href="#flex_bg把元数据打包" data-toc-target="flex_bg把元数据打包">flex_bg：把元数据打包</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八ext4-在闪存上的痛点" data-toc-target="八ext4-在闪存上的痛点">八、ext4 在闪存上的痛点</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九日志结构文件系统把随机写变成顺序写" data-toc-target="九日志结构文件系统把随机写变成顺序写">九、日志结构文件系统：把随机写变成顺序写</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十f2fs-的空间布局六个区域" data-toc-target="十f2fs-的空间布局六个区域">十、F2FS 的空间布局：六个区域</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一f2fs-的索引结构nat--sit--ssa" data-toc-target="十一f2fs-的索引结构nat--sit--ssa">十一、F2FS 的索引结构：NAT / SIT / SSA</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二冷热分离为什么要把数据分段" data-toc-target="十二冷热分离为什么要把数据分段">十二、冷热分离：为什么要把数据分段</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三cleaner日志结构的垃圾回收代价" data-toc-target="十三cleaner日志结构的垃圾回收代价">十三、cleaner：日志结构的垃圾回收代价</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四f2fs-的发展历程与适用场景" data-toc-target="十四f2fs-的发展历程与适用场景">十四、F2FS 的发展历程与适用场景</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五ext4-与-f2fs-正面对比" data-toc-target="十五ext4-与-f2fs-正面对比">十五、ext4 与 F2FS 正面对比</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六怎么选按介质与负载" data-toc-target="十六怎么选按介质与负载">十六、怎么选：按介质与负载</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十七mkfs-与挂载参数的实用建议" data-toc-target="十七mkfs-与挂载参数的实用建议">十七、mkfs 与挂载参数的实用建议</a>
+                    
+                    <a class="toc-item toc-lv3" href="#ext4-这边" data-toc-target="ext4-这边">ext4 这边</a>
+                    
+                    <a class="toc-item toc-lv3" href="#f2fs-这边" data-toc-target="f2fs-这边">F2FS 这边</a>
+                    
+                    <a class="toc-item toc-lv3" href="#换文件系统的流程" data-toc-target="换文件系统的流程">换文件系统的流程</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十八易错点速查" data-toc-target="十八易错点速查">十八、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#-章节与原文对应" data-toc-target="-章节与原文对应">① 章节与原文对应</a>
+                    
+                    <a class="toc-item toc-lv3" href="#-修正的错误" data-toc-target="-修正的错误">② 修正的错误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#-未验证项" data-toc-target="-未验证项">③ 未验证项</a>
+                    
+                    <a class="toc-item toc-lv3" href="#-原文引用" data-toc-target="-原文引用">④ 原文引用</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/04-文件系统/ext4-与-F2FS：两种磁盘布局的设计取舍/","title":"ext4 与 F2FS：两种磁盘布局的设计取舍","url":"/B.内核/04-文件系统/ext4-与-F2FS：两种磁盘布局的设计取舍/","type":"current"},{"id":"/B.内核/04-文件系统/Linux-内核驱动中对文件的读写/","title":"Linux 内核驱动中对文件的读写","url":"/B.内核/04-文件系统/Linux-内核驱动中对文件的读写/","type":"neighbor"},{"id":"/B.内核/04-文件系统/VFS-虚拟文件系统：抽象层与三大操作表/","title":"VFS 虚拟文件系统：抽象层与三大操作表","url":"/B.内核/04-文件系统/VFS-虚拟文件系统：抽象层与三大操作表/","type":"neighbor"},{"id":"/B.内核/04-文件系统/page-cache：文件系统与块设备之间/","title":"page cache：文件系统与块设备之间","url":"/B.内核/04-文件系统/page-cache：文件系统与块设备之间/","type":"neighbor"},{"id":"/B.内核/04-文件系统/进程与文件系统：fs_struct、files_struct-与打开文件表/","title":"进程与文件系统：fs_struct、files_struct 与打开文件表","url":"/B.内核/04-文件系统/进程与文件系统：fs_struct、files_struct-与打开文件表/","type":"neighbor"}],"links":[{"source":"/B.内核/04-文件系统/ext4-与-F2FS：两种磁盘布局的设计取舍/","target":"/B.内核/04-文件系统/Linux-内核驱动中对文件的读写/","type":"neighbor"},{"source":"/B.内核/04-文件系统/ext4-与-F2FS：两种磁盘布局的设计取舍/","target":"/B.内核/04-文件系统/VFS-虚拟文件系统：抽象层与三大操作表/","type":"neighbor"},{"source":"/B.内核/04-文件系统/ext4-与-F2FS：两种磁盘布局的设计取舍/","target":"/B.内核/04-文件系统/page-cache：文件系统与块设备之间/","type":"neighbor"},{"source":"/B.内核/04-文件系统/ext4-与-F2FS：两种磁盘布局的设计取舍/","target":"/B.内核/04-文件系统/进程与文件系统：fs_struct、files_struct-与打开文件表/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

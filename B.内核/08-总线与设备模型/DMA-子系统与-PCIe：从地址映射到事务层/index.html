@@ -1,0 +1,2209 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DMA 子系统与 PCIe：从地址映射到事务层 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">DMA 子系统与 PCIe：从地址映射到事务层</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/08-总线与设备模型/DMA-子系统与-PCIe：从地址映射到事务层/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">DMA 子系统与 PCIe：从地址映射到事务层</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">DMA 子系统与 PCIe：从地址映射到事务层</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <p>这里讲两段：软件侧的 DMA 子系统，硬件侧的 PCIe 总线；加上一条把两者串起来的完整链路。不涉及 dmaengine 的 provider/consumer 编程、设备树 <code>dmas</code> 属性、<code>probe()</code> 的 devres 生命周期，这些各有专篇。内核版本按 4.20+ 为准，<code>dma-direct</code> 是 4.20 才引入的架构。</p>
+<h2 id="一dma-是什么让外设绕开-cpu-搬数据" tabindex="-1">一、DMA 是什么：让外设绕开 CPU 搬数据 <a class="header-anchor" href="#一dma-是什么让外设绕开-cpu-搬数据"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>DMA 是 Direct Memory Access，直接内存访问。它指绕开 CPU，在 memory 与 memory、memory 与设备之间直接搬运数据。它不提升算力，只是把「搬数据」这件事从 CPU 手里拿走。这个定义有个容易忽略的后果：DMA 搬运的发起者是<strong>设备</strong>，不是 CPU。CPU 只负责在开工前把地址和长度写进某个寄存器，写完就退场。所有「设备能不能访问这块内存」「设备看到的是哪个地址」的问题，都在这一刻之前定死了，搬起来之后软件已经没有插手余地。</p>
+<h2 id="二为什么需要-dma一次拷贝的开销" tabindex="-1">二、为什么需要 DMA：一次拷贝的开销 <a class="header-anchor" href="#二为什么需要-dma一次拷贝的开销"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>CPU 与外设的速度差着几个数量级。串口每毫秒才来一个字节，而 CPU 在这 1ms 里能执行上百万条指令。若由 CPU 逐字节搬 1KB，绝大部分时间都耗在轮询状态寄存器和读写数据寄存器上。这些等待还是不可抢占的，实时任务会被直接拖垮。</p>
+<p>DMA 控制器的做法是：CPU 只下达一条「把 A 搬到 B，共 N 字节」的指令，然后立刻返回干别的；控制器自己在总线上完成搬运，结束时用中断通知 CPU。搬 4KB 数据对 CPU 的占用从数万条指令降到一次配置加一次中断处理。把这笔开销摊开看：非 DMA 路径每个字节要付「读状态寄存器、读数据寄存器、写目标、更新指针、循环」，每条指令都是一次访存；DMA 路径的成本是固定的，一次寄存器写入序列加一次中断。</p>
+<h2 id="三dma-控制器的硬件模型" tabindex="-1">三、DMA 控制器的硬件模型 <a class="header-anchor" href="#三dma-控制器的硬件模型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>各个厂商的 DMA 控制器细节不同，但职责高度一致，正是这种一致性让内核能用一套 dmaengine framework 去抽象它们。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">职责</th>
+<th style="text-align:left">说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">通道管理</td>
+<td style="text-align:left">维护若干 channel，给发起方分配与仲裁</td>
+</tr>
+<tr>
+<td style="text-align:left">地址生成</td>
+<td style="text-align:left">每个传输周期推进源/目的地址，按 width 增减</td>
+</tr>
+<tr>
+<td style="text-align:left">突发组织</td>
+<td style="text-align:left">把多个小传输合成一次总线事务，减少仲裁开销</td>
+</tr>
+<tr>
+<td style="text-align:left">传输计数</td>
+<td style="text-align:left">搬够 size 个字节自动停止，或按周期循环</td>
+</tr>
+<tr>
+<td style="text-align:left">完成通知</td>
+<td style="text-align:left">传输结束（或每传一个 period）产生中断</td>
+</tr>
+</tbody>
+</table></div><p>控制器不参与数据内容，它只认地址与长度。所有「搬什么、搬到哪、搬多少」都由软件在发起前写进控制器寄存器或描述符。</p>
+<p><strong>两种触发方式。</strong> 软件请求：进程 <code>read()</code> 时驱动分配一个 DMA buffer，把它的总线地址写进控制器并启动，随后进程睡眠；硬件搬完产生中断，中断处理程序应答中断、唤醒进程——这是块设备、网卡发送方向的常见形态。硬件异步：数据什么时候到达由设备决定，CPU 无法预知，流程是设备产生中断、处理程序分配 buffer 告诉设备往这写、设备写完再中断、程序把数据分发出去并唤醒等待者。网卡是后者的典型实现：驱动在初始化时分配一圈 buffer 组成<strong>环形缓冲区</strong>（DMA ring buffer），放在与处理器共享的内存里；每个输入包进入环中下一个可用 buffer 后产生中断，驱动把包交给协议栈，再往环里补一个新的 DMA buffer。整圈 buffer 从驱动加载一直用到卸载，<strong>不在收包路径上分配内存</strong>，这是高吞吐的前提。</p>
+<h3 id="channel逻辑概念不是物理并行通道" tabindex="-1">channel：逻辑概念，不是物理并行通道 <a class="header-anchor" href="#channel逻辑概念不是物理并行通道"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一个 DMA 控制器能「同时」进行的传输个数叫作 <strong>DMA channel</strong>。这个「同时」要打引号。总线访问存在冲突，加上内存一致性的要求，物理上并不真的并行跑两个 DMA 传输；channel 大多是控制器为了方便抽象出来的概念，所有 channel 的请求都要在控制器内部仲裁，然后串行执行；软件也可以基于<strong>物理 channel</strong> 自行抽象出更多<strong>逻辑 channel</strong>，由软件调度其上的请求，dmaengine framework 不区分两者。驱动里看到 <code>max_channels = 8</code>，不代表带宽是单通道的 8 倍，只代表可以挂 8 个互不阻塞的传输请求队列。</p>
+<h3 id="request-line为什么需要一根物理连线" tabindex="-1">request line：为什么需要一根物理连线 <a class="header-anchor" href="#request-line为什么需要一根物理连线"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>CPU 发起 DMA 时只说了「从哪搬到哪」，但它并不知道此刻是否具备传输条件：源设备 FIFO 里有没有数据、目的设备 FIFO 有没有空位。这些信息只有设备自己知道。于是设备与 DMA 控制器之间连了几根物理线，叫作 <strong>DMA request（DRQ，DMA 请求线）</strong>，设备用它告诉控制器「现在可以搬了」。控制器收到拉高电平才发起总线事务，否则等待——没有这条线，控制器只能盲目地按节拍搬运，搬到空 FIFO 就是读到垃圾数据。每个数据收发的节点（endpoint）都对应一条 request line，memory 除外——memory 永远就绪，不需要申请。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">维度</th>
+<th style="text-align:left">DMA channel</th>
+<th style="text-align:left">DMA request line</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">角色</td>
+<td style="text-align:left">Provider，提供传输服务</td>
+<td style="text-align:left">Consumer，消费传输服务</td>
+</tr>
+<tr>
+<td style="text-align:left">归属</td>
+<td style="text-align:left">DMA 控制器内部资源</td>
+<td style="text-align:left">设备与控制器之间的物理连线</td>
+</tr>
+<tr>
+<td style="text-align:left">数量关系</td>
+<td style="text-align:left">少</td>
+<td style="text-align:left">多，因为不是每条线每一刻都在传</td>
+</tr>
+<tr>
+<td style="text-align:left">解决的问题</td>
+<td style="text-align:left">谁来搬</td>
+<td style="text-align:left">什么时候能搬</td>
+</tr>
+</tbody>
+</table></div><p>这也是 <code>struct dma_slave_config</code> 里 <code>slave_id</code> 字段存在的原因：控制器要知道这次传输对应哪条 request line，才能正确地等待与响应。不区分 slave 的控制器可以忽略它。</p>
+<h3 id="传输参数sizewidthburst" tabindex="-1">传输参数：size、width、burst <a class="header-anchor" href="#传输参数sizewidthburst"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>DMA 传输参数是逐步演进出来的，三个参数各解决一类问题。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">参数</th>
+<th style="text-align:left">含义</th>
+<th style="text-align:left">不设它会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">transfer size</td>
+<td style="text-align:left">本次要搬多少字节</td>
+<td style="text-align:left">无此参数无法启动，但只有它时控制器只能每个时钟搬 1 byte</td>
+</tr>
+<tr>
+<td style="text-align:left">transfer width</td>
+<td style="text-align:left">每个时钟搬多少 bit</td>
+<td style="text-align:left">无法利用 32/64-bit 总线宽度；音频会对不齐 16/24-bit 采样</td>
+</tr>
+<tr>
+<td style="text-align:left">burst size</td>
+<td style="text-align:left">控制器内部 buffer 一次缓存多少</td>
+<td style="text-align:left">每个 beat 都去访问一次 memory，效率极低</td>
+</tr>
+</tbody>
+</table></div><p><strong>transfer width</strong> 的必要性来自两类矛盾需求：memory 之间传输希望用总线最大宽度（32-bit、64-bit）拉满带宽；音频设备则要求每次精确写入 16-bit 或 24-bit，多一个字节就是噪音。<strong>burst size</strong> 解决的是 memory 访问效率：控制器内部有一小块 buffer，memory 作源时一次读出一批数据存在 buffer 里再按节拍一点点送给目的设备，memory 作目的时先把源数据攒够一批再一次性写回 memory，这块 buffer 的容量就是 burst size。</p>
+<p>三者关系是：总字节数 = burst 次数 × burst size，而 burst size 的单位是 <strong>transfer width 的个数</strong>，不是字节。这一点在 <code>dma_slave_config</code> 里体现得很直接：<code>src_maxburst</code> 的单位是 <code>src_addr_width</code>，写错就会得到 4 倍或 8 倍的突发长度。burst 的上界由 <code>dma_device-&gt;max_burst</code> 兜底，单次传输的 maxburst 不能超过它。<strong>一次传输的完整分工</strong>是这样的：CPU 写控制器寄存器（源、目的、宽度、突发、总字节数、对应哪条 request line）→ 控制器挂起等到 request line 拉高 → 控制器发起总线读/写，按 width 逐个 beat 搬、按 burst 组织成事务 → 字节数归零或线路无效时停止并产生中断 → 中断程序解除映射、唤醒等待者、必要时重新挂 buffer。</p>
+<p>到这里讲的还是个<strong>独立的 DMAC</strong>：CPU 配寄存器、DRQ 拉起来、控制器抢总线。第二十一章会看到 PCIe 设备根本不走这套——它自己就是总线主设备，没有中央 DMAC 什么事。两套模型都要认。</p>
+<h2 id="四三种地址虚拟物理总线" tabindex="-1">四、三种地址：虚拟、物理、总线 <a class="header-anchor" href="#四三种地址虚拟物理总线"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>驱动里最容易混淆的就是「地址」这个词。Linux 驱动开发涉及三种地址，混用其中两个基本必出 bug。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">典型类型</th>
+<th style="text-align:left">谁使用</th>
+<th style="text-align:left">怎么得到</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">虚拟地址</td>
+<td style="text-align:left"><code>void *</code></td>
+<td style="text-align:left">CPU</td>
+<td style="text-align:left"><code>kmalloc()</code>、<code>vmalloc()</code>、<code>ioremap()</code> 返回</td>
+</tr>
+<tr>
+<td style="text-align:left">物理地址</td>
+<td style="text-align:left"><code>phys_addr_t</code> / <code>resource_size_t</code></td>
+<td style="text-align:left">CPU 通过 MMU 间接用</td>
+<td style="text-align:left">页表翻译得到；<code>/proc/iomem</code> 可看；驱动不能直接用，需 <code>ioremap()</code></td>
+</tr>
+<tr>
+<td style="text-align:left">总线地址</td>
+<td style="text-align:left"><code>dma_addr_t</code></td>
+<td style="text-align:left">设备</td>
+<td style="text-align:left">设备在总线上看到的地址，MMIO 寄存器或 DMA 读写内存时使用</td>
+</tr>
+</tbody>
+</table></div><p>典型 PCI 场景最能说明三者的关系：设备用 BAR 声明自己在总线上占用的地址区间 A；CPU 不能直接访问总线地址 A，PCI host bridge 会把总线地址 A 映射到一段物理地址 B；驱动 <code>ioremap(B)</code> 拿到虚拟地址 C，之后 <code>ioread32(C)</code> 实际访问的就是总线地址 A 上的寄存器。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>虚拟 ──MMU 页表──► 物理 ──host bridge──► 总线
+  ▲                  │                    │
+  └── ioremap ───────┴────────────────────┘
+
+CPU 只认虚拟地址。设备只认总线地址。
+物理地址是内核代管的中间产物，驱动不该直接拿去用。
+</code></pre></div></code></pre>
+<h2 id="五dma-地址不等于物理地址" tabindex="-1">五、DMA 地址不等于物理地址 <a class="header-anchor" href="#五dma-地址不等于物理地址"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一节是全文最该记住的一条。假设驱动 <code>kmalloc()</code> 得到虚拟地址 X，MMU 把它映射到物理地址 Y。此时设备<strong>看不到 X</strong>——MMU 只对 CPU 起作用，对挂在总线上的设备完全不可见。而且系统内存总线与 PCI 总线是两个不同的地址空间，Y 未必是设备能用的地址。</p>
+<p>简单系统里设备可以直接访问 Y，事情到此为止。但多数现代系统中间还有一层 <strong>IOMMU</strong>：它把设备发出的总线地址 Z 翻译成物理地址 Y。于是 <code>dma_map_single()</code> 干的事就清楚了：它先接收虚拟地址 X，再建立 IOMMU 页表项把 X 所在的物理页 Y 映射到总线地址 Z，最后返回 Z。此后设备对 Z 发起 DMA，IOMMU 把它翻译成 Y，落到驱动申请的那块 buffer 上。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        ┌──────────┐   dma_map_single()   ┌──────────┐
+        │ 驱动持有 │ ───────────────────► │ 设备持有 │
+        │ 虚拟 X   │                      │ 总线 Z   │
+        └────┬─────┘                      └────┬─────┘
+             │ MMU                             │ IOMMU
+             ▼                                 ▼
+        ┌──────────┐                      ┌──────────┐
+        │ 物理 Y   │ ◄────────────────────│ 物理 Y   │
+        └──────────┘       (同一块页)      └──────────┘
+</code></pre></div></code></pre>
+<p><strong><code>dma_address</code> 不等于物理地址</strong>，这是原文反复强调、也最容易出错的一点。有 IOMMU 时，<code>dma_addr_t</code> 是 <strong>IOVA</strong>（I/O Virtual Address），一个和设备绑定、和物理页没有固定偏移关系的编号，同一个物理页被两个设备分别映射会拿到两个不同的 IOVA。没有 IOMMU 时，<code>dma_addr_t</code> 才等于 PA（物理地址），但也只是<strong>当前平台的实现恰好如此</strong>，不是 API 的承诺。有 SWIOTLB（bounce buffer）时，<code>dma_addr_t</code> 指向 bounce buffer 的物理地址，和原 buffer 毫无关系，数据靠软件拷贝。所以这三件事都不能做：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 错 1：拿 virt_to_phys 的结果当 DMA 地址——有 IOMMU 时是彻底错误的编号 */</span>
+<span class="hljs-type">dma_addr_t</span> bad = virt_to_phys(buf);
+
+<span class="hljs-comment">/* 错 2：拿 dma_handle 去 kmap / 解引用——那是设备侧编号，CPU 无法解引用 */</span>
+<span class="hljs-type">void</span> *p = phys_to_virt(dma_handle);
+
+<span class="hljs-comment">/* 错 3：比较两个设备的 dma_handle 判断是否同一块内存 */</span>
+<span class="hljs-keyword">if</span> (dev_a_handle == dev_b_handle) { <span class="hljs-comment">/* 永远不要这么想 */</span> }
+</code></pre></div></code></pre>
+<p><code>virt_to_bus()</code> / <code>bus_to_virt()</code> 在现代内核里基本已不可用。唯一正确的总线地址来源是 <code>dma_map_*()</code> 的返回值——它会考虑 IOMMU、bounce buffer、非一致性架构的缓存维护，而 <code>virt_to_bus()</code> 一个都不管。整个过程驱动只碰 X 和 Z，Y 由内核代管。这就是驱动永远不应该 <code>virt_to_phys()</code> 再拿去给设备用的原因。没有 IOMMU 的平台（大量嵌入式 SoC）上，Z 等于 Y，看起来「不需要翻译」，但代码不能依赖这一点，否则移植到有 IOMMU 的平台上必然失效。</p>
+<h3 id="动态映射到底动态在哪" tabindex="-1">动态映射到底「动态」在哪 <a class="header-anchor" href="#动态映射到底动态在哪"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>动态 DMA 映射</strong>指只在要用的时候建立 buffer 的虚拟地址到总线地址的映射，传输一结束就销毁。这也解释了 API 为什么叫 <code>map</code> / <code>unmap</code>——它是一次性的租借，不是永久绑定。与之相对的是第十章的<strong>一致性映射</strong>：初始化时建立，整个驱动生命周期内都在。写驱动应该用通用 API 而不是总线专有 API：用 <code>dma_map_*()</code> 而不是 <code>pci_map_*()</code>，头文件包含 <code>&lt;linux/dma-mapping.h&gt;</code>。通用 API 内部会处理 IOMMU、SWIOTLB、地址限制等平台差异，<code>dma_addr_t</code> 可以保存任何总线与架构上的 DMA 地址。</p>
+<h3 id="哪些内存能做-dma" tabindex="-1">哪些内存能做 DMA <a class="header-anchor" href="#哪些内存能做-dma"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">分配方式</th>
+<th style="text-align:left">能否直接 DMA 映射</th>
+<th style="text-align:left">原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>__get_free_page*()</code>（伙伴系统）</td>
+<td style="text-align:left">可以</td>
+<td style="text-align:left">物理页连续</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>kmalloc()</code></td>
+<td style="text-align:left">可以</td>
+<td style="text-align:left">保证物理连续</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>kmem_cache_alloc()</code></td>
+<td style="text-align:left">可以</td>
+<td style="text-align:left">底层是 slab，物理连续</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>vmalloc()</code></td>
+<td style="text-align:left"><strong>不要用</strong></td>
+<td style="text-align:left">页帧不连续，且虚拟/物理地址无线性关系，映射时要遍历页表才能得到物理地址</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>kmap()</code></td>
+<td style="text-align:left"><strong>不要用</strong></td>
+<td style="text-align:left">同上，且属临时映射</td>
+</tr>
+<tr>
+<td style="text-align:left">编译进内核的全局变量</td>
+<td style="text-align:left">可以</td>
+<td style="text-align:left">内核初始化时建立的 image mapping 使其连续且虚实偏移固定</td>
+</tr>
+<tr>
+<td style="text-align:left">编译成模块的全局变量</td>
+<td style="text-align:left"><strong>不行</strong></td>
+<td style="text-align:left">模块加载时用 vmalloc 分配，超过 1 页就无法保证物理连续</td>
+</tr>
+<tr>
+<td style="text-align:left">块设备 I/O buffer、网络收发 buffer</td>
+<td style="text-align:left">可以</td>
+<td style="text-align:left">由对应子系统在分配时就保证了 DMA 要求</td>
+</tr>
+</tbody>
+</table></div><p>最后一行是条重要经验：驱动不该自己为收发数据造 buffer，而应使用子系统提供的（<code>bio</code> 的页、<code>sk_buff</code> 的数据区），因为它们已经把 DMA 约束考虑进去了。用全局变量做 DMA 还要额外注意两点：一是 cacheline 对齐，避免与相邻变量共享 cacheline 导致伪共享与一致性失效；二是如果平台不是全面 DMA coherent，写回操作必须自己保证。</p>
+<div class="callout callout-warning"><div class="callout-title"><span class="callout-icon">⚠</span><span>警告</span></div><div class="callout-body"><p>栈上变量永远不能做 DMA buffer。栈内存的物理页不保证连续，栈溢出后地址更是完全不可控。<code>CONFIG_DMA_API_DEBUG</code> 会专门抓这一条。</p>
+</div></div>
+<h2 id="六iommu-在这里扮演什么角色" tabindex="-1">六、IOMMU 在这里扮演什么角色 <a class="header-anchor" href="#六iommu-在这里扮演什么角色"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>IOMMU 不是可选加速器。它在四个地方起作用，每一个都能改变驱动的正确性要求。</p>
+<p><strong>一、地址翻译。</strong> 设备发总线地址，IOMMU 按页表翻成物理地址，这就是上节 Z→Y 那一层。IOVA 空间可以做到和设备的 <code>dma_mask</code> 一样窄（32 位就够），于是 32 位设备能塞进一台装着大内存的机器里正常工作。</p>
+<p><strong>二、地址隔离与保护。</strong> 设备只能访问被显式映射过的页。驱动把错误地址写进寄存器，DMA 打到未映射区间会被 IOMMU 直接拒绝并报错（x86 上是 <code>DMAR: [DMA Write] Request device ... fault</code>），而不是悄悄踩坏别人的内存。没有 IOMMU 时同一个 bug 的表现是「几小时后系统在无关位置 panic」。</p>
+<p><strong>三、把分散的页聚成连续的 IOVA。</strong> 这是 <code>dma_map_sg()</code> 能被软件「合并」的基础。物理页散在四处，IOMMU 可以把它们映射成一段首尾相接的 IOVA 区间，设备只需要一个基址就能连续访问。这就是「不支持 SG 的控制器也能工作」的实现原理。</p>
+<p><strong>四、扮演历史遗留物里「映射寄存器」的角色。</strong> 在支持映射寄存器的系统上，每个 DMA 映射都要占用总线上一个或多个映射寄存器；寄存器数量有限，而一致性映射生命周期很长，会长期独占这些资源，<strong>即使它根本没在传输</strong>。耗尽后新的映射只能失败或退化成 bounce buffer，吞吐直接崩掉。现代平台上这个角色由 IOMMU 承担，问题本质没变——IOMMU 的地址转换条目同样是稀缺资源。判断标准因此很简单：<strong>这块内存是不是长期被 CPU 与设备交替访问？是才用一致性映射，否则用流式。</strong></p>
+<div class="callout callout-note"><div class="callout-title"><span class="callout-icon">ℹ</span><span>笔记</span></div><div class="callout-body"><p>内核里 IOMMU 的抽象是 <code>struct iommu_domain</code> 与 <code>-&gt;dma_map_ops</code>。<code>dma-direct</code> 是 <strong>4.20</strong> 引入的直通路径：没有 IOMMU 时 <code>dma_map_ops</code> 指向 <code>dma_direct_ops</code>，有 IOMMU 时指向厂商的 <code>*_iommu_ops</code>（Intel 的 <code>intel_iommu_ops</code>、AMD 的 <code>amd_iommu_ops</code>、ARM 的 <code>iommu_dma_ops</code>）。4.20 之前这套分层散在 <code>arch/*/kernel/dma-mapping.c</code> 和各架构的 <code>struct dma_map_ops</code> 里，读旧代码时别套新结构。</p>
+</div></div>
+<h2 id="七哪些内存能做-dma一致性内存与流式内存" tabindex="-1">七、哪些内存能做 DMA：一致性内存与流式内存 <a class="header-anchor" href="#七哪些内存能做-dma一致性内存与流式内存"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核把 DMA 映射分成两类，区别在<strong>生命周期</strong>和<strong>谁负责维护 cache 一致性</strong>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">维度</th>
+<th style="text-align:left">一致性内存（coherent）</th>
+<th style="text-align:left">流式内存（streaming）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">建立时机</td>
+<td style="text-align:left">驱动 init 时，贯穿驱动生命周期</td>
+<td style="text-align:left">每次传输前 map，传完 unmap</td>
+</tr>
+<tr>
+<td style="text-align:left">生命周期</td>
+<td style="text-align:left">等于驱动生命周期</td>
+<td style="text-align:left">等于一次传输</td>
+</tr>
+<tr>
+<td style="text-align:left">是否需要方向</td>
+<td style="text-align:left">不需要（隐含 <code>DMA_BIDIRECTIONAL</code>）</td>
+<td style="text-align:left">必须指明 <code>enum dma_data_direction</code></td>
+</tr>
+<tr>
+<td style="text-align:left">Cache 维护</td>
+<td style="text-align:left">由平台硬件/内核保证，无需 sync</td>
+<td style="text-align:left">由 map/unmap/sync 按方向处理</td>
+</tr>
+<tr>
+<td style="text-align:left">CPU 访问限制</td>
+<td style="text-align:left">可随时读写</td>
+<td style="text-align:left">map 之后默认不该碰，要碰必须 sync</td>
+</tr>
+<tr>
+<td style="text-align:left">主要 API</td>
+<td style="text-align:left"><code>dma_alloc_coherent()</code></td>
+<td style="text-align:left"><code>dma_map_single()</code> / <code>dma_map_page()</code> / <code>dma_map_sg()</code></td>
+</tr>
+<tr>
+<td style="text-align:left">资源占用</td>
+<td style="text-align:left">长期占用 IOMMU 条目</td>
+<td style="text-align:left">用完即还</td>
+</tr>
+<tr>
+<td style="text-align:left">典型场景</td>
+<td style="text-align:left">描述符环、mailbox、固件 microcode</td>
+<td style="text-align:left">网卡收发的数据 buffer、块设备数据页</td>
+</tr>
+</tbody>
+</table></div><p>一句话选型：<strong>长期被 CPU 与设备交替访问的用一致性，一次性的顺序数据用流式。</strong> 不要因为「一致性内存省事」就全用它，它的成本是隐性的：占地址空间、占 IOMMU 条目、小块场景下每块至少一页。</p>
+<h2 id="八dma_mask-与寻址限制" tabindex="-1">八、dma_mask 与寻址限制 <a class="header-anchor" href="#八dma_mask-与寻址限制"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>设备能访问的地址范围由它自己的地址线决定，不由系统内存大小决定。一块只能驱动低 24 位地址的设备，物理上就只能访问 16MB 以下的内存；给它一个 0x80000000 的地址，DMA 会打到完全不相干的地方，症状是内存被随机踩坏、系统在毫无关联的地方 panic。</p>
+<p>驱动必须把设备的限制告诉内核，否则内核默认设备能访问全部 32 bit 地址，分配 buffer 时就不会做特殊处理。这个告知动作在 <code>probe()</code> 里完成。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">dma_set_mask_and_coherent</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, u64 mask)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">dma_set_mask</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, u64 mask)</span>;            <span class="hljs-comment">/* 只设 streaming */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">dma_set_coherent_mask</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, u64 mask)</span>;   <span class="hljs-comment">/* 只设 coherent */</span>
+
+<span class="hljs-type">int</span> using_dac;
+<span class="hljs-keyword">if</span> (!dma_set_mask(dev, DMA_BIT_MASK(<span class="hljs-number">64</span>)))          <span class="hljs-comment">/* 64 位设备：先试 64，再退 32 */</span>
+    using_dac = <span class="hljs-number">1</span>;
+<span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!dma_set_mask(dev, DMA_BIT_MASK(<span class="hljs-number">32</span>)))
+    using_dac = <span class="hljs-number">0</span>;
+<span class="hljs-keyword">else</span>
+    <span class="hljs-keyword">goto</span> ignore_this_device;
+</code></pre></div></code></pre>
+<p><code>mask</code> 表示设备支持的地址位，写 <code>DMA_BIT_MASK(32)</code>、<code>DMA_BIT_MASK(64)</code> 这种形式。返回 0 表示从设备到该 mask 范围内内存的 DMA 可以被系统支持（包括控制器与总线层）；<strong>返回非 0 表示这样的 DMA 无法正确完成</strong>，强行做后果不可预知。失败后有三个选择：换一个更小的 mask；放弃 DMA 改用普通 PIO；忽略这个设备不初始化。64 位失败<strong>并不等于平台不能做 64 位寻址</strong>。很多平台上 32 位寻址更快——例如 SPARC64 上 PCI 的 SAC（32 位）比 DAC（64 位）性能更好，内核会主动让 64 位设定失败，把设备压回 32 位窗口。所以这个降级链条是常态而非异常。</p>
+<h3 id="struct-device-上与-dma-相关的字段" tabindex="-1">struct device 上与 DMA 相关的字段 <a class="header-anchor" href="#struct-device-上与-dma-相关的字段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>dma_mask</code> 不是孤立的一个值，<code>struct device</code> 里跟 DMA 相关的字段有一组：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>dma_mask</code></td>
+<td style="text-align:left"><code>u64 *</code></td>
+<td style="text-align:left">指向设备可寻址位宽掩码的指针，streaming DMA 用</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>coherent_dma_mask</code></td>
+<td style="text-align:left"><code>u64</code></td>
+<td style="text-align:left">coherent DMA 的寻址掩码，是值不是指针</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>dma_range_map</code></td>
+<td style="text-align:left"><code>const struct bus_dma_region *</code></td>
+<td style="text-align:left">总线地址与物理地址之间的偏移表（<code>dma-ranges</code> 解析结果）</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>dma_ops</code></td>
+<td style="text-align:left"><code>const struct dma_map_ops *</code></td>
+<td style="text-align:left">该设备实际使用的映射操作集，<code>dma-direct</code> 也挂这里</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>dma_coherent</code></td>
+<td style="text-align:left"><code>bool</code></td>
+<td style="text-align:left">该设备是否为硬件一致（非一致设备需要显式 cache 维护）</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>dma_parms</code></td>
+<td style="text-align:left"><code>struct device_dma_parameters *</code></td>
+<td style="text-align:left">段的边界与大小约束，见下文</td>
+</tr>
+</tbody>
+</table></div><p><code>dma_mask</code> 是<strong>指针</strong>。历史上有些架构允许同一总线上的设备共享一个 mask 变量，所以设成了指针。写驱动时用 <code>dma_set_mask()</code> 就够了，不要直接碰这个字段。<code>dma_parms</code> 里的约束比 <code>dma_mask</code> 更细：<code>max_segment_size</code> 是一次 DMA 传输的段最大字节数，<code>segment_boundary_mask</code> 是段边界的位掩码，结构体就这两个字段。<code>max_segment_size</code> 解决的是「设备一次只能搬这么多，超过就必须拆成多段」。典型例子是 32 位 PCI 设备上的 <code>max_segment_size = 65536 - 1</code>——地址跨过 64KB 边界时硬件高位不进位，跨界的传输会回卷到段首。这两个值由总线层在 <code>probe()</code> 时按设备类代码与厂商信息设好，驱动一般不用自己写。</p>
+<h3 id="coherent-mask-与-streaming-mask-的关系" tabindex="-1">coherent mask 与 streaming mask 的关系 <a class="header-anchor" href="#coherent-mask-与-streaming-mask-的关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一致性与流式两类 DMA 的寻址限制可以不同，也可以相同。相同时用 <code>dma_set_mask_and_coherent()</code> 一次设完，不同时分开设。有一条恒成立的约束：<strong>coherent mask 总是小于或等于 streaming mask</strong>。因此只要 streaming 设定成功，再用同样或更小的 mask 去设 coherent 必然成功，实践中往往不检查 <code>dma_set_coherent_mask()</code> 的返回值。例外是只支持 coherent DMA 的怪设备，这时必须检查。</p>
+<div class="callout callout-important"><div class="callout-title"><span class="callout-icon">❢</span><span>重要</span></div><div class="callout-body"><p>一个反直觉的坑：即使驱动把 streaming mask 设成了 64 位，只要没有显式调用 <code>dma_set_coherent_mask()</code>，<code>dma_alloc_coherent()</code> 一般仍然只返回 32 位可寻址的地址。dma mask 与 coherent dma mask 是两套独立的限制，不要以为设了一个另一个就跟着变。</p>
+<h2 id="九coherent-dmadma_alloc_coherent" tabindex="-1">九、coherent DMA：dma_alloc_coherent <a class="header-anchor" href="#九coherent-dmadma_alloc_coherent"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+</div></div>
+<p>一致性映射（consistent / coherent DMA mapping）在驱动初始化时建立，整个生命周期内都在，CPU 与设备看到的内存始终一致，中间不需要软件做任何 cache 操作。两个特征：一是<strong>长期存在</strong>，init 时 map、shutdown 时 unmap，中间不反复建立销毁；二是<strong>自动一致</strong>，CPU 写完内存设备立刻能看到，设备写完 CPU 立刻能读到，不需要 <code>dma_sync_*()</code>。「consistent」这个名字其实名不副实，它保证的是 <strong>coherent</strong>（一致性），不是别的什么。</p>
+<p>典型场景的共性是「CPU 与设备会反复交替读写同一块内存，且读写时机无法预判」：网卡描述符环/链（驱动写描述符、设备读；设备状态回写、驱动读，全程反复）；SCSI 适配器的 mailbox command（命令与状态在同一块内存来回传递）；外设执行的固件 microcode（设备自行取指，CPU 无法预知访问时机）；DMA controller 的传输描述符数组（控制器随时会回读描述符）。这些场景改用流式映射，每次 CPU 改完都要 sync for device、每次设备写完都要 sync for cpu，且必须精确插在访问点之间，漏一次就是偶发的数据错乱。</p>
+<h3 id="两个地址页对齐" tabindex="-1">两个地址、页对齐 <a class="header-anchor" href="#两个地址页对齐"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> *<span class="hljs-title function_">dma_alloc_coherent</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, <span class="hljs-type">size_t</span> size,
+                         <span class="hljs-type">dma_addr_t</span> *dma_handle, <span class="hljs-type">gfp_t</span> gfp)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">dma_free_coherent</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, <span class="hljs-type">size_t</span> size,
+                       <span class="hljs-type">void</span> *cpu_addr, <span class="hljs-type">dma_addr_t</span> dma_handle)</span>;
+</code></pre></div></code></pre>
+<p>返回值是 <strong>CPU 侧的虚拟地址</strong>，通过 <code>dma_handle</code> 带回 <strong>设备侧的总线地址</strong>。两个地址指向同一块内存，绝不能互相替代：CPU 只能用前者解引用，设备寄存器里只能写后者。几条容易踩的性质：起始地址与 <code>size</code> 都按 page 对齐，行为类似 <code>__get_free_pages()</code>，所以申请 100 字节也会占一页；buffer 不会跨越 page 边界，天然满足「DMA buffer 物理连续」的要求；可以在中断上下文调用，但此时 <code>gfp</code> 必须传 <code>GFP_ATOMIC</code>；即使设备的 streaming mask 支持 64 位，只要没显式设过 coherent mask，返回地址一般仍在 32 位窗口内。</p>
+<div class="callout callout-warning"><div class="callout-title"><span class="callout-icon">⚠</span><span>警告</span></div><div class="callout-body"><p><code>dma_free_coherent()</code> <strong>不能在中断上下文调用</strong>。某些平台上释放一致性内存会触发 TLB 维护，进而需要核间通信（IPI）；在关中断的上下文里调用会直接死在 SMP 的 IPI 代码中（<code>BUG: scheduling while atomic</code> 或更难查的挂死）。中断里只能释放用 <code>dma_pool</code> 分配的小块，或把释放动作丢到 workqueue。</p>
+</div></div>
+<h3 id="dma-pool大量小块一致内存" tabindex="-1">dma pool：大量小块一致内存 <a class="header-anchor" href="#dma-pool大量小块一致内存"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>驱动经常需要成千上万个<strong>又小又多</strong>的一致映射块：USB 的传输请求、网络的小描述符、块设备的命令块。直接对每个小块调 <code>dma_alloc_coherent()</code> 会浪费得离谱——每块至少占一页，还会在 IOMMU 里占掉一个映射项。DMA pool 的思路与 <code>kmem_cache</code> 一样：先从 <code>dma_alloc_coherent()</code> 拿一大块，再从中零售小块。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">struct</span> dma_pool *<span class="hljs-title function_">dma_pool_create</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span> *name, <span class="hljs-keyword">struct</span> device *dev,
+                                 <span class="hljs-type">size_t</span> size, <span class="hljs-type">size_t</span> align, <span class="hljs-type">size_t</span> boundary)</span>;
+<span class="hljs-type">void</span> *<span class="hljs-title function_">dma_pool_alloc</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> dma_pool *pool, <span class="hljs-type">gfp_t</span> mem_flags, <span class="hljs-type">dma_addr_t</span> *handle)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">dma_pool_free</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> dma_pool *pool, <span class="hljs-type">void</span> *vaddr, <span class="hljs-type">dma_addr_t</span> dma)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">dma_pool_destroy</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> dma_pool *pool)</span>;
+</code></pre></div></code></pre>
+<p><code>boundary</code> 是关键参数：分配到的小块<strong>不会跨越 boundary 边界</strong>（传 <code>4096</code> 就不会跨 4K 页）。这对地址受限的设备很有用——某些老设备要求一次 DMA 不跨页，边界约束能在分配时就保证，而不是运行期再拆。池的 <code>size</code> 一旦定下就不可变，所以要把结构体大小算准并留出对齐余量；实际分配到的块大小会被向上取整，<code>align</code> 取 cacheline 大小或硬件要求的最小对齐。</p>
+<h3 id="一致性内存仍需内存屏障" tabindex="-1">一致性内存仍需内存屏障 <a class="header-anchor" href="#一致性内存仍需内存屏障"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>「一致」只保证 cache 层面的可见性，<strong>不保证访问顺序</strong>。CPU 和编译器都会重排对一致性内存的访问指令。如果硬件要求 word0 必须先于 word1 更新（典型的描述符「先填内容、最后置 valid 位」），必须显式加屏障：</p>
+<p>```c`c
+desc-&gt;addr = dma_handle;
+desc-&gt;len  = size;
+wmb();                  /* 保证前两条写入对设备可见后，才写下面的 valid 位 */
+WRITE_ONCE(desc-&gt;valid, 1);</p>
+<pre><code><div class="code-block"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>
+有些平台上，修改一致性 buffer 后还需要 flush write buffer（`mb()` 或平台特有的 flush），设备才能看到，这类需求写在 SoC 手册里。cache 同步与顺序屏障是两件事，`wmb()` 只解决后者。
+
+## 十、streaming DMA：dma_map_single / dma_map_page
+
+流式映射（streaming DMA mapping）是一次性的：要传的时候才 map，传完立刻 unmap。硬件可以针对这种顺序访问做优化，因此它是数据面（收发路径）的默认选择。使用约束有四条：生命周期等于一次传输，map 与 unmap 之间才是设备可访问的窗口；需要指明方向，因为方向决定了要 flush 还是 invalidate，方向错就是数据错；默认情况下 map 之后 CPU 不应碰 buffer，确实要在中间读写必须用 `dma_sync_*()` 交还控制权；这些接口是按性能优先设计的，**调用前必须清楚知道它做了什么**，不能靠猜。典型场景是网卡收发的数据 buffer、文件系统的数据 buffer（最终交给 SCSI 设备）。
+
+### 方向参数
+
+```c
+enum dma_data_direction {
+    DMA_BIDIRECTIONAL,
+    DMA_TO_DEVICE,
+    DMA_FROM_DEVICE,
+    DMA_NONE,
+};
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">方向</th>
+<th style="text-align:left">含义</th>
+<th style="text-align:left">典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>DMA_TO_DEVICE</code></td>
+<td style="text-align:left">数据从内存流向设备</td>
+<td style="text-align:left">网卡发送、写块设备</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DMA_FROM_DEVICE</code></td>
+<td style="text-align:left">数据从设备流向内存</td>
+<td style="text-align:left">网卡接收、读块设备</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DMA_BIDIRECTIONAL</code></td>
+<td style="text-align:left">双向</td>
+<td style="text-align:left">控制块与状态块放在一起的设备</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DMA_NONE</code></td>
+<td style="text-align:left">仅用于调试</td>
+<td style="text-align:left">不要在生产代码里用</td>
+</tr>
+</tbody>
+</table></div><p>方向一定要写准，不要图省事全写 <code>DMA_BIDIRECTIONAL</code>。准确的方向有两重收益：一是实现可以在 <code>DMA_TO_DEVICE</code> 时只 flush、<code>DMA_FROM_DEVICE</code> 时只 invalidate，省掉一半 cache 操作；二是<strong>调试价值</strong>——某些平台的页表里带写权限位，控制器违反方向去写只读的 <code>DMA_TO_DEVICE</code> buffer 时会打内核日志，方向写错能被抓出来。只有流式映射需要指明方向，一致性映射隐含 <code>DMA_BIDIRECTIONAL</code>，因为 CPU 与设备都会随时读写它。</p>
+<h3 id="map_single-与-map_page" tabindex="-1">map_single 与 map_page <a class="header-anchor" href="#map_single-与-map_page"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">dma_addr_t</span> <span class="hljs-title function_">dma_map_single</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, <span class="hljs-type">void</span> *ptr, <span class="hljs-type">size_t</span> size,
+                          <span class="hljs-keyword">enum</span> dma_data_direction dir)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">dma_unmap_single</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, <span class="hljs-type">dma_addr_t</span> dma_handle,
+                      <span class="hljs-type">size_t</span> size, <span class="hljs-keyword">enum</span> dma_data_direction dir)</span>;
+
+<span class="hljs-type">dma_addr_t</span> <span class="hljs-title function_">dma_map_page</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, <span class="hljs-keyword">struct</span> page *page,
+                        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> offset, <span class="hljs-type">size_t</span> size,
+                        <span class="hljs-keyword">enum</span> dma_data_direction dir)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">dma_unmap_page</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, <span class="hljs-type">dma_addr_t</span> dma_handle,
+                    <span class="hljs-type">size_t</span> size, <span class="hljs-keyword">enum</span> dma_data_direction dir)</span>;
+</code></pre></div></code></pre>
+<p><code>dma_map_single()</code> 传进去的是 CPU 指针，返回设备侧总线地址。它有一个硬限制：<strong>不能映射 HIGHMEM</strong>，因为它需要虚拟地址，而 HIGHMEM 在没有 <code>kmap()</code> 的情况下没有固定虚拟地址。需要映射 HIGHMEM 上的页时，改用 page 加页内偏移的版本：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* page + offset 形式：块设备、网络收包这类拿到 struct page 的场景 */</span>
+dma_handle = dma_map_page(dev, buffer-&gt;page, buffer-&gt;offset, buffer-&gt;len,
+                          DMA_FROM_DEVICE);
+<span class="hljs-keyword">if</span> (dma_mapping_error(dev, dma_handle))
+    <span class="hljs-keyword">goto</span> map_error_handling;
+
+<span class="hljs-comment">/* ... 启动传输 ...
+
+   传输完成后 */</span>
+dma_unmap_page(dev, dma_handle, buffer-&gt;len, DMA_FROM_DEVICE);
+</code></pre></div></code></pre>
+<h3 id="dma_mapping_error必须用它判断" tabindex="-1">dma_mapping_error：必须用它判断 <a class="header-anchor" href="#dma_mapping_error必须用它判断"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>映射会失败（IOMMU 表项不足、地址超出设备窗口等），失败时返回值不是 NULL 而是某个特定标记。<strong>判断失败必须调用 <code>dma_mapping_error(dev, dma_handle)</code></strong>，不要自己拿返回值做比较。两种典型错误写法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 错误示例 1：假设失败地址一定在前 16MB 之外，或低位有标志 */</span>
+<span class="hljs-keyword">if</span> ((dma_handle &amp; <span class="hljs-number">0xffff</span> != <span class="hljs-number">0</span>) || (dma_handle &gt;= <span class="hljs-number">0x1000000</span>))
+    <span class="hljs-keyword">goto</span> map_error;
+
+<span class="hljs-comment">/* 错误示例 2：假设失败地址一定等于 DMA_ERROR_CODE */</span>
+<span class="hljs-keyword">if</span> (dma_handle == DMA_ERROR_CODE)
+    <span class="hljs-keyword">goto</span> map_error;
+
+<span class="hljs-comment">/* 正确写法 */</span>
+dma_handle = dma_map_single(dev, addr, size, DMA_TO_DEVICE);
+<span class="hljs-keyword">if</span> (dma_mapping_error(dev, dma_handle)) {
+    <span class="hljs-comment">/* 回滚：释放自己的资源，不要继续启动传输 */</span>
+    <span class="hljs-keyword">goto</span> map_error_handling;
+}
+</code></pre></div></code></pre>
+<p>两种错误写法都对底层实现做了假设，换个架构就失效。不检查错误的后果更严重：把无效地址写进设备寄存器，轻则数据悄悄写错位置（损坏无关内存），重则直接 kernel panic。</p>
+<h3 id="unmap-元数据的零成本抽象" tabindex="-1">unmap 元数据的零成本抽象 <a class="header-anchor" href="#unmap-元数据的零成本抽象"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>很多平台上 unmap 是空操作，根本不需要地址和长度，那么在数据结构里为它们各留一个字段就是纯浪费内存。内核为此提供了宏，视 <code>CONFIG_NEED_DMA_MAP_STATE</code> 决定这些字段是真成员还是一无所有：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* before：无条件占内存 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">ring_state</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sk_buff</span> *<span class="hljs-title">skb</span>;</span>
+    <span class="hljs-type">dma_addr_t</span> mapping;
+    __u32 len;
+};
+
+<span class="hljs-comment">/* after：平台不需要时字段消失，代码不变 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">ring_state</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sk_buff</span> *<span class="hljs-title">skb</span>;</span>
+    DEFINE_DMA_UNMAP_ADDR(mapping);
+    DEFINE_DMA_UNMAP_LEN(len);
+};
+
+<span class="hljs-comment">/* 赋值与访问也必须换成宏 */</span>
+dma_unmap_addr_set(ringp, mapping, FOO);
+dma_unmap_len_set(ringp, len, BAR);
+
+dma_unmap_single(dev, dma_unmap_addr(ringp, mapping),
+                 dma_unmap_len(ringp, len), DMA_FROM_DEVICE);
+</code></pre></div></code></pre>
+<p>地址和长度分开处理是有原因的：某些实现里 unmap 只需要 dma address，长度完全用不上，能给一个字段是一份。</p>
+<h3 id="unmap-与-dma-地址空间耗尽" tabindex="-1">unmap 与 DMA 地址空间耗尽 <a class="header-anchor" href="#unmap-与-dma-地址空间耗尽"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>DMA 地址空间是<strong>共享资源</strong>，IOMMU 表项数量有限。每次 <code>dma_map_single()</code> / <code>dma_map_sg()</code> 都必须有严格配对的 unmap。只分配不回收，最终会耗尽可用 DMA 地址，整个系统里所有设备的 DMA 一起失败——症状是运行几小时后网卡开始丢包、磁盘报 I/O 错误，而内存和 CPU 看起来都正常。有几条路径特别容易漏 unmap：错误处理分支、设备拔出的清理路径、中断里提前 return 的分支。写驱动时把 map/unmap 当作 <code>kmalloc</code>/<code>kfree</code> 一样严格对待。</p>
+<p>多段映射中途失败<strong>必须把已经映射成功的那些 unmap 掉</strong>。固定两段时用 goto 链条逐级回滚（<code>err_unmap1</code> 里 <code>dma_unmap_single(dev, dma_handle1, len1, DMA_TO_DEVICE)</code>），循环映射时用索引记住成功到哪一段，失败时把 <code>0..i-1</code> 全部 unmap：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; nents; i++) {
+    sg_dma_address(&amp;sgl[i]) = dma_map_single(dev, sg_virt(&amp;sgl[i]),
+                                             sgl[i].length, dir);
+    <span class="hljs-keyword">if</span> (dma_mapping_error(dev, sg_dma_address(&amp;sgl[i]))) {
+        <span class="hljs-keyword">for</span> (j = <span class="hljs-number">0</span>; j &lt; i; j++)
+            dma_unmap_single(dev, sg_dma_address(&amp;sgl[j]),
+                             sgl[j].length, dir);
+        <span class="hljs-keyword">return</span> -EIO;
+    }
+}
+</code></pre></div></code></pre>
+<h3 id="上层回调里的错误语义" tabindex="-1">上层回调里的错误语义 <a class="header-anchor" href="#上层回调里的错误语义"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>映射失败不仅要回滚资源，还要按调用它的子系统约定返回，否则会造成上层无限重试或统计错乱：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 网卡发送路径：map 失败必须释放 skb 并返回 NETDEV_TX_OK */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">netdev_tx_t</span> <span class="hljs-title function_">my_xmit</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff *skb, <span class="hljs-keyword">struct</span> net_device *ndev)</span>
+{
+    <span class="hljs-type">dma_addr_t</span> mapping = dma_map_single(dev, skb-&gt;data, skb-&gt;len, DMA_TO_DEVICE);
+
+    <span class="hljs-keyword">if</span> (dma_mapping_error(dev, mapping)) {
+        dev-&gt;stats.tx_dropped++;
+        dev_kfree_skb(skb);
+        <span class="hljs-keyword">return</span> NETDEV_TX_OK;   <span class="hljs-comment">/* 表示这个 skb 已被处理（丢弃），不是失败 */</span>
+    }
+}
+</code></pre></div></code></pre>
+<p>SCSI 路径的约定不同：<code>queuecommand</code> 里 map 失败要返回 <code>SCSI_MLQUEUE_HOST_BUSY</code>，让 SCSI 中间层稍后重传。</p>
+<p><code>NETDEV_TX_OK</code> 这个返回值最容易搞错：它的语义是「该 skb 的发送流程到此结束」，不是「发送成功」。返回 <code>NETDEV_TX_BUSY</code> 会让重传逻辑介入，而我们并没有把 skb 排队，重传必然再次失败。</p>
+<h3 id="bounce-buffer-与-arch_dma_minalign" tabindex="-1">bounce buffer 与 ARCH_DMA_MINALIGN <a class="header-anchor" href="#bounce-buffer-与-arch_dma_minalign"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>bounce buffer</strong>：驱动要在设备访问不到的地址上做 DMA 时（典型是 HIGHMEM，或者超出设备地址窗口的内存），内核另建一块设备能访问的 buffer，数据按需在原 buffer 与 bounce buffer 之间复制。有的架构直接让映射失败，有的架构会悄悄建 bounce buffer 并把请求成功返回——所以同一个驱动在不同平台上表现会完全不同，这也是为什么必须设对 mask。</p>
+<p><strong><code>ARCH_DMA_MINALIGN</code></strong>：<code>kmalloc()</code> 出来的 buffer 也会用于 DMA。如果架构不是全面 DMA coherent，就必须定义这个宏，保证 kmalloc 返回的地址对齐到它，从而<strong>不与相邻的 buffer 共享 cacheline</strong>——否则一次 cache 回写会覆盖掉设备刚写进邻居 buffer 的数据，这类 bug 极难查。</p>
+<div class="callout callout-warning"><div class="callout-title"><span class="callout-icon">⚠</span><span>警告</span></div><div class="callout-body"><p><code>ARCH_DMA_MINALIGN</code> 是 <strong>DMA buffer 的对齐约束</strong>，不是 CPU 的数据对齐约束。它只要求那些会被 DMA 访问的 buffer 满足，并不意味着所有内存访问都要按它对齐。移植时漏定义它，症状是「小 buffer 偶发数据错乱、大 buffer 正常」。</p>
+</div></div>
+<p>平台移植还有一条：架构若支持 IOMMU（含软件模拟的 IOMMU），需要打开 <code>CONFIG_NEED_SG_DMA_LENGTH</code>。</p>
+<h2 id="十一scatter-gatherdma_map_sg-与-struct-scatterlist" tabindex="-1">十一、scatter-gather：dma_map_sg 与 struct scatterlist <a class="header-anchor" href="#十一scatter-gatherdma_map_sg-与-struct-scatterlist"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>DMA 只能处理物理连续的 buffer，但上层拿到的数据往往是散的：一个 <code>sk_buff</code> 的线性区会跨页，一个文件读请求的目标页更是完全分散。把这些非连续的块拼成一段连续内存再交给 DMA，这个操作叫 <strong>scatter gather</strong>。多数情况下这靠软件完成：驱动自己维护一个描述符数组，每项记录一段连续区域的地址与长度，控制器逐个执行。真正在硬件层面支持 SG 的控制器（图像、视频、网络这些高吞吐场景常见）可以直接按描述符链遍历，省掉中间拷贝。</p>
+<h3 id="struct-scatterlist-的字段" tabindex="-1">struct scatterlist 的字段 <a class="header-anchor" href="#struct-scatterlist-的字段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">scatterlist</span> {</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>   page_link;     <span class="hljs-comment">/* struct page 指针；低 2 位被征用为标志 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>    offset;        <span class="hljs-comment">/* 页内偏移 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>    length;        <span class="hljs-comment">/* 本段长度 */</span>
+
+    <span class="hljs-type">dma_addr_t</span>      dma_address;   <span class="hljs-comment">/* 映射后的设备侧总线地址（不是物理地址） */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_NEED_SG_DMA_LENGTH</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>    dma_length;    <span class="hljs-comment">/* 映射后的设备侧长度 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+};
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">语义</th>
+<th style="text-align:left">要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>page_link</code></td>
+<td style="text-align:left">指向 <code>struct page</code></td>
+<td style="text-align:left">低 2 位是两个标志：<code>SG_END</code>（最后一段）与 <code>SG_CHAIN</code>（下一段是链式列表）。所以取页指针必须用 <code>sg_page(sg)</code>，不能直接读字段</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>offset</code></td>
+<td style="text-align:left">段在页内的起始偏移</td>
+<td style="text-align:left">用 <code>sg_set_page(sg, page, len, offset)</code> 设置，不要手写</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>length</code></td>
+<td style="text-align:left">本次映射前的实际长度</td>
+<td style="text-align:left">由 CPU 侧填写</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>dma_address</code></td>
+<td style="text-align:left"><code>dma_map_sg()</code> 填进去的<strong>设备侧地址</strong></td>
+<td style="text-align:left">只能通过 <code>sg_dma_address(sg)</code> 读</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>dma_length</code></td>
+<td style="text-align:left">映射后会被合并变长的长度</td>
+<td style="text-align:left">只能通过 <code>sg_dma_len(sg)</code> 读；宏关闭时不占空间</td>
+</tr>
+</tbody>
+</table></div><p><code>dma_address</code> 和 <code>length</code> 是两个独立的槽位：map 之前 <code>length</code> 有意义、<code>dma_address</code> 无意义；map 之后 <code>dma_length</code> 会大于 <code>length</code>（段被合并），设备侧必须用 <code>dma_length</code>。</p>
+<h3 id="dma_map_sg-的完整流程" tabindex="-1">dma_map_sg 的完整流程 <a class="header-anchor" href="#dma_map_sg-的完整流程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">dma_map_sg</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, <span class="hljs-keyword">struct</span> scatterlist *sglist,
+               <span class="hljs-type">int</span> nents, <span class="hljs-keyword">enum</span> dma_data_direction dir)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">dma_unmap_sg</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, <span class="hljs-keyword">struct</span> scatterlist *sglist,
+                  <span class="hljs-type">int</span> nents, <span class="hljs-keyword">enum</span> dma_data_direction dir)</span>;
+</code></pre></div></code></pre>
+<p><strong>返回值是成功映射的段数，这个值会小于传入的 <code>nents</code>。</strong> 返回 0 表示失败。少掉的那几段是被合并了。内部到底做了什么，按 <code>dma-direct</code>（4.20+）的路径展开：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>dma_map_sg(dev, sglist, nents, dir)
+  │
+  ├─ dma_direct_map_sg（无 IOMMU）
+  │    ├─ for_each_sg(): 取 sg_phys() 得物理地址
+  │    ├─ dma_direct_map_page()：判设备是否可达这段 PA
+  │    │    ├─ 可达 → dma_address = phys_to_dma(dev, pa)
+  │    │    └─ 不可达 → 走 SWIOTLB，alloc bounce 并 memcpy
+  │    ├─ 按 dir 做 cache maintain：TO_DEVICE 写回，
+  │    │  FROM_DEVICE 先写回（防脏行覆盖）后失效
+  │    └─ __finalize_sg_io_tlb()：合并相邻 bounce 区
+  │
+  ├─ iommu_dma_map_sg（有 IOMMU）
+  │    ├─ 按 PAGE_SIZE 粒度逐段切成页
+  │    ├─ 在 IOVA 空间里申请一段连续区间
+  │    ├─ 建 IOMMU 页表项：IOVA → 各物理页
+  │    ├─ 相邻的物理连续页被合并成一个 IOVA 段
+  │    └─ 超额时触发 IOVA 空间回收后再试
+  │
+  └─ __dma_map_sg_attrs() 收尾：写回 sg-&gt;dma_address / sg-&gt;dma_length，
+     返回段数（≤ nents）
+</code></pre></div></code></pre>
+<p>返回段数变小的原因有两处：<code>iommu_dma_map_sg()</code> 里物理相邻的页被压成一个 IOVA 段，以及 bounce 区的合并。这个性质正是「不支持或只支持有限 scatter-gather 的控制器也能工作」的原因——内核在映射阶段就把分散的 buffer 整理成了设备能接受的形态。映射成功后遍历用 <code>for_each_sg()</code>，通过 <code>sg_dma_address()</code> 与 <code>sg_dma_len()</code> 取设备侧地址。是否支持硬件 SG 由 <code>dma_device</code> 的 <code>cap_mask</code> 里有没有 <code>DMA_SG</code>、<code>DMA_INTERLEAVE</code> 决定。</p>
+<h3 id="sg-初始化与常见错误" tabindex="-1">sg 初始化与常见错误 <a class="header-anchor" href="#sg-初始化与常见错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>sg = kmalloc_array(page_count, <span class="hljs-keyword">sizeof</span>(*sg), GFP_KERNEL);
+<span class="hljs-keyword">if</span> (!sg)
+    <span class="hljs-keyword">return</span> -ENOMEM;
+
+sg_init_table(sg, page_count);          <span class="hljs-comment">/* 必须：清标志位、把最后一段标 SG_END */</span>
+<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; page_count; i++)
+    sg_set_page(&amp;sg[i], pages[i], PAGE_SIZE, <span class="hljs-number">0</span>);
+
+count = dma_map_sg(dev, sg, page_count, DMA_TO_DEVICE);
+<span class="hljs-keyword">if</span> (!count) {                           <span class="hljs-comment">/* 返回 0 即失败，没有别的判据 */</span>
+    kfree(sg);
+    <span class="hljs-keyword">return</span> -EIO;
+}
+
+for_each_sg(sg, s, count, i)            <span class="hljs-comment">/* 注意遍历用 count，unmap 用 page_count */</span>
+    load_descriptor_to_device(sg_dma_address(s), sg_dma_len(s));
+
+trigger_dma_hardware_sg();
+wait_for_dma_done();
+
+dma_unmap_sg(dev, sg, page_count, DMA_TO_DEVICE);
+kfree(sg);
+</code></pre></div></code></pre>
+<p>三条最容易犯的错：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 错 1：前面没调 sg_init_table，SG_END 没置位，遍历越界 */</span>
+sg_set_page(&amp;sg[<span class="hljs-number">0</span>], page, len, <span class="hljs-number">0</span>);
+
+<span class="hljs-comment">/* 错 2：unmap 时传 count 而不是原始 nents —— IOMMU 表项泄漏 */</span>
+dma_unmap_sg(dev, sg, count, DMA_TO_DEVICE);        <span class="hljs-comment">/* 错 */</span>
+dma_unmap_sg(dev, sg, page_count, DMA_TO_DEVICE);   <span class="hljs-comment">/* 对 */</span>
+
+<span class="hljs-comment">/* 错 3：设备侧用 sg-&gt;length 而不是 sg_dma_len(sg)，合并后的段被截断 */</span>
+</code></pre></div></code></pre>
+<div class="callout callout-important"><div class="callout-title"><span class="callout-icon">❢</span><span>重要</span></div><div class="callout-body"><p><code>dma_unmap_sg()</code> 的 <code>nents</code> 参数必须传<strong>当初传给 <code>dma_map_sg()</code> 的那个 <code>nents</code></strong>，不是返回的 <code>count</code>。传 count 会让那些被合并掉的段得不到清理，IOMMU 表项泄漏，跑一段时间后 DMA 开始莫名其妙失败。<code>dma_sync_sg_*()</code> 同理。</p>
+</div></div>
+<h2 id="十二映射方向与-dma_sync-的语义" tabindex="-1">十二、映射方向与 dma_sync 的语义 <a class="header-anchor" href="#十二映射方向与-dma_sync-的语义"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>如果一次 map 与 unmap 之间 CPU 从不触碰 buffer，那<strong>根本不需要任何 sync 操作</strong>。只有在同一块 buffer 上做多次访问、且要在两次 DMA 之间读写它时才需要：DMA 传完 CPU 要读 buffer，调 <code>dma_sync_single_for_cpu()</code> / <code>dma_sync_sg_for_cpu()</code>；CPU 改完要把控制权交还设备，调 <code>dma_sync_single_for_device()</code> / <code>dma_sync_sg_for_device()</code>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">dma_sync_single_for_cpu</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, <span class="hljs-type">dma_addr_t</span> dma_handle,
+                             <span class="hljs-type">size_t</span> size, <span class="hljs-keyword">enum</span> dma_data_direction dir)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">dma_sync_single_for_device</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, <span class="hljs-type">dma_addr_t</span> dma_handle,
+                                <span class="hljs-type">size_t</span> size, <span class="hljs-keyword">enum</span> dma_data_direction dir)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">dma_sync_sg_for_cpu</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, <span class="hljs-keyword">struct</span> scatterlist *sglist,
+                         <span class="hljs-type">int</span> nents, <span class="hljs-keyword">enum</span> dma_data_direction dir)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">dma_sync_sg_for_device</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> device *dev, <span class="hljs-keyword">struct</span> scatterlist *sglist,
+                            <span class="hljs-type">int</span> nents, <span class="hljs-keyword">enum</span> dma_data_direction dir)</span>;
+</code></pre></div></code></pre>
+<h3 id="名字里的-owner-视角" tabindex="-1">名字里的 owner 视角 <a class="header-anchor" href="#名字里的-owner-视角"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>for_cpu</code> / <code>for_device</code> 描述的是<strong>交接给谁</strong>，不是「谁需要同步」。<code>for_cpu</code> 把所有权从设备收回来交给 CPU，要保证 CPU 接下来读到的是 RAM 里的最新值；<code>for_device</code> 把所有权交出去给设备，要保证设备接下来读到的是 CPU 写过的最新值。方向参数依然要传对，因为同一个 <code>for_device</code> 在 <code>DMA_FROM_DEVICE</code> 与 <code>DMA_TO_DEVICE</code> 下做的事不一样：<code>DMA_FROM_DEVICE</code> 的 <code>for_device</code> 需要先把脏行写回（否则设备写 RAM 时脏行还在 cache 里，之后被回写覆盖），<code>DMA_TO_DEVICE</code> 的 <code>for_device</code> 只需要写回。</p>
+<h3 id="完整往返示例" tabindex="-1">完整往返示例 <a class="header-anchor" href="#完整往返示例"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>网卡收包，这段是理解 sync 时机最好的材料：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 准备阶段：映射一块 buffer 交给硬件，此后 CPU 不应再碰它 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">my_card_setup_receive_buffer</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> my_card *cp, <span class="hljs-type">char</span> *buffer, <span class="hljs-type">int</span> len)</span>
+{
+    <span class="hljs-type">dma_addr_t</span> mapping;
+
+    mapping = dma_map_single(cp-&gt;dev, buffer, len, DMA_FROM_DEVICE);
+    <span class="hljs-keyword">if</span> (dma_mapping_error(cp-&gt;dev, mapping))
+        <span class="hljs-keyword">goto</span> map_error_handling;
+
+    cp-&gt;rx_buf = buffer;
+    cp-&gt;rx_len = len;
+    cp-&gt;rx_dma = mapping;
+
+    give_rx_buf_to_card(cp);          <span class="hljs-comment">/* 把总线地址写进网卡 DMA 寄存器 */</span>
+}
+
+<span class="hljs-comment">/* 中断里：硬件已把数据写进 buffer */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">irqreturn_t</span> <span class="hljs-title function_">my_card_interrupt_handler</span><span class="hljs-params">(<span class="hljs-type">int</span> irq, <span class="hljs-type">void</span> *devid)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_card</span> *<span class="hljs-title">cp</span> =</span> devid;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_card_header</span> *<span class="hljs-title">hp</span>;</span>
+
+    <span class="hljs-keyword">if</span> (read_card_status(cp) != RX_BUF_TRANSFERRED)
+        <span class="hljs-keyword">return</span> IRQ_NONE;
+
+    <span class="hljs-comment">/* 关键一步：先 sync for cpu，否则读到的是 cache 里的旧数据 */</span>
+    dma_sync_single_for_cpu(cp-&gt;dev, cp-&gt;rx_dma, cp-&gt;rx_len, DMA_FROM_DEVICE);
+
+    hp = (<span class="hljs-keyword">struct</span> my_card_header *)cp-&gt;rx_buf;
+    <span class="hljs-keyword">if</span> (header_is_ok(hp)) {
+        dma_unmap_single(cp-&gt;dev, cp-&gt;rx_dma, cp-&gt;rx_len, DMA_FROM_DEVICE);
+        pass_to_upper_layers(cp-&gt;rx_buf);
+        make_and_setup_new_rx_buf(cp);
+    } <span class="hljs-keyword">else</span> {
+        <span class="hljs-comment">/* 头部不合法但 buffer 还要继续用：sync for device 后重新交给网卡 */</span>
+        dma_sync_single_for_device(cp-&gt;dev, cp-&gt;rx_dma, cp-&gt;rx_len, DMA_FROM_DEVICE);
+        give_rx_buf_to_card(cp);
+    }
+    <span class="hljs-keyword">return</span> IRQ_HANDLED;
+}
+</code></pre></div></code></pre>
+<p>两个分支的区别：走 unmap 的路径已经把 buffer 还给上层，不再需要交还设备；继续复用的路径必须 <code>sync for device</code>，否则 CPU 读操作会让 cache 里留下脏行，设备下次 DMA 写入时数据被 cache 回写覆盖。</p>
+<h2 id="十三dma-与-cache-一致性什么时候要-sync" tabindex="-1">十三、DMA 与 cache 一致性：什么时候要 sync <a class="header-anchor" href="#十三dma-与-cache-一致性什么时候要-sync"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>CPU 读内存走 cache，DMA 设备读写内存绕过 cache 直接到 RAM。两条路径看到的内存不是同一份：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>                ┌──────────────────┐
+                │      CPU 核心     │
+                └────────┬─────────┘
+                         ▼▲
+                ┌──────────────────┐
+                │   Cache 缓存      │ ◄── ① CPU 写入的脏数据停在这里没下去
+                └────────┬─────────┘
+                         ▼▲
+  ┌──────────┐  DMA 写  ┌──────────┐
+  │ DMA 设备  ├─────────►│ RAM 内存  │ ◄── ② 设备直接写 RAM，cache 里还是旧值
+  └──────────┘           └──────────┘
+</code></pre></div></code></pre>
+<p>有两种错法：<strong>写丢</strong>——CPU 写了数据在 cache 里标脏，设备读 RAM 读到旧值，需要在设备读之前 flush（clean / writeback）；<strong>读旧</strong>——设备往 RAM 写了新数据，CPU 从 cache 读到旧值，需要在 CPU 读之前 invalidate。<code>DMA_FROM_DEVICE</code> 的缓冲有个陷阱：invalidate 之前必须先 clean。否则 cache 里有脏行，设备已经按 RAM 的旧内容写完，clean 会把脏行覆盖回去，设备写的数据就没了。这就是方向必须传对的原因——方向决定了实现做哪几件事。</p>
+<h3 id="硬件兜底mesi-与总线监听" tabindex="-1">硬件兜底：MESI 与总线监听 <a class="header-anchor" href="#硬件兜底mesi-与总线监听"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>x86 与多数 ARM 服务器 SoC 在硬件层面解决了这个问题。MESI 协议里 cache 块有四个状态：<strong>M（Modified）</strong> 脏、只在本核、与 RAM 不一致；<strong>E（Exclusive）</strong> 与 RAM 一致、只在本核；<strong>S（Shared）</strong> 与 RAM 一致、在多个核；<strong>I（Invalid）</strong> 已失效，需要从 RAM 重新加载。设备发起写事务抵达一致性互联（coherent interconnect）时，内存控制器会向所有核心广播监听请求（snoop）：若某核里是 S 或 E 状态，硬件立刻把它置为 I；若是 M 状态，硬件会拦住这次 DMA 写，先逼该核把 M 数据写回 RAM，再让设备写。</p>
+<p>有这套机制的平台上，<code>dma_map_*</code> 与 <code>dma_sync_*</code> 在不少架构上是<strong>空操作</strong>（<code>CONFIG_ARCH_HAS_SYNC_DMA_FOR_DEVICE</code> 未定义时的默认实现）。这就是同一份驱动在 x86 上跑得好好的、搬到某个 ARM 板上就开始丢包的原因。低阶 MCU（部分 Cortex-M 类）、MIPS、以及不少低成本 ARM SoC 没有完整的硬件 snooping 互联，这类非一致性平台上 cache 维护必须由驱动经 <code>dma_sync_*()</code> 显式完成，一次都不能漏。同一块 SoC 上，有的设备一致有的不一致，所以 <code>dev-&gt;dma_coherent</code> 是<strong>设备级</strong>属性，不能按平台一概而论。判断方法看两处：编译期的 <code>CONFIG_ARCH_DMA_DEFAULT_COHERENT</code>（架构是否默认一致），以及运行期的 <code>dev-&gt;dma_coherent</code>（这个设备是否一致，由固件或 DT 的 <code>dma-coherent</code> 属性决定）。</p>
+<h3 id="什么时候必须-sync" tabindex="-1">什么时候必须 sync <a class="header-anchor" href="#什么时候必须-sync"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">场景</th>
+<th style="text-align:left">是否要 sync</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">map 之后、unmap 之前 CPU 从不碰 buffer</td>
+<td style="text-align:left">不需要，一次都不要加</td>
+</tr>
+<tr>
+<td style="text-align:left">map 之后 CPU 读一次，然后 unmap</td>
+<td style="text-align:left">要 <code>for_cpu</code>（非一致平台）；一致平台上是空操作</td>
+</tr>
+<tr>
+<td style="text-align:left">同一 buffer 连续做两次 DMA，中间 CPU 改数据</td>
+<td style="text-align:left">要 <code>for_device</code></td>
+</tr>
+<tr>
+<td style="text-align:left">用 <code>dma_alloc_coherent()</code> 拿的内存</td>
+<td style="text-align:left">不需要 sync，但要 <code>wmb()</code> 之类的顺序屏障</td>
+</tr>
+<tr>
+<td style="text-align:left">描述符环里的 valid 位</td>
+<td style="text-align:left">要屏障，不要 sync</td>
+</tr>
+</tbody>
+</table></div><h2 id="十四一张-api-全景表" tabindex="-1">十四、一张 API 全景表 <a class="header-anchor" href="#十四一张-api-全景表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">类别</th>
+<th style="text-align:left">API</th>
+<th style="text-align:left">作用</th>
+<th style="text-align:left">关键约束</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">寻址能力</td>
+<td style="text-align:left"><code>dma_set_mask()</code></td>
+<td style="text-align:left">设 streaming mask</td>
+<td style="text-align:left">返回非 0 即失败，必须检查</td>
+</tr>
+<tr>
+<td style="text-align:left">寻址能力</td>
+<td style="text-align:left"><code>dma_set_coherent_mask()</code></td>
+<td style="text-align:left">设 coherent mask</td>
+<td style="text-align:left">往往必成功；只支持 coherent 的设备要检查</td>
+</tr>
+<tr>
+<td style="text-align:left">寻址能力</td>
+<td style="text-align:left"><code>dma_set_mask_and_coherent()</code></td>
+<td style="text-align:left">一次设两个</td>
+<td style="text-align:left">两者相同时用</td>
+</tr>
+<tr>
+<td style="text-align:left">寻址能力</td>
+<td style="text-align:left"><code>dma_get_required_mask()</code></td>
+<td style="text-align:left">查询满足全部内存所需的掩码</td>
+<td style="text-align:left">用于探测设备是否够宽</td>
+</tr>
+<tr>
+<td style="text-align:left">一致内存</td>
+<td style="text-align:left"><code>dma_alloc_coherent()</code></td>
+<td style="text-align:left">分配长期一致 buffer</td>
+<td style="text-align:left">返回 CPU 地址 + <code>dma_handle</code>；页对齐</td>
+</tr>
+<tr>
+<td style="text-align:left">一致内存</td>
+<td style="text-align:left"><code>dma_free_coherent()</code></td>
+<td style="text-align:left">释放</td>
+<td style="text-align:left"><strong>不能在中断上下文调用</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">一致内存</td>
+<td style="text-align:left"><code>dma_pool_create()</code> / <code>dma_pool_alloc()</code> / <code>dma_pool_free()</code></td>
+<td style="text-align:left">大量小块一致内存</td>
+<td style="text-align:left"><code>boundary</code> 保证不跨界</td>
+</tr>
+<tr>
+<td style="text-align:left">流式</td>
+<td style="text-align:left"><code>dma_map_single()</code> / <code>dma_unmap_single()</code></td>
+<td style="text-align:left">映射虚拟地址起的一段</td>
+<td style="text-align:left">不能映射 HIGHMEM</td>
+</tr>
+<tr>
+<td style="text-align:left">流式</td>
+<td style="text-align:left"><code>dma_map_page()</code> / <code>dma_unmap_page()</code></td>
+<td style="text-align:left">映射 <code>struct page</code> + offset</td>
+<td style="text-align:left">HIGHMEM 用这个</td>
+</tr>
+<tr>
+<td style="text-align:left">流式</td>
+<td style="text-align:left"><code>dma_map_sg()</code> / <code>dma_unmap_sg()</code></td>
+<td style="text-align:left">映射段数组</td>
+<td style="text-align:left">返回段数小于 nents；unmap 传原 nents</td>
+</tr>
+<tr>
+<td style="text-align:left">流式</td>
+<td style="text-align:left"><code>dma_map_resource()</code></td>
+<td style="text-align:left">把设备 BAR 当 DMA 目标映射</td>
+<td style="text-align:left">用于 PCIe P2P</td>
+</tr>
+<tr>
+<td style="text-align:left">流式</td>
+<td style="text-align:left"><code>dma_map_pages()</code>（6.x 引入，未验证具体版本）</td>
+<td style="text-align:left">page 数组</td>
+<td style="text-align:left">历史版本请用 sg 接口</td>
+</tr>
+<tr>
+<td style="text-align:left">校验</td>
+<td style="text-align:left"><code>dma_mapping_error()</code></td>
+<td style="text-align:left">判断映射是否失败</td>
+<td style="text-align:left"><strong>唯一正确判据</strong></td>
+</tr>
+<tr>
+<td style="text-align:left">同步</td>
+<td style="text-align:left"><code>dma_sync_single_for_cpu()</code> / <code>_for_device()</code></td>
+<td style="text-align:left">单段所有权交接</td>
+<td style="text-align:left">只在复用 buffer 时需要</td>
+</tr>
+<tr>
+<td style="text-align:left">同步</td>
+<td style="text-align:left"><code>dma_sync_sg_for_cpu()</code> / <code>_for_device()</code></td>
+<td style="text-align:left">段数组所有权交接</td>
+<td style="text-align:left">nents 传原值</td>
+</tr>
+<tr>
+<td style="text-align:left">同步</td>
+<td style="text-align:left"><code>dma_sync_single_range_for_*()</code></td>
+<td style="text-align:left">只同步页内一段</td>
+<td style="text-align:left">比整页同步省 cache 操作</td>
+</tr>
+<tr>
+<td style="text-align:left">元数据</td>
+<td style="text-align:left"><code>DEFINE_DMA_UNMAP_ADDR</code> / <code>DEFINE_DMA_UNMAP_LEN</code></td>
+<td style="text-align:left">unmap 元数据的条件字段</td>
+<td style="text-align:left">配合 <code>dma_unmap_addr()</code> 使用</td>
+</tr>
+<tr>
+<td style="text-align:left">PCI 专有</td>
+<td style="text-align:left"><code>pci_map_single()</code> / <code>pci_map_sg()</code></td>
+<td style="text-align:left">PCI 专用映射</td>
+<td style="text-align:left"><strong>不要在新代码里用</strong>，用通用版</td>
+</tr>
+<tr>
+<td style="text-align:left">已废弃</td>
+<td style="text-align:left"><code>virt_to_bus()</code> / <code>bus_to_virt()</code></td>
+<td style="text-align:left">虚拟↔总线地址</td>
+<td style="text-align:left">现代内核不可用</td>
+</tr>
+<tr>
+<td style="text-align:left">直通</td>
+<td style="text-align:left"><code>dma_direct_map_page()</code> / <code>dma_direct_map_sg()</code></td>
+<td style="text-align:left">无 IOMMU 的直通映射</td>
+<td style="text-align:left">4.20+ 内部接口，驱动不直接调</td>
+</tr>
+</tbody>
+</table></div><h2 id="十五pcie-是什么从并行总线到串行链路" tabindex="-1">十五、PCIe 是什么：从并行总线到串行链路 <a class="header-anchor" href="#十五pcie-是什么从并行总线到串行链路"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>PCIe 是 PCI Express，一种高带宽、低延迟、端到端（Point-to-Point）的同步串行差分总线。它彻底放弃了 PCI 共享总线的拓扑，改用类似交换式以太网的点对点路由。一条 Link 只能连两个端口：一个 TX，一个 RX；一条链路由若干条 <strong>Lane</strong> 组成，每条 Lane 是一对差分线。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        【 PCIe 物理单通道 (Lane) 差分走线 】
+
++------------------+                    +------------------+
+|  发送端 (TX)     |                    |  接收端 (RX)     |
+|      [驱动器]    |                    |     [比较器]     |
+|       (D+)  ○────┼───||─── 差分线 ────┼────►○           |
+|                  |    AC 耦合电容     |   比较器求差     |
+|       (D-)  ○────┼───||─── 差分线 ────┼────►○           |
++------------------+                    +------------------+
+</code></pre></div></code></pre>
+<p>一条 Lane 由两向共 4 根差分信号线组成，发送端正负极经差分线连到接收端，反方向同理；电气规范要求发送端串接 <strong>AC 耦合电容</strong>，用于消除直流偏移并保护输入电路。接收端比较 D+ 与 D- 的电压差判定逻辑值，外部噪声同时同值加载在两根线上，求差后被抵消；两根线电流大小相等方向相反，电磁场近乎抵消，对外的辐射小。链路宽度支持 x1、x2、x4、x8、x12、x16、x32，芯片组（PCH）给低速外设留 x1，x16 留给显卡或高速网卡。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">规范版本</th>
+<th style="text-align:left">时钟主频 (GHz)</th>
+<th style="text-align:left">链路传输率 (GT/s)</th>
+<th style="text-align:left">数据编码</th>
+<th style="text-align:left">单 Lane 理论单向带宽</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">PCIe 1.x</td>
+<td style="text-align:left">1.25</td>
+<td style="text-align:left">2.5</td>
+<td style="text-align:left">8b/10b（20% 开销）</td>
+<td style="text-align:left">250 MB/s</td>
+</tr>
+<tr>
+<td style="text-align:left">PCIe 2.x</td>
+<td style="text-align:left">2.5</td>
+<td style="text-align:left">5.0</td>
+<td style="text-align:left">8b/10b（20% 开销）</td>
+<td style="text-align:left">500 MB/s</td>
+</tr>
+<tr>
+<td style="text-align:left">PCIe 3.0</td>
+<td style="text-align:left">4.0</td>
+<td style="text-align:left">8.0</td>
+<td style="text-align:left">128b/130b（1.5% 开销）</td>
+<td style="text-align:left">985 MB/s</td>
+</tr>
+<tr>
+<td style="text-align:left">PCIe 4.0</td>
+<td style="text-align:left">8.0</td>
+<td style="text-align:left">16.0</td>
+<td style="text-align:left">128b/130b（1.5% 开销）</td>
+<td style="text-align:left">1.97 GB/s</td>
+</tr>
+<tr>
+<td style="text-align:left">PCIe 5.0</td>
+<td style="text-align:left">16.0</td>
+<td style="text-align:left">32.0</td>
+<td style="text-align:left">128b/130b（1.5% 开销）</td>
+<td style="text-align:left">3.94 GB/s</td>
+</tr>
+</tbody>
+</table></div><p>3.0 的频率只有 2.0 的 1.6 倍，带宽却翻了一倍，原因在编码：8b/10b 为在没有时钟线的串行流里恢复时钟，每发 8 位净荷要夹带 2 位同步码，浪费 20%；3.0 改用加扰（scrambling）加 128b/130b 编码，额外开销降到 1.5%。</p>
+<p>插槽上除了差分收发线，还有几根关键引脚：<code>PERST#</code> 是复位（低电平触发，主机电源稳定后拉高，释放外设做内部状态机复位）；<code>REFCLK+</code>/<code>REFCLK-</code> 是 100 MHz 差分参考时钟，让插槽上的卡与主板时钟同相、减小 PLL 抖动；<code>Vaux</code> 是 3.3V 辅助供电，系统休眠时维持卡上的 sticky 寄存器状态，支持 Wake-on-LAN；<code>WAKE#</code> 用于卡向主机申请唤醒；<code>PRSNT1#</code>/<code>PRSNT2#</code> 是存在检测，按接法区分链路宽度。</p>
+<h2 id="十六pcie-的分层结构事务层--数据链路层--物理层" tabindex="-1">十六、PCIe 的分层结构：事务层 / 数据链路层 / 物理层 <a class="header-anchor" href="#十六pcie-的分层结构事务层--数据链路层--物理层"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>PCIe 的数据流分层和 TCP/IP 协议栈是同一种思路：每层只做自己那件事，把对端的同层当成语义上的直接通信方。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>             【 PCIe 三层协议栈数据流 】
+
+  +------------------+                   +------------------+
+  |  事务层 (TLP)    | ◄─── 组包/拆包 ──►|  事务层 (TLP)    |
+  +--------▲---------+                   +--------▲---------+
+           │                                      │
+  +--------▼---------+                   +--------▼---------+
+  | 数据链路层 (DLLP)| ◄─── CRC/ACK ────►| 数据链路层 (DLLP)|
+  +--------▲---------+                   +--------▲---------+
+           │                                      │
+  +--------▼---------+                   +--------▼---------+
+  |   物理层 (PL)    | ◄── 编码/串并转换 ─►|   物理层 (PL)    |
+  +--------▲---------+                   +--------▲---------+
+           │                                      │
+  =========┴─────────── 物理差分走线 ─────────────┴==========
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">层</th>
+<th style="text-align:left">主要职责</th>
+<th style="text-align:left">关键概念</th>
+<th style="text-align:left">加的开销</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">事务层</td>
+<td style="text-align:left">组装/解析 TLP，端到端路由，流控</td>
+<td style="text-align:left">Memory Read/Write、Configuration Read/Write、IO Read/Write、Message、Completion；Flow Control Credits</td>
+<td style="text-align:left">TLP 头 12~16 字节 + 可选数据</td>
+</tr>
+<tr>
+<td style="text-align:left">数据链路层</td>
+<td style="text-align:left">保证相邻两端口间可靠传输</td>
+<td style="text-align:left">序列号（12 位）、LCRC（32 位）、ACK/NAK、重传</td>
+<td style="text-align:left">序列号 + LCRC，共 4+4 字节</td>
+</tr>
+<tr>
+<td style="text-align:left">物理层</td>
+<td style="text-align:left">电气传输、编码、串行化</td>
+<td style="text-align:left">8b/10b 或 128b/130b、加扰、CDR、有序集（TS1/TS2/Electrical Idle）</td>
+<td style="text-align:left">编码开销 20% 或 1.5%</td>
+</tr>
+</tbody>
+</table></div><p>三层的分工可以从「谁负责什么可靠性」来记：事务层管<strong>语义</strong>（这个包是读还是写、读哪个地址、要不要回应），数据链路层管<strong>相邻两跳的完整性</strong>（包丢了错了靠 LCRC + ACK/NAK 重传补回来，它不关心包里装的是什么），物理层管<strong>电压和时序</strong>（把字节序列变成线上能恢复出时钟的比特流）。</p>
+<p>这个分工带来一个推论：<strong>数据链路层的重传对事务层是透明的</strong>。驱动看到的 DMA 数据不会因为线上一次 LCRC 错就出错，只会慢一点。但链路彻底断了就是另一回事，见 AER。</p>
+<div class="callout callout-note"><div class="callout-title"><span class="callout-icon">ℹ</span><span>笔记</span></div><div class="callout-body"><p>AER（Advanced Error Reporting）把错误分两类。可纠正错误（Correctable）如 LCRC 错、输入缓冲区瞬时溢出，由物理层/链路层的重传机制在硬件上自行消化，软件看不到。不可纠正错误（Uncorrectable）分非致命（Non-fatal，如投毒 TLP Poisoned TLP、目的地址不存在）与致命（Fatal，如链路断开）。非致命错误会触发内核 AER 服务调用 <code>pci_driver</code> 的 <code>struct pci_error_handlers</code> 回调链：<code>error_detected</code> → <code>slot_reset</code> → <code>resume</code>，对应返回值是 <code>PCI_ERS_RESULT_NEED_RESET</code>、<code>PCI_ERS_RESULT_RECOVERED</code> 等。这里只标出它与 DMA 的关系：<strong><code>error_detected</code> 里必须停掉设备的 DMA 通路，否则复位期间设备还在往已释放的 buffer 里写。</strong></p>
+</div></div>
+<h2 id="十七tlp-包格式与常见事务类型" tabindex="-1">十七、TLP 包格式与常见事务类型 <a class="header-anchor" href="#十七tlp-包格式与常见事务类型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>TLP（Transaction Layer Packet）由四段组成，前后顺序固定：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>+---------+---------+--------------+-----------+-------------+-----+
+| Header  |  Data   |  ECRC(可选)  |  LCRC     |  Framing    |     |
+| 12/16 B | 0~4096B |   4 Bytes    |  4 Bytes  |  STP/END    |     |
++---------+---------+--------------+-----------+-------------+-----+
+   事务层生成           │           数据链路层加          物理层加
+                        └── 数据载荷，长度由 Length 字段与 TC 决定
+</code></pre></div></code></pre>
+<p>能不能带数据由事务类型决定，读请求与不带数据的写请求后面没有 Data 段。以 32 位 Memory 请求头（<code>Fmt=10</code>，3DW）为例，前几个双字承载所有路由信息：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">位宽</th>
+<th style="text-align:left">作用</th>
+<th style="text-align:left">与驱动的关联</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>Fmt</code></td>
+<td style="text-align:left">2 bit</td>
+<td style="text-align:left">头长度（3DW / 4DW）+ 是否带数据</td>
+<td style="text-align:left">64 位地址的请求必须用 4DW</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>Type</code></td>
+<td style="text-align:left">5 bit</td>
+<td style="text-align:left">事务类型，见下表</td>
+<td style="text-align:left">决定对端怎么处理</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>TC</code></td>
+<td style="text-align:left">3 bit</td>
+<td style="text-align:left">Traffic Class，流量类别</td>
+<td style="text-align:left">QoS 分级用</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>Attr</code></td>
+<td style="text-align:left">3 bit</td>
+<td style="text-align:left">属性（Relaxed Ordering、ID-based Ordering）</td>
+<td style="text-align:left">影响重排与一致性</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>Length</code></td>
+<td style="text-align:left">10 bit</td>
+<td style="text-align:left">数据载荷长度，<strong>单位是 DW（4 字节）</strong></td>
+<td style="text-align:left">最大 <code>0x3FF</code> DW，规范上界约 4 KB</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>Requester ID</code></td>
+<td style="text-align:left">16 bit</td>
+<td style="text-align:left">发起者（Bus/Dev/Fn）</td>
+<td style="text-align:left">Completion 靠它回到谁</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>Tag</code></td>
+<td style="text-align:left">8 bit</td>
+<td style="text-align:left">未完成请求的编号</td>
+<td style="text-align:left">设备用它在多个 outstanding 请求间配对</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>Address</code></td>
+<td style="text-align:left">32/64 bit</td>
+<td style="text-align:left">目标地址</td>
+<td style="text-align:left"><strong>这里填的就是 <code>dma_addr_t</code></strong></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>First BE</code> / <code>Last BE</code></td>
+<td style="text-align:left">各 4 bit</td>
+<td style="text-align:left">首尾双字的字节使能</td>
+<td style="text-align:left">非对齐访问靠它表达</td>
+</tr>
+</tbody>
+</table></div><p><code>Length</code> 单位是 DW 这一条很实在：PCIe 上一个 TLP 最多搬 4 KB，所以一块 64 KB 的 DMA 在硬件上会被拆成十几个 TLP。设备厂商在驱动里能配的 <code>max_read_request</code>、<code>max_payload_size</code>（MPS）就是在约束这个拆分粒度，值越大单次 TLP 越长、开销占比越低。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">Type 编码</th>
+<th style="text-align:left">事务</th>
+<th style="text-align:left">带数据</th>
+<th style="text-align:left">典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>0_0000</code></td>
+<td style="text-align:left">Memory Read Request（3DW / 4DW）</td>
+<td style="text-align:left">否</td>
+<td style="text-align:left">DMA 读内存，32/64 位地址</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>0_0001</code></td>
+<td style="text-align:left">Memory Read Lock</td>
+<td style="text-align:left">否</td>
+<td style="text-align:left">弃用</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>0_0010</code></td>
+<td style="text-align:left">Memory Write Request</td>
+<td style="text-align:left">是</td>
+<td style="text-align:left">DMA 写内存</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>0_0100</code></td>
+<td style="text-align:left">IO Read Request</td>
+<td style="text-align:left">否</td>
+<td style="text-align:left">老式 ISA 兼容 IO 空间访问</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>0_0101</code></td>
+<td style="text-align:left">IO Write Request</td>
+<td style="text-align:left">是</td>
+<td style="text-align:left">同上</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>1_0100</code></td>
+<td style="text-align:left">Configuration Read Type 0/1</td>
+<td style="text-align:left">否</td>
+<td style="text-align:left">枚举与 BAR 探测</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>1_0101</code></td>
+<td style="text-align:left">Configuration Write Type 0/1</td>
+<td style="text-align:left">是</td>
+<td style="text-align:left">写 BAR、使能 MSI</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>0_1010</code></td>
+<td style="text-align:left">Completion（Cpl）/ Completion with Data（CplD）</td>
+<td style="text-align:left">后者带</td>
+<td style="text-align:left">读请求的应答</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>0_1011</code></td>
+<td style="text-align:left">Message（Msg / MsgD）</td>
+<td style="text-align:left">可选</td>
+<td style="text-align:left"><strong>MSI/MSI-X 中断就是它</strong></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>0_1100</code></td>
+<td style="text-align:left">FetchAdd / Swap（原子操作）</td>
+<td style="text-align:left">是</td>
+<td style="text-align:left">原子 RMW</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>0_1101</code></td>
+<td style="text-align:left">CompareAndSwap（原子操作）</td>
+<td style="text-align:left">是</td>
+<td style="text-align:left">同上</td>
+</tr>
+</tbody>
+</table></div><p><code>Fmt</code> 与 <code>Type</code> 的位编码请以 PCIe 基础规范为准，上表是讲解级近似。若要写硬件仿真或抓包工具，请对照规范原文核对。</p>
+<p>Completion 有三个状态位值得记：<code>SC</code>（Successful Completion）、<code>UR</code>（Unsupported Request）、<code>CRS</code>（Configuration Request Retry Status）。配置空间读回全 <code>1</code> 且 <code>UR</code> 置位，往往意味着这个设备或功能号不存在。</p>
+<h2 id="十八配置空间与-bar" tabindex="-1">十八、配置空间与 BAR <a class="header-anchor" href="#十八配置空间与-bar"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>为了让设备可自动识别（PnP），每个 PCIe 设备都提供一块配置空间。传统 PCI 只有 256 字节，PCIe 扩到 <strong>4 KB</strong>：前 256 字节与 PCI 2.3 规范严格兼容，含厂商 ID（Vendor ID）、设备 ID（Device ID）、类代码、BAR、中断引脚等；后 3840 字节是 PCIe 扩展配置空间，挂 MSI/MSI-X、电源管理、链路控制与状态、AER 寄存器。</p>
+<p>x86 与多数 ARM 服务器把整片配置空间以 MMIO 方式映射进 CPU 物理地址空间，这种访问方式叫 <strong>ECAM</strong>（Enhanced Configuration Access Mechanism）：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>MMIO 地址 = ECAM 基址 + (总线号 &lt;&lt; 20) + (设备号 &lt;&lt; 15) + (功能号 &lt;&lt; 12) + 寄存器偏移
+</code></pre></div></code></pre>
+<p>每个功能号占 4 KB，8 个功能号占 32 KB（即 <code>1&lt;&lt;15</code>），256 个总线号整体占 256 MB。另一条路是 <strong>CAM</strong>：老 x86 用 <code>0xCF8</code>/<code>0xCFC</code> 两个 IO 端口间接访问，每次只能读一个 DW，慢但兼容性极好，内核在 <code>pci_mmcfg</code> 不可用时退回这条路径。</p>
+<p><strong>BAR（Base Address Register）</strong> 是配置空间首部里的寄存器，用来协商设备要占多大一段 MMIO（或 IO）空间：上电时 BAR 里存的是设备<strong>申请的大小与类型</strong>编码，低位属性位说明是内存空间还是 IO 空间、是否可预取（prefetchable）、是 32 位还是 64 位，高处一串 <code>0</code> 的个数说明对齐要求，也就是空间大小；系统 BIOS 或内核枚举设备时读 BAR，算出需要多大空间，在物理地址空间里找一段空闲的写回去；此后 CPU 访问这段 MMIO 地址，就被主桥重定向到该设备内部的寄存器。</p>
+<p>探测大小的经典手法（写全 1 再读回）在驱动里不用手写，<code>pci_resource_len()</code> 已经算好了：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">resource_size_t</span> start = pci_resource_start(pdev, bar);
+<span class="hljs-type">resource_size_t</span> len   = pci_resource_len(pdev, bar);
+<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>   flags = pci_resource_flags(pdev, bar);
+
+<span class="hljs-keyword">if</span> (!(flags &amp; IORESOURCE_MEM))
+    <span class="hljs-keyword">return</span> -ENODEV;                 <span class="hljs-comment">/* 这个 BAR 不是内存空间 */</span>
+</code></pre></div></code></pre>
+<p>BAR 的几条硬事实：一个设备最多 6 个 BAR（<code>PCI_STD_NUM_BARS</code>）；64 位 BAR 要占<strong>两个相邻</strong>的槽位（低 32 位 + 高 32 位），所以设了 64 位 BAR 之后可用槽位数会减少；PCIe 端点一般不用 IO BAR，老设备才用，现代驱动应一律假设内存空间；BAR 里给的是<strong>总线地址</strong>，CPU 要访问它必须先 <code>ioremap()</code>。</p>
+<h2 id="十九mmio-与-pio驱动怎么访问设备寄存器" tabindex="-1">十九、MMIO 与 PIO：驱动怎么访问设备寄存器 <a class="header-anchor" href="#十九mmio-与-pio驱动怎么访问设备寄存器"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">方式</th>
+<th style="text-align:left">谁发起</th>
+<th style="text-align:left">用在什么上</th>
+<th style="text-align:left">内核接口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">MMIO</td>
+<td style="text-align:left">CPU</td>
+<td style="text-align:left">设备寄存器、配置空间（经 ECAM）</td>
+<td style="text-align:left"><code>ioremap()</code> + <code>readl()</code> / <code>writel()</code></td>
+</tr>
+<tr>
+<td style="text-align:left">PIO（端口 IO）</td>
+<td style="text-align:left">CPU</td>
+<td style="text-align:left">x86 的 IO 空间、老 ISA 设备</td>
+<td style="text-align:left"><code>inb()</code> / <code>outb()</code> / <code>ioread8()</code> 系列</td>
+</tr>
+<tr>
+<td style="text-align:left">DMA</td>
+<td style="text-align:left">设备</td>
+<td style="text-align:left">大批量数据搬运</td>
+<td style="text-align:left"><code>dma_map_*()</code></td>
+</tr>
+</tbody>
+</table></div><p>口诀是「<strong>寄存器走 MMIO，数据走 DMA</strong>」。用 CPU 一个字节一个字节地读设备数据寄存器搬大数据，就是第二章算过的那笔亏本账。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> __iomem *base = ioremap(pci_resource_start(pdev, <span class="hljs-number">0</span>),
+                             pci_resource_len(pdev, <span class="hljs-number">0</span>));
+<span class="hljs-keyword">if</span> (!base)
+    <span class="hljs-keyword">return</span> -ENOMEM;
+
+u32 id = readl(base + REG_ID);        <span class="hljs-comment">/* 读寄存器 */</span>
+writel(val, base + REG_CTRL);         <span class="hljs-comment">/* 写寄存器 */</span>
+</code></pre></div></code></pre>
+<p><code>__iomem</code> 这个地址空间标注不是装饰：它让 sparse 能在编译期抓出「把 MMIO 指针当普通指针解引用」这类错。</p>
+<p><code>readl()</code>/<code>writel()</code> 是小端并隐含 <code>mb()</code> 级屏障；<code>ioread32()</code>/<code>iowrite32()</code> 用原生字节序、不隐含屏障；<code>ioread32be()</code>/<code>iowrite32be()</code> 强制大端；<code>readl_relaxed()</code>/<code>writel_relaxed()</code> 是小端但<strong>无屏障</strong>，需要自己加。PCI 设备的寄存器按规范是小端，所以 x86 和 ARM 小端平台上 <code>writel()</code> 就是正确选择，用 <code>iowrite32()</code> 在 BE 平台上会写出字节序反了的值。</p>
+<p><strong>寄存器写入的完成时机。</strong> <code>writel()</code> 返回不代表设备收到了。写操作在 PCIe 上是 <strong>Posted Write</strong>（不带 Completion 的写），CPU 侧写进写合并缓冲就算完成。要确认设备真看到了，得读回同一个寄存器（读操作会强制前面的写刷新出去）：<code>writel(val, base + REG_DOORBELL);</code> 之后跟一句 <code>readl(base + REG_DOORBELL);</code>。门铃之后最好不要马上做别的事——有些设备的门铃语义是「一拍即发」，读回会让同一个命令触发两次，具体看设备手册。</p>
+<h2 id="二十msi--msi-x-中断" tabindex="-1">二十、MSI / MSI-X 中断 <a class="header-anchor" href="#二十msi--msi-x-中断"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>传统并行总线用专用物理引脚（<code>INTA#</code> ~ <code>INTD#</code>）做「带外」中断，一个插槽只有 4 根线，多个设备共享。中断处理程序进来后必须挨个读设备寄存器判明中断源，延迟高、开销大，对高位速网卡是硬瓶颈。PCIe 把中断搬进了数据流本身：<strong>带内（in-band）消息</strong>。设备发一个写事务 TLP，往中断控制器的地址写一个特定值，硬件把它翻译成一条中断。</p>
+<p>MSI（Message Signaled Interrupts）要求设备发一个 <strong>Memory Write TLP</strong>，写指定地址、携带指定数据：地址是目标 CPU 的 APIC 中断控制器映射区（x86 上由 <code>0xFEE00000</code> 一带的 LAPIC 地址加字段拼成），数据是中断向量号（含投递模式、触发方式等位）；一个功能最多申请 <strong>32 个</strong>向量，都写在同一个 MSI Capability 里（一个地址 + 至多 32 个数据值）。内核侧接口是 <code>pci_alloc_irq_vectors(pdev, min_vecs, max_vecs, PCI_IRQ_MSI)</code>。</p>
+<p>MSI-X 是扩展版，向量数上限从 32 提到 <strong>2048</strong>，地址与数据不再放配置空间，而是放在 <strong>BAR 里的一张表</strong>（MSI-X Table，由 BIR 字段指定落在哪个 BAR），每个表项各自有地址、数据、掩码位，另外还有 Per-vector Pending Bit Array（PBA）记录挂起状态。MSI 只有整体掩码，MSI-X 能逐向量掩码。MSI-X 每个表项 16 字节：Message Address 低 32 位、高 32 位、Message Data、Vector Control（含掩码位）。表项就在设备 BAR 的 MMIO 里，设备也能读，所以掩码状态双方可见。</p>
+<p>多队列网卡的用法是给每个 RX/TX 队列绑一个独立向量，再把向量绑到不同 CPU 上（中断亲和性，写 <code>/proc/irq/&lt;n&gt;/smp_affinity</code>）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> nvec = pci_alloc_irq_vectors(pdev, <span class="hljs-number">1</span>, num_queues,
+                                 PCI_IRQ_MSIX | PCI_IRQ_MSI | PCI_IRQ_LEGACY);
+<span class="hljs-keyword">if</span> (nvec &lt; <span class="hljs-number">0</span>)
+    <span class="hljs-keyword">return</span> nvec;
+
+<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; nvec; i++)
+    request_irq(pci_irq_vector(pdev, i), my_queue_isr, <span class="hljs-number">0</span>,
+                dev_name(&amp;pdev-&gt;dev), &amp;priv-&gt;<span class="hljs-built_in">queue</span>[i]);
+</code></pre></div></code></pre>
+<p><code>PCI_IRQ_AFFINITY</code> 标志会让内核自动把向量分摊到各 CPU 上，省掉手工设亲和性。</p>
+<p><strong>DMA 完成通知走的就是这条路。</strong> 一次传输结束的完整路径是：设备 DMA 引擎搬完 → 内部状态机置完成位 → 设备发 Memory Write TLP（MSI-X 表项里的地址与数据）→ 根复合体收到并路由到对应 CPU 的 LAPIC → CPU 进中断执行 <code>request_irq</code> 注册的处理函数 → 处理函数确认完成、unmap buffer、唤醒等待者。没有中断线，没有共享冲突，中断源天然确定。</p>
+<h2 id="二十一pcie-上的-dma-事务怎么走" tabindex="-1">二十一、PCIe 上的 DMA 事务怎么走 <a class="header-anchor" href="#二十一pcie-上的-dma-事务怎么走"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>第三章讲的是 SoC 内部那种独立 DMAC：CPU 配寄存器、DRQ 拉起来、控制器抢总线。PCIe 上不是这样。</p>
+<p>主板上没有统一的中央 DMA 控制器指挥所有设备。每个 PCIe 端点（千兆网卡、M.2 固态硬盘、GPU）内部都集成了自己的 DMA 引擎，这个能力叫 <strong>Bus Mastering（总线主控）</strong>：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">环节</th>
+<th style="text-align:left">谁做</th>
+<th style="text-align:left">怎么体现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">分配缓冲区</td>
+<td style="text-align:left">CPU 上的驱动</td>
+<td style="text-align:left">在 RAM 里分配描述符环与数据 buffer</td>
+</tr>
+<tr>
+<td style="text-align:left">写描述符</td>
+<td style="text-align:left">CPU 上的驱动</td>
+<td style="text-align:left">把 <code>dma_addr_t</code> 与长度填进描述符</td>
+</tr>
+<tr>
+<td style="text-align:left">通知设备</td>
+<td style="text-align:left">CPU 上的驱动</td>
+<td style="text-align:left">MMIO 写门铃（doorbell）寄存器</td>
+</tr>
+<tr>
+<td style="text-align:left">发起总线读/写</td>
+<td style="text-align:left"><strong>设备的 DMA 引擎</strong></td>
+<td style="text-align:left">主动发 Memory Read / Memory Write TLP</td>
+</tr>
+<tr>
+<td style="text-align:left">通知完成</td>
+<td style="text-align:left"><strong>设备</strong></td>
+<td style="text-align:left">发 MSI/MSI-X 消息 TLP</td>
+</tr>
+</tbody>
+</table></div><p>设备充当总线 Master，自己往系统 RAM 吐数据或拉数据，CPU 全程不参与地址运算。这和第三章的 DRQ 模型是两套东西：DRQ 是外设「请求」控制器来搬，PCIe 是设备自己搬，控制器就长在设备里。</p>
+<h3 id="描述符环与门铃" tabindex="-1">描述符环与门铃 <a class="header-anchor" href="#描述符环与门铃"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>   RAM 里的描述符环（device 与 CPU 共享，用 dma_alloc_coherent 分配）
+   ┌──────┬──────┬──────┬──────┬──────┬──────┐
+   │ desc0│ desc1│ desc2│ desc3│ desc4│ ...  │
+   │addr  │addr  │addr  │addr  │addr  │      │
+   │len   │len   │len   │len   │len   │      │
+   │flags │flags │flags │flags │flags │      │
+   └──┬───┴──┬───┴──────┴──────┴──────┴──────┘
+      │      │
+      ▼      ▼
+   数据 buf 数据 buf ...（每个 buffer 一次 dma_map_single / dma_map_page）
+
+   CPU 写 tail 指针 ──► 门铃寄存器 ──► 设备读 tail，开始按环取描述符
+   设备写 head 指针 ──► MSI-X ──► CPU 中断，回收已完成的描述符
+</code></pre></div></code></pre>
+<p>几个设计要点，全部由「设备在另一侧并发读写」这个事实推出来：描述符环本身必须一致（<code>dma_alloc_coherent()</code>），因为 CPU 与设备交替读写同一块内存；数据 buffer 用流式映射，因为每个 buffer 一次用完就还；描述符里的 <code>flags</code>（含 valid 位）必须最后写，前面要 <code>wmb()</code>，设备只看 valid 位决定这个描述符能不能用；<code>tail</code>/<code>head</code> 的内存语义必须是单写者——CPU 只写 tail，设备只写 head。</p>
+<h3 id="一次-dma-写事务在线上长什么样" tabindex="-1">一次 DMA 写事务在线上长什么样 <a class="header-anchor" href="#一次-dma-写事务在线上长什么样"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>假设驱动已经 map 好一块 buffer，拿到 <code>dma_addr_t = 0x8000_2000</code>，长度 4 KB，交给设备让设备把数据写进内存。线上发生的是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>   ① 驱动：writel(desc_idx, base + REG_TX_DOORBELL)
+     → MMIO 写，Posted Write 到设备 BAR 里的寄存器
+
+   ② 设备：读描述符 → 发 Memory Read TLP（64 位地址，读 desc[desc_idx]）
+     → 根复合体转成对物理内存的读 → 返回 Completion with Data（CplD）
+
+   ③ 设备：搬数据 → 发一串 Memory Write TLP（目标 0x8000_2000 起的各段）
+     → Length 单位是 DW，一个 TLP 至多 4 KB，超出则拆多个
+     → Posted Write，没有 Completion 回来
+     → IOMMU 若在，把 0x8000_2000 翻成物理地址 Y
+
+   ④ 设备：发 MSI-X 消息 TLP（Memory Write 到 LAPIC 地址），通知完成
+   ⑤ CPU：进中断，dma_unmap_single() / dma_unmap_sg() 收回映射
+</code></pre></div></code></pre>
+<p>注意第 ② 步：<strong>设备要读描述符，本身就是一次 DMA 读</strong>，代价算在 DMA 带宽里。所以描述符环的布局对性能有直接影响——紧凑、cacheline 对齐、不跨页的环比散着放快得多。第 ③ 步里那些 Write TLP 的数据来自设备内部 FIFO 或设备自己的一片内存，CPU 完全看不到。TSO/GSO 之类的卸载功能就是在设备内部完成分段，把多个小包合成一两个大 TLP 发出去。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">DMA 方向</th>
+<th style="text-align:left">设备发的 TLP</th>
+<th style="text-align:left">Completion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>DMA_TO_DEVICE</code>（内存→设备）</td>
+<td style="text-align:left">Memory Read Request，读 RAM</td>
+<td style="text-align:left">有，CplD 带回数据</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DMA_FROM_DEVICE</code>（设备→内存）</td>
+<td style="text-align:left">Memory Write Request，写 RAM</td>
+<td style="text-align:left">无，Posted</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DMA_BIDIRECTIONAL</code></td>
+<td style="text-align:left">两者都有</td>
+<td style="text-align:left">混合</td>
+</tr>
+</tbody>
+</table></div><p>这个对应关系解释了一个常见现象：<strong>同样的字节数，收方向的 CPU 占用往往比发方向低</strong>。收方向全是 Posted Write，设备尽管发；发方向每个读请求都要等一次 Completion 往返，延迟敏感，需要靠增加 outstanding 请求数（更多 Tag）来填满流水。</p>
+<h3 id="p2p设备到设备" tabindex="-1">P2P：设备到设备 <a class="header-anchor" href="#p2p设备到设备"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>PCIe 上两个设备之间可以直接搬数据，不必绕回 RAM，这叫作 <strong>P2P DMA</strong>（Peer-to-Peer）。典型场景是 GPU 直接读 NVMe，或者网卡直接写板卡的显存。驱动侧把设备的 BAR 地址映射成可 DMA 的地址即可：<code>dma_map_resource(dev, peer_bar_phys, len, DMA_FROM_DEVICE, 0)</code>，判断失败依然用 <code>dma_mapping_error()</code>。P2P 能不能走通取决于拓扑：两个设备在同一 PCIe Switch 下可以，跨根复合体的路径由硬件与 IOMMU 配置决定。测试前先确认拓扑，不要假设它能用。</p>
+<h2 id="二十二从-dma_map-到设备收到-tlp-的完整链路" tabindex="-1">二十二、从 dma_map 到设备收到 TLP 的完整链路 <a class="header-anchor" href="#二十二从-dma_map-到设备收到-tlp-的完整链路"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把全文的链子接起来。一次网卡发送，从驱动到线上：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>[驱动侧]
+  1. dma_map_single(dev, skb-&gt;data, skb-&gt;len, DMA_TO_DEVICE)
+       ├─ 有 IOMMU：建立 IOVA → 物理页的页表项，返回 IOVA
+       ├─ 无 IOMMU：返回 phys_to_dma(dev, pa)，也就是 PA
+       ├─ 地址超出 dma_mask：走 SWIOTLB bounce，返回 bounce 的地址
+       └─ 非一致架构：按 TO_DEVICE 做 cache clean → 返回 dma_addr_t Z
+
+  2. 把 Z 与长度写进描述符环（这块环是 dma_alloc_coherent 来的），wmb() 后置 valid 位
+  3. writel(idx, base + REG_DOORBELL) —— MMIO 写，经 BAR 到设备寄存器，Posted
+
+[总线侧]
+  4. 设备 DMA 引擎读描述符：Memory Read TLP，Requester ID = 设备，Tag = n
+  5. 根复合体转发 → 内存控制器返回 Completion with Data
+  6. 设备按描述符里的 Z 拼 Memory Write TLP
+       ├─ Header 里 Address 字段 = Z（IOVA）
+       ├─ IOMMU 把 Z 翻成物理地址 Y
+       └─ 数据落到驱动当初 kmalloc 的那块页上
+  7. 设备发 MSI-X 消息 TLP
+
+[驱动侧]
+  8. 中断处理：确认完成 → dma_unmap_single() → 释放 skb
+</code></pre></div></code></pre>
+<p>两个必须看清的点。<strong>第一，第 3 步和第 6 步的目标地址是两种不同的东西。</strong> 第 3 步写的是 BAR 里的寄存器，那是<strong>总线地址</strong>，由 BAR 协商得来，CPU 通过 <code>ioremap</code> 的虚拟地址访问；第 6 步写的是 <code>dma_addr_t</code>，那是<strong>内存侧的总线地址</strong>，由 <code>dma_map_*</code> 生成。两者都被叫「总线地址」，但一个指向设备内部空间，一个指向系统内存。搞混的症状是「把 BAR 地址当 DMA target 去做 P2P，结果设备往自己的寄存器空间写数据」。</p>
+<p><strong>第二，第 6 步能成功的前提全在第 1 步就定好了。</strong> mask 设小了、IOMMU 域建错了、buffer 是 <code>vmalloc</code> 的、方向传反了，都在这里静默出错，事后很难从症状反查回原因。</p>
+<h2 id="二十三pcie-驱动-probe-里的资源获取" tabindex="-1">二十三、PCIe 驱动 probe 里的资源获取 <a class="header-anchor" href="#二十三pcie-驱动-probe-里的资源获取"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一个 PCIe 驱动的 <code>probe()</code> 有一串固定动作，顺序有讲究。这是「DMA 子系统」和「PCIe 总线」真正碰面的一刻。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">my_probe</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> pci_dev *pdev, <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> pci_device_id *id)</span>
+{
+    <span class="hljs-type">int</span> ret;
+    <span class="hljs-type">void</span> __iomem *base;
+
+    ret = pci_enable_device(pdev);              <span class="hljs-comment">/* 1. 使能设备与 BAR 背后的地址空间 */</span>
+    <span class="hljs-keyword">if</span> (ret)
+        <span class="hljs-keyword">return</span> ret;
+
+    ret = pci_request_regions(pdev, <span class="hljs-string">&quot;mydev&quot;</span>);   <span class="hljs-comment">/* 2. 独占 BAR 区域 */</span>
+    <span class="hljs-keyword">if</span> (ret)
+        <span class="hljs-keyword">goto</span> err_disable;
+
+    <span class="hljs-comment">/* 3. 设 DMA mask —— 必须在任何 dma_map / dma_alloc 之前 */</span>
+    ret = dma_set_mask_and_coherent(&amp;pdev-&gt;dev, DMA_BIT_MASK(<span class="hljs-number">64</span>));
+    <span class="hljs-keyword">if</span> (ret &amp;&amp; dma_set_mask_and_coherent(&amp;pdev-&gt;dev, DMA_BIT_MASK(<span class="hljs-number">32</span>))) {
+        dev_err(&amp;pdev-&gt;dev, <span class="hljs-string">&quot;no usable DMA mask\n&quot;</span>);
+        <span class="hljs-keyword">goto</span> err_release;
+    }
+
+    pci_set_master(pdev);                       <span class="hljs-comment">/* 4. bus master 位，不开 DMA 被丢弃 */</span>
+
+    base = pci_iomap(pdev, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);               <span class="hljs-comment">/* 5. 映射 BAR */</span>
+    <span class="hljs-keyword">if</span> (!base) {
+        ret = -ENOMEM;
+        <span class="hljs-keyword">goto</span> err_release;
+    }
+
+    <span class="hljs-comment">/* 6. 申请 MSI-X 向量 */</span>
+    ret = pci_alloc_irq_vectors(pdev, <span class="hljs-number">1</span>, MY_MAX_QUEUES,
+                                PCI_IRQ_MSIX | PCI_IRQ_MSI | PCI_IRQ_LEGACY);
+    <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> err_unmap;
+
+    <span class="hljs-comment">/* 7. 一致内存：描述符环 */</span>
+    ring = dma_alloc_coherent(&amp;pdev-&gt;dev, MY_RING_BYTES, &amp;ring_dma, GFP_KERNEL);
+    <span class="hljs-keyword">if</span> (!ring) {
+        ret = -ENOMEM;
+        <span class="hljs-keyword">goto</span> err_vectors;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+err_vectors:
+    pci_free_irq_vectors(pdev);
+err_unmap:
+    pci_iounmap(pdev, base);
+err_release:
+    pci_release_regions(pdev);
+err_disable:
+    pci_disable_device(pdev);
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">步骤</th>
+<th style="text-align:left">接口</th>
+<th style="text-align:left">漏掉会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left"><code>pci_enable_device()</code></td>
+<td style="text-align:left">设备内存空间未使能，<code>ioremap</code> 到的地址读回全 <code>1</code></td>
+</tr>
+<tr>
+<td style="text-align:left">2</td>
+<td style="text-align:left"><code>pci_request_regions()</code></td>
+<td style="text-align:left">两个驱动同时映射同一段 BAR，互相踩寄存器</td>
+</tr>
+<tr>
+<td style="text-align:left">3</td>
+<td style="text-align:left"><code>dma_set_mask*()</code></td>
+<td style="text-align:left">内核按默认 32 位规划 buffer，超出设备窗口就打到错地方</td>
+</tr>
+<tr>
+<td style="text-align:left">4</td>
+<td style="text-align:left"><code>pci_set_master()</code></td>
+<td style="text-align:left">Command 寄存器的 Bus Master 位为 0，设备的 Memory 请求被根复合体丢弃（x86 上会报 <code>Unsupported Request</code>）</td>
+</tr>
+<tr>
+<td style="text-align:left">5</td>
+<td style="text-align:left"><code>pci_iomap()</code></td>
+<td style="text-align:left">没有虚拟地址就碰不到寄存器</td>
+</tr>
+<tr>
+<td style="text-align:left">6</td>
+<td style="text-align:left"><code>pci_alloc_irq_vectors()</code></td>
+<td style="text-align:left">没有中断就没有完成通知，只能靠轮询</td>
+</tr>
+<tr>
+<td style="text-align:left">7</td>
+<td style="text-align:left"><code>dma_alloc_coherent()</code></td>
+<td style="text-align:left">描述符环没有设备侧地址</td>
+</tr>
+</tbody>
+</table></div><p>第 4 步是新手最容易漏的一步，也是症状最迷惑的一步：寄存器读写都正常，门铃也写进去了，设备状态位也动了，但数据就是不出现。因为它自己发起的 TLP 没有被主机接收——<code>pci_set_master()</code> 之前，这个功能在总线上的身份只是「能应答配置访问的从设备」。</p>
+<p>用 devres 可以省掉上面那串 <code>goto</code>：<code>pcim_enable_device()</code>、<code>pcim_iomap()</code>、<code>pcim_request_all_regions()</code>（名称以本机头文件为准）。<code>pcim_*</code> 系列在没有 probe 成功时自动回滚，退出时自动释放，细节见《platform 设备与 devres》。<code>remove()</code> 里的顺序反过来：先 <code>free_irq()</code>，再写寄存器停掉设备，然后 <code>dma_free_coherent()</code>，最后 <code>pci_free_irq_vectors()</code>、<code>pci_iounmap()</code>、<code>pci_release_regions()</code>、<code>pci_disable_device()</code>。先关中断与 DMA 引擎，再释放 buffer，最后拆映射。顺序写反就会踩到「设备还在往已释放的 buffer 里写」——这类 bug 的现场是一块被复用的内存莫名其妙变成全 <code>0xFF</code>。</p>
+<h2 id="二十四易错点速查" tabindex="-1">二十四、易错点速查 <a class="header-anchor" href="#二十四易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">现象</th>
+<th style="text-align:left">根因</th>
+<th style="text-align:left">怎么查</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">跑几小时后网卡开始丢包、磁盘报 I/O 错，内存 CPU 都正常</td>
+<td style="text-align:left"><code>dma_map</code> 与 <code>dma_unmap</code> 不配对，IOVA 空间耗尽</td>
+<td style="text-align:left"><code>CONFIG_DMA_API_DEBUG</code> + <code>/sys/kernel/debug/dma-api/</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>unmap</code> 之后 IOMMU 报 <code>DMAR fault</code>，访问的地址看着眼熟</td>
+<td style="text-align:left"><code>dma_unmap_sg()</code> 传了 <code>count</code> 而不是原 <code>nents</code></td>
+<td style="text-align:left">核对 unmap 调用点的参数</td>
+</tr>
+<tr>
+<td style="text-align:left">小 buffer 偶发数据错乱，大 buffer 正常</td>
+<td style="text-align:left"><code>ARCH_DMA_MINALIGN</code> 未定义，相邻 buffer 共享 cacheline</td>
+<td style="text-align:left">查架构头文件的宏定义</td>
+</tr>
+<tr>
+<td style="text-align:left">x86 上好的，ARM 板上丢数据</td>
+<td style="text-align:left">那块板不是 DMA 一致架构，漏了 <code>dma_sync_*</code></td>
+<td style="text-align:left">查 <code>dev-&gt;dma_coherent</code> 与 DT 的 <code>dma-coherent</code></td>
+</tr>
+<tr>
+<td style="text-align:left">设备写内存总是写到自己顶上 16MB，然后越来越歪</td>
+<td style="text-align:left"><code>dma_mask</code> 没设，或设成 64 位但设备只有 32 位地址线</td>
+<td style="text-align:left">查 <code>probe()</code> 里有没有 <code>dma_set_mask*</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>dma_alloc_coherent()</code> 只返回 32 位可寻址地址</td>
+<td style="text-align:left">只设了 streaming mask，没设 coherent mask</td>
+<td style="text-align:left">两个 mask 分别设或用 <code>_and_coherent</code> 版</td>
+</tr>
+<tr>
+<td style="text-align:left">寄存器读写正常，门铃也进去了，DMA 数据就是不动</td>
+<td style="text-align:left"><code>pci_set_master()</code> 没调，Bus Master 位为 0</td>
+<td style="text-align:left"><code>lspci -v</code> 看 Command 里的 <code>BusMaster+</code></td>
+</tr>
+<tr>
+<td style="text-align:left">DMA 打到完全不相干的内存，系统在无关位置 panic</td>
+<td style="text-align:left">自己用 <code>virt_to_phys()</code> 或 <code>virt_to_bus()</code> 算地址</td>
+<td style="text-align:left">全仓 grep <code>virt_to_phys</code> 与 <code>virt_to_bus</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>dma_map_single()</code> 在 HIGHMEM 页上行为异常</td>
+<td style="text-align:left">该接口不能映射 HIGHMEM</td>
+<td style="text-align:left">改成 <code>dma_map_page()</code></td>
+</tr>
+<tr>
+<td style="text-align:left">中断里 <code>dma_free_coherent()</code> 挂死或 <code>BUG: scheduling while atomic</code></td>
+<td style="text-align:left">释放触发 TLB flush + IPI，不能在关中断上下文做</td>
+<td style="text-align:left">把释放丢到 workqueue</td>
+</tr>
+<tr>
+<td style="text-align:left">描述符的 valid 位比内容先到设备，设备读到半新半旧</td>
+<td style="text-align:left">缺 <code>wmb()</code>，CPU 或编译器重排了写序列</td>
+<td style="text-align:left">在置 valid 之前加 <code>wmb()</code>，用 <code>WRITE_ONCE</code></td>
+</tr>
+<tr>
+<td style="text-align:left">一致内存上 CPU 与设备仍看到不一致</td>
+<td style="text-align:left">一致只保证 cache 层，不保证顺序，也不保证写缓冲已刷</td>
+<td style="text-align:left">加 <code>mb()</code> 或按 SoC 手册做 write flush</td>
+</tr>
+<tr>
+<td style="text-align:left">栈上 buffer 做 DMA，偶发内核栈损坏</td>
+<td style="text-align:left">栈页不保证物理连续</td>
+<td style="text-align:left"><code>CONFIG_DMA_API_DEBUG</code> 会直接报</td>
+</tr>
+<tr>
+<td style="text-align:left">模块加载后全局变量做 DMA 失败</td>
+<td style="text-align:left">模块数据段是 vmalloc，超一页就不连续</td>
+<td style="text-align:left">用 <code>dma_alloc_coherent()</code> 或 kmalloc</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>dma_mask</code> 设了 64 位却仍然失败</td>
+<td style="text-align:left">平台主动拒绝（如 SPARC64 上 SAC 更快）</td>
+<td style="text-align:left">这是预期行为，走降级链</td>
+</tr>
+<tr>
+<td style="text-align:left">设备被 AER 复位后驱动仍在收数据</td>
+<td style="text-align:left"><code>error_detected</code> 里没停 DMA 通路</td>
+<td style="text-align:left">回调里关设备、停队列</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>lspci</code> 里 BAR 全 <code>0</code></td>
+<td style="text-align:left">该设备或功能号不存在，或配置空间访问返回 <code>UR</code></td>
+<td style="text-align:left"><code>lspci -vv</code> 看能力链表是否可读</td>
+</tr>
+<tr>
+<td style="text-align:left">两个功能抢同一段 BAR</td>
+<td style="text-align:left">只调了 <code>pci_enable_device()</code> 没调 <code>pci_request_regions()</code></td>
+<td style="text-align:left">查 probe 的资源申请链</td>
+</tr>
+</tbody>
+</table></div><p>调试工具一览：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>CONFIG_DMA_API_DEBUG=y     映射生命周期跟踪，抓漏 unmap、方向不符、长度不符
+CONFIG_DEBUG_SG=y          scatterlist 结构与标志位检查
+lspci -vvv                 BAR、MSI/MSI-X 能力、Command 寄存器
+cat /proc/iomem            物理地址空间占用，找 BAR 落在哪
+dmesg | grep -i dmar       IOMMU 映射错误
+dmesg | grep -i aer        AER 事件
+</code></pre></div></code></pre>
+<p><code>CONFIG_DMA_API_DEBUG</code> 是这类问题里最值回票价的一个。它建一张哈希表记录所有映射的生命周期，能实时拦下：把 <code>vmalloc</code> 分配的内存拿去 DMA 映射；方向标志与实际读写行为不符；unmap 时传的长度与 map 时不符；模块卸载前仍有未 unmap 的残留映射。<code>/sys/kernel/debug/dma-api/</code> 下能看到每个设备的映射数、错误计数与泄漏列表。</p>
+<h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="章节出处" tabindex="-1">章节出处 <a class="header-anchor" href="#章节出处"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">本文章节</th>
+<th style="text-align:left">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">一、DMA 是什么</td>
+<td style="text-align:left">《Linux DMA子系统》§1 开头</td>
+</tr>
+<tr>
+<td style="text-align:left">二、为什么需要 DMA</td>
+<td style="text-align:left">《Linux DMA子系统》§1.1（本文补了开销分解）</td>
+</tr>
+<tr>
+<td style="text-align:left">三、DMA 控制器的硬件模型</td>
+<td style="text-align:left">《Linux DMA子系统》§1.2~1.3、§2.1~2.3、§2.5</td>
+</tr>
+<tr>
+<td style="text-align:left">四、三种地址</td>
+<td style="text-align:left">《Linux DMA子系统》§3.1</td>
+</tr>
+<tr>
+<td style="text-align:left">五、DMA 地址不等于物理地址</td>
+<td style="text-align:left">《Linux DMA子系统》§3.2~3.4、§10.3 末尾（本文补了三种错法与地址链条图）</td>
+</tr>
+<tr>
+<td style="text-align:left">六、IOMMU 的角色</td>
+<td style="text-align:left">《Linux DMA子系统》§3.2、§5.5、§6.7</td>
+</tr>
+<tr>
+<td style="text-align:left">七、一致性内存与流式内存</td>
+<td style="text-align:left">《Linux DMA子系统》§5 开头、§6.1，PCIe 篇 §3.1</td>
+</tr>
+<tr>
+<td style="text-align:left">八、dma_mask 与寻址限制</td>
+<td style="text-align:left">《Linux DMA子系统》§4.1~4.4（<code>struct device</code> 字段与 <code>dma_parms</code> 为本文补）</td>
+</tr>
+<tr>
+<td style="text-align:left">九~十、coherent / streaming DMA</td>
+<td style="text-align:left">《Linux DMA子系统》§5.1~5.4、§6.2~6.11</td>
+</tr>
+<tr>
+<td style="text-align:left">十一、scatter-gather</td>
+<td style="text-align:left">《Linux DMA子系统》§2.4、§6.5，PCIe 篇 §3.5（<code>struct scatterlist</code> 字段与 map_sg 流程为本文补）</td>
+</tr>
+<tr>
+<td style="text-align:left">十二~十三、dma_sync 与 cache 一致性</td>
+<td style="text-align:left">《Linux DMA子系统》§6.2、§6.6，PCIe 篇 §3.1~3.3</td>
+</tr>
+<tr>
+<td style="text-align:left">十四、API 全景表</td>
+<td style="text-align:left">两篇汇总，按 4.20+ 接口整理</td>
+</tr>
+<tr>
+<td style="text-align:left">十五~十六、PCIe 物理层与分层</td>
+<td style="text-align:left">PCIe 篇 §1.1~1.4、§1.8（AER）</td>
+</tr>
+<tr>
+<td style="text-align:left">十七、TLP 格式与事务类型</td>
+<td style="text-align:left">原文无此内容，按 PCIe 基础规范补充，属本文新增</td>
+</tr>
+<tr>
+<td style="text-align:left">十八、配置空间与 BAR</td>
+<td style="text-align:left">PCIe 篇 §1.5（BAR 探测与 <code>pci_resource_*</code> 为本文补）</td>
+</tr>
+<tr>
+<td style="text-align:left">十九、MMIO 与 PIO</td>
+<td style="text-align:left">PCIe 篇 §1.5 延伸，原文无专节，属本文整合</td>
+</tr>
+<tr>
+<td style="text-align:left">二十、MSI / MSI-X</td>
+<td style="text-align:left">PCIe 篇 §1.7（表项格式与 <code>pci_alloc_irq_vectors</code> 为本文补）</td>
+</tr>
+<tr>
+<td style="text-align:left">二十一、PCIe 上的 DMA 事务</td>
+<td style="text-align:left">PCIe 篇 §1.6、§2.1~2.2（描述符环与 P2P 为本文补）</td>
+</tr>
+<tr>
+<td style="text-align:left">二十二、完整链路</td>
+<td style="text-align:left">两篇合成，新增</td>
+</tr>
+<tr>
+<td style="text-align:left">二十三、probe 资源获取</td>
+<td style="text-align:left">原文无此内容，按 PCI 驱动惯例补充</td>
+</tr>
+<tr>
+<td style="text-align:left">二十四、易错点速查</td>
+<td style="text-align:left">汇总两篇的 WARNING / IMPORTANT 与实测经验</td>
+</tr>
+</tbody>
+</table></div><h3 id="修正的错误" tabindex="-1">修正的错误 <a class="header-anchor" href="#修正的错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">原文表述</th>
+<th style="text-align:left">问题</th>
+<th style="text-align:left">本文的处理方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">PCIe 篇：「一致性 DMA 映射……<strong>自动关闭这块内存的 Cache 缓存功能</strong>」</td>
+<td style="text-align:left">只在「关 cache」这一种实现下成立。现代平台多数靠硬件一致性（snooping）或按需 cache 维护达成，<code>dma_alloc_coherent()</code> 返回的内存<strong>并不一定</strong>被设成非 cacheable。原文把一种实现当成了定义</td>
+<td style="text-align:left">改为「由平台硬件/内核保证一致，无需 sync」，并在第十三章说明两种实现路径</td>
+</tr>
+<tr>
+<td style="text-align:left">PCIe 篇：「流式 DMA……映射的物理内存默认是开启 Cache 缓存的，传输结束后再手动解映射」</td>
+<td style="text-align:left">「结束之后」这个时机偏了。<code>DMA_FROM_DEVICE</code> 的 invalidate 必须发生在 <strong>CPU 读取之前</strong>，不是 unmap 之后</td>
+<td style="text-align:left">第十二章按 ownership（<code>for_cpu</code> / <code>for_device</code>）重建时序，明确 invalidate 在 CPU 读之前</td>
+</tr>
+<tr>
+<td style="text-align:left">PCIe 篇代码：<code>dma_map_single(..., DMA_BIDIRECTIONAL)</code> 之后在 <code>DMA_FROM_DEVICE</code> 与 <code>DMA_TO_DEVICE</code> 之间来回切换 sync 方向</td>
+<td style="text-align:left">方向在 map 与 sync 之间不一致。多次 sync 允许，但方向必须与 buffer 的实际用途一致，混用会让实现做错 cache 操作</td>
+<td style="text-align:left">本文的 sync 示例统一为 <code>DMA_FROM_DEVICE</code>（收包场景），并明确方向必须固定</td>
+</tr>
+<tr>
+<td style="text-align:left">PCIe 篇：「MSI 报文……CPU 收到此写事件后，硬件自动将其翻译为<strong>对应的软中断</strong>」</td>
+<td style="text-align:left">不是软中断。MSI 落到 LAPIC 上产生的是一条<strong>硬件中断</strong>（经 APIC 投递到某个 CPU 的向量），和 softirq 是两套机制</td>
+<td style="text-align:left">第二十章改为「翻译成一条中断」</td>
+</tr>
+<tr>
+<td style="text-align:left">PCIe 篇：<code>s3c2410_dma_enqueue()</code> / <code>s3c2410_dma_config()</code> 示例</td>
+<td style="text-align:left">这是 2.6.18 之前的平台私有 API，早已被 dmaengine 取代；示例里 <code>dma_alloc_coherent(NULL, ...)</code> 传空 <code>dev</code> 也不合规范</td>
+<td style="text-align:left">删掉该示例，在易错点里提示这类接口已废弃；<code>dma_alloc_coherent()</code> 需要传入一个真实的 <code>dev</code></td>
+</tr>
+<tr>
+<td style="text-align:left">PCIe 篇 §1.5：ECAM 公式写成 <code>(功能号 &lt;&lt; 12)</code></td>
+<td style="text-align:left">公式本身对（每个功能 4KB），但原文未说明前提是 <code>(设备号 &lt;&lt; 15)</code> 覆盖 8 个功能，读者容易漏乘</td>
+<td style="text-align:left">第十八章保留公式并加了展开说明</td>
+</tr>
+<tr>
+<td style="text-align:left">DMA 篇 §6.4：错误示例 <code>(dma_handle &amp; 0xffff != 0)</code></td>
+<td style="text-align:left">运算符优先级陷阱，<code>!=</code> 先于 <code>&amp;</code>。这是原文引自旧文档的经典错例，本身没错</td>
+<td style="text-align:left">原样保留在「错误写法」里，只作反例出现</td>
+</tr>
+<tr>
+<td style="text-align:left">DMA 篇 §5.4：「一致内存仍需内存屏障」给出的 <code>wmb()</code></td>
+<td style="text-align:left">本身正确，但原文未提 <code>dma_alloc_coherent</code> 在不同架构上返回的会是写合并内存，需要 <code>mb()</code> 而不是 <code>wmb()</code></td>
+<td style="text-align:left">第十三章表格单列一行「顺序屏障与 cache 同步是两件事」</td>
+</tr>
+<tr>
+<td style="text-align:left">DMA 篇 §3.3：<code>dma_map_*</code> 与 <code>pci_map_*</code> 的关系</td>
+<td style="text-align:left">原文说「用通用 API 而不是总线专有 API」，方向对，但没说 <code>pci_map_single()</code> 在 PCI 设备上与 <code>dma_map_single()</code> 等价</td>
+<td style="text-align:left">第十四章表格标注为「不要在新代码里用」，原因补充为可移植性</td>
+</tr>
+<tr>
+<td style="text-align:left">DMA 篇 §2.3 表格：「不设它会怎样」列对 <code>burst size</code> 的描述</td>
+<td style="text-align:left">描述正确但没提 burst 的上界由 <code>dma_device-&gt;max_burst</code> 兜底</td>
+<td style="text-align:left">第三章末尾补了这一句</td>
+</tr>
+</tbody>
+</table></div><h3 id="未验证项" tabindex="-1">未验证项 <a class="header-anchor" href="#未验证项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>以下内容来自原文或按规范记忆写入，本文未独立核对版本或规范原文：<code>dma_map_pages()</code> 的引入版本（原文未提，按 6.x 记忆写入，早于该版本的树上请用 <code>dma_map_sg()</code> 代替）；<code>pcim_request_all_regions()</code> 的函数名（devres 版本在 5.13 前后有增补，名称以实际头文件 <code>include/linux/pci.h</code> 为准）；第十七章 <code>Type</code> 与 <code>Fmt</code> 的位编码表（按 PCIe 基础规范整理，写硬件仿真或抓包工具请对照规范原文）；<code>struct scatterlist</code> 与 <code>struct device</code> 的字段列表（按 5.x 源码整理，6.x 上 <code>dma_length</code> 的条件编译与 <code>dma_ops</code> 的位置有调整）；<code>dma-direct</code> 引入于 4.20 这一说法（来自文档变迁记录，但某个架构在某个 4.19.x 稳定版上是否已回移，未逐一核对）；PCIe 各代带宽数值（来自原文表格，未按规范重算，不含 TLP 头与链路层开销，实际可达值更低）；第二十章 MSI-X 表项 16 字节的字段排布（按规范记忆写入，未逐字段对照规范原文）；第二十一章「收方向 CPU 占用比发方向低」（经验判断，量化数据需要实测，本文不给数字）。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+                <div class="rail-card rail-backlinks-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                      </svg>
+                      反向链接
+                    </span>
+                    <span class="rail-badge">2</span>
+                  </div>
+                  <ul class="backlinks-list">
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/内核连续内存与用户态拷贝/">内核连续内存与用户态拷贝</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/08-总线与设备模型/设备树：语法、dtb-格式与内核解析/">设备树：语法、dtb 格式与内核解析</a></li>
+                    
+                  </ul>
+                </div>
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一dma-是什么让外设绕开-cpu-搬数据" data-toc-target="一dma-是什么让外设绕开-cpu-搬数据">一、DMA 是什么：让外设绕开 CPU 搬数据</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二为什么需要-dma一次拷贝的开销" data-toc-target="二为什么需要-dma一次拷贝的开销">二、为什么需要 DMA：一次拷贝的开销</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三dma-控制器的硬件模型" data-toc-target="三dma-控制器的硬件模型">三、DMA 控制器的硬件模型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#channel逻辑概念不是物理并行通道" data-toc-target="channel逻辑概念不是物理并行通道">channel：逻辑概念，不是物理并行通道</a>
+                    
+                    <a class="toc-item toc-lv3" href="#request-line为什么需要一根物理连线" data-toc-target="request-line为什么需要一根物理连线">request line：为什么需要一根物理连线</a>
+                    
+                    <a class="toc-item toc-lv3" href="#传输参数sizewidthburst" data-toc-target="传输参数sizewidthburst">传输参数：size、width、burst</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四三种地址虚拟物理总线" data-toc-target="四三种地址虚拟物理总线">四、三种地址：虚拟、物理、总线</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五dma-地址不等于物理地址" data-toc-target="五dma-地址不等于物理地址">五、DMA 地址不等于物理地址</a>
+                    
+                    <a class="toc-item toc-lv3" href="#动态映射到底动态在哪" data-toc-target="动态映射到底动态在哪">动态映射到底「动态」在哪</a>
+                    
+                    <a class="toc-item toc-lv3" href="#哪些内存能做-dma" data-toc-target="哪些内存能做-dma">哪些内存能做 DMA</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六iommu-在这里扮演什么角色" data-toc-target="六iommu-在这里扮演什么角色">六、IOMMU 在这里扮演什么角色</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七哪些内存能做-dma一致性内存与流式内存" data-toc-target="七哪些内存能做-dma一致性内存与流式内存">七、哪些内存能做 DMA：一致性内存与流式内存</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八dma_mask-与寻址限制" data-toc-target="八dma_mask-与寻址限制">八、dma_mask 与寻址限制</a>
+                    
+                    <a class="toc-item toc-lv3" href="#struct-device-上与-dma-相关的字段" data-toc-target="struct-device-上与-dma-相关的字段">struct device 上与 DMA 相关的字段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#coherent-mask-与-streaming-mask-的关系" data-toc-target="coherent-mask-与-streaming-mask-的关系">coherent mask 与 streaming mask 的关系</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九coherent-dmadma_alloc_coherent" data-toc-target="九coherent-dmadma_alloc_coherent">九、coherent DMA：dma_alloc_coherent</a>
+                    
+                    <a class="toc-item toc-lv3" href="#两个地址页对齐" data-toc-target="两个地址页对齐">两个地址、页对齐</a>
+                    
+                    <a class="toc-item toc-lv3" href="#dma-pool大量小块一致内存" data-toc-target="dma-pool大量小块一致内存">dma pool：大量小块一致内存</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一致性内存仍需内存屏障" data-toc-target="一致性内存仍需内存屏障">一致性内存仍需内存屏障</a>
+                    
+                    <a class="toc-item toc-lv3" href="#map_single-与-map_page" data-toc-target="map_single-与-map_page">map_single 与 map_page</a>
+                    
+                    <a class="toc-item toc-lv3" href="#dma_mapping_error必须用它判断" data-toc-target="dma_mapping_error必须用它判断">dma_mapping_error：必须用它判断</a>
+                    
+                    <a class="toc-item toc-lv3" href="#unmap-元数据的零成本抽象" data-toc-target="unmap-元数据的零成本抽象">unmap 元数据的零成本抽象</a>
+                    
+                    <a class="toc-item toc-lv3" href="#unmap-与-dma-地址空间耗尽" data-toc-target="unmap-与-dma-地址空间耗尽">unmap 与 DMA 地址空间耗尽</a>
+                    
+                    <a class="toc-item toc-lv3" href="#上层回调里的错误语义" data-toc-target="上层回调里的错误语义">上层回调里的错误语义</a>
+                    
+                    <a class="toc-item toc-lv3" href="#bounce-buffer-与-arch_dma_minalign" data-toc-target="bounce-buffer-与-arch_dma_minalign">bounce buffer 与 ARCH_DMA_MINALIGN</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一scatter-gatherdma_map_sg-与-struct-scatterlist" data-toc-target="十一scatter-gatherdma_map_sg-与-struct-scatterlist">十一、scatter-gather：dma_map_sg 与 struct scatterlist</a>
+                    
+                    <a class="toc-item toc-lv3" href="#struct-scatterlist-的字段" data-toc-target="struct-scatterlist-的字段">struct scatterlist 的字段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#dma_map_sg-的完整流程" data-toc-target="dma_map_sg-的完整流程">dma_map_sg 的完整流程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#sg-初始化与常见错误" data-toc-target="sg-初始化与常见错误">sg 初始化与常见错误</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二映射方向与-dma_sync-的语义" data-toc-target="十二映射方向与-dma_sync-的语义">十二、映射方向与 dma_sync 的语义</a>
+                    
+                    <a class="toc-item toc-lv3" href="#名字里的-owner-视角" data-toc-target="名字里的-owner-视角">名字里的 owner 视角</a>
+                    
+                    <a class="toc-item toc-lv3" href="#完整往返示例" data-toc-target="完整往返示例">完整往返示例</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三dma-与-cache-一致性什么时候要-sync" data-toc-target="十三dma-与-cache-一致性什么时候要-sync">十三、DMA 与 cache 一致性：什么时候要 sync</a>
+                    
+                    <a class="toc-item toc-lv3" href="#硬件兜底mesi-与总线监听" data-toc-target="硬件兜底mesi-与总线监听">硬件兜底：MESI 与总线监听</a>
+                    
+                    <a class="toc-item toc-lv3" href="#什么时候必须-sync" data-toc-target="什么时候必须-sync">什么时候必须 sync</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四一张-api-全景表" data-toc-target="十四一张-api-全景表">十四、一张 API 全景表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五pcie-是什么从并行总线到串行链路" data-toc-target="十五pcie-是什么从并行总线到串行链路">十五、PCIe 是什么：从并行总线到串行链路</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六pcie-的分层结构事务层--数据链路层--物理层" data-toc-target="十六pcie-的分层结构事务层--数据链路层--物理层">十六、PCIe 的分层结构：事务层 / 数据链路层 / 物理层</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十七tlp-包格式与常见事务类型" data-toc-target="十七tlp-包格式与常见事务类型">十七、TLP 包格式与常见事务类型</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十八配置空间与-bar" data-toc-target="十八配置空间与-bar">十八、配置空间与 BAR</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十九mmio-与-pio驱动怎么访问设备寄存器" data-toc-target="十九mmio-与-pio驱动怎么访问设备寄存器">十九、MMIO 与 PIO：驱动怎么访问设备寄存器</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十msi--msi-x-中断" data-toc-target="二十msi--msi-x-中断">二十、MSI / MSI-X 中断</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十一pcie-上的-dma-事务怎么走" data-toc-target="二十一pcie-上的-dma-事务怎么走">二十一、PCIe 上的 DMA 事务怎么走</a>
+                    
+                    <a class="toc-item toc-lv3" href="#描述符环与门铃" data-toc-target="描述符环与门铃">描述符环与门铃</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一次-dma-写事务在线上长什么样" data-toc-target="一次-dma-写事务在线上长什么样">一次 DMA 写事务在线上长什么样</a>
+                    
+                    <a class="toc-item toc-lv3" href="#p2p设备到设备" data-toc-target="p2p设备到设备">P2P：设备到设备</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十二从-dma_map-到设备收到-tlp-的完整链路" data-toc-target="二十二从-dma_map-到设备收到-tlp-的完整链路">二十二、从 dma_map 到设备收到 TLP 的完整链路</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十三pcie-驱动-probe-里的资源获取" data-toc-target="二十三pcie-驱动-probe-里的资源获取">二十三、PCIe 驱动 probe 里的资源获取</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十四易错点速查" data-toc-target="二十四易错点速查">二十四、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#章节出处" data-toc-target="章节出处">章节出处</a>
+                    
+                    <a class="toc-item toc-lv3" href="#修正的错误" data-toc-target="修正的错误">修正的错误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#未验证项" data-toc-target="未验证项">未验证项</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/08-总线与设备模型/DMA-子系统与-PCIe：从地址映射到事务层/","title":"DMA 子系统与 PCIe：从地址映射到事务层","url":"/B.内核/08-总线与设备模型/DMA-子系统与-PCIe：从地址映射到事务层/","type":"current"},{"id":"/B.内核/03-内存管理/内核连续内存与用户态拷贝/","title":"内核连续内存与用户态拷贝","url":"/B.内核/03-内存管理/内核连续内存与用户态拷贝/","type":"backlink"},{"id":"/B.内核/08-总线与设备模型/设备树：语法、dtb-格式与内核解析/","title":"设备树：语法、dtb 格式与内核解析","url":"/B.内核/08-总线与设备模型/设备树：语法、dtb-格式与内核解析/","type":"backlink"},{"id":"/B.内核/08-总线与设备模型/GPIO、pinctrl-与-I2C：三个子系统框架/","title":"GPIO、pinctrl 与 I2C：三个子系统框架","url":"/B.内核/08-总线与设备模型/GPIO、pinctrl-与-I2C：三个子系统框架/","type":"neighbor"},{"id":"/B.内核/08-总线与设备模型/Linux-总线设备驱动模型：bus、class、device-与-driver/","title":"Linux 总线设备驱动模型：bus、class、device 与 driver","url":"/B.内核/08-总线与设备模型/Linux-总线设备驱动模型：bus、class、device-与-driver/","type":"neighbor"}],"links":[{"source":"/B.内核/03-内存管理/内核连续内存与用户态拷贝/","target":"/B.内核/08-总线与设备模型/DMA-子系统与-PCIe：从地址映射到事务层/","type":"direct"},{"source":"/B.内核/08-总线与设备模型/设备树：语法、dtb-格式与内核解析/","target":"/B.内核/08-总线与设备模型/DMA-子系统与-PCIe：从地址映射到事务层/","type":"direct"},{"source":"/B.内核/08-总线与设备模型/DMA-子系统与-PCIe：从地址映射到事务层/","target":"/B.内核/08-总线与设备模型/GPIO、pinctrl-与-I2C：三个子系统框架/","type":"neighbor"},{"source":"/B.内核/08-总线与设备模型/DMA-子系统与-PCIe：从地址映射到事务层/","target":"/B.内核/08-总线与设备模型/Linux-总线设备驱动模型：bus、class、device-与-driver/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

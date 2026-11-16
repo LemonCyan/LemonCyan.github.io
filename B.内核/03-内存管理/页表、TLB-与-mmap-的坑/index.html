@@ -1,0 +1,1235 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>页表、TLB 与 mmap 的坑 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">页表、TLB 与 mmap 的坑</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">页表、TLB 与 mmap 的坑</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">页表、TLB 与 mmap 的坑</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>这篇只讲一件事：页表被改了之后，TLB 怎么被通知。范围是 TLB 的存在理由、tag 比对、ARMv8 的 TLB 分层与 ASID、TLBI 指令族、内核四个 flush API、DSB 与 DVM 域，以及一次把 TLB 语义踩爆的现场：mmap <code>/dev/mem</code> 写寄存器，第一次写触发 <code>tlbi</code> + <code>dsb</code>，与对端 Root Complex 形成指令级死锁，PCIe 扫描 390ms 超时。</p>
+<p>不讲的东西，拆到别处：</p>
+<ul>
+<li>进程切换时 TTBR0 换掉、ASID 换掉、TLB 该付多少代价 → <a href="/B.%E5%86%85%E6%A0%B8/02-%E8%BF%9B%E7%A8%8B%E4%B8%8E%E8%B0%83%E5%BA%A6/%E8%BF%9B%E7%A8%8B%E5%88%87%E6%8D%A2%EF%BC%9A%E4%B8%8A%E4%B8%8B%E6%96%87%E3%80%81TLB-%E4%B8%8E%E5%88%87%E6%8D%A2%E5%BC%80%E9%94%80/" class="wikilink">进程切换：上下文、TLB 与切换开销</a></li>
+<li>页表怎么建起来、memblock 与 KASLR → <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/ARM64-%E5%86%85%E5%AD%98%E5%88%9D%E5%A7%8B%E5%8C%96%EF%BC%9A%E9%A1%B5%E8%A1%A8%E3%80%81memblock-%E4%B8%8E-KASLR/" class="wikilink">ARM64 内存初始化：页表、memblock 与 KASLR</a></li>
+<li>VMA、缺页路径全貌、ioremap 与 <code>/dev/mem</code> 的映射语义 → <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/%E5%9C%B0%E5%9D%80%E7%A9%BA%E9%97%B4%E4%B8%8E%E5%9C%B0%E5%9D%80%E7%BF%BB%E8%AF%91/" class="wikilink">地址空间与地址翻译</a></li>
+</ul>
+<p>一句边界：进程切换时 TLB 怎么处理在《进程切换》那篇，本文只讲「不切换的时候，页表变了怎么通知 TLB」。ASID 在这里只作为 flush 操作的匹配键出现，不作为切换开销的主角。</p>
+<p>代码以 5.10 为基线，案例本身跑在 5.10.100。4.x 时代的差异单独标注。</p>
+</blockquote>
+<h2 id="一tlb-是什么为什么必须有它" tabindex="-1">一、TLB 是什么，为什么必须有它 <a class="header-anchor" href="#一tlb-是什么为什么必须有它"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>CPU 执行一条访问内存的指令，第一件事不是读数据，是把虚拟地址翻译成物理地址。这个翻译要按页表一级一级走下来。4KB 粒度、48 位 VA 的配置下是四级：PGD → PUD → PMD → PTE，每一级都要读一个表项，拿到下一级的基址，再读下一级。四次访存，只为了拿到最终的那个物理页号。麻烦在于这四次访存发生在取数据之前，指令流水线再深也救不了这种串行依赖：读 PTE 的地址来自读 PMD 的结果，读 PMD 的地址来自读 PUD 的结果。</p>
+<p>TLB 就是把这条链路的终点缓存下来。全称 Translation Lookaside Buffer，本质是一块 translation cache。命中一次，VA → PA 的映射直接拿到，页表一次都不用碰；未命中才走上面那四级。</p>
+<p>它和 I-cache、D-cache 解决的不是同一个问题。一条数据访问指令的完整步骤拆开看：</p>
+<ol>
+<li>把 PC 里的虚拟地址翻译成物理地址</li>
+<li>从内存取出这条指令</li>
+<li>把指令里的虚拟地址 x 翻译成物理地址 y</li>
+<li>从地址 y 读出数据</li>
+</ol>
+<p>I-cache 解决步骤 2，D-cache 解决步骤 4，unified cache 两者都能沾一点。步骤 1 和步骤 3 没人管，那两个翻译开销就赤裸裸留在关键路径上。TLB 补的就是这两个洞。</p>
+<p>一个 TLB entry 里存的东西：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">内容</th>
+<th style="text-align:left">备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">物理页号</td>
+<td style="text-align:left">PA 高位</td>
+<td style="text-align:left">翻译结果</td>
+</tr>
+<tr>
+<td style="text-align:left">虚拟页号</td>
+<td style="text-align:left">VA 高位，即 tag</td>
+<td style="text-align:left">命中比对的对象</td>
+</tr>
+<tr>
+<td style="text-align:left">内存属性</td>
+<td style="text-align:left">memory type、cache policy、访问权限</td>
+<td style="text-align:left">来自页表描述符</td>
+</tr>
+<tr>
+<td style="text-align:left">状态位</td>
+<td style="text-align:left">valid、dirty、access</td>
+<td style="text-align:left">硬件或软件维护</td>
+</tr>
+<tr>
+<td style="text-align:left">上下文标识</td>
+<td style="text-align:left">ASID、VMID</td>
+<td style="text-align:left">区分地址空间与虚拟机</td>
+</tr>
+</tbody>
+</table></div><h2 id="二tlb-的工作原理tag-比对与命中" tabindex="-1">二、TLB 的工作原理：tag 比对与命中 <a class="header-anchor" href="#二tlb-的工作原理tag-比对与命中"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>翻译一个 VA 时，拿它的虚拟页号去 TLB 里比对。比中了叫 TLB hit，翻译到此结束，不必再访问页表。比不中叫 TLB miss，走 hardware translation table walk，把结果填回 TLB。TLB 永远是全部页表的一个子集，填满之后要腾位置，靠替换算法决定淘汰哪个 entry。</p>
+<p>寻址方式决定了命中怎么找。全相联（fully-associative）的 TLB 里，一个 VA 可以落在任何 entry，比对时要并行比较所有 entry 的 tag；组相联（set-associative）用 VA 低位选组，组内再比 tag。前者的好处是不冲突，代价是比较器多；后者省比较器，代价是组内会互相挤。</p>
+<p>walk 这一步还要看页表本身放在哪种内存里。<code>TCR_ELx.IRGN</code>/<code>ORGN</code> 配成 Normal + Inner Write-Back Cacheable，walk 就有机会在 L2 cache 里命中，省掉一次 DRAM 往返；配成 Write-Through 或 Non-cacheable，walk 直接打到外部内存上，每一次未命中都是实打实的总线事务。miss 的代价由此分四层：TLB 命中最快，L2 TLB 命中次之，cache 里的 walk 再次之，一路打到 DRAM 最慢。这四层的比例决定了地址翻译在你 workload 里的总成本。</p>
+<h2 id="三armv8-的-tlb-组成结构" tabindex="-1">三、ARMv8 的 TLB 组成结构 <a class="header-anchor" href="#三armv8-的-tlb-组成结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>以 Cortex-A72 为例，它实现了两级 TLB：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">层级</th>
+<th style="text-align:left">组成</th>
+<th style="text-align:left">规格</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">L1</td>
+<td style="text-align:left">L1 instruction TLB</td>
+<td style="text-align:left">48 entry，全相联</td>
+</tr>
+<tr>
+<td style="text-align:left">L1</td>
+<td style="text-align:left">L1 data TLB</td>
+<td style="text-align:left">32 entry，全相联</td>
+</tr>
+<tr>
+<td style="text-align:left">L2</td>
+<td style="text-align:left">unified TLB</td>
+<td style="text-align:left">1024 entry，4 路组相联</td>
+</tr>
+</tbody>
+</table></div><p>L1 分指令和数据两条，各自很小、全相联、追求单周期命中。L2 是统一的，容量大一个数量级，用组相联换面积。L1 未命中就查 L2，L2 也未命中才启动 hardware table walk。</p>
+<p>两点必须记住。第一，每个 core 有自己的 TLB，它不是共享资源，一个 core 上刷掉的映射，另一个 core 的 TLB 里还留着。这是后面所有多核同步问题的物理根源。第二，TLB 之外还有一层 walk cache，中间级页表项（PGD/PUD/PMD 指向下一级表的那些项）也会被缓存；只刷叶子 entry 的指令不会碰 walk cache，动了中间级就必须换另一类指令。这条区别在第六章和第七章会各出现一次。</p>
+<p>具体某个核的 entry 数由实现决定，A72 的数字不能外推到别的核。换平台要查该核的 TRM，未验证的型号不要套。</p>
+<h2 id="四asid进程切换时为什么不用全刷" tabindex="-1">四、ASID：进程切换时为什么不用全刷 <a class="header-anchor" href="#四asid进程切换时为什么不用全刷"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一个 VA 在不同地址空间里翻译到不同 PA。进程 A 的 <code>0x400000</code> 是它的代码段，进程 B 的 <code>0x400000</code> 是它的堆。如果 TLB entry 里只存 VA 和 PA，切进程的那一刻，TLB 里所有 user 映射全部作废，只能整块刷掉。整刷在功能上没问题，性能上不能接受：每次 switch 都丢掉全部翻译，新进程起来要从零开始 walk，切换频率一高就全耗在填 TLB 上。</p>
+<p>ARMv8 的做法是给 TLB entry 加一个上下文标签，同时把页分成两类：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">类别</th>
+<th style="text-align:left">页表位</th>
+<th style="text-align:left">匹配条件</th>
+<th style="text-align:left">切进程时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">Global（内核空间）</td>
+<td style="text-align:left">nG = 0</td>
+<td style="text-align:left">不比对 ASID</td>
+<td style="text-align:left">保留，不刷</td>
+</tr>
+<tr>
+<td style="text-align:left">Process-specific</td>
+<td style="text-align:left">nG = 1</td>
+<td style="text-align:left">必须 ASID 相等</td>
+<td style="text-align:left">不同 ASID 自然不命中，不必刷</td>
+</tr>
+</tbody>
+</table></div><p>内核映射在所有进程里都一样，标成 Global 就跨进程复用。用户映射标 nG，带上 ASID，进程 A 和进程 B 的同一个 VA 可以在 TLB 里同时存在两份，只要 ASID 不同就不冲突。</p>
+<p>ASID 位宽由 <code>ID_AA64MMFR0_EL1.ASIDBits</code> 决定：0 表示 8 位（256 个），2 表示 16 位（65536 个）。16 位要额外把 <code>TCR_EL1.ASID16</code> 置起来才生效。ASID 就放在 <code>TTBR0_EL1</code>/<code>TTBR1_EL1</code> 的低 16 位里，<code>TCR_EL1.A1</code> 决定当前用哪个 TTBR 的 ASID。</p>
+<p>位数有限，就一定会有用完的时候。arm64 的 ASID 分配器用「代」来解决：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* arch/arm64/mm/context.c，5.10 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> ASID_MASK            (~GENMASK(asid_bits - 1, 0))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> ASID_FIRST_VERSION   (1UL &lt;&lt; asid_bits)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NUM_USER_ASIDS       ASID_FIRST_VERSION</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> asid2idx(asid)       ((asid) &amp; ~ASID_MASK)</span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">atomic64_t</span> asid_generation;
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> asid_gen_match(asid) \
+    (!(((asid) ^ atomic64_read(&amp;asid_generation)) &gt;&gt; asid_bits))</span>
+</code></pre></div></code></pre>
+<p><code>mm-&gt;context.id</code> 里存的是「代 + 索引」打包后的值：高位是 generation，低位是 ASID 槽位。判断一个 mm 的 ASID 还能不能用，比的就是 generation 是否一致。</p>
+<p>槽位分配不出来时触发 rollover：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>	asid = find_next_zero_bit(asid_map, NUM_USER_ASIDS, cur_idx);
+	<span class="hljs-keyword">if</span> (asid != NUM_USER_ASIDS)
+		<span class="hljs-keyword">goto</span> set_asid;
+
+	<span class="hljs-comment">/* 用完了，抬一代 */</span>
+	generation = atomic64_add_return_relaxed(ASID_FIRST_VERSION,
+	                                         &amp;asid_generation);
+	flush_context();
+	asid = find_next_zero_bit(asid_map, NUM_USER_ASIDS, <span class="hljs-number">1</span>);
+</code></pre></div></code></pre>
+<p><code>flush_context()</code> 会重建 ASID bitmap，把每个 CPU 上还活着的 ASID 标成 reserved，然后对本 CPU 上已经过完一代的情况做保留处理，最后一句是 <code>cpumask_setall(&amp;tlb_flush_pending)</code>。真正刷 TLB 不在 rollover 现场做，而是等到各 CPU 下一次 <code>check_and_switch_context()</code> 时看到 <code>tlb_flush_pending</code> 里有自己，才调 <code>local_flush_tlb_all()</code>。</p>
+<p>这里有个容易忽略的细节：KPTI（<code>CONFIG_UNMAP_KERNEL_AT_EL0</code>）下，每个 mm 占两个 ASID，一偶一奇，偶数给内核侧、奇数给用户侧，低一位区分。可用 ASID 数量直接腰斩。另一个细节是 pinned ASID，给 SVA/CNP 这类要把 ASID 交到用户态的场景用，上限是 <code>num_available_asids - num_possible_cpus() - 2</code>，留出的余量保证 rollover 之后一定还分得到。</p>
+<p>进程切换这条线就到这里，切换路径上的寄存器操作与实测开销去 <a href="/B.%E5%86%85%E6%A0%B8/02-%E8%BF%9B%E7%A8%8B%E4%B8%8E%E8%B0%83%E5%BA%A6/%E8%BF%9B%E7%A8%8B%E5%88%87%E6%8D%A2%EF%BC%9A%E4%B8%8A%E4%B8%8B%E6%96%87%E3%80%81TLB-%E4%B8%8E%E5%88%87%E6%8D%A2%E5%BC%80%E9%94%80/" class="wikilink">进程切换：上下文、TLB 与切换开销</a>。下面转入本文的正题：不切进程的情况下，页表被改了。</p>
+<h2 id="五tlb-的一致性从哪来" tabindex="-1">五、TLB 的一致性从哪来 <a class="header-anchor" href="#五tlb-的一致性从哪来"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>TLB 是 cache，cache 就有多份拷贝，就有 coherence 问题。硬件维护 I-cache/D-cache 的一致性，但不维护 TLB 的。软件改了页表，硬件不知道，TLB 里那条旧翻译会一直躺着。所以一次正确的页表修改是三段式，缺一段都不算完：</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">str</span>  <span class="hljs-built_in">x1</span>, [<span class="hljs-built_in">x0</span>]        <span class="hljs-comment">// 1. 写页表项，新内容先落到内存/cache</span>
+    <span class="hljs-keyword">dsb</span>  ishst           <span class="hljs-comment">// 2. 等这次写对 inner shareable 域内可见</span>
+    tlbi vale1is, <span class="hljs-built_in">x2</span>     <span class="hljs-comment">// 3. 让匹配的 TLB entry 失效</span>
+    <span class="hljs-keyword">dsb</span>  ish             <span class="hljs-comment">// 4. 等失效操作在域内所有 PE 上完成</span>
+    <span class="hljs-keyword">isb</span>                  <span class="hljs-comment">// 5. 只在刷了内核映射时才需要</span>
+</code></pre></div></code></pre>
+<p>第二步的 <code>dsb ishst</code> 是最容易漏的一步。少了它，<code>tlbi</code> 会先于 PTE 的写完成，TLB entry 失效之后那个 core 重新 walk 页表，读到的还是旧 PTE，又把旧翻译填回 TLB。刷了，等于没刷。<code>st</code> 后缀把屏障限定在 store 上，比全序的 <code>dsb ish</code> 便宜。第五步的 <code>isb</code> 只在被刷的是内核映射（含可执行页）时需要，作用是丢干净流水线里已经预取、用旧映射翻译过的指令；用户映射的刷不需要它。</p>
+<h2 id="六什么时候必须刷页表项被修改的三种情形" tabindex="-1">六、什么时候必须刷：页表项被修改的三种情形 <a class="header-anchor" href="#六什么时候必须刷页表项被修改的三种情形"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>判断标准只有一条：这个改动会不会让 TLB 里已经缓存的那条翻译变成错的。会，就得刷。</p>
+<p>情形一，映射关系变了。VA 指向的 PA 换了，或者映射被建立、被拆除。<code>munmap</code>、<code>mremap</code>、页面迁移、KSM 合并、swap 换入、THP 折叠与拆分，全在这一类。这一类刷的是 VA。</p>
+<p>情形二，权限位变了。同一对 VA/PA，只改 AP 位或可执行位。典型的是写时复制：父子的 PTE 都被改成只读，谁先写谁触发缺页，缺页处理里再把 PTE 改回可写。这一类同样按 VA 刷。</p>
+<p>情形三，页表层级本身变了。中间级表项被填上、被清掉、被折叠成大页、或者页表页要被释放。这类改动影响的是 walk cache，只刷叶子 entry 没有用，必须用带中间级的指令（<code>vae1is</code>），或者干脆整地址空间刷掉。</p>
+<p>反过来，有些改动不用刷：PTE 的 access flag 从 0 变 1、DBM 位让硬件把只读翻成可写，这类由硬件直接改 PTE 位、不改变翻译结果的操作，TLB entry 照样成立。第十八章会看到，这一条恰好是本次事故的解药。</p>
+<h2 id="七维护-tlb-的指令tlbi-系列" tabindex="-1">七、维护 TLB 的指令（TLBI 系列） <a class="header-anchor" href="#七维护-tlb-的指令tlbi-系列"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>ARMv8 的 TLB 维护指令只有 <code>tlbi</code> 一条，靠操作数编码区分范围。名字拆开看就清楚了：</p>
+<pre><code><div class="code-block"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>tlbi  &lt;op&gt;, Xt
+      └─ op 由三段拼成：&lt;匹配维度&gt;&lt;粒度&gt;&lt;regime&gt;&lt;域&gt;
+</code></pre></div></code></pre>
+<ul>
+<li>匹配维度：<code>VMALL</code>（当前 VMID 全部）、<code>ASID</code>（指定 ASID 全部）、<code>VA</code>（指定虚拟地址）</li>
+<li>粒度：<code>A</code> = all ASIDs，<code>L</code> = last level only</li>
+<li>regime：<code>E1</code> = EL1&amp;0 stage 1，<code>E2</code> = EL2 stage 1，<code>E1S</code>/<code>E2S</code> 之类是 stage 2</li>
+<li>域：带 <code>IS</code> 后缀是 inner shareable 广播，不带就是本核</li>
+</ul>
+<p>常用的一组：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">指令</th>
+<th style="text-align:left">匹配</th>
+<th style="text-align:left">是否碰 walk cache</th>
+<th style="text-align:left">谁在用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>tlbi vmalle1</code></td>
+<td style="text-align:left">本核、当前 VMID 全部</td>
+<td style="text-align:left">是</td>
+<td style="text-align:left"><code>local_flush_tlb_all()</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>tlbi vmalle1is</code></td>
+<td style="text-align:left">域内所有 PE 全部</td>
+<td style="text-align:left">是</td>
+<td style="text-align:left"><code>flush_tlb_all()</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>tlbi aside1is, Xt</code></td>
+<td style="text-align:left">指定 ASID 全部</td>
+<td style="text-align:left">是</td>
+<td style="text-align:left"><code>flush_tlb_mm()</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>tlbi vale1is, Xt</code></td>
+<td style="text-align:left">指定 VA + ASID，叶子</td>
+<td style="text-align:left">否</td>
+<td style="text-align:left"><code>flush_tlb_page()</code>、range 循环</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>tlbi vae1is, Xt</code></td>
+<td style="text-align:left">指定 VA + ASID，含中间级</td>
+<td style="text-align:left">是</td>
+<td style="text-align:left">大页拆分/折叠、搬页表</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>tlbi vaae1is, Xt</code></td>
+<td style="text-align:left">指定 VA，所有 ASID</td>
+<td style="text-align:left">是</td>
+<td style="text-align:left">内核中间级映射</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>tlbi vaale1is, Xt</code></td>
+<td style="text-align:left">指定 VA，所有 ASID，叶子</td>
+<td style="text-align:left">否</td>
+<td style="text-align:left"><code>flush_tlb_kernel_range()</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>tlbi rvale1is, Xt</code></td>
+<td style="text-align:left">VA 区间（ARMv8.4-TTL）</td>
+<td style="text-align:left">否</td>
+<td style="text-align:left">range 快路径</td>
+</tr>
+</tbody>
+</table></div><p>带 VA 的操作数不是裸地址，是打包过的 64 位：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* arch/arm64/include/asm/tlbflush.h */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __TLBI_VADDR(addr, asid)              \
+    ({                                        \
+        unsigned long __ta = (addr) &gt;&gt; 12;    \
+        __ta &amp;= GENMASK_ULL(43, 0);           \
+        __ta |= (unsigned long)(asid) &lt;&lt; 48;  \
+        __ta;                                 \
+    })</span>
+</code></pre></div></code></pre>
+<p>低 44 位放 VA[55:12]，高 16 位放 ASID。所以 <code>vale1is</code> 从来不是「只按当前 ASID 刷」，ASID 是显式编进操作数里的，编错了就刷不掉目标 entry。ARMv8.4-TTL 多出来的 bits[47:44] 是 TTL 提示，告诉硬件这次失效发生在第几级，级别给错，刷就不生效。</p>
+<p>区间操作 <code>rvale1is</code>/<code>rvae1is</code> 的操作数换了一套布局：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">位域</th>
+<th style="text-align:left">字段</th>
+<th style="text-align:left">含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">63:48</td>
+<td style="text-align:left">ASID</td>
+<td style="text-align:left">地址空间</td>
+</tr>
+<tr>
+<td style="text-align:left">47:46</td>
+<td style="text-align:left">TG</td>
+<td style="text-align:left">翻译粒度</td>
+</tr>
+<tr>
+<td style="text-align:left">45:44</td>
+<td style="text-align:left">SCALE</td>
+<td style="text-align:left">区间缩放</td>
+</tr>
+<tr>
+<td style="text-align:left">43:39</td>
+<td style="text-align:left">NUM</td>
+<td style="text-align:left">页数减一</td>
+</tr>
+<tr>
+<td style="text-align:left">38:37</td>
+<td style="text-align:left">TTL</td>
+<td style="text-align:left">级数提示</td>
+</tr>
+<tr>
+<td style="text-align:left">36:0</td>
+<td style="text-align:left">BADDR</td>
+<td style="text-align:left">起始地址</td>
+</tr>
+</tbody>
+</table></div><p>一次区间失效覆盖的字节数是 <code>(NUM + 1) &lt;&lt; (5 * SCALE + 1) * PAGE_SIZE</code>，单条指令最多 2^21 页。</p>
+<h2 id="八tlb-flush-的四个-api" tabindex="-1">八、TLB flush 的四个 API <a class="header-anchor" href="#八tlb-flush-的四个-api"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核不让你直接写 <code>tlbi</code>。四个标准接口，签名与语义在 <code>Documentation/core-api/cachetlb.rst</code> 里定义，arm64 在 <code>arch/arm64/include/asm/tlbflush.h</code> 里实现。</p>
+<h3 id="1.-void-flush_tlb_allvoid" tabindex="-1">1. <code>void flush_tlb_all(void)</code> <a class="header-anchor" href="#1.-void-flush_tlb_allvoid"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>刷掉全部 TLB entry，内核映射和所有用户映射一锅端。执行完，之前对页表的任何修改都保证被所有 CPU 看见。代价最高，非必要不用。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">flush_tlb_all</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	dsb(ishst);
+	__tlbi(vmalle1is);
+	dsb(ish);
+	isb();
+}
+</code></pre></div></code></pre>
+<p>底层就是 <code>tlbi vmalle1is</code>。<code>vm</code> 当前 VMID，<code>all</code> 所有 entry，<code>e1</code> 指 regime 是 EL1&amp;0 stage 1，<code>is</code> 广播到 inner shareable 域内所有 PE。去掉 <code>is</code> 得到只影响本核的 <code>local_flush_tlb_all()</code>，屏障跟着从 <code>ish</code> 降到 <code>nsh</code>（对照见第十章的表）。</p>
+<h3 id="2.-void-flush_tlb_mmstruct-mm_struct-mm" tabindex="-1">2. <code>void flush_tlb_mm(struct mm_struct *mm)</code> <a class="header-anchor" href="#2.-void-flush_tlb_mmstruct-mm_struct-mm"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>刷掉某个地址空间对应的全部 entry，其它进程的映射不受影响。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">flush_tlb_mm</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> mm_struct *mm)</span>
+{
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> asid = __TLBI_VADDR(<span class="hljs-number">0</span>, ASID(mm));
+
+	dsb(ishst);
+	__tlbi(aside1is, asid);
+	__tlbi_user(aside1is, asid);
+	dsb(ish);
+}
+</code></pre></div></code></pre>
+<p><code>aside1is</code>：按 ASID 刷，广播。地址位没用，所以 <code>__TLBI_VADDR</code> 的第一个参数填 0，只为把 ASID 拼进高 16 位。<code>__tlbi_user</code> 那行是 KPTI 专用：内核和用户各占一个 ASID，只刷内核那个不够。</p>
+<h3 id="3.-void-flush_tlb_pagestruct-vm_area_struct-vma-unsigned-long-uaddr" tabindex="-1">3. <code>void flush_tlb_page(struct vm_area_struct *vma, unsigned long uaddr)</code> <a class="header-anchor" href="#3.-void-flush_tlb_pagestruct-vm_area_struct-vma-unsigned-long-uaddr"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>只刷一个页对应的 entry。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">flush_tlb_page</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> vm_area_struct *vma,
+				  <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> uaddr)</span>
+{
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> addr = __TLBI_VADDR(uaddr, ASID(vma-&gt;vm_mm));
+
+	dsb(ishst);
+	__tlbi(vale1is, addr);
+	__tlbi_user(vale1is, addr);
+	dsb(ish);
+}
+</code></pre></div></code></pre>
+<p><code>vale1is</code>：VA + last level。<code>l</code> 这个字符的含义是「只动最后一级的叶子 entry」，不动 walk cache。页表上级没变、只有叶子 PTE 变了的时候，用它是正确且最省的。</p>
+<h3 id="4.-void-flush_tlb_rangestruct-vm_area_struct-vma-unsigned-long-start-unsigned-long-end" tabindex="-1">4. <code>void flush_tlb_range(struct vm_area_struct *vma, unsigned long start, unsigned long end)</code> <a class="header-anchor" href="#4.-void-flush_tlb_rangestruct-vm_area_struct-vma-unsigned-long-start-unsigned-long-end"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>刷 <code>[start, end)</code> 这段 VA 上的 entry，比 <code>flush_tlb_mm</code> 窄，比 <code>flush_tlb_page</code> 一次刷得多。</p>
+<p>所有 range 刷最终都走 <code>__flush_tlb_range(vma, start, end, stride, last_level, tlb_level)</code>。真正干活的分两种情况：硬件支持 ARMv8.4-TLB 的，用 <code>rvale1is</code>/<code>rvae1is</code> 按区间发；不支持的，退化成一条一条 <code>vale1is</code>。区间大到超过上限就直接放弃细化，退成 <code>flush_tlb_mm</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>	<span class="hljs-keyword">if</span> ((!system_supports_tlb_range() &amp;&amp;
+	     (end - start) &gt;= (MAX_TLBI_OPS * stride)) ||
+	    pages &gt;= MAX_TLBI_RANGE_PAGES) {
+		flush_tlb_mm(vma-&gt;vm_mm);
+		<span class="hljs-keyword">return</span>;
+	}
+</code></pre></div></code></pre>
+<p><code>MAX_TLBI_OPS</code> 的定义值就是 <code>PTRS_PER_PTE</code>（4KB 页下是 512）。这条上限的作用是防软锁死：一个几 GB 的 munmap 如果逐页发 <code>tlbi</code>，光指令就好几百万条，中间还有 <code>dsb</code>，会把 CPU 卡在那儿动不了。</p>
+<h2 id="九四个-api-的适用场景" tabindex="-1">九、四个 API 的适用场景 <a class="header-anchor" href="#九四个-api-的适用场景"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">API</th>
+<th style="text-align:left">粒度</th>
+<th style="text-align:left">底层指令</th>
+<th style="text-align:left">同步点</th>
+<th style="text-align:left">典型调用点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>flush_tlb_all()</code></td>
+<td style="text-align:left">全部 TLB（含内核）</td>
+<td style="text-align:left"><code>vmalle1is</code></td>
+<td style="text-align:left"><code>dsb ish</code> + <code>isb</code></td>
+<td style="text-align:left">页表格式整体变化、KPTI 换页表、初始化收尾</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>flush_tlb_mm(mm)</code></td>
+<td style="text-align:left">一个地址空间</td>
+<td style="text-align:left"><code>aside1is</code></td>
+<td style="text-align:left"><code>dsb ish</code></td>
+<td style="text-align:left"><code>execve</code> 收尾、ASID 复用前、range 过大退化</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>flush_tlb_range(vma, s, e)</code></td>
+<td style="text-align:left">一段 VA</td>
+<td style="text-align:left"><code>rvale1is</code>/<code>vale1is</code></td>
+<td style="text-align:left"><code>dsb ish</code></td>
+<td style="text-align:left"><code>munmap</code>、<code>mprotect</code>、<code>mremap</code> 经 <code>tlb_finish_mmu()</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>flush_tlb_page(vma, a)</code></td>
+<td style="text-align:left">单个 VA</td>
+<td style="text-align:left"><code>vale1is</code></td>
+<td style="text-align:left"><code>dsb ish</code></td>
+<td style="text-align:left">缺页里把 PTE 从只读改可写、<code>ptep_set_access_flags()</code></td>
+</tr>
+</tbody>
+</table></div><p>选哪个只看三件事：改的是不是只有叶子、能圈多小的范围、要不要连内核映射一起刷。</p>
+<p>改叶子、有明确 VA：<code>flush_tlb_page</code> 或 <code>flush_tlb_range</code>。</p>
+<p>改叶子、但范围覆盖了整个地址空间（比如 fork 之后大批量写保护）：直接 <code>flush_tlb_mm</code>，别循环。</p>
+<p>改了中间级、或者要释放页表页：用 <code>flush_tlb_range</code> 的 <code>last_level = false</code> 路径，它发的是 <code>vae1is</code>；或者用 <code>__flush_tlb_kernel_pgtable()</code>，它发 <code>vaae1is</code>。这两个都带 <code>isb</code>，因为动到的多半是内核映射。</p>
+<p>内核空间的 unmapping（<code>vunmap</code>、模块卸载、<code>ioremap</code> 释放）走 <code>flush_tlb_kernel_range()</code>，最终是 <code>vaale1is</code>。它和用户侧的刷不共用一个入口，别混。</p>
+<h2 id="十tlb-shootdown多核下的-ipi-开销" tabindex="-1">十、TLB shootdown：多核下的 IPI 开销 <a class="header-anchor" href="#十tlb-shootdown多核下的-ipi-开销"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>「让别的核把 TLB 刷掉」这件事，x86 和 arm64 的代价模型完全不同。</p>
+<p>x86 靠 IPI。一核改页表，得给所有缓存了这条映射的核发中断，让它们在中断上下文里各自执行 <code>invlpg</code>，然后回一个 ack，发起方等齐所有 ack 才算完。核多的时候，这就是 N 次中断投递加 N 次等待，业界管这叫 TLB shootdown，代价随核数线性涨。</p>
+<p>arm64 走广播。<code>is</code> 后缀的那条 <code>tlbi</code> 本身就是一条 DVM 消息，硬件帮你送到 inner shareable 域内所有 PE，不需要软件发 IPI，也不需要对方回 ack。所以 <code>flush_tlb_mm()</code> 里没有 IPI 循环，只有指令和屏障。</p>
+<p>省掉了 IPI，不等于免费。同步责任从「等 ack」挪到了 <code>dsb ish</code> 上：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">维度</th>
+<th style="text-align:left">单核（<code>local_*</code>，NSH 域）</th>
+<th style="text-align:left">多核（<code>is</code> 后缀，ISH 域）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">指令</td>
+<td style="text-align:left"><code>tlbi vmalle1</code></td>
+<td style="text-align:left"><code>tlbi vmalle1is</code></td>
+</tr>
+<tr>
+<td style="text-align:left">前置屏障</td>
+<td style="text-align:left"><code>dsb nshst</code></td>
+<td style="text-align:left"><code>dsb ishst</code></td>
+</tr>
+<tr>
+<td style="text-align:left">完成等待</td>
+<td style="text-align:left"><code>dsb nsh</code>，只等本核</td>
+<td style="text-align:left"><code>dsb ish</code>，等域内每个 PE 确认</td>
+</tr>
+<tr>
+<td style="text-align:left">要不要 IPI</td>
+<td style="text-align:left">不要</td>
+<td style="text-align:left">不要，广播由硬件发 DVM 消息</td>
+</tr>
+<tr>
+<td style="text-align:left">延迟花在</td>
+<td style="text-align:left">本核流水线排空</td>
+<td style="text-align:left">互联上最慢的那个 PE</td>
+</tr>
+<tr>
+<td style="text-align:left">谁在用</td>
+<td style="text-align:left">rollover 冲刷、KPTI 切页表</td>
+<td style="text-align:left"><code>flush_tlb_*()</code> 全家</td>
+</tr>
+</tbody>
+</table></div><p>最后一行第二列那个「最慢的那个 PE」，就是本文后面的案发现场。当某个 PE 正卡在一条要等外部设备响应的访问上，它的 TLB 维护确认就回不来，<code>dsb ish</code> 也就回不来。</p>
+<h2 id="十一dsb-与-dvm-域内存屏障在-tlb-操作里的角色" tabindex="-1">十一、DSB 与 DVM 域：内存屏障在 TLB 操作里的角色 <a class="header-anchor" href="#十一dsb-与-dvm-域内存屏障在-tlb-操作里的角色"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>DVM 是 Distributed Virtual Memory 的缩写。它管的是那些「一个核发指令、多个核执行」的维护操作：TLB 失效广播、I-cache 全局失效、分支预测器失效，都属于 DVM 消息。这些消息走的是互联上的专门通道，不走数据通路。</p>
+<p>域（shareability domain）决定了消息发给谁：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">域</th>
+<th style="text-align:left">屏障写法</th>
+<th style="text-align:left">覆盖范围</th>
+<th style="text-align:left">本文里的用处</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">Non-shareable</td>
+<td style="text-align:left"><code>dsb nsh</code></td>
+<td style="text-align:left">只有本核</td>
+<td style="text-align:left"><code>local_flush_tlb_all()</code></td>
+</tr>
+<tr>
+<td style="text-align:left">Inner shareable</td>
+<td style="text-align:left"><code>dsb ish</code></td>
+<td style="text-align:left">共享同一份 inner cache 的一组 PE</td>
+<td style="text-align:left"><code>flush_tlb_*()</code> 全家</td>
+</tr>
+<tr>
+<td style="text-align:left">Outer shareable</td>
+<td style="text-align:left"><code>dsb osh</code></td>
+<td style="text-align:left">更大一圈，含 IO 一致性代理</td>
+<td style="text-align:left">内核里基本不用</td>
+</tr>
+<tr>
+<td style="text-align:left">Full system</td>
+<td style="text-align:left"><code>dsb sy</code></td>
+<td style="text-align:left">全系统</td>
+<td style="text-align:left">DMA 一致性边界</td>
+</tr>
+</tbody>
+</table></div><p><code>dsb ish</code> 的语义不是「等我这边的写入排空」，而是「等域内所有 PE 完成此前广播的维护操作」。硬件实现上，这要求发起方收到一个 DVM sync 的完成确认，确认来自域内每一个 PE。少一个，屏障就不放行。</p>
+<p>把这条语义放进第五章那个三段式里，就能看出每一句在等什么：</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">str</span>  <span class="hljs-built_in">x1</span>, [<span class="hljs-built_in">x0</span>]        <span class="hljs-comment">// 写 PTE</span>
+    <span class="hljs-keyword">dsb</span>  ishst           <span class="hljs-comment">// 等 PTE 写对域内可见（数据通路）</span>
+    tlbi vale1is, <span class="hljs-built_in">x2</span>     <span class="hljs-comment">// 发 DVM 广播（互联的维护通道）</span>
+    <span class="hljs-keyword">dsb</span>  ish             <span class="hljs-comment">// 等域内每个 PE 确认收到并执行完（DVM 通道）</span>
+</code></pre></div></code></pre>
+<p>三段屏障踩的是两条不同的通路。<code>dsb ishst</code> 管数据，<code>dsb ish</code> 管 DVM。案子里卡住的是后一条：数据早就写完了，DVM 的确认回不来。</p>
+<p>还要分清 <code>dsb</code> 和 <code>dmb</code>。<code>dmb</code> 只保证顺序，不保证完成；<code>dsb</code> 保证此前所有指定类型的操作都已完成。TLB 维护要的是「完成」，用 <code>dsb</code>。这也是为什么刷 TLB 的代码里看不到 <code>dmb</code>。</p>
+<h2 id="十二现场一次-pcie-扫描超时的排查" tabindex="-1">十二、现场：一次 PCIe 扫描超时的排查 <a class="header-anchor" href="#十二现场一次-pcie-扫描超时的排查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>平台情况，先钉住几个事实。</p>
+<p>内核 5.10.100。两颗核 A 和 B，处在同一个 inner shareable 域内。A 核跑扫描软件，负责发起 PCIe 配置空间扫描；B 核跑代答软件，负责在收到扫描请求后回复对应的 TLP。板子上有一个 Root Complex，x16 lane 被拆成两个 x8，一个做 RC 侧的 x8，另一个做 EP 侧的 x8，中间用 PCIe 链接线连起来。抓包用的是 PCIe 协议分析仪，代号 pz1。</p>
+<p>触发问题的不是内核驱动，是用户态程序用 mmap <code>/dev/mem</code> 直接操作寄存器，形态大致是这样。现象是扫描失败，程序侧先看到的是「第一次写寄存器特别慢」，慢的时间刚好和 RC 的超时时间对得上。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 按原稿描述还原的形态，非原程序逐字 */</span>
+<span class="hljs-type">int</span> fd = open(<span class="hljs-string">&quot;/dev/mem&quot;</span>, O_RDWR | O_SYNC);
+<span class="hljs-type">void</span> *base = mmap(<span class="hljs-literal">NULL</span>, <span class="hljs-number">0x1000</span>, PROT_READ | PROT_WRITE, MAP_SHARED,
+                  fd, RC_REG_PHYS &amp; ~<span class="hljs-number">0xfffU</span>L);
+<span class="hljs-keyword">volatile</span> <span class="hljs-type">uint32_t</span> *reg = (<span class="hljs-type">uint32_t</span> *)((<span class="hljs-type">char</span> *)base + (RC_REG_PHYS &amp; <span class="hljs-number">0xfff</span>));
+
+*reg = val;      <span class="hljs-comment">/* 第一次写：卡在这里 390ms */</span>
+</code></pre></div></code></pre>
+<h2 id="十三现象与初步定位" tabindex="-1">十三、现象与初步定位 <a class="header-anchor" href="#十三现象与初步定位"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核日志里能定位到超时的那两条，中间是枚举输出：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>[  329.135578] pci_bus 0001:c2: before scan 0
+[... 中间省略 N 行枚举输出，原稿未保留，N 未验证 ...]
+[  329.525806] pci_bus 0001:c2: after scan 0
+</code></pre></div></code></pre>
+<p>两个时间戳相差 390ms。这个数字不是巧合，它就是 RC 侧配置的超时时间窗。也就是说 RC 发出扫描请求后没在窗口内拿到回复，走了超时路径，bus 扫描据此认定这个 slot 上没有设备。代答侧其实是在干活的：分析仪的记录显示，B 核每次收到扫描信息都回了对应的 TLP，但形状很怪，第一次回复必然超时，第二次及以后的回复 RC 都能正常收到。同一个软件、同一个寄存器、同一条链路，第一次和后面几次的差别只在于「是不是这轮的第一笔」。</p>
+<p>排查往两个方向分叉。硬件侧看链路训练、lane 映射、时序参数，没有异常。软件侧看代码，发现 B 核上写寄存器用的是 mmap <code>/dev/mem</code>，且第一次写慢的时间和 RC 超时窗口严格吻合。两边一对，方向定了：不是链路问题，是第一次写这个动作本身被什么东西拖住了。</p>
+<h2 id="十四波形分析发现了什么" tabindex="-1">十四、波形分析发现了什么 <a class="header-anchor" href="#十四波形分析发现了什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>pz1 抓波形，看到了那个不该出现的东西：B 核在写寄存器那条指令附近，必然跟着一对 <code>tlbi</code> + <code>dsb</code>。</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">str</span>   <span class="hljs-built_in">w1</span>, [<span class="hljs-built_in">x0</span>]        <span class="hljs-comment">// 写寄存器</span>
+    tlbi  vale1is, <span class="hljs-built_in">x2</span>     <span class="hljs-comment">// 针对刚才那个 VA 的 TLB 失效</span>
+    <span class="hljs-keyword">dsb</span>   ish             <span class="hljs-comment">// 等 DVM 域内所有 PE 确认</span>
+    ...
+</code></pre></div></code></pre>
+<p>两个关键判读。第一，<code>tlbi</code> 操作数里的地址解出来，就是那个寄存器的 VA。这里踩过一个坑：波形解码最初把 VA 解错了，导致有一段时间在追一个不相干的地址，方向偏了，浪费了时间。</p>
+<p>第二，时序。A 核发出 rescan 请求 1，进入等待；B 核在这段时间里发出 <code>tlbi</code> + <code>dsb</code>；这个 <code>dsb</code> 一直到 A 核那边请求 1 超时之后，才给 B 核返回。三条时间线叠起来，环就闭合了：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>A 核：发 rescan 1 ────────────────── 等 B 的回复 ──────────→ 超时，代答
+B 核：                 收扫描 ── 写寄存器 ── tlbi ── dsb(卡住) ──→ dsb 返回
+RC  ：                            等 B 的 TLP ───────────────────→ 超时
+</code></pre></div></code></pre>
+<p>A 核在等 B 核的业务回复，B 核的 <code>dsb</code> 在等 A 核（RC）那边的 transaction 结束。这是指令级的死锁，不是锁竞争，不是调度问题，每一次都复现。</p>
+<h2 id="十五疑问一mmap-devmem-建好页表后为什么访问还会-tlbi" tabindex="-1">十五、疑问一：mmap /dev/mem 建好页表后，为什么访问还会 tlbi <a class="header-anchor" href="#十五疑问一mmap-devmem-建好页表后为什么访问还会-tlbi"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>mmap <code>/dev/mem</code> 走的是 <code>mmap_mem()</code>，最终调用 <code>remap_pfn_range()</code>。它和普通文件映射、匿名映射都不一样：不是「先记下 VMA，等缺页时再建 PTE」，而是在 mmap 返回之前就把 PTE 全部填好了，VMA 打上 <code>VM_IO | VM_PFNMAP</code>，<code>vm_ops</code> 换成 <code>mmap_mem_ops</code>。</p>
+<p>PTE 建好了，所以第一次访问不会因为「没有映射」而缺页。但这条 PTE 建出来的时候<strong>是干净的</strong>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* arch/arm64/include/asm/pgtable-prot.h，aa57157 之后 */</span>
+<span class="hljs-comment">/* shared+writable pages are clean by default, hence PTE_RDONLY|PTE_WRITE */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> PAGE_SHARED	__pgprot(_PAGE_DEFAULT | PTE_USER | PTE_RDONLY | PTE_NG | \
+			         PTE_PXN | PTE_UXN | PTE_WRITE)</span>
+</code></pre></div></code></pre>
+<p><code>PTE_RDONLY</code> 置着，等于 AP[2] = 1，页面对 EL0 只读；<code>PTE_WRITE</code> 就是 <code>PTE_DBM</code>，置着表示「这个页允许硬件自己把只读翻成可写」。这两个位同时为 1 的组合，语义是「干净但可写」：软件认为它现在不该被写，但允许硬件在真的被写时自己接管。</p>
+<p>硬件能不能自己接管，取决于 <code>TCR_EL1.HD</code>。HD = 0 时硬件不做 dirty 管理，遇到对 AP[2] = 1 且 DBM = 1 的页写操作，它不会去清 AP[2]，而是报一个 permission fault 扔给内核。</p>
+<p>内核接住这个 fault，走的是写保护缺页那条路。<code>handle_pte_fault()</code> 里，PTE 是 present 的、<code>FAULT_FLAG_WRITE</code> 置着、<code>pte_write()</code> 为假，于是进 <code>do_wp_page()</code>，最终把 PTE 从干净改成脏：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* arch/arm64/mm/fault.c，5.10 */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">ptep_set_access_flags</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> vm_area_struct *vma,
+			  <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> address, <span class="hljs-type">pte_t</span> *ptep,
+			  <span class="hljs-type">pte_t</span> entry, <span class="hljs-type">int</span> dirty)</span>
+{
+	...
+	<span class="hljs-comment">/* Invalidate a stale read-only entry */</span>
+	<span class="hljs-keyword">if</span> (dirty)
+		flush_tlb_page(vma, address);
+	<span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+}
+</code></pre></div></code></pre>
+<p><code>dirty</code> 为真，调 <code>flush_tlb_page()</code>，<code>flush_tlb_page()</code> 发 <code>vale1is</code> 加 <code>dsb ish</code>。波形上那一对指令，就是这么来的。它的地址是 <code>vma</code> + 出错的 <code>address</code>，所以解出来正好是那个寄存器的 VA，和现场完全吻合。</p>
+<p>一句话回答疑问一：页表确实建好了，但建出来的是一条「干净」的 PTE；第一次写触发的是权限缺页，而不是翻译缺页；权限缺页的收尾动作就是刷那一条 TLB。</p>
+<h2 id="十六疑问二dsb-为什么要等对端-transaction-超时才返回" tabindex="-1">十六、疑问二：dsb 为什么要等对端 transaction 超时才返回 <a class="header-anchor" href="#十六疑问二dsb-为什么要等对端-transaction-超时才返回"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>dsb ish</code> 的完成条件在第十一章已经交代：要等 inner shareable 域内每一个 PE 确认此前的广播维护操作已完成。</p>
+<p>B 核发 <code>tlbi</code> 的时候，B 核自己有没有别的未完成事务？有。B 核正在通过这条 PCIe 链路跟 RC 打交道，手上压着访问配置空间的读写事务。按 ARM 的屏障语义，<code>dsb</code> 要求「此前的全部相关操作完成」，落在 B 核这条路径上，就包括那条还没拿到响应的 PCIe 事务。</p>
+<p>而 RC 那边在等什么？在等 B 核回 TLP。RC 的等待窗口是 390ms，超时之后它放弃、代答、把 bus 扫描收尾。RC 一收尾，那条被卡住的配置事务才得到响应；事务得到响应，B 核的 <code>dsb</code> 才返回；<code>dsb</code> 返回，写寄存器的指令才退休，B 核的软件才走到发 TLP 那一步。这时候 A 核已经在 390ms 前就判定超时了。</p>
+<p>A 核下一轮再发 rescan，bootstrap 阶段的那笔事务已经清空，B 核的 <code>dsb</code> 不再等任何东西，所以第二次以后的回复 RC 都能收到。这解释了「只有第一次必超时」这个形状。</p>
+<p>两个条件必须同时成立，缺一个都不会死：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">条件</th>
+<th style="text-align:left">单独成立会怎样</th>
+<th style="text-align:left">两个同时成立</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">A：PTE 干净可写（aa57157）+ <code>TCR_EL1.HD = 0</code></td>
+<td style="text-align:left">首次写多付一次权限缺页 + 一次 <code>tlbi</code> + 一次 <code>dsb</code>，几十微秒级，功能无碍</td>
+<td style="text-align:left">死锁</td>
+</tr>
+<tr>
+<td style="text-align:left">B：<code>dsb ish</code> 需 DVM 域确认 + 对方事务卡在 RC 超时窗内</td>
+<td style="text-align:left">某次屏障慢，但没有对端在等本核的业务回复，慢完就算了</td>
+<td style="text-align:left">死锁</td>
+</tr>
+<tr>
+<td style="text-align:left">A + B</td>
+<td style="text-align:left">—</td>
+<td style="text-align:left">A 核等业务回复，B 核等 A 核（RC）事务完成，指令级死锁，必现</td>
+</tr>
+</tbody>
+</table></div><h2 id="十七根因vm_writevm_shared-的-pte-默认必须是干净的" tabindex="-1">十七、根因：VM_WRITE|VM_SHARED 的 PTE 默认必须是干净的 <a class="header-anchor" href="#十七根因vm_writevm_shared-的-pte-默认必须是干净的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>往上追，那条「干净」的 PTE 来自一个补丁：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>git show aa57157be69f -- <span class="hljs-built_in">arch</span>/arm64/include/asm/pgtable-prot.h
+<span class="hljs-comment"># commit aa57157be69fb599bd4c38a4b75c5aad74a60ec0</span>
+<span class="hljs-comment"># Author: Catalin Marinas</span>
+<span class="hljs-comment"># Date:   Tue Oct 29 15:30:51 2019 +0000</span>
+<span class="hljs-comment">#     arm64: Ensure VM_WRITE|VM_SHARED ptes are clean by default</span>
+</code></pre></div></code></pre>
+<p>补丁改动很小：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>-<span class="hljs-meta">#<span class="hljs-keyword">define</span> PAGE_SHARED	__pgprot(_PAGE_DEFAULT | PTE_USER | PTE_NG | PTE_PXN | PTE_UXN | PTE_WRITE)</span>
+-<span class="hljs-meta">#<span class="hljs-keyword">define</span> PAGE_SHARED_EXEC __pgprot(_PAGE_DEFAULT | PTE_USER | PTE_NG | PTE_PXN | PTE_WRITE)</span>
++<span class="hljs-meta">#<span class="hljs-keyword">define</span> PAGE_SHARED	__pgprot(_PAGE_DEFAULT | PTE_USER | PTE_RDONLY | PTE_NG | PTE_PXN | PTE_UXN | PTE_WRITE)</span>
++<span class="hljs-meta">#<span class="hljs-keyword">define</span> PAGE_SHARED_EXEC __pgprot(_PAGE_DEFAULT | PTE_USER | PTE_RDONLY | PTE_NG | PTE_PXN | PTE_WRITE)</span>
+</code></pre></div></code></pre>
+<p>顺手把内核 <code>PROT_*</code> 里多余的 <code>PTE_DIRTY</code> 也删了。</p>
+<p>commit message 把因果写得很清楚：共享且可写的映射（<code>__S.1.</code>）初始状态必须是干净的，等真被写了再变脏，变脏的方式要么走硬件 DBM，要么走写缺页。arm64 对「干净」的定义是 <code>PTE_RDONLY</code> 置位且 <code>PTE_DIRTY</code> 清零。<code>PAGE_SHARED{,_EXEC}</code> 一直是 <code>PTE_WRITE</code> 置位、<code>PTE_DIRTY</code> 清零，就缺 <code>PTE_RDONLY</code> 这一位。</p>
+<p>责任在更早的一个提交：<code>73e86cb03cf2</code>（&quot;arm64: Move PTE_RDONLY bit handling out of set_pte_at()&quot;）把 <code>set_pte_at()</code> 里「软件 dirty 位没置就顺手把 PTE_RDONLY 置上」那段逻辑挪走了，却没同步改 <code>PAGE_SHARED</code> 的定义。结果共享可写映射变成默认脏。aa57157 是把这个洞补回去，<code>Fixes:</code> 标签指着 <code>73e86cb03cf2</code>。</p>
+<p>落到我们的场景：mmap <code>/dev/mem</code> 用的是 <code>MAP_SHARED</code> + <code>PROT_WRITE</code>，<code>vm_page_prot</code> 取的就是 <code>PAGE_SHARED</code>，PTE 于是带着 <code>PTE_RDONLY</code> 落地。这是<strong>正确</strong>行为，不是 bug。bug 在它叠上了 <code>TCR_EL1.HD = 0</code> 之后。</p>
+<p>有一件事要提醒：这个补丁反向合入了多个 LTS 分支，4.14.x 起都在 <code>Cc: stable</code> 里。判断手上内核有没有这个行为，只能看源码，不能看版本号高低，也不能看发布时间。</p>
+<h2 id="十八tcr_el1.hd-与-config_arm64_hw_afdbm-的关系" tabindex="-1">十八、TCR_EL1.HD 与 CONFIG_ARM64_HW_AFDBM 的关系 <a class="header-anchor" href="#十八tcr_el1.hd-与-config_arm64_hw_afdbm-的关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>TCR_EL1</code> 里有两个位管页表的硬件更新：| 位 | 名称 | 置 1 后的行为 |
+| :--- | :--- | :--- |
+| 39 | HA（Hardware Access） | 访问 AF=0 的页时，硬件直接把 AF 置 1，不报 access flag fault |
+| 40 | HD（Hardware Dirty） | 写 AP[2]=1 且 DBM=1 的页时，硬件直接清 AP[2]，不报 permission fault |</p>
+<p>这两个位归 <code>CONFIG_ARM64_HW_AFDBM</code> 管，该选项 <code>default y</code>。但选项打开不等于位被置上，还要看硬件报不报支持。</p>
+<p>HA 在 <code>__cpu_setup()</code> 里就置了：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_ARM64_HW_AFDBM</span>
+	<span class="hljs-comment">/*
+	 * Enable hardware update of the Access Flags bit.
+	 * Hardware dirty bit management is enabled later,
+	 * via capabilities.
+	 */</span>
+	mrs	x9, ID_AA64MMFR1_EL1
+	and	x9, x9, #<span class="hljs-number">0xf</span>
+	cbz	x9, <span class="hljs-number">1f</span>
+	orr	x10, x10, #TCR_HA		<span class="hljs-comment">// hardware Access flag update</span>
+<span class="hljs-number">1</span>:
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+</code></pre></div></code></pre>
+<p>HD 拖到 capability 框架里，一个核一个核地开：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* arch/arm64/kernel/cpufeature.c，5.10 */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> __cpu_enable_hw_dbm(<span class="hljs-type">void</span>)
+{
+	u64 tcr = read_sysreg(tcr_el1) | TCR_HD;
+
+	write_sysreg(tcr, tcr_el1);
+	isb();
+	local_flush_tlb_all();
+}
+</code></pre></div></code></pre>
+<p>置完 HD 要刷一次本核全部 TLB，因为此前按「HD = 0」建起来的 entry 要按新规则重新解释。</p>
+<p>打开 HD 之后，PTE 位的组合语义变成下面这张表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">Dirty</th>
+<th style="text-align:left">Writable</th>
+<th style="text-align:left">PTE_RDONLY</th>
+<th style="text-align:left">PTE_WRITE (DBM)</th>
+<th style="text-align:left">PTE_DIRTY (sw)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">0</td>
+<td style="text-align:left">0</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">0</td>
+<td style="text-align:left">0</td>
+</tr>
+<tr>
+<td style="text-align:left">0</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">0</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">0</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">0</td>
+<td style="text-align:left">1</td>
+</tr>
+<tr>
+<td style="text-align:left">1</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">0</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">x</td>
+</tr>
+</tbody>
+</table></div><p>第二行就是 mmap <code>/dev/mem</code> 建出来的那条 PTE：干净、可写、DBM 置位。HD = 0 时它落到 permission fault，HD = 1 时硬件自己把 <code>PTE_RDONLY</code> 清掉，PTE 直接变成第四行，全程没有异常、没有缺页、没有 <code>tlbi</code>。</p>
+<p>链条到这里就闭合了：<code>CONFIG_ARM64_HW_AFDBM=y</code> → <code>TCR_EL1.HD = 1</code> → 共享可写页的首次写由硬件接管 → 不产生权限缺页 → 不调 <code>flush_tlb_page()</code> → 不发 <code>tlbi</code> → 没有那个 <code>dsb ish</code> → 死锁的两个条件里，条件 A 消失。</p>
+<p>有一个已知例外：<code>CONFIG_ARM64_ERRATUM_1024718</code>（Cortex-A55 r0p0–r1p0）会因为 DBM/AP 位更新的 break-before-make 问题，把这些核上的硬件 DBM 关掉。<code>cpu_has_broken_dbm()</code> 列出的是 A55 r0p0–r1p0 和 Kryo4xx Silver 的特定版本，命中的核上 HD 不会置起，同一个坑会原样回来。而 <code>arch_faults_on_old_pte()</code> 的实现是 <code>!cpu_has_hw_af()</code>，也是按同一条能力链判断的。</p>
+<h2 id="十九修复与验证" tabindex="-1">十九、修复与验证 <a class="header-anchor" href="#十九修复与验证"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>修法是配置，不是改代码。<code>grep CONFIG_ARM64_HW_AFDBM .config</code> 确认选项是 <code>=y</code>；5.10 上它 <code>default y</code>，只要没被裁剪就是这个值。烧录后按这几项验收：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">验收项</th>
+<th style="text-align:left">期望</th>
+<th style="text-align:left">手段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">capability 检出</td>
+<td style="text-align:left"><code>detected: hardware dirty bit management</code></td>
+<td style="text-align:left">dmesg 里 <code>CPU features:</code> 前缀的行</td>
+</tr>
+<tr>
+<td style="text-align:left">TCR 状态</td>
+<td style="text-align:left"><code>TCR_EL1.HD = 1</code> 且 <code>HA = 1</code></td>
+<td style="text-align:left">调试器读系统寄存器，或崩机时打印</td>
+</tr>
+<tr>
+<td style="text-align:left">首次写延迟</td>
+<td style="text-align:left">与后续写同量级，不再等于 RC 超时窗</td>
+<td style="text-align:left">用户态打点，前后对比</td>
+</tr>
+<tr>
+<td style="text-align:left">波形</td>
+<td style="text-align:left">寄存器 VA 附近不再出现 <code>tlbi vale1is</code> + <code>dsb ish</code></td>
+<td style="text-align:left">pz1 复抓</td>
+</tr>
+<tr>
+<td style="text-align:left">扫描结果</td>
+<td style="text-align:left"><code>pci_bus 0001:c2</code> 前后时间差回落到正常枚举耗时</td>
+<td style="text-align:left">同一段 dmesg</td>
+</tr>
+</tbody>
+</table></div><p>验收里最容易漏的是第四项。延迟恢复、扫描通过，都只能说明症状消了；只有波形上那一对指令真的不再出现，才能说明是 HD 接管生效，而不是某个别的延迟把时间差盖过去了。</p>
+<p>反过来的验收也值得做一次：把 <code>CONFIG_ARM64_HW_AFDBM</code> 关掉重跑，如果 390ms 稳定重现，因果链就双向闭合了。这一步原稿没有记录，本文把它列成建议，不当作已验证结论。</p>
+<h2 id="二十这个坑怎么避开写寄存器前的检查清单" tabindex="-1">二十、这个坑怎么避开：写寄存器前的检查清单 <a class="header-anchor" href="#二十这个坑怎么避开写寄存器前的检查清单"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<ol>
+<li>先问一句：这个寄存器访问会不会卡在外部设备上。会，就别和「会触发 TLB 维护」的访问放在同一条时间链上。</li>
+<li>用户态 mmap <code>/dev/mem</code> 写寄存器，第一次写必然多一次权限缺页。确认 <code>TCR_EL1.HD</code> 是 1；不是 1，就自己扛这一下。</li>
+<li>更稳的做法是不走 <code>/dev/mem</code>，让内核驱动用 <code>devm_ioremap()</code> 建映射。内核侧的 <code>ioremap</code> 路径不经过用户 VMA 的 <code>PAGE_SHARED</code>，也就没有这一层权限缺页。</li>
+<li>真要长时间轮询对端寄存器，把第一次写预热掉：起业务之前先对同一页做一次写，把 PTE 弄脏，后面就不会再触发。</li>
+<li>排查超时类问题时，日志时间差对上了超时窗，先怀疑「有人在等一个等不到的东西」，别急着怀疑链路。</li>
+<li>涉及 TLB 的时序问题，波形永远比代码快。用 <code>tlbi</code> 的操作数解出 VA，比在代码里猜快得多；解码要先验证一遍，解错一次会把方向带偏很久。</li>
+<li>多核处在同一个 inner shareable 域时，把 <code>dsb ish</code> 当成一次跨核会合，别当成一条本地空转指令。</li>
+<li>移植、回滚、升级内核时，<code>PAGE_SHARED</code> 这类宏的位定义变化比版本号更值得看，aa57157 的反向合入是典型例子。</li>
+<li>换 CPU 型号先查两件事：<code>ID_AA64MMFR1_EL1</code> 报不报 DBM，以及有没有 erratum 把 DBM 关掉。</li>
+</ol>
+<h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="章节出处" tabindex="-1">章节出处 <a class="header-anchor" href="#章节出处"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">本文章节</th>
+<th style="text-align:left">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">一、二、三、五</td>
+<td style="text-align:left">原《TLB flush操作》第二、三章：基本概念重写，A72 的 entry 数与相联度照原样保留，一致性一节补上 <code>dsb ishst</code> 与「刷了等于没刷」的反例</td>
+</tr>
+<tr>
+<td style="text-align:left">四</td>
+<td style="text-align:left">原《TLB flush操作》第三章 3 节。ASID 位宽、rollover、pinned ASID 按 5.10 的 <code>context.c</code> 补齐</td>
+</tr>
+<tr>
+<td style="text-align:left">六、七、十、十一</td>
+<td style="text-align:left">新增。原文没有整理「何时刷」与指令族，只有一句「is 表示广播」；DVM 域与 DSB 语义是为案例铺垫</td>
+</tr>
+<tr>
+<td style="text-align:left">八、九</td>
+<td style="text-align:left">原《TLB flush操作》第四章四个接口。签名按 5.10 重录，补上 <code>__tlbi_user</code>、range 退化路径</td>
+</tr>
+<tr>
+<td style="text-align:left">十二、十三、十四</td>
+<td style="text-align:left">原《mmap在arm64背后的那个深坑》一、二节。因果链拆成三章，日志只留两行</td>
+</tr>
+<tr>
+<td style="text-align:left">十五、十六</td>
+<td style="text-align:left">原《深坑》三节的两个问题。补上 <code>mmap_mem</code> → <code>remap_pfn_range</code> 与 <code>ptep_set_access_flags</code> 的实际路径，展开 DVM sync 与 RC 超时窗的相互等待</td>
+</tr>
+<tr>
+<td style="text-align:left">十七</td>
+<td style="text-align:left">原《深坑》三节问题 1 的后半。aa57157 的改动与 <code>Fixes</code> 标签按上游 patch 原文核对</td>
+</tr>
+<tr>
+<td style="text-align:left">十八</td>
+<td style="text-align:left">新增。<code>TCR_EL1.HD</code> 与 <code>CONFIG_ARM64_HW_AFDBM</code> 的关系原稿只有一句，本文按 <code>proc.S</code>、<code>cpufeature.c</code>、<code>pgtable.h</code> 展开</td>
+</tr>
+<tr>
+<td style="text-align:left">十九、二十</td>
+<td style="text-align:left">原《深坑》末段的修复结论，扩成验收表与检查清单</td>
+</tr>
+</tbody>
+</table></div><h3 id="修正的错误" tabindex="-1">修正的错误 <a class="header-anchor" href="#修正的错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ol>
+<li>原《TLB flush操作》说「ARM64 并没有直接 flush 一个 range 的硬件操作接口，只能一页一页刷」。这句在 4.4 成立，在 5.10 不成立：有 ARMv8.4-TLB 的 <code>rvale1is</code>/<code>rvae1is</code>，<code>flush_tlb_range()</code> 在不支持区间指令时才退化成逐页。</li>
+<li>原稿把 <code>vale1is</code> 里的 <code>l</code> 解释成「用户改了 last level 页表」，方向对，但不完整。名字里另外几个字母同样承载语义：<code>vaa</code> 是 all ASIDs、<code>vaal</code> 是 all ASIDs + last level、<code>va</code> 是含中间级。刷中间级却用 <code>vale1is</code>，等于没刷。</li>
+<li>原稿讲 <code>flush_tlb_page</code> 时说「针对当前 asid 中的某个 virtual address」，容易被读成「ASID 由上下文隐含提供」。实际是显式编码进操作数高 16 位的（<code>__TLBI_VADDR</code>），ASID 传错就刷不掉目标。</li>
+<li>原稿讲 TLB 一致性时只写了「软件修改页表后要 invalidate」。漏掉了写 PTE 与 <code>tlbi</code> 之间的 <code>dsb ishst</code>，这一步缺失会让刷操作失效，是实打实的正确性错误，不是性能问题。</li>
+<li>原《深坑》把「问题 1 的原因是 aa57157」当成单一原因。准确表述是两个条件同时成立：PTE 默认干净（补丁带来的）加 <code>TCR_EL1.HD = 0</code>（配置没开）。原文自己也提了 HD，但标题式的归因容易读成单因，本文第十七、十八章拆开写。</li>
+<li>原稿说「根据时间判断是否合入这个补丁」是不对的，原文也已经自我修正。本文按源码判断，并把「反向合入 4.14+ LTS」写进正文，避免有人拿版本号高低下结论。</li>
+<li>原稿用「A 核 / B 核」两个角色讲完整个故事，但「A 核在等 B 核的回复」和「RC 在等 B 核的 TLP」是两件事。本文把角色拆成三个：A 核（扫描软件）、B 核（代答软件）、RC（硬件）。不拆开，死锁那一环说不清。</li>
+<li>原稿说 DSB「实现为 DVM sync 属性」。这句话要分两层：<code>dsb ish</code> 等域内所有 PE 完成广播维护操作，这一层是 ARM 架构定义的；该 SoC 上 DVM sync 的确认如何被 RC 端口上未完成的事务拖住，属于实现细节，见下面的未验证项。</li>
+</ol>
+<h3 id="未验证项" tabindex="-1">未验证项 <a class="header-anchor" href="#未验证项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li>波形解码最初解错的 VA 是什么、错在哪里，原稿只写了「解错，浪费了时间」，细节未保留。</li>
+<li>390ms 与 RC 超时窗「刚好相等」在原稿里是定性判断，RC 的超时寄存器配置值未给出，本文沿用「刚好相等」的说法，未独立核对。</li>
+<li>该 SoC 上 <code>dsb ish</code> 的完成确认是否经由 DVM sync 排在那笔未完成的 PCIe 配置事务之后，是本文根据现象与架构语义推出来的解释，公有文档未覆盖到该实现层面。</li>
+<li>B 核代答软件的 TLP 发送模型（轮询还是中断触发、单线程还是多线程）原稿未记录，本文只写「B 核的软件」。</li>
+<li><code>CONFIG_ARM64_ERRATUM_1024718</code> 在该平台上是否打开，未验证。若打开且 CPU 命中受影响版本，硬件 DBM 会被关掉，本文结论不成立。</li>
+<li>原稿的「内核调试之 devmem 直接读写寄存器」是链接指向的另一篇笔记，其内容未纳入本文，因此 <code>/dev/mem</code> 之外的寄存器访问方式（<code>/dev/kmem</code>、<code>O_SYNC</code> 与否）本文没有展开。</li>
+</ul>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+                <div class="rail-card rail-backlinks-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                      </svg>
+                      反向链接
+                    </span>
+                    <span class="rail-badge">3</span>
+                  </div>
+                  <ul class="backlinks-list">
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/">ARM64 内存初始化：页表、memblock 与 KASLR</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/Linux的mmap内存映射机制解析/">Linux的mmap内存映射机制解析</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/地址空间与地址翻译/">地址空间与地址翻译</a></li>
+                    
+                  </ul>
+                </div>
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一tlb-是什么为什么必须有它" data-toc-target="一tlb-是什么为什么必须有它">一、TLB 是什么，为什么必须有它</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二tlb-的工作原理tag-比对与命中" data-toc-target="二tlb-的工作原理tag-比对与命中">二、TLB 的工作原理：tag 比对与命中</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三armv8-的-tlb-组成结构" data-toc-target="三armv8-的-tlb-组成结构">三、ARMv8 的 TLB 组成结构</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四asid进程切换时为什么不用全刷" data-toc-target="四asid进程切换时为什么不用全刷">四、ASID：进程切换时为什么不用全刷</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五tlb-的一致性从哪来" data-toc-target="五tlb-的一致性从哪来">五、TLB 的一致性从哪来</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六什么时候必须刷页表项被修改的三种情形" data-toc-target="六什么时候必须刷页表项被修改的三种情形">六、什么时候必须刷：页表项被修改的三种情形</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七维护-tlb-的指令tlbi-系列" data-toc-target="七维护-tlb-的指令tlbi-系列">七、维护 TLB 的指令（TLBI 系列）</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八tlb-flush-的四个-api" data-toc-target="八tlb-flush-的四个-api">八、TLB flush 的四个 API</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.-void-flush_tlb_allvoid" data-toc-target="1.-void-flush_tlb_allvoid">1. void flush_tlb_all(void)</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.-void-flush_tlb_mmstruct-mm_struct-mm" data-toc-target="2.-void-flush_tlb_mmstruct-mm_struct-mm">2. void flush_tlb_mm(struct mm_struct *mm)</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.-void-flush_tlb_pagestruct-vm_area_struct-vma-unsigned-long-uaddr" data-toc-target="3.-void-flush_tlb_pagestruct-vm_area_struct-vma-unsigned-long-uaddr">3. void flush_tlb_page(struct vm_area_struct *vma, unsigned long uaddr)</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.-void-flush_tlb_rangestruct-vm_area_struct-vma-unsigned-long-start-unsigned-long-end" data-toc-target="4.-void-flush_tlb_rangestruct-vm_area_struct-vma-unsigned-long-start-unsigned-long-end">4. void flush_tlb_range(struct vm_area_struct *vma, unsigned long start, unsigned long end)</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九四个-api-的适用场景" data-toc-target="九四个-api-的适用场景">九、四个 API 的适用场景</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十tlb-shootdown多核下的-ipi-开销" data-toc-target="十tlb-shootdown多核下的-ipi-开销">十、TLB shootdown：多核下的 IPI 开销</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一dsb-与-dvm-域内存屏障在-tlb-操作里的角色" data-toc-target="十一dsb-与-dvm-域内存屏障在-tlb-操作里的角色">十一、DSB 与 DVM 域：内存屏障在 TLB 操作里的角色</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二现场一次-pcie-扫描超时的排查" data-toc-target="十二现场一次-pcie-扫描超时的排查">十二、现场：一次 PCIe 扫描超时的排查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三现象与初步定位" data-toc-target="十三现象与初步定位">十三、现象与初步定位</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四波形分析发现了什么" data-toc-target="十四波形分析发现了什么">十四、波形分析发现了什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五疑问一mmap-devmem-建好页表后为什么访问还会-tlbi" data-toc-target="十五疑问一mmap-devmem-建好页表后为什么访问还会-tlbi">十五、疑问一：mmap /dev/mem 建好页表后，为什么访问还会 tlbi</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六疑问二dsb-为什么要等对端-transaction-超时才返回" data-toc-target="十六疑问二dsb-为什么要等对端-transaction-超时才返回">十六、疑问二：dsb 为什么要等对端 transaction 超时才返回</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十七根因vm_writevm_shared-的-pte-默认必须是干净的" data-toc-target="十七根因vm_writevm_shared-的-pte-默认必须是干净的">十七、根因：VM_WRITE|VM_SHARED 的 PTE 默认必须是干净的</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十八tcr_el1.hd-与-config_arm64_hw_afdbm-的关系" data-toc-target="十八tcr_el1.hd-与-config_arm64_hw_afdbm-的关系">十八、TCR_EL1.HD 与 CONFIG_ARM64_HW_AFDBM 的关系</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十九修复与验证" data-toc-target="十九修复与验证">十九、修复与验证</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十这个坑怎么避开写寄存器前的检查清单" data-toc-target="二十这个坑怎么避开写寄存器前的检查清单">二十、这个坑怎么避开：写寄存器前的检查清单</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#章节出处" data-toc-target="章节出处">章节出处</a>
+                    
+                    <a class="toc-item toc-lv3" href="#修正的错误" data-toc-target="修正的错误">修正的错误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#未验证项" data-toc-target="未验证项">未验证项</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/","title":"页表、TLB 与 mmap 的坑","url":"/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/","type":"current"},{"id":"/B.内核/02-进程与调度/进程切换：上下文、TLB-与切换开销/","title":"进程切换：上下文、TLB 与切换开销","url":"/B.内核/02-进程与调度/进程切换：上下文、TLB-与切换开销/","type":"outgoing"},{"id":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","title":"ARM64 内存初始化：页表、memblock 与 KASLR","url":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","type":"outgoing"},{"id":"/B.内核/03-内存管理/地址空间与地址翻译/","title":"地址空间与地址翻译","url":"/B.内核/03-内存管理/地址空间与地址翻译/","type":"outgoing"},{"id":"/B.内核/03-内存管理/Linux的mmap内存映射机制解析/","title":"Linux的mmap内存映射机制解析","url":"/B.内核/03-内存管理/Linux的mmap内存映射机制解析/","type":"backlink"}],"links":[{"source":"/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/","target":"/B.内核/02-进程与调度/进程切换：上下文、TLB-与切换开销/","type":"direct"},{"source":"/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/","target":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","type":"direct"},{"source":"/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/","target":"/B.内核/03-内存管理/地址空间与地址翻译/","type":"direct"},{"source":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","target":"/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/","type":"direct"},{"source":"/B.内核/03-内存管理/Linux的mmap内存映射机制解析/","target":"/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/","type":"direct"},{"source":"/B.内核/03-内存管理/地址空间与地址翻译/","target":"/B.内核/03-内存管理/页表、TLB-与-mmap-的坑/","type":"direct"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

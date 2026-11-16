@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>U-Boot 启动优化与 Falcon 模式 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">U-Boot 启动优化与 Falcon 模式</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/A.硬件与固件/04-启动流程与U-Boot/U-Boot-启动优化与-Falcon-模式/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">U-Boot 启动优化与 Falcon 模式</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">U-Boot 启动优化与 Falcon 模式</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <h2 id="一先把启动时间拆开" tabindex="-1">一、先把启动时间拆开 <a class="header-anchor" href="#一先把启动时间拆开"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>不看分段的优化都是瞎猜。嵌入式板子从上电到应用起来，大致五段：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">阶段</th>
+<th style="text-align:left">执行者</th>
+<th style="text-align:left">典型耗时</th>
+<th style="text-align:left">能砍到什么程度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">BootROM</td>
+<td style="text-align:left">片内 ROM 固化代码</td>
+<td style="text-align:left">10~50ms</td>
+<td style="text-align:left">不可改</td>
+</tr>
+<tr>
+<td style="text-align:left">SPL / BL1</td>
+<td style="text-align:left">片内 SRAM 里的第一段</td>
+<td style="text-align:left">20~80ms</td>
+<td style="text-align:left">可裁剪，可跳过主 U-Boot</td>
+</tr>
+<tr>
+<td style="text-align:left">主 U-Boot</td>
+<td style="text-align:left">DDR 里的完整 U-Boot</td>
+<td style="text-align:left">200ms~1s</td>
+<td style="text-align:left">裁剪 + 静默 + 去校验</td>
+</tr>
+<tr>
+<td style="text-align:left">内核解压与初始化</td>
+<td style="text-align:left">Linux</td>
+<td style="text-align:left">1~5s</td>
+<td style="text-align:left">内核裁剪、驱动异步 probe</td>
+</tr>
+<tr>
+<td style="text-align:left">用户态</td>
+<td style="text-align:left">init / 应用</td>
+<td style="text-align:left">差别巨大</td>
+<td style="text-align:left">与本文无关</td>
+</tr>
+</tbody>
+</table></div><p>主 U-Boot 这一段最容易下手——它的大部分时间花在<strong>探测硬件</strong>和<strong>打印日志</strong>上，而不是真在干活。</p>
+<h2 id="二配置层能砍的五刀" tabindex="-1">二、配置层能砍的五刀 <a class="header-anchor" href="#二配置层能砍的五刀"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="2.1-干掉-bootdelay-停顿" tabindex="-1">2.1 干掉 bootdelay 停顿 <a class="header-anchor" href="#2.1-干掉-bootdelay-停顿"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>setenv bootdelay 0
+saveenv
+</code></pre></div></code></pre>
+<p>但只设 0 会有个副作用：万一启动失败，你<strong>没有任何机会</strong>按 Ctrl+C 进命令行，只能重新烧。所以还要配合打开：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/configs/&lt;board&gt;.h */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> CONFIG_ZERO_BOOTDELAY_CHECK</span>
+</code></pre></div></code></pre>
+<p>它的作用是：bootdelay 为 0 时仍然短暂轮询控制台，<strong>只要检测到有键按下就跳回交互 Shell</strong>。量产日志里看不到任何延迟，研发手里却能随时打断。</p>
+<h3 id="2.2-静默控制台" tabindex="-1">2.2 静默控制台 <a class="header-anchor" href="#2.2-静默控制台"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> CONFIG_SILENT_CONSOLE</span>
+</code></pre></div></code></pre>
+<p>运行时配合环境变量 <code>silent=yes</code> 生效，把引导期间的所有打印吞掉。省下的不只是串口带宽——每一条 printf 都是同步轮询发送，波特率 115200 时一行 80 字符要 7ms，几十行就是几百毫秒。</p>
+<p>排查问题时把 <code>silent</code> 设成空即可恢复输出，比重新编译快得多。</p>
+<h3 id="2.3-关掉镜像校验" tabindex="-1">2.3 关掉镜像校验 <a class="header-anchor" href="#2.3-关掉镜像校验"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>setenv verify no
+</code></pre></div></code></pre>
+<p><code>bootm</code> 默认会算一遍 CRC32。对 8MB 的 <code>uImage</code> 来说这一步通常几十到上百毫秒。<strong>开发阶段留着，量产可以关</strong>——前提是你的加载通道本身可信（片内 eMMC/NAND 读取，而不是网络）。</p>
+<h3 id="2.4-裁掉用不到的命令" tabindex="-1">2.4 裁掉用不到的命令 <a class="header-anchor" href="#2.4-裁掉用不到的命令"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>命令是 <code>CONFIG_CMD_*</code> 宏控制的，关掉一个就少一个 .o。真正影响启动时间的不是代码体积，而是<strong>初始化函数</strong>：每个还活着的子系统都要在 <code>init_sequence_r</code> 里跑一遍 probe。</p>
+<p>量产固件里通常可以关掉：USB、<code>CONFIG_CMD_FS_*</code> 系列、<code>CONFIG_CMD_DATE</code>、各种 <code>CONFIG_CMD_*TEST</code>。裁完记得 <code>bdinfo</code> 看一眼 <code>mon_len</code> 少了多少。</p>
+<h3 id="2.5-别让-spl-重复做一遍主-u-boot-要做的事" tabindex="-1">2.5 别让 SPL 重复做一遍主 U-Boot 要做的事 <a class="header-anchor" href="#2.5-别让-spl-重复做一遍主-u-boot-要做的事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>常见错误：SPL 里已经把 DDR 初始化好了，主 U-Boot 又初始化一遍。确认 <code>CONFIG_SKIP_LOWLEVEL_INIT</code> 与 <code>lowlevel_init</code> 的实际内容，别让同一段代码跑两遍。</p>
+<h2 id="三消除内核的二次搬移" tabindex="-1">三、消除内核的二次搬移 <a class="header-anchor" href="#三消除内核的二次搬移"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>bootm</code> 加载 <code>uImage</code> 的默认流程是「读到临时地址 → 读 64 字节头部 → 把内核搬到最终运行地址」。如果临时地址和最终地址不同，这一趟 memmove 就白费了。</p>
+<p><code>uImage</code> 头部固定 64 字节（<code>IH_SIZE</code>），所以只要把加载地址算准，内核落地时就已经在目标位置上：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>加载地址 = 内核运行地址 - 64 字节（uImage 头）
+</code></pre></div></code></pre>
+<p>举例：内核运行地址 <code>0x20008000</code>，那就把 <code>uImage</code> 直接读到 <code>0x20007FC0</code>。U-Boot 在 <code>bootm</code> 里会发现 <code>images-&gt;os.load</code> 已经等于目标地址，自动跳过搬移。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>=&gt; tftp 0x20007FC0 uImage
+=&gt; bootm 0x20007FC0
+</code></pre></div></code></pre>
+<p>省下的是几十毫秒到几百毫秒（取决于内核大小与 DDR 带宽）。代价是可读性变差——地址不再整齐，写进启动脚本时务必加注释。</p>
+<h2 id="四falcon-模式让-spl-直接起内核" tabindex="-1">四、Falcon 模式：让 SPL 直接起内核 <a class="header-anchor" href="#四falcon-模式让-spl-直接起内核"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面所有优化加起来，主 U-Boot 这一段的<strong>固定开销</strong>（重定位、板级 probe、控制台初始化）还是消不掉。想再往下走，只能把它整个跳过。</p>
+<p>Falcon 模式的思路：SPL 本来就已经初始化好了 DDR，那它完全可以<strong>直接加载内核并跳过去</strong>，主 U-Boot 一次都不运行。</p>
+<h3 id="4.1-配置" tabindex="-1">4.1 配置 <a class="header-anchor" href="#4.1-配置"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> CONFIG_SPL_OS_BOOT</span>
+</code></pre></div></code></pre>
+<h3 id="4.2-导出启动参数" tabindex="-1">4.2 导出启动参数 <a class="header-anchor" href="#4.2-导出启动参数"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>SPL 不知道内核需要什么 bootargs、加载到哪里、设备树在哪。这些信息要靠主 U-Boot <strong>跑一次</strong>来生成并固化进 Flash：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 主 U-Boot 命令行里</span>
+=&gt; tftp 0x48000000 uImage
+=&gt; tftp 0x49000000 s5p6818-nanopi3.dtb
+=&gt; spl <span class="hljs-built_in">export</span> fdt 0x48000000 - 0x49000000
+</code></pre></div></code></pre>
+<p><code>spl export fdt &lt;kernel&gt; &lt;ramdisk|-&gt; &lt;fdt&gt;</code> 会把「内核该放哪、参数是什么、FDT 放哪」打包成一段结构，写到 Flash 的固定位置。</p>
+<h3 id="4.3-下次上电" tabindex="-1">4.3 下次上电 <a class="header-anchor" href="#4.3-下次上电"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>SPL 启动后先看那段参数在不在：在 → 直接加载内核跳过去（主 U-Boot 完全不执行）；不在 → 正常启动主 U-Boot。所以<strong>第一次烧写后仍要走一次完整流程</strong>，导出过之后才是 Falcon。</p>
+<h3 id="4.4-代价" tabindex="-1">4.4 代价 <a class="header-anchor" href="#4.4-代价"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">失去的能力</th>
+<th style="text-align:left">影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">命令行</td>
+<td style="text-align:left">现场没法 tftp 换内核、没法 printenv 排障</td>
+</tr>
+<tr>
+<td style="text-align:left">环境变量</td>
+<td style="text-align:left">改动必须重新 spl export</td>
+</tr>
+<tr>
+<td style="text-align:left">网络启动</td>
+<td style="text-align:left">SPL 里的网络栈是极简版，只有 UDP</td>
+</tr>
+<tr>
+<td style="text-align:left">调试可见性</td>
+<td style="text-align:left">出问题只能看 SPL 的日志</td>
+</tr>
+</tbody>
+</table></div><p>结论：<strong>Falcon 适合定型后的量产</strong>，开发阶段别开。切换成本是把主 U-Boot 保留在 Flash 里、只是不让它默认运行。</p>
+<h2 id="五两个和优化无关但绕不开的机制" tabindex="-1">五、两个和优化无关但绕不开的机制 <a class="header-anchor" href="#五两个和优化无关但绕不开的机制"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="5.1-x-macrogd-jt-跳转表怎么来的" tabindex="-1">5.1 X-Macro：gd-&gt;jt 跳转表怎么来的 <a class="header-anchor" href="#5.1-x-macrogd-jt-跳转表怎么来的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>gd_t</code> 里有个 <code>void **jt</code>，这是个函数跳转表，<code>printf</code>、<code>malloc</code>、<code>udelay</code> 这类基础函数都通过它间接调用。它是 X-Macro 生成的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/_exports.h —— 清单文件，只列名字 */</span>
+EXPORT_FUNC(get_version)
+EXPORT_FUNC(getc)
+EXPORT_FUNC(tstc)
+EXPORT_FUNC(putc)
+EXPORT_FUNC(<span class="hljs-built_in">puts</span>)
+EXPORT_FUNC(<span class="hljs-built_in">printf</span>)
+EXPORT_FUNC(install_hdlr)
+EXPORT_FUNC(free_hdlr)
+EXPORT_FUNC(<span class="hljs-built_in">malloc</span>)
+EXPORT_FUNC(<span class="hljs-built_in">free</span>)
+EXPORT_FUNC(udelay)
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/exports.h —— 第一重展开：变成结构体成员 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">jt_funcs</span> {</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> EXPORT_FUNC_ENTRY(sym)  void (*sym)(void);</span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;_exports.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">undef</span> EXPORT_FUNC_ENTRY</span>
+};
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* common/exports.c —— 第二重展开：变成初始化语句 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> **jt;
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> EXPORT_FUNC_ENTRY(sym)  jt[i++] = (void *)sym;</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">jumptable_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">int</span> i = <span class="hljs-number">0</span>;
+    jt = <span class="hljs-built_in">malloc</span>(<span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> jt_funcs) + <span class="hljs-number">4</span>);
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;_exports.h&gt;</span></span>
+    gd-&gt;jt = jt;
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+<span class="hljs-meta">#<span class="hljs-keyword">undef</span> EXPORT_FUNC_ENTRY</span>
+</code></pre></div></code></pre>
+<p>同一份清单，include 两次、宏定义换两次，就同时生成了「声明」和「赋值」。加一个函数只需在 <code>_exports.h</code> 里加一行——这就是它在 U-Boot 里活到现在的原因。</p>
+<blockquote>
+<p>这类「清单 + 多态 include」的写法在本仓库其他地方也出现过：<code>.u_boot_list</code> 段注册表、<code>of_device_id</code> 表、<code>CLK_OF_DECLARE</code>，本质都是<strong>用编译期结构替代运行期注册代码</strong>。</p>
+</blockquote>
+<h3 id="5.2-网卡驱动的双轨制" tabindex="-1">5.2 网卡驱动的双轨制 <a class="header-anchor" href="#5.2-网卡驱动的双轨制"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>老驱动和新驱动在同一个 U-Boot 里共存，靠 <code>CONFIG_DM_ETH</code> 区分：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left"></th>
+<th style="text-align:left">Legacy 模式</th>
+<th style="text-align:left">DM 模式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">结构体</td>
+<td style="text-align:left"><code>struct eth_device</code></td>
+<td style="text-align:left"><code>struct udevice</code> + <code>eth_ops</code></td>
+</tr>
+<tr>
+<td style="text-align:left">注册方式</td>
+<td style="text-align:left">手写 <code>eth_register()</code> 挂进全局链表</td>
+<td style="text-align:left"><code>U_BOOT_DRIVER</code> 声明，按设备树匹配自动实例化</td>
+</tr>
+<tr>
+<td style="text-align:left">初始化入口</td>
+<td style="text-align:left"><code>&lt;drv&gt;_initialize(bd_t *bis)</code></td>
+<td style="text-align:left"><code>.probe</code> 回调</td>
+</tr>
+<tr>
+<td style="text-align:left">典型例子</td>
+<td style="text-align:left"><code>rtl8139_initialize</code>、<code>dm9000_initialize</code></td>
+<td style="text-align:left"><code>U_BOOT_DRIVER(mcs7830_eth)</code></td>
+</tr>
+</tbody>
+</table></div><p>老写法一眼能认出来：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">rtl8139_initialize</span><span class="hljs-params">(<span class="hljs-type">bd_t</span> *bis)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">eth_device</span> *<span class="hljs-title">dev</span> =</span> <span class="hljs-built_in">malloc</span>(<span class="hljs-keyword">sizeof</span>(*dev));
+    <span class="hljs-built_in">memset</span>(dev, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(*dev));
+    <span class="hljs-built_in">sprintf</span>(dev-&gt;name, <span class="hljs-string">&quot;RTL8139#%d&quot;</span>, card_number);
+    dev-&gt;iobase = bus_to_phys(iobase);
+    dev-&gt;init   = rtl8139_probe;
+    dev-&gt;halt   = rtl_disable;
+    dev-&gt;send   = rtl_transmit;
+    dev-&gt;recv   = rtl_poll;
+    eth_register(dev);        <span class="hljs-comment">/* 手动挂进链表 */</span>
+    <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+}
+</code></pre></div></code></pre>
+<p>新写法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">eth_ops</span> <span class="hljs-title">mcs7830_eth_ops</span> =</span> {
+    .start        = mcs7830_eth_start,
+    .send         = mcs7830_eth_send,
+    .recv         = mcs7830_eth_recv,
+    .free_pkt     = mcs7830_free_pkt,
+    .stop         = mcs7830_eth_stop,
+    .write_hwaddr = mcs7830_write_hwaddr,
+};
+
+U_BOOT_DRIVER(mcs7830_eth) = {
+    .name  = <span class="hljs-string">&quot;mcs7830_eth&quot;</span>,
+    .id    = UCLASS_ETH,
+    .probe = mcs7830_eth_probe,
+    .ops   = &amp;mcs7830_eth_ops,
+};
+</code></pre></div></code></pre>
+<p>移植老驱动到新框架时最常踩的坑：以为 <code>board_eth_init</code> 还要留着。DM 模式下 <code>eth_initialize()</code> 会自己遍历 <code>UCLASS_ETH</code> 设备，<code>board_eth_init</code> 只在没有 DM 时才需要。</p>
+<h2 id="六优化完怎么验证" tabindex="-1">六、优化完怎么验证 <a class="header-anchor" href="#六优化完怎么验证"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>别靠秒表掐串口。开 <code>CONFIG_BOOTSTAGE</code>，它会在关键节点打时间戳，进命令行后 <code>bootstage report</code> 直接出分段耗时表。没有这个宏时，退一步的做法是在 <code>board_init_f</code>、<code>board_init_r</code>、<code>bootm</code> 前后各打一行带 <code>get_timer(0)</code> 的打印，差值就是耗时。</p>
+<h2 id="小结" tabindex="-1">小结 <a class="header-anchor" href="#小结"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<ul>
+<li>优化顺序：<strong>先测量</strong>（bootstage）→ 再去掉无用 probe（裁命令）→ 再压固定开销（bootdelay/silent/verify）→ 最后才考虑 Falcon。</li>
+<li>消除内核二次搬移是性价比最高的一招：改一个加载地址，省几十上百毫秒，不改任何代码。</li>
+<li>Falcon 模式的本质是「把主 U-Boot 变成只跑一次的配置工具」，适合定型产品，不适合开发板。</li>
+<li><code>gd-&gt;jt</code>、<code>.u_boot_list</code>、<code>of_device_id</code>、<code>CLK_OF_DECLARE</code> 是同一个套路：<strong>用链接期数据结构替代运行期注册代码</strong>，既省代码又省启动时间。</li>
+</ul>
+<blockquote>
+<p>相关阅读：<a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/04-%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B%E4%B8%8EU-Boot/U-Boot-%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B%EF%BC%9A%E4%BB%8E-_start-%E5%88%B0-main_loop/" class="wikilink">U-Boot 启动流程：从 _start 到 main_loop</a>、<a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/04-%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B%E4%B8%8EU-Boot/U-Boot-%E5%B8%B8%E7%94%A8%E5%91%BD%E4%BB%A4%E4%B8%8E%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F/" class="wikilink">U-Boot 常用命令与环境变量</a>、<a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/04-%E5%90%AF%E5%8A%A8%E6%B5%81%E7%A8%8B%E4%B8%8EU-Boot/U-Boot-%E7%BC%96%E8%AF%91%E4%BD%93%E7%B3%BB%E4%B8%8E%E6%BA%90%E7%A0%81%E7%BB%93%E6%9E%84/" class="wikilink">U-Boot 编译体系与源码结构</a></p>
+</blockquote>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一先把启动时间拆开" data-toc-target="一先把启动时间拆开">一、先把启动时间拆开</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二配置层能砍的五刀" data-toc-target="二配置层能砍的五刀">二、配置层能砍的五刀</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.1-干掉-bootdelay-停顿" data-toc-target="2.1-干掉-bootdelay-停顿">2.1 干掉 bootdelay 停顿</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.2-静默控制台" data-toc-target="2.2-静默控制台">2.2 静默控制台</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.3-关掉镜像校验" data-toc-target="2.3-关掉镜像校验">2.3 关掉镜像校验</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.4-裁掉用不到的命令" data-toc-target="2.4-裁掉用不到的命令">2.4 裁掉用不到的命令</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.5-别让-spl-重复做一遍主-u-boot-要做的事" data-toc-target="2.5-别让-spl-重复做一遍主-u-boot-要做的事">2.5 别让 SPL 重复做一遍主 U-Boot 要做的事</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三消除内核的二次搬移" data-toc-target="三消除内核的二次搬移">三、消除内核的二次搬移</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四falcon-模式让-spl-直接起内核" data-toc-target="四falcon-模式让-spl-直接起内核">四、Falcon 模式：让 SPL 直接起内核</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.1-配置" data-toc-target="4.1-配置">4.1 配置</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.2-导出启动参数" data-toc-target="4.2-导出启动参数">4.2 导出启动参数</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.3-下次上电" data-toc-target="4.3-下次上电">4.3 下次上电</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.4-代价" data-toc-target="4.4-代价">4.4 代价</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五两个和优化无关但绕不开的机制" data-toc-target="五两个和优化无关但绕不开的机制">五、两个和优化无关但绕不开的机制</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.1-x-macrogd-jt-跳转表怎么来的" data-toc-target="5.1-x-macrogd-jt-跳转表怎么来的">5.1 X-Macro：gd->jt 跳转表怎么来的</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.2-网卡驱动的双轨制" data-toc-target="5.2-网卡驱动的双轨制">5.2 网卡驱动的双轨制</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六优化完怎么验证" data-toc-target="六优化完怎么验证">六、优化完怎么验证</a>
+                    
+                    <a class="toc-item toc-lv2" href="#小结" data-toc-target="小结">小结</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-启动优化与-Falcon-模式/","title":"U-Boot 启动优化与 Falcon 模式","url":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-启动优化与-Falcon-模式/","type":"current"},{"id":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-启动流程：从-_start-到-main_loop/","title":"U-Boot 启动流程：从 _start 到 main_loop","url":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-启动流程：从-_start-到-main_loop/","type":"outgoing"},{"id":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-常用命令与环境变量/","title":"U-Boot 常用命令与环境变量","url":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-常用命令与环境变量/","type":"outgoing"},{"id":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-编译体系与源码结构/","title":"U-Boot 编译体系与源码结构","url":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-编译体系与源码结构/","type":"outgoing"},{"id":"/A.硬件与固件/04-启动流程与U-Boot/Hikey-的-Boot-from-USB-调试/","title":"Hikey 的 Boot from USB 调试","url":"/A.硬件与固件/04-启动流程与U-Boot/Hikey-的-Boot-from-USB-调试/","type":"neighbor"}],"links":[{"source":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-启动优化与-Falcon-模式/","target":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-启动流程：从-_start-到-main_loop/","type":"direct"},{"source":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-启动优化与-Falcon-模式/","target":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-常用命令与环境变量/","type":"direct"},{"source":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-启动优化与-Falcon-模式/","target":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-编译体系与源码结构/","type":"direct"},{"source":"/A.硬件与固件/04-启动流程与U-Boot/U-Boot-启动优化与-Falcon-模式/","target":"/A.硬件与固件/04-启动流程与U-Boot/Hikey-的-Boot-from-USB-调试/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

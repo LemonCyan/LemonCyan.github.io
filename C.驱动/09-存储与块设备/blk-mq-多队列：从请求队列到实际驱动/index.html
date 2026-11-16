@@ -1,0 +1,2466 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>blk-mq 多队列：从请求队列到实际驱动 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">blk-mq 多队列：从请求队列到实际驱动</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/C.驱动/09-存储与块设备/blk-mq-多队列：从请求队列到实际驱动/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">blk-mq 多队列：从请求队列到实际驱动</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">blk-mq 多队列：从请求队列到实际驱动</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>本篇讲 Linux 5.0 之后块层唯一的一条路：blk-mq。先把单队列为什么走到头、两层队列怎么摆、tag 怎么分配讲透，再落到一个能跑的真实驱动 z2ram，最后给你一份从零写 blk-mq 驱动的步骤表和易错点。</p>
+<p>不讲这些：bio 的生成过程（系统调用到文件系统那一段）、gendisk 的注册细节、具体介质驱动（MTD/Flash、SD/MMC、NVMe 命令层）。</p>
+<p>跨篇指路：《块设备驱动基础》讲 bio / gendisk / request_queue 的基本概念和通用块层 API；《MTD 子系统与 Flash》《SD/MMC 子系统》讲具体介质；本篇只负责多队列架构 + 一个完整实例。内核版本以 Linux 5.2.8 为基准，凡与 6.x 有差异的地方逐处标注。</p>
+</blockquote>
+<h2 id="一为什么要-blk-mq单队列的瓶颈" tabindex="-1">一、为什么要 blk-mq：单队列的瓶颈 <a class="header-anchor" href="#一为什么要-blk-mq单队列的瓶颈"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>传统块层是为机械盘设计的。HDD 随机 IO 性能很差，吞吐几百 IOPS，延迟毫秒级 —— 瓶颈在硬件，内核那点软件开销根本不算事。</p>
+<p>所以当时的设计很朴素：<strong>每个块设备一个请求队列 <code>request_queue</code></strong>，一把 <code>q-&gt;queue_lock</code> 管住整个队列。这就是 blk-sq（block simple queue）单队列架构。</p>
+<p>局面被 SSD 和 NVMe 改掉了。这类器件没有机械部件，能高并发随机访问，百万级甚至千万级 IOPS 起步。软件开销一上来就顶不住，瓶颈从硬件挪到内核。多核体系下 blk-sq 的开销来自三个地方：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>开销来源</th>
+<th>具体表现</th>
+<th>多核下为什么更糟</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>请求队列锁竞争</td>
+<td>每次往调度器队列插入/删除 request 都要抢 <code>q-&gt;queue_lock</code>；排序、调度也要抢</td>
+<td>高 IOPS 场景多线程同时提交，锁竞争剧烈</td>
+</tr>
+<tr>
+<td>硬件中断</td>
+<td>高 IOPS 等于高中断数。完成一次 I/O 常需要两次中断：存储器件一次，IPI 核间中断一次</td>
+<td>中断在多核间乱飞，软中断排队</td>
+</tr>
+<tr>
+<td>远端内存访问</td>
+<td>提交 I/O 的 CPU 与收中断的 CPU 不是同一个、且不共享缓存时，抢锁过程要跨节点访问内存</td>
+<td>NUMA 机器上代价被放大</td>
+</tr>
+</tbody>
+</table></div><p>blk-mq 的思路就是把<strong>一把大锁拆成每个 CPU 一把小锁</strong>，再把<strong>提交路径和完成路径钉在同一个 CPU 上</strong>，顺带把硬件队列这层抽象让给驱动。两层队列一分摊，锁竞争和远端内存访问同时缓解，Block Layer 的 IOPS 吞吐量才跟得上器件。</p>
+<p>一句话总结拆锁逻辑：blk-sq 里 N 个 CPU 抢 1 把锁，blk-mq 里 N 个 CPU 各用各的 ctx 锁，只在向硬件队列派发的那一刻才碰 hctx 锁。</p>
+<h2 id="二从-request_fn-到-mq架构的改变" tabindex="-1">二、从 request_fn 到 MQ：架构的改变 <a class="header-anchor" href="#二从-request_fn-到-mq架构的改变"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先把两种架构并排放。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>单队列 blk-sq</th>
+<th>多队列 blk-mq</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>队列结构</td>
+<td>1 个 <code>request_queue</code>，1 个 <code>request_fn</code></td>
+<td>每 CPU 1 个 sw queue（ctx）+ N 个 hw queue（hctx）</td>
+</tr>
+<tr>
+<td>驱动接口</td>
+<td><code>q-&gt;request_fn</code>，驱动自己从队列取 request</td>
+<td><code>blk_mq_ops-&gt;queue_rq</code>，块层把 request 推给驱动</td>
+</tr>
+<tr>
+<td>同步手段</td>
+<td>全局 <code>q-&gt;queue_lock</code></td>
+<td><code>ctx-&gt;lock</code> + <code>hctx-&gt;lock</code> + sbitmap 原子位图</td>
+</tr>
+<tr>
+<td>bio 入口</td>
+<td><code>make_request_fn</code>（驱动可自定义）</td>
+<td>固定为 <code>blk_mq_make_request</code></td>
+</tr>
+<tr>
+<td>request 分配</td>
+<td>运行时申请，走 slab</td>
+<td>初始化时预分配，靠 tag 索引取用</td>
+</tr>
+<tr>
+<td>IO 调度</td>
+<td>单一调度器队列</td>
+<td>每 hctx 一个调度器实例，<code>elevator</code> 挂在 queue 上</td>
+</tr>
+<tr>
+<td>生命周期终点</td>
+<td><code>blk_cleanup_queue()</code></td>
+<td><code>blk_cleanup_queue()</code> + <code>blk_mq_free_tag_set()</code></td>
+</tr>
+</tbody>
+</table></div><p>历史上这条迁移走了六年多：</p>
+<ul>
+<li>内核 3.13（2014）blk-mq 代码合入主线；</li>
+<li>内核 3.16 成为完整特性；</li>
+<li>内核 5.0 blk-sq 代码（含基于 blk-sq 的 I/O 调度器）被完全移除，MQ 成为 Block Layer 的默认也是唯一路径。</li>
+</ul>
+<p>两个直接影响驱动的变化：</p>
+<ol>
+<li><strong><code>make_request_fn</code> 接口删除</strong>。5.0 之后 <code>request_queue</code> 上不再有 <code>make_request_fn</code> 字段给你塞自定义函数，<code>blk_queue_make_request()</code> 的语义也变了，不再是「注册你自己的 make_request」，而是内部设置 <code>blk_mq_make_request</code>。想绕开块层做 bio 直通，得用 <code>blk_mq</code> 提供的其他钩子，不要指望复刻 4.x 的老写法。</li>
+<li><strong><code>q-&gt;request_fn</code> 彻底没了</strong>。所有块设备驱动，包括 RAM 盘、loop、NVMe、virtio-blk，统一用 <code>blk_mq_ops</code>。</li>
+</ol>
+<p>本篇下面所有结构体、函数都取自 Linux 5.2.8，见 <code>include/linux/blk-mq.h</code>、<code>block/blk-mq.c</code>、<code>block/blk-mq-tag.c</code>、<code>block/blk-mq-sched.c</code>。</p>
+<blockquote>
+<p>版本注记：5.2.8 的 <code>request_queue</code> 里还留着 <code>make_request_fn</code> 字段和 <code>const struct blk_mq_ops *mq_ops</code>，但真正用的是 <code>q-&gt;mq_ops</code>，<code>make_request_fn</code> 由 <code>blk_queue_make_request(q, blk_mq_make_request)</code> 内部改写。6.x 里这一组字段被重整为 <code>q-&gt;tag_set</code>、<code>q-&gt;mq_ops</code> + <code>q-&gt;limits</code> 分离，具体字段名各版本有出入，字段级差异本篇不逐个断言，标「未验证」。</p>
+</blockquote>
+<h2 id="三软件队列与硬件队列" tabindex="-1">三、软件队列与硬件队列 <a class="header-anchor" href="#三软件队列与硬件队列"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>blk-mq 用两层队列把锁竞争分散开，分层职责很清晰。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层</th>
+<th>内核结构体</th>
+<th>数量</th>
+<th>谁锁它</th>
+<th>存放什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>软件队列（sw queue / ctx）</td>
+<td><code>struct blk_mq_ctx</code></td>
+<td>等于 CPU 数，per-CPU</td>
+<td><code>ctx-&gt;lock</code>，只被本 CPU 抢</td>
+<td>本 CPU 提交的 request 链表 <code>rq_lists[]</code></td>
+</tr>
+<tr>
+<td>硬件派发队列（hw queue / hctx）</td>
+<td><code>struct blk_mq_hw_ctx</code></td>
+<td><code>set-&gt;nr_hw_queues</code>，多数器件为 1，NVMe 可 &gt;1</td>
+<td><code>hctx-&gt;lock</code></td>
+<td><code>hctx-&gt;dispatch</code> 派发链表 + <code>hctx-&gt;tags</code></td>
+</tr>
+</tbody>
+</table></div><p>软件队列是 per-CPU 变量，<code>blk_mq_ctx</code> 用 <code>per_cpu_ptr(q-&gt;queue_ctx, cpu)</code> 取。每个 CPU 提交的 I/O 只进自己的链表，所以提交路径上根本不存在跨 CPU 竞争 —— 同一个 CPU 上的多个进程之间仍然会抢 <code>ctx-&gt;lock</code>，这一点别忽略。</p>
+<p>硬件队列对应器件真正的提交通路。<code>blk_mq_hw_ctx</code> 的 <code>__percpu</code> 之外的字段都住在这一个结构里，最要紧的几个：<code>dispatch</code>（已派发但驱动没收下的 request 链表）、<code>tags</code>（无调度器时的 tag 集合）、<code>sched_tags</code>（有调度器时的 tag 集合）、<code>queue_num</code>（硬件队列号）、<code>ctxs</code>/<code>nr_ctx</code>（挂在这个 hctx 上的 ctx 数组）。</p>
+<p>派发方向是单向的：sw queue → hw queue → 器件。软件队列往硬件队列派发的动作由 <code>blk_mq_run_hw_queue()</code> 驱动，映射关系在驱动初始化时一次性建好，之后不再变（<code>nr_hw_queues</code> 跑着改属于热插拔/超配场景，走 <code>blk_mq_update_nr_hw_queues()</code>，本篇不展开）。</p>
+<p>两种队列之外还有第三种位置容易被漏：<strong>plug list</strong>。它是进程私有的，<code>current-&gt;plug</code>，不加锁就能做 bio merge。plug 不是必须的 —— 5.2.8 里 <code>sys_read</code> 用了 plug，<code>sys_write</code> 已经不用，具体看调用方有没有 <code>blk_start_plug()</code> / <code>blk_finish_plug()</code> 配对。</p>
+<h2 id="四tag-与请求的生命周期" tabindex="-1">四、tag 与请求的生命周期 <a class="header-anchor" href="#四tag-与请求的生命周期"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>tag 是 blk-mq 的身份证号。<strong>一个 request 只有拿到 tag 才能做真正的 I/O 传输</strong>，没有 tag 就只能躺在链表里等着。</p>
+<p>tag 不是动态分配的堆对象，而是<strong>预先撒好的 request 池的数组下标</strong>。这个池子在硬件队列初始化时一次性建好，之后整台机器跑多久就用多久。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq-tag.h，Linux 5.2.8 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_tags</span> {</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> nr_tags;              <span class="hljs-comment">/* 每个硬件队列的深度，含 reserved */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> nr_reserved_tags;     <span class="hljs-comment">/* 预留 tag 个数 */</span>
+        <span class="hljs-type">atomic_t</span> active_queues;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sbitmap_queue</span> <span class="hljs-title">bitmap_tags</span>;</span>  <span class="hljs-comment">/* 普通 tag 位图 */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sbitmap_queue</span> <span class="hljs-title">breserved_tags</span>;</span> <span class="hljs-comment">/* 预留 tag 位图 */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request</span> **<span class="hljs-title">rqs</span>;</span>              <span class="hljs-comment">/* 已分配出去的 request，长度 nr_tags */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request</span> **<span class="hljs-title">static_rqs</span>;</span>       <span class="hljs-comment">/* 预分配的 request 池，长度 nr_tags */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">page_list</span>;</span>        <span class="hljs-comment">/* 用来串 alloc_pages 出来的页 */</span>
+};
+</code></pre></div></code></pre>
+<p>几个字段的含义和分工：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>容易搞错的地方</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nr_tags</code></td>
+<td>该硬件队列的总深度，等于 <code>set-&gt;queue_depth</code></td>
+<td>含预留，不是「可用普通 tag 数」</td>
+</tr>
+<tr>
+<td><code>nr_reserved_tags</code></td>
+<td>预留 tag 数，给内存回收等关键路径用</td>
+<td>为 0 时走 <code>BLK_MQ_REQ_RESERVED</code> 会 <code>WARN_ON_ONCE</code> 并失败</td>
+</tr>
+<tr>
+<td><code>bitmap_tags</code></td>
+<td>管理 <code>static_rqs[nr_reserved_tags .. nr_tags)</code> 这一段</td>
+<td>下标偏移是 <code>nr_reserved_tags</code>，不是 0</td>
+</tr>
+<tr>
+<td><code>breserved_tags</code></td>
+<td>管理 <code>static_rqs[0 .. nr_reserved_tags)</code> 这一段</td>
+<td>只在 <code>BLK_MQ_REQ_RESERVED</code> 时用</td>
+</tr>
+<tr>
+<td><code>rqs</code></td>
+<td>当前 tag 上挂着的 request 指针</td>
+<td>派发失败释放 tag 后这里也要清</td>
+</tr>
+<tr>
+<td><code>static_rqs</code></td>
+<td>真正的 request 池，物理内存连续分配</td>
+<td>数组长度是 <code>nr_tags</code>，不是 <code>queue_depth - reserved</code></td>
+</tr>
+<tr>
+<td><code>page_list</code></td>
+<td>记录 <code>alloc_pages_node</code> 拿到的页，释放时要一页页还</td>
+<td>忘了它还就等于漏内存</td>
+</tr>
+</tbody>
+</table></div><p>一次「bio 变成能做 I/O 的 request」要走四步：从 <code>bitmap_tags</code> 或 <code>breserved_tags</code> 抢一个 tag；以 <code>static_rqs[tag]</code> 取出预分配的 request；用 <code>blk_mq_rq_ctx_init()</code> 把 <code>q</code> / <code>mq_ctx</code> / <code>mq_hctx</code> / <code>cmd_flags</code> / 起始时间填好；最后 <code>rqs[tag] = rq</code>，把 tag 和 request 双向绑定。</p>
+<p>中间有个坑要记：<code>blk_mq_get_tag()</code> 返回的是<strong>相对位图的下标</strong>，<code>found_tag: return tag + tag_offset;</code>，<code>tag_offset</code> 在普通路径上是 <code>nr_reserved_tags</code>。所以 <code>static_rqs[tag_offset + tag]</code> 才是那个 request。驱动不该碰这一层，但调试 <code>rqs[]</code> / <code>static_rqs[]</code> 对不上号时，先回头查有没有漏掉这个偏移。</p>
+<p>tag 的生命周期跟 request 不完全一样，是三条互相独立的线：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>阶段</th>
+<th>谁动的</th>
+<th>标志</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>申请内部 tag</td>
+<td><code>blk_mq_get_request()</code>，有调度器时</td>
+<td><code>rq-&gt;tag = -1</code>，<code>rq-&gt;internal_tag = tag</code></td>
+</tr>
+<tr>
+<td>申请驱动 tag</td>
+<td><code>blk_mq_get_driver_tag()</code>，派发前</td>
+<td><code>rq-&gt;tag = tag</code>；若驱动繁忙失败则回退到 -1</td>
+</tr>
+<tr>
+<td>释放 tag</td>
+<td>完成或 requeue 时</td>
+<td><code>rq-&gt;tag</code> 复位；<code>rqs[tag]</code> 清空</td>
+</tr>
+</tbody>
+</table></div><p><code>internal_tag</code> 和 <code>tag</code> 并存是 blk-mq 一个反直觉的设计：有 I/O 调度器时，request 先进调度器，此时只占「内部名额」（internal tag，位图来自 <code>sched_tags</code>），真正要发给硬件时再从 <code>hctx-&gt;tags</code> 里要一个 driver tag。两套 tag 分开，调度器才能持有超过硬件深度的 request。没有调度器时，<code>rq-&gt;tag</code> 直接就是 driver tag，<code>internal_tag = -1</code>。</p>
+<blockquote>
+<p>版本注记：6.x 里 <code>internal_tag</code> 仍在，但 tag 分配路径（<code>blk_mq_get_tag()</code>、<code>sbitmap</code> 换 <code>sbitmap_queue</code> 的细节、<code>BLK_MQ_F_TAG_SHARED</code> 改为 <code>BLK_MQ_F_TAG_HCTX_SHARED</code>）有变化，跨版本读代码要对齐字段名。本篇所有断言都只覆盖 5.2.8。</p>
+</blockquote>
+<h2 id="五struct-blk_mq_tag_set驱动要填什么" tabindex="-1">五、struct blk_mq_tag_set：驱动要填什么 <a class="header-anchor" href="#五struct-blk_mq_tag_set驱动要填什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>blk_mq_tag_set</code> 是驱动递给块层的「器件 I/O 特征说明书」。一个物理设备注册时，所有块层需要知道的东西都在这一个结构里。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/linux/blk-mq.h，Linux 5.2.8 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_tag_set</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_queue_map</span> <span class="hljs-title">map</span>[<span class="hljs-title">HCTX_MAX_TYPES</span>];</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            nr_maps;        <span class="hljs-comment">/* nr entries in map[] */</span>
+        <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_ops</span> *<span class="hljs-title">ops</span>;</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            nr_hw_queues;   <span class="hljs-comment">/* nr hw queues across maps */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            queue_depth;    <span class="hljs-comment">/* max hw supported */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            reserved_tags;
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            cmd_size;       <span class="hljs-comment">/* per-request extra data */</span>
+        <span class="hljs-type">int</span>                     numa_node;
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            timeout;
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            flags;          <span class="hljs-comment">/* BLK_MQ_F_* */</span>
+        <span class="hljs-type">void</span>                    *driver_data;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_tags</span>      **<span class="hljs-title">tags</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">mutex</span>            <span class="hljs-title">tag_list_lock</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span>        <span class="hljs-title">tag_list</span>;</span>
+};
+</code></pre></div></code></pre>
+<p>全字段逐个说明：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>驱动要填吗</th>
+<th>注意点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>map[HCTX_MAX_TYPES]</code></td>
+<td>每种 hctx 类型一份的 ctx→hctx 映射表</td>
+<td>由 <code>blk_mq_alloc_tag_set()</code> 填 <code>mq_map</code> 指针</td>
+<td>数组下标是 <code>HCTX_TYPE_*</code></td>
+</tr>
+<tr>
+<td><code>nr_maps</code></td>
+<td><code>map[]</code> 里有几份生效的映射，取值 <code>[1, HCTX_MAX_TYPES]</code></td>
+<td>要（0 会被当成 1）</td>
+<td>只用 default 类型就填 1</td>
+</tr>
+<tr>
+<td><code>ops</code></td>
+<td>驱动回调集合 <code>blk_mq_ops</code></td>
+<td><strong>必须</strong></td>
+<td><code>ops-&gt;queue_rq</code> 为空直接被拒</td>
+</tr>
+<tr>
+<td><code>nr_hw_queues</code></td>
+<td>硬件队列数</td>
+<td><strong>必须</strong>，且非 0</td>
+<td>多数器件 1；单 map 且大于 CPU 数会被压到 <code>nr_cpu_ids</code></td>
+</tr>
+<tr>
+<td><code>queue_depth</code></td>
+<td>每个硬件队列深度，含 reserved</td>
+<td><strong>必须</strong>，且非 0</td>
+<td><code>&gt; BLK_MQ_MAX_DEPTH</code>（10240）会被截断并打印提示</td>
+</tr>
+<tr>
+<td><code>reserved_tags</code></td>
+<td>每队列的预留 tag 数</td>
+<td>要（常用 0，或留 2~8 个）</td>
+<td>必须满足 <code>queue_depth &gt;= reserved_tags + BLK_MQ_TAG_MIN</code></td>
+</tr>
+<tr>
+<td><code>cmd_size</code></td>
+<td>每个 request 额外分配的驱动私有区大小</td>
+<td>要（不需要就 0）</td>
+<td>拿法见下面的 <code>blk_mq_rq_to_pdu()</code></td>
+</tr>
+<tr>
+<td><code>numa_node</code></td>
+<td>设备所在的 NUMA 节点</td>
+<td>要（不知道填 <code>NUMA_NO_NODE</code> 即 -1）</td>
+<td>分配 request 和 queue 内存都按它走，避免远端访问</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>请求超时，单位 jiffies</td>
+<td>要（0 则块层默认 30s）</td>
+<td><code>blk_mq_init_allocated_queue()</code> 里 <code>set-&gt;timeout ? set-&gt;timeout : 30 * HZ</code></td>
+</tr>
+<tr>
+<td><code>flags</code></td>
+<td><code>BLK_MQ_F_*</code> 组合</td>
+<td>要</td>
+<td><code>BLK_MQ_F_SHOULD_MERGE</code> 决定支不支持 merge；<code>BLK_MQ_F_BLOCKING</code> 允许 <code>queue_rq</code> 睡眠</td>
+</tr>
+<tr>
+<td><code>driver_data</code></td>
+<td>驱动私有数据指针</td>
+<td>可选</td>
+<td>块层不碰</td>
+</tr>
+<tr>
+<td><code>tags</code></td>
+<td><code>nr_hw_queues</code> 个 <code>blk_mq_tags *</code></td>
+<td><strong>不要填</strong></td>
+<td><code>blk_mq_alloc_tag_set()</code> 内部 <code>kcalloc_node</code> 分配</td>
+</tr>
+<tr>
+<td><code>tag_list_lock</code></td>
+<td>保护 <code>tag_list</code> 的互斥锁</td>
+<td><strong>不要填</strong></td>
+<td>同上函数里 <code>mutex_init</code></td>
+</tr>
+<tr>
+<td><code>tag_list</code></td>
+<td>挂到全局 tag set 链表</td>
+<td><strong>不要填</strong></td>
+<td>同上函数里 <code>INIT_LIST_HEAD</code></td>
+</tr>
+</tbody>
+</table></div><p><code>cmd_size</code> 是实战里最常用的一个字段。给 NVMe 提交队列条目、给自研卡留 DMA 描述符，都靠它：块层在分配 request 时多分配 <code>cmd_size</code> 字节，紧跟在 <code>struct request</code> 后面，驱动用 <code>blk_mq_rq_to_pdu(rq)</code> 取。</p>
+<p><code>queue_depth</code> 的含义要用准：它是<strong>单个硬件队列</strong>的深度。<code>nr_hw_queues = 8</code> 且 <code>queue_depth = 64</code> 时一共预分配 512 个 request。这个数字决定内存占用，也决定硬件能压多少在飞。填大了 <code>blk_mq_alloc_rq_maps()</code> 会逐次减半重试（见第八章），最后拿到的深度未必是你写的那个数。</p>
+<p><code>numa_node</code> 的影响面比看起来大：它决定 <code>blk_alloc_queue_node()</code> 从哪个节点拿 <code>request_queue</code>，也决定 <code>blk_mq_alloc_rq_map()</code> / <code>blk_mq_alloc_rqs()</code> 在哪个节点上分配 <code>rqs</code> / <code>static_rqs</code> / 页。填错就是全程远端内存访问，跑分能差出一截。</p>
+<h2 id="六struct-blk_mq_ops驱动要实现的回调" tabindex="-1">六、struct blk_mq_ops：驱动要实现的回调 <a class="header-anchor" href="#六struct-blk_mq_ops驱动要实现的回调"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>blk_mq_ops</code> 是驱动行为的抽象层。字段不算多，但真正必填的只有一个。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/linux/blk-mq.h，Linux 5.2.8 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_ops</span> {</span>
+        queue_rq_fn             *queue_rq;
+        commit_rqs_fn           *commit_rqs;
+        get_budget_fn           *get_budget;
+        put_budget_fn           *put_budget;
+        timeout_fn              *timeout;
+        poll_fn                 *poll;
+        complete_fn             *complete;
+        init_hctx_fn            *init_hctx;
+        exit_hctx_fn            *exit_hctx;
+        init_request_fn         *init_request;
+        exit_request_fn         *exit_request;
+        <span class="hljs-type">void</span> (*initialize_rq_fn)(<span class="hljs-keyword">struct</span> request *rq);
+        busy_fn                 *busy;
+        map_queues_fn           *map_queues;
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_BLK_DEBUG_FS</span>
+        <span class="hljs-type">void</span> (*show_rq)(<span class="hljs-keyword">struct</span> seq_file *m, <span class="hljs-keyword">struct</span> request *rq);
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+};
+</code></pre></div></code></pre>
+<p>逐个回调的作用、是否必填、什么时候被调：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>回调</th>
+<th>作用</th>
+<th>必填</th>
+<th>调用时机</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>queue_rq</code></td>
+<td>把块层给的 request 交给硬件</td>
+<td><strong>必填</strong></td>
+<td>每次派发，<code>__blk_mq_issue_directly()</code> / <code>blk_mq_dispatch_rq_list()</code> 调用</td>
+</tr>
+<tr>
+<td><code>commit_rqs</code></td>
+<td>驱动用 <code>bd-&gt;last</code> 判断何时提交时，出错了靠它踢一脚硬件</td>
+<td>条件必填</td>
+<td>有 <code>bd-&gt;last</code> 语义时；没实现则块层一条条发</td>
+</tr>
+<tr>
+<td><code>get_budget</code></td>
+<td>派发前预留配额</td>
+<td>与 <code>put_budget</code> 成对</td>
+<td><code>__blk_mq_try_issue_directly()</code> 里先调</td>
+</tr>
+<tr>
+<td><code>put_budget</code></td>
+<td>释放配额</td>
+<td>与 <code>get_budget</code> 成对</td>
+<td>派发失败、或完成时</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>超时处理</td>
+<td>选了</td>
+<td>超时工作时；返回 <code>BLK_EH_DONE</code> / <code>BLK_EH_RESET_TIMER</code></td>
+</tr>
+<tr>
+<td><code>poll</code></td>
+<td>轮询指定 tag 的完成状态</td>
+<td>选了</td>
+<td><code>QUEUE_FLAG_POLL</code> 且用户走轮询 I/O 时</td>
+</tr>
+<tr>
+<td><code>complete</code></td>
+<td>标记 request 完成（驱动有自己的完成队列时用）</td>
+<td>选了</td>
+<td>块层准备结束一个 request 时</td>
+</tr>
+<tr>
+<td><code>init_hctx</code></td>
+<td>hctx 建立后让驱动分配配套结构</td>
+<td>选了</td>
+<td><code>blk_mq_alloc_and_init_hctx()</code> 里</td>
+</tr>
+<tr>
+<td><code>exit_hctx</code></td>
+<td>对应的拆除</td>
+<td>选了</td>
+<td><code>blk_mq_exit_hctx()</code></td>
+</tr>
+<tr>
+<td><code>init_request</code></td>
+<td>每个预分配 request 的驱动侧初始化</td>
+<td>选了</td>
+<td><code>blk_mq_alloc_rqs()</code> 里逐个调；tag ≥ <code>queue_depth</code> 的那批是给 flush request 用的</td>
+</tr>
+<tr>
+<td><code>exit_request</code></td>
+<td>对应拆除</td>
+<td>选了</td>
+<td>释放 request 池前</td>
+</tr>
+<tr>
+<td><code>initialize_rq_fn</code></td>
+<td><code>blk_get_request()</code> 内部初始化</td>
+<td>选了</td>
+<td>走 <code>blk_get_request</code> 的路径</td>
+</tr>
+<tr>
+<td><code>busy</code></td>
+<td>返回队列当前是否繁忙</td>
+<td>选了</td>
+<td>块层判断要不要继续往这里塞</td>
+</tr>
+<tr>
+<td><code>map_queues</code></td>
+<td>覆写默认的 ctx→hctx 映射算法</td>
+<td>选了</td>
+<td><code>blk_mq_update_queue_map()</code> 里</td>
+</tr>
+<tr>
+<td><code>show_rq</code></td>
+<td>debugfs 里打印请求细节</td>
+<td>可选</td>
+<td>只在 <code>CONFIG_BLK_DEBUG_FS</code> 下编译进来</td>
+</tr>
+</tbody>
+</table></div><p>两个成对约束会直接 <code>-EINVAL</code> 拒绝注册：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8，节选 */</span>
+<span class="hljs-keyword">if</span> (!<span class="hljs-built_in">set</span>-&gt;ops-&gt;queue_rq)
+        <span class="hljs-keyword">return</span> -EINVAL;
+<span class="hljs-keyword">if</span> (!<span class="hljs-built_in">set</span>-&gt;ops-&gt;get_budget ^ !<span class="hljs-built_in">set</span>-&gt;ops-&gt;put_budget)
+        <span class="hljs-keyword">return</span> -EINVAL;
+</code></pre></div></code></pre>
+<p>第二句是异或：<strong>只填一个就报错，两个都不填可以，两个都填也行</strong>。别只填 <code>get_budget</code> 忘了 <code>put_budget</code>，报错信息很难定位到这里。</p>
+<p>只填 <code>queue_rq</code> 的最小实例如下，z2ram 就是这么干的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_ops</span> <span class="hljs-title">z2_mq_ops</span> =</span> {
+        .queue_rq       = z2_queue_rq,
+};
+</code></pre></div></code></pre>
+<p>这已经足够让驱动跑起来。<code>nr_hw_queues = 1</code> + <code>BLK_MQ_F_SHOULD_MERGE</code> + 单一 <code>queue_rq</code>，就是 RAM 盘、loop 这类设备的全部配置。</p>
+<h2 id="七队列映射cpu-到硬件队列" tabindex="-1">七、队列映射：CPU 到硬件队列 <a class="header-anchor" href="#七队列映射cpu-到硬件队列"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>映射表 <code>blk_mq_queue_map</code> 只有三个字段，却决定整台机器的 I/O 走向。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/linux/blk-mq.h，Linux 5.2.8 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_queue_map</span> {</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> *mq_map;      <span class="hljs-comment">/* 长度 nr_cpu_ids，下标 CPU 号，元素 hctx 号 */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> nr_queues;    <span class="hljs-comment">/* 本类型可用的硬件队列数 */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> queue_offset; <span class="hljs-comment">/* 本类型在全局 hctx 编号里的起始偏移 */</span>
+};
+</code></pre></div></code></pre>
+<p><code>blk_mq_tag_set.map[]</code> 是它的数组，每种 hctx 类型一份。三种类型的语义完全不同：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>编号</th>
+<th>派发什么</th>
+<th>谁来触发</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HCTX_TYPE_DEFAULT</code></td>
+<td>0</td>
+<td>普通写、flush、绝大多数请求</td>
+<td><code>blk_mq_make_request()</code> 常规路径</td>
+</tr>
+<tr>
+<td><code>HCTX_TYPE_READ</code></td>
+<td>1</td>
+<td>只读请求（NVMe 读写共用队列时写会堵读，所以要分开）</td>
+<td><code>blk_mq_map_queue()</code> 按 <code>REQ_OP_READ</code> 判断</td>
+</tr>
+<tr>
+<td><code>HCTX_TYPE_POLL</code></td>
+<td>2</td>
+<td><code>REQ_HIPRI</code> 的轮询请求</td>
+<td>同上，按 <code>REQ_HIPRI</code> 判断</td>
+</tr>
+</tbody>
+</table></div><p>类型怎么选出来，逻辑就这几行：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/linux/blk-mq.h，Linux 5.2.8 */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-keyword">struct</span> blk_mq_hw_ctx *<span class="hljs-title function_">blk_mq_map_queue</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> request_queue *q,
+                                                     <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> flags,
+                                                     <span class="hljs-keyword">struct</span> blk_mq_ctx *ctx)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">hctx_type</span> <span class="hljs-title">type</span> =</span> HCTX_TYPE_DEFAULT;
+        <span class="hljs-keyword">if</span> (flags &amp; REQ_HIPRI)
+                type = HCTX_TYPE_POLL;
+        <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> ((flags &amp; REQ_OP_MASK) == REQ_OP_READ)
+                type = HCTX_TYPE_READ;
+        <span class="hljs-keyword">return</span> ctx-&gt;hctxs[type];
+}
+</code></pre></div></code></pre>
+<p>所以 <code>ctx-&gt;hctxs[3]</code> 各指向一个 <code>blk_mq_hw_ctx</code>，<code>ctx-&gt;index_hw[3]</code> 各存一个 hctx 编号。只有 default 类型时，<code>hctxs[READ]</code> / <code>hctxs[POLL]</code> 和 <code>hctxs[DEFAULT]</code> 指向同一个硬件队列。</p>
+<p>默认映射算法有两套，由驱动有没有实现 <code>map_queues</code> 决定：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">blk_mq_update_queue_map</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_tag_set *<span class="hljs-built_in">set</span>)</span>
+{
+        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">set</span>-&gt;ops-&gt;map_queues &amp;&amp; !is_kdump_kernel()) {
+                <span class="hljs-type">int</span> i;
+                <span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-built_in">set</span>-&gt;nr_maps; i++)
+                        blk_mq_clear_mq_map(&amp;<span class="hljs-built_in">set</span>-&gt;<span class="hljs-built_in">map</span>[i]);
+                <span class="hljs-keyword">return</span> <span class="hljs-built_in">set</span>-&gt;ops-&gt;map_queues(<span class="hljs-built_in">set</span>);
+        } <span class="hljs-keyword">else</span> {
+                BUG_ON(<span class="hljs-built_in">set</span>-&gt;nr_maps &gt; <span class="hljs-number">1</span>);
+                <span class="hljs-keyword">return</span> blk_mq_map_queues(&amp;<span class="hljs-built_in">set</span>-&gt;<span class="hljs-built_in">map</span>[HCTX_TYPE_DEFAULT]);
+        }
+}
+</code></pre></div></code></pre>
+<p>注意 <code>BUG_ON(set-&gt;nr_maps &gt; 1)</code>：<strong>没实现 <code>map_queues</code> 却又声明了多份 map，内核直接 BUG</strong>。想用 READ / POLL 分队列，必须自己实现 <code>map_queues</code>。</p>
+<p>自己实现时的标准写法，源码注释里就给了模板：外层 <code>for (queue = 0; queue &lt; set-&gt;nr_hw_queues; queue++)</code> 取 <code>mask = get_cpu_mask(queue)</code>，内层 <code>for_each_cpu(cpu, mask)</code> 写 <code>set-&gt;map[x].mq_map[cpu] = queue</code>。重映射前必须 <code>blk_mq_clear_mq_map()</code> 清表，否则某个 CPU 会挂在已经不存在的 hctx 上。</p>
+<p>两套映射容易混：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>名字</th>
+<th>位置</th>
+<th>内容</th>
+<th>什么时候建</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>map[i].mq_map[cpu]</code></td>
+<td><code>struct blk_mq_queue_map</code></td>
+<td>CPU → hctx 编号的数字表</td>
+<td><code>blk_mq_update_queue_map()</code></td>
+</tr>
+<tr>
+<td><code>blk_mq_map_swqueue()</code></td>
+<td><code>block/blk-mq.c</code></td>
+<td>按上表把 <code>ctx-&gt;hctxs[]</code> / <code>ctx-&gt;index_hw[]</code> 指针与编号落实，并填充 <code>hctx-&gt;ctxs[]</code> / <code>hctx-&gt;nr_ctx</code></td>
+<td><code>blk_mq_init_allocated_queue()</code> 末尾</td>
+</tr>
+</tbody>
+</table></div><p>一句话区分：前者是「编号表」，后者是「运行时真正的双向指针绑定」。</p>
+<h2 id="八blk_mq_init_queue-的完整流程" tabindex="-1">八、blk_mq_init_queue 的完整流程 <a class="header-anchor" href="#八blk_mq_init_queue-的完整流程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>从驱动的 <code>z2_init()</code> 到拿到一个能用的 <code>request_queue</code>，中间这一串调用链是 blk-mq 初始化期的全貌。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>blk_mq_init_queue(set)
+ └─ blk_alloc_queue_node(GFP_KERNEL, set-&gt;numa_node)
+ └─ blk_mq_init_allocated_queue(set, q)
+     ├─ q-&gt;mq_ops = set-&gt;ops                          标记为 mq
+     ├─ blk_stat_alloc_callback(blk_mq_poll_stats_fn…) 轮询统计
+     ├─ blk_mq_alloc_ctxs(q)                          分配 per-CPU ctx
+     ├─ blk_mq_sysfs_init(q)                          mq_kobj / sw queue kobj
+     ├─ q-&gt;nr_queues = nr_hw_queues(set)
+     ├─ q-&gt;queue_hw_ctx = kcalloc_node(...)           hctx 指针数组
+     ├─ blk_mq_realloc_hw_ctxs(set, q)                建每个 hctx
+     ├─ INIT_WORK(timeout_work, blk_mq_timeout_work)
+     ├─ blk_queue_rq_timeout(set-&gt;timeout ? : 30 * HZ)
+     ├─ q-&gt;queue_flags |= QUEUE_FLAG_MQ_DEFAULT        有 POLL map 则置 QUEUE_FLAG_POLL
+     ├─ INIT_DELAYED_WORK(requeue_work, blk_mq_requeue_work)
+     ├─ blk_queue_make_request(q, blk_mq_make_request) bio 入口固定
+     ├─ q-&gt;nr_requests = set-&gt;queue_depth
+     ├─ q-&gt;poll_nsec = BLK_MQ_POLL_CLASSIC
+     ├─ blk_mq_init_cpu_queues(q, set-&gt;nr_hw_queues)   初始化每个 ctx
+     ├─ blk_mq_add_queue_tag_set(set, q)              挂进 set-&gt;tag_list
+     ├─ blk_mq_map_swqueue(q)                         ctx↔hctx 双向绑定
+     └─ elevator_init_mq(q)                           除非 BLK_MQ_F_NO_SCHED
+</code></pre></div></code></pre>
+<p><code>blk_mq_init_queue()</code> 本体只做两件事：按设备的 NUMA 节点拿 <code>request_queue</code> 内存（避免远端访问），再把剩下的活全交给 <code>blk_mq_init_allocated_queue()</code>。所以<strong>必须先 <code>blk_mq_alloc_tag_set()</code> 成功，再调它</strong>。而上面这十几步，就是 <code>blk_mq_init_allocated_queue()</code> 内部的「初始化期全貌」。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8 */</span>
+<span class="hljs-keyword">struct</span> request_queue *<span class="hljs-title function_">blk_mq_init_queue</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_tag_set *<span class="hljs-built_in">set</span>)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request_queue</span> *<span class="hljs-title">uninit_q</span>, *<span class="hljs-title">q</span>;</span>
+        uninit_q = blk_alloc_queue_node(GFP_KERNEL, <span class="hljs-built_in">set</span>-&gt;numa_node);
+        <span class="hljs-keyword">if</span> (!uninit_q)
+                <span class="hljs-keyword">return</span> ERR_PTR(-ENOMEM);
+        q = blk_mq_init_allocated_queue(<span class="hljs-built_in">set</span>, uninit_q);
+        <span class="hljs-keyword">if</span> (IS_ERR(q))
+                blk_cleanup_queue(uninit_q);
+        <span class="hljs-keyword">return</span> q;
+}
+</code></pre></div></code></pre>
+<h3 id="8.1-tag_set-的分配blk_mq_alloc_tag_set" tabindex="-1">8.1 tag_set 的分配：blk_mq_alloc_tag_set <a class="header-anchor" href="#8.1-tag_set-的分配blk_mq_alloc_tag_set"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8，校验段 + 会改写 set 的几处 */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">blk_mq_alloc_tag_set</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_tag_set *<span class="hljs-built_in">set</span>)</span>
+{
+        BUILD_BUG_ON(BLK_MQ_MAX_DEPTH &gt; <span class="hljs-number">1</span> &lt;&lt; BLK_MQ_UNIQUE_TAG_BITS);
+        <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">set</span>-&gt;nr_hw_queues)                            <span class="hljs-keyword">return</span> -EINVAL;  <span class="hljs-comment">/* 必填 */</span>
+        <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">set</span>-&gt;queue_depth)                             <span class="hljs-keyword">return</span> -EINVAL;  <span class="hljs-comment">/* 必填 */</span>
+        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">set</span>-&gt;queue_depth &lt; <span class="hljs-built_in">set</span>-&gt;reserved_tags + BLK_MQ_TAG_MIN)
+                <span class="hljs-keyword">return</span> -EINVAL;
+        <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">set</span>-&gt;ops-&gt;queue_rq)                           <span class="hljs-keyword">return</span> -EINVAL;  <span class="hljs-comment">/* 唯一强制回调 */</span>
+        <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">set</span>-&gt;ops-&gt;get_budget ^ !<span class="hljs-built_in">set</span>-&gt;ops-&gt;put_budget) <span class="hljs-keyword">return</span> -EINVAL;  <span class="hljs-comment">/* 成对约束 */</span>
+        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">set</span>-&gt;queue_depth &gt; BLK_MQ_MAX_DEPTH) {         <span class="hljs-comment">/* 截到 10240 */</span>
+                pr_info(<span class="hljs-string">&quot;blk-mq: reduced tag depth to %u\n&quot;</span>, BLK_MQ_MAX_DEPTH);
+                <span class="hljs-built_in">set</span>-&gt;queue_depth = BLK_MQ_MAX_DEPTH;
+        }
+        <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">set</span>-&gt;nr_maps)
+                <span class="hljs-built_in">set</span>-&gt;nr_maps = <span class="hljs-number">1</span>;
+        <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (<span class="hljs-built_in">set</span>-&gt;nr_maps &gt; HCTX_MAX_TYPES)
+                <span class="hljs-keyword">return</span> -EINVAL;
+        <span class="hljs-keyword">if</span> (is_kdump_kernel()) {                           <span class="hljs-comment">/* kdump 下极限缩水 */</span>
+                <span class="hljs-built_in">set</span>-&gt;nr_hw_queues = <span class="hljs-number">1</span>;
+                <span class="hljs-built_in">set</span>-&gt;nr_maps = <span class="hljs-number">1</span>;
+                <span class="hljs-built_in">set</span>-&gt;queue_depth = min(<span class="hljs-number">64U</span>, <span class="hljs-built_in">set</span>-&gt;queue_depth);
+        }
+        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">set</span>-&gt;nr_maps == <span class="hljs-number">1</span> &amp;&amp; <span class="hljs-built_in">set</span>-&gt;nr_hw_queues &gt; nr_cpu_ids)
+                <span class="hljs-built_in">set</span>-&gt;nr_hw_queues = nr_cpu_ids;            <span class="hljs-comment">/* 单 map 不需要比 CPU 多 */</span>
+        <span class="hljs-comment">/* 之后依次：tags 指针数组 -&gt; 每份 map 的 mq_map -&gt; blk_mq_update_queue_map()
+         *          -&gt; blk_mq_alloc_rq_maps() -&gt; mutex_init(tag_list_lock) */</span>
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>这里面有六处会<strong>偷改你填的值</strong>，看到驱动行为跟配置不符时先回来对一遍：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位置</th>
+<th>条件</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>校验</td>
+<td><code>queue_depth &gt; BLK_MQ_MAX_DEPTH</code></td>
+<td><code>queue_depth</code> 截到 10240，打印 <code>reduced tag depth</code></td>
+</tr>
+<tr>
+<td>校验</td>
+<td><code>!nr_maps</code></td>
+<td>补成 1</td>
+</tr>
+<tr>
+<td>校验</td>
+<td><code>nr_maps &gt; HCTX_MAX_TYPES</code></td>
+<td><code>-EINVAL</code></td>
+</tr>
+<tr>
+<td>kdump</td>
+<td><code>is_kdump_kernel()</code></td>
+<td><code>nr_hw_queues = 1</code>，<code>nr_maps = 1</code>，<code>queue_depth = min(64, depth)</code></td>
+</tr>
+<tr>
+<td>单 map</td>
+<td><code>nr_maps == 1 &amp;&amp; nr_hw_queues &gt; nr_cpu_ids</code></td>
+<td><code>nr_hw_queues</code> 压到 <code>nr_cpu_ids</code></td>
+</tr>
+<tr>
+<td>内存不足</td>
+<td>见 8.2</td>
+<td><code>queue_depth</code> 逐次减半</td>
+</tr>
+</tbody>
+</table></div><p><code>nr_hw_queues(set)</code> 与 <code>set-&gt;nr_hw_queues</code> 的差别：前者是宏，算出「所有 map 里 <code>nr_queues</code> 之和」，后者是你声明的一个数。有多个 map 时两者不等。</p>
+<h3 id="8.2-tags-与-request-池的分配" tabindex="-1">8.2 tags 与 request 池的分配 <a class="header-anchor" href="#8.2-tags-与-request-池的分配"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>blk_mq_alloc_rq_maps()</code> 会带重试：分配失败就把深度砍一半再试。三个函数的分工是：<code>__blk_mq_alloc_rq_maps()</code> 遍历每个 hctx 调 <code>__blk_mq_alloc_rq_map()</code>，后者先 <code>blk_mq_alloc_rq_map()</code> 建 tags 骨架、再 <code>blk_mq_alloc_rqs()</code> 撒真 request。下面是后两个的节选：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8，节选 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">blk_mq_alloc_rq_maps</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_tag_set *<span class="hljs-built_in">set</span>)</span>
+{
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> depth = <span class="hljs-built_in">set</span>-&gt;queue_depth;
+        <span class="hljs-type">int</span> err;
+        <span class="hljs-keyword">do</span> {
+                err = __blk_mq_alloc_rq_maps(<span class="hljs-built_in">set</span>);   <span class="hljs-comment">/* 逐个 hctx 调下面两个函数 */</span>
+                <span class="hljs-keyword">if</span> (!err)
+                        <span class="hljs-keyword">break</span>;
+                <span class="hljs-built_in">set</span>-&gt;queue_depth &gt;&gt;= <span class="hljs-number">1</span>;              <span class="hljs-comment">/* 失败就把深度砍一半再试 */</span>
+                <span class="hljs-keyword">if</span> (<span class="hljs-built_in">set</span>-&gt;queue_depth &lt; <span class="hljs-built_in">set</span>-&gt;reserved_tags + BLK_MQ_TAG_MIN) {
+                        err = -ENOMEM;
+                        <span class="hljs-keyword">break</span>;
+                }
+        } <span class="hljs-keyword">while</span> (<span class="hljs-built_in">set</span>-&gt;queue_depth);
+        <span class="hljs-keyword">if</span> (!<span class="hljs-built_in">set</span>-&gt;queue_depth || err) {
+                pr_err(<span class="hljs-string">&quot;blk-mq: failed to allocate request map\n&quot;</span>);
+                <span class="hljs-keyword">return</span> -ENOMEM;
+        }
+        <span class="hljs-keyword">if</span> (depth != <span class="hljs-built_in">set</span>-&gt;queue_depth)
+                pr_info(<span class="hljs-string">&quot;blk-mq: reduced tag depth (%u -&gt; %u)\n&quot;</span>, depth, <span class="hljs-built_in">set</span>-&gt;queue_depth);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+<span class="hljs-comment">/* 只分配 blk_mq_tags 和两个指针数组，不碰 request 本体 */</span>
+<span class="hljs-keyword">struct</span> blk_mq_tags *<span class="hljs-title function_">blk_mq_alloc_rq_map</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_tag_set *<span class="hljs-built_in">set</span>,
+                                        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> hctx_idx,
+                                        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> nr_tags,
+                                        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> reserved_tags)</span>
+{
+        <span class="hljs-type">int</span> node = blk_mq_hw_queue_to_node(&amp;<span class="hljs-built_in">set</span>-&gt;<span class="hljs-built_in">map</span>[HCTX_TYPE_DEFAULT], hctx_idx);
+        <span class="hljs-keyword">if</span> (node == NUMA_NO_NODE)                 <span class="hljs-comment">/* 节点从 DEFAULT map 反查 */</span>
+                node = <span class="hljs-built_in">set</span>-&gt;numa_node;
+        tags = blk_mq_init_tags(nr_tags, reserved_tags, node,
+                                BLK_MQ_FLAG_TO_ALLOC_POLICY(<span class="hljs-built_in">set</span>-&gt;flags));
+        <span class="hljs-keyword">if</span> (!tags)
+                <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+        tags-&gt;rqs = kcalloc_node(nr_tags, <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> request *),
+                                 GFP_NOIO | __GFP_NOWARN | __GFP_NORETRY, node);
+        tags-&gt;static_rqs = kcalloc_node(nr_tags, <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> request *),
+                                        GFP_NOIO | __GFP_NOWARN | __GFP_NORETRY, node);
+        <span class="hljs-comment">/* 任一失败：先 kfree(rqs) 再 blk_mq_free_tags(tags)，然后返回 NULL */</span>
+        <span class="hljs-keyword">return</span> tags;
+}
+<span class="hljs-comment">/* 真正把 request 撒出来：按页批量切，rq_size 里含 cmd_size */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">blk_mq_alloc_rqs</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_tag_set *<span class="hljs-built_in">set</span>, <span class="hljs-keyword">struct</span> blk_mq_tags *tags,
+                     <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> hctx_idx, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> depth)</span>
+{
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> i, j, entries_per_page, max_order = <span class="hljs-number">4</span>;
+        <span class="hljs-type">size_t</span> rq_size, left;
+        <span class="hljs-type">int</span> node = blk_mq_hw_queue_to_node(&amp;<span class="hljs-built_in">set</span>-&gt;<span class="hljs-built_in">map</span>[HCTX_TYPE_DEFAULT], hctx_idx);
+        <span class="hljs-keyword">if</span> (node == NUMA_NO_NODE)
+                node = <span class="hljs-built_in">set</span>-&gt;numa_node;
+        INIT_LIST_HEAD(&amp;tags-&gt;page_list);
+        <span class="hljs-comment">/* 请求本体 + 驱动 payload，按 cacheline 向上取整 */</span>
+        rq_size = round_up(<span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> request) + <span class="hljs-built_in">set</span>-&gt;cmd_size, cache_line_size());
+        left = rq_size * depth;
+        <span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; depth; ) {
+                <span class="hljs-type">int</span> this_order = max_order;
+                <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">page</span> *<span class="hljs-title">page</span>;</span>
+                <span class="hljs-type">int</span> to_do;
+                <span class="hljs-type">void</span> *p;
+                <span class="hljs-keyword">while</span> (this_order &amp;&amp; left &lt; order_to_size(this_order - <span class="hljs-number">1</span>))
+                        this_order--;
+                <span class="hljs-comment">/* order 不够就降阶再试，GFP_ZERO 保证槽位干净 */</span>
+                page = alloc_pages_node(node,
+                        GFP_NOIO | __GFP_NOWARN | __GFP_NORETRY | __GFP_ZERO, this_order);
+                <span class="hljs-keyword">if</span> (!page)
+                        <span class="hljs-keyword">goto</span> fail;
+                page-&gt;private = this_order;
+                list_add_tail(&amp;page-&gt;lru, &amp;tags-&gt;page_list);   <span class="hljs-comment">/* 记帐，释放要还 */</span>
+                p = page_address(page);
+                kmemleak_alloc(p, order_to_size(this_order), <span class="hljs-number">1</span>, GFP_NOIO);
+                entries_per_page = order_to_size(this_order) / rq_size;
+                to_do = min(entries_per_page, depth - i);
+                left -= to_do * rq_size;
+                <span class="hljs-keyword">for</span> (j = <span class="hljs-number">0</span>; j &lt; to_do; j++) {
+                        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request</span> *<span class="hljs-title">rq</span> =</span> p;
+                        tags-&gt;static_rqs[i] = rq;
+                        <span class="hljs-keyword">if</span> (blk_mq_init_request(<span class="hljs-built_in">set</span>, rq, hctx_idx, node)) {
+                                tags-&gt;static_rqs[i] = <span class="hljs-literal">NULL</span>;   <span class="hljs-comment">/* 内部会调 ops-&gt;init_request */</span>
+                                <span class="hljs-keyword">goto</span> fail;
+                        }
+                        p += rq_size;
+                        i++;
+                }
+        }
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+fail:
+        blk_mq_free_rqs(<span class="hljs-built_in">set</span>, tags, hctx_idx);
+        <span class="hljs-keyword">return</span> -ENOMEM;
+}
+</code></pre></div></code></pre>
+<p><code>cmd_size</code> 就是在这里生效的：<code>rq_size</code> 把驱动私有区一起算进每个槽位，<code>blk_mq_init_request()</code> 内部调 <code>ops-&gt;init_request()</code> 让你初始化它。所以 <code>cmd_size</code> 定的值一经初始化就不能变，改它必须重建整个 tag set。</p>
+<h3 id="8.3-request_queue-的初始化blk_mq_init_allocated_queue" tabindex="-1">8.3 request_queue 的初始化：blk_mq_init_allocated_queue <a class="header-anchor" href="#8.3-request_queue-的初始化blk_mq_init_allocated_queue"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8，节选 */</span>
+<span class="hljs-keyword">struct</span> request_queue *<span class="hljs-title function_">blk_mq_init_allocated_queue</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_tag_set *<span class="hljs-built_in">set</span>,
+                                                  <span class="hljs-keyword">struct</span> request_queue *q)</span>
+{
+        q-&gt;mq_ops = <span class="hljs-built_in">set</span>-&gt;ops;                             <span class="hljs-comment">/* 第一件事：标记为 MQ */</span>
+        q-&gt;poll_cb = blk_stat_alloc_callback(blk_mq_poll_stats_fn,
+                                             blk_mq_poll_stats_bkt,
+                                             BLK_MQ_POLL_STATS_BKTS, q);
+        <span class="hljs-keyword">if</span> (!q-&gt;poll_cb)
+                <span class="hljs-keyword">goto</span> err_exit;
+        <span class="hljs-keyword">if</span> (blk_mq_alloc_ctxs(q))                         <span class="hljs-comment">/* per-CPU ctx 数组 */</span>
+                <span class="hljs-keyword">goto</span> err_poll;
+        blk_mq_sysfs_init(q);                             <span class="hljs-comment">/* q-&gt;mq_kobj + sw queue kobj */</span>
+        q-&gt;nr_queues = nr_hw_queues(<span class="hljs-built_in">set</span>);
+        q-&gt;queue_hw_ctx = kcalloc_node(q-&gt;nr_queues, <span class="hljs-keyword">sizeof</span>(*(q-&gt;queue_hw_ctx)),
+                                                GFP_KERNEL, <span class="hljs-built_in">set</span>-&gt;numa_node);
+        <span class="hljs-keyword">if</span> (!q-&gt;queue_hw_ctx)
+                <span class="hljs-keyword">goto</span> err_sys_init;
+        INIT_LIST_HEAD(&amp;q-&gt;unused_hctx_list);
+        spin_lock_init(&amp;q-&gt;unused_hctx_lock);
+        blk_mq_realloc_hw_ctxs(<span class="hljs-built_in">set</span>, q);                   <span class="hljs-comment">/* 建每个 hctx */</span>
+        <span class="hljs-keyword">if</span> (!q-&gt;nr_hw_queues)
+                <span class="hljs-keyword">goto</span> err_hctxs;
+        INIT_WORK(&amp;q-&gt;timeout_work, blk_mq_timeout_work);
+        blk_queue_rq_timeout(q, <span class="hljs-built_in">set</span>-&gt;timeout ? <span class="hljs-built_in">set</span>-&gt;timeout : <span class="hljs-number">30</span> * HZ);
+        q-&gt;tag_set = <span class="hljs-built_in">set</span>;
+        q-&gt;queue_flags |= QUEUE_FLAG_MQ_DEFAULT;
+        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">set</span>-&gt;nr_maps &gt; HCTX_TYPE_POLL &amp;&amp;
+            <span class="hljs-built_in">set</span>-&gt;<span class="hljs-built_in">map</span>[HCTX_TYPE_POLL].nr_queues)
+                blk_queue_flag_set(QUEUE_FLAG_POLL, q);
+        q-&gt;sg_reserved_size = INT_MAX;
+        INIT_DELAYED_WORK(&amp;q-&gt;requeue_work, blk_mq_requeue_work);
+        INIT_LIST_HEAD(&amp;q-&gt;requeue_list);
+        spin_lock_init(&amp;q-&gt;requeue_lock);
+        blk_queue_make_request(q, blk_mq_make_request);   <span class="hljs-comment">/* bio 入口从此固定 */</span>
+        <span class="hljs-comment">/* Do this after blk_queue_make_request() overrides it... */</span>
+        q-&gt;nr_requests = <span class="hljs-built_in">set</span>-&gt;queue_depth;
+        q-&gt;poll_nsec = BLK_MQ_POLL_CLASSIC;
+        blk_mq_init_cpu_queues(q, <span class="hljs-built_in">set</span>-&gt;nr_hw_queues);     <span class="hljs-comment">/* 初始化每个 ctx */</span>
+        blk_mq_add_queue_tag_set(<span class="hljs-built_in">set</span>, q);                 <span class="hljs-comment">/* 挂进 set-&gt;tag_list */</span>
+        blk_mq_map_swqueue(q);                            <span class="hljs-comment">/* ctx &lt;-&gt; hctx 双向绑定 */</span>
+        <span class="hljs-keyword">if</span> (!(<span class="hljs-built_in">set</span>-&gt;flags &amp; BLK_MQ_F_NO_SCHED)) {          <span class="hljs-comment">/* 除非显式禁用调度器 */</span>
+                <span class="hljs-type">int</span> ret = elevator_init_mq(q);
+                <span class="hljs-keyword">if</span> (ret)
+                        <span class="hljs-keyword">return</span> ERR_PTR(ret);
+        }
+        <span class="hljs-keyword">return</span> q;
+        <span class="hljs-comment">/* err_hctxs / err_sys_init / err_poll / err_exit 四级回滚，略 */</span>
+}
+</code></pre></div></code></pre>
+<p>上面每一步的作用就写在注释里，按序号读一遍即可。重点看三步：第 5 步建 hctx、第 8 步固定 bio 入口、第 10 步建调度器。</p>
+<p>第 5 步的 <code>blk_mq_realloc_hw_ctxs()</code> 对每个 hctx 的顺序，就是一份「hctx 初始化清单」：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>hctx-&gt;nr_active = 0;
+hctx-&gt;run_work  -&gt; blk_mq_run_work_fn;
+hctx-&gt;ctxs      = kmalloc_array_node(nr_cpu_ids, sizeof(void *), gfp, node);
+hctx-&gt;nr_ctx    = 0;
+hctx-&gt;queue     = q;
+spin_lock_init(&amp;hctx-&gt;dispatch_wait_lock);
+spin_lock_init(&amp;hctx-&gt;lock);
+INIT_LIST_HEAD(&amp;hctx-&gt;hctx_list);
+INIT_LIST_HEAD(&amp;hctx-&gt;dispatch);
+hctx-&gt;queue_num = hctx_idx;
+hctx-&gt;tags      = set-&gt;tags[hctx_idx];   /* 一个硬件队列一个 blk_mq_tags */
+</code></pre></div></code></pre>
+<p>它还有个 NUMA 早退分支：<code>if (hctxs[i] &amp;&amp; (hctxs[i]-&gt;numa_node == node)) continue;</code> —— hctx 已存在且节点没变就跳过重建，热更新 <code>nr_hw_queues</code> 时靠这个避免全量拆建。</p>
+<p>第 9 步的 <code>blk_mq_init_cpu_queues()</code> 末尾那段值得抄：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">for</span> (j = <span class="hljs-number">0</span>; j &lt; <span class="hljs-built_in">set</span>-&gt;nr_maps; j++) {
+        hctx = blk_mq_map_queue_type(q, j, i);
+        <span class="hljs-keyword">if</span> (nr_hw_queues &gt; <span class="hljs-number">1</span> &amp;&amp; hctx-&gt;numa_node == NUMA_NO_NODE)
+                hctx-&gt;numa_node = local_memory_node(cpu_to_node(i));
+}
+</code></pre></div></code></pre>
+<p>只有 <code>nr_hw_queues &gt; 1</code> 才把 hctx 的 NUMA 节点落到本地内存节点；单硬件队列时保持设备本节点，这是有意的取舍。前面那套逐个字段初始化的动作则是 <code>__ctx-&gt;cpu = i</code>、<code>spin_lock_init(&amp;__ctx-&gt;lock)</code>、把 <code>rq_lists[HCTX_MAX_TYPES]</code> 逐个 <code>INIT_LIST_HEAD</code>。</p>
+<h3 id="8.4-便捷封装blk_mq_init_sq_queue" tabindex="-1">8.4 便捷封装：blk_mq_init_sq_queue <a class="header-anchor" href="#8.4-便捷封装blk_mq_init_sq_queue"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>多数单队列设备不愿意手写上面这一串，所以块层给了封装：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8，节选 */</span>
+<span class="hljs-keyword">struct</span> request_queue *<span class="hljs-title function_">blk_mq_init_sq_queue</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_tag_set *<span class="hljs-built_in">set</span>,
+                                           <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> blk_mq_ops *ops,
+                                           <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> queue_depth,
+                                           <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> set_flags)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request_queue</span> *<span class="hljs-title">q</span>;</span>
+        <span class="hljs-type">int</span> ret;
+        <span class="hljs-built_in">memset</span>(<span class="hljs-built_in">set</span>, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(*<span class="hljs-built_in">set</span>));   <span class="hljs-comment">/* 注意：cmd_size / timeout 等一并清 0 */</span>
+        <span class="hljs-built_in">set</span>-&gt;ops = ops;
+        <span class="hljs-built_in">set</span>-&gt;nr_hw_queues = <span class="hljs-number">1</span>;          <span class="hljs-comment">/* 强制单硬件队列 */</span>
+        <span class="hljs-built_in">set</span>-&gt;nr_maps = <span class="hljs-number">1</span>;               <span class="hljs-comment">/* 强制单 map */</span>
+        <span class="hljs-built_in">set</span>-&gt;queue_depth = queue_depth;
+        <span class="hljs-built_in">set</span>-&gt;numa_node = NUMA_NO_NODE;  <span class="hljs-comment">/* 强制不指定节点 */</span>
+        <span class="hljs-built_in">set</span>-&gt;flags = set_flags;
+        ret = blk_mq_alloc_tag_set(<span class="hljs-built_in">set</span>);
+        <span class="hljs-keyword">if</span> (ret)
+                <span class="hljs-keyword">return</span> ERR_PTR(ret);
+        q = blk_mq_init_queue(<span class="hljs-built_in">set</span>);
+        <span class="hljs-keyword">if</span> (IS_ERR(q)) {
+                blk_mq_free_tag_set(<span class="hljs-built_in">set</span>);
+                <span class="hljs-keyword">return</span> q;
+        }
+        <span class="hljs-keyword">return</span> q;
+}
+</code></pre></div></code></pre>
+<p>四个参数：<code>set</code>（调用方提供的 <code>blk_mq_tag_set</code> 存储）、<code>ops</code>、<code>queue_depth</code>、<code>set_flags</code>。它的隐含设定要记牢，因为这几项你<strong>没法通过它传</strong>：</p>
+<ul>
+<li><code>nr_hw_queues</code> 强制 1，<code>nr_maps</code> 强制 1；</li>
+<li><code>numa_node</code> 强制 <code>NUMA_NO_NODE</code>；</li>
+<li><code>reserved_tags</code>、<code>cmd_size</code>、<code>timeout</code>、<code>driver_data</code> 全被 <code>memset</code> 清 0；</li>
+<li>出错时帮你调 <code>blk_mq_free_tag_set()</code>，分配 <code>q</code> 失败时也一并退了 tag set。</li>
+</ul>
+<p>所以只要你的设备有多个硬件队列、需要 <code>cmd_size</code>、需要预留 tag 或要指定 NUMA 节点，就得走 <code>blk_mq_alloc_tag_set()</code> + <code>blk_mq_init_queue()</code> 两条调用，不能用 <code>sq</code> 封装。z2ram 什么特殊需求都没有，一行 <code>blk_mq_init_sq_queue(&amp;tag_set, &amp;z2_mq_ops, 16, BLK_MQ_F_SHOULD_MERGE)</code> 就够。</p>
+<blockquote>
+<p>版本注记：<code>blk_mq_init_sq_queue()</code> 在较新内核（6.x）里已被删除。现在等价的路径是 <code>blk_mq_alloc_tag_set()</code> + <code>blk_mq_alloc_disk()</code>。后者一次返回 <code>gendisk</code> 和 <code>request_queue</code>（通过出参），省掉 <code>alloc_disk()</code> + <code>blk_mq_init_queue()</code> + 手工赋 <code>disk-&gt;queue</code> 三步，配套释放是 <code>del_gendisk()</code> + <code>put_disk()</code>，<code>queue</code> 的生命周期跟着 <code>gendisk</code> 走。5.x 里 <code>alloc_disk()</code> + <code>blk_mq_init_queue()</code> 还是标准写法，两种写法不要混用。</p>
+</blockquote>
+<h2 id="九请求的分发queue_rq" tabindex="-1">九、请求的分发：queue_rq <a class="header-anchor" href="#九请求的分发queue_rq"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>queue_rq</code> 是块层唯一强制的驱动回调，签名固定：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">blk_status_t</span> (*queue_rq)(<span class="hljs-keyword">struct</span> blk_mq_hw_ctx *hctx,
+                         <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> blk_mq_queue_data *bd);
+</code></pre></div></code></pre>
+<p><code>bd</code> 里就两个东西：<code>bd-&gt;rq</code> 是这次的 request，<code>bd-&gt;last</code> 表示「这是本批次的最后一条」。要不要用 <code>last</code> 做批量提交由驱动自己定，用了就得实现 <code>commit_rqs</code>。</p>
+<p>从 <code>submit_bio()</code> 到 <code>queue_rq()</code> 只隔一层：<code>generic_make_request()</code> 调 <code>q-&gt;make_request_fn</code>，也就是 <code>blk_mq_make_request()</code>。函数前半段是固定动作，按顺序背下来即可：<code>blk_queue_bounce()</code>（DMA 地址限制）→ <code>blk_queue_split()</code>（超限 bio 拆分，拆出的部分重新走 <code>generic_make_request</code>）→ <code>bio_integrity_prep()</code>（完整性校验）→ <code>blk_attempt_plug_merge()</code>（试合并到 plug）→ <code>blk_mq_sched_bio_merge()</code>（试合并到调度器或 sw queue）→ <code>rq_qos_throttle()</code>（限流）→ <code>blk_mq_get_request()</code>（拿 request + tag）。任一步合并成功就直接 <code>return BLK_QC_T_NONE</code>，根本不产生新 request。后半段是五条分支：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8，节选：四条派发分支 */</span>
+        plug = current-&gt;plug;
+        <span class="hljs-keyword">if</span> (unlikely(is_flush_fua)) {                     <span class="hljs-comment">/* 分支一：flush/FUA 绕过调度器 */</span>
+                blk_mq_put_ctx(data.ctx);
+                blk_mq_bio_to_request(rq, bio);
+                blk_insert_flush(rq);
+                blk_mq_run_hw_queue(data.hctx, <span class="hljs-literal">true</span>);
+        } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (plug &amp;&amp; (q-&gt;nr_hw_queues == <span class="hljs-number">1</span> || q-&gt;mq_ops-&gt;commit_rqs)) {
+                <span class="hljs-comment">/* 分支二：单队列或驱动支持 bd-&gt;last，攒进 plug-&gt;mq_list */</span>
+                <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> request_count = plug-&gt;rq_count;
+                <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request</span> *<span class="hljs-title">last</span> =</span> <span class="hljs-literal">NULL</span>;
+                blk_mq_put_ctx(data.ctx);
+                blk_mq_bio_to_request(rq, bio);
+                <span class="hljs-keyword">if</span> (request_count)
+                        last = list_entry_rq(plug-&gt;mq_list.prev);
+                <span class="hljs-keyword">if</span> (request_count &gt;= BLK_MAX_REQUEST_COUNT || (last &amp;&amp;
+                    blk_rq_bytes(last) &gt;= BLK_PLUG_FLUSH_SIZE))
+                        blk_flush_plug_list(plug, <span class="hljs-literal">false</span>);  <span class="hljs-comment">/* 攒够了，一次下发 */</span>
+                blk_add_rq_to_plug(plug, rq);
+        } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (plug &amp;&amp; !blk_queue_nomerges(q)) {      <span class="hljs-comment">/* 分支三：plug 里只留一条 */</span>
+                blk_mq_bio_to_request(rq, bio);
+                <span class="hljs-keyword">if</span> (list_empty(&amp;plug-&gt;mq_list))
+                        same_queue_rq = <span class="hljs-literal">NULL</span>;
+                <span class="hljs-keyword">if</span> (same_queue_rq) {
+                        list_del_init(&amp;same_queue_rq-&gt;queuelist);
+                        plug-&gt;rq_count--;
+                }
+                blk_add_rq_to_plug(plug, rq);
+                blk_mq_put_ctx(data.ctx);
+                <span class="hljs-keyword">if</span> (same_queue_rq) {                      <span class="hljs-comment">/* 旧的同队列请求直发 */</span>
+                        data.hctx = same_queue_rq-&gt;mq_hctx;
+                        blk_mq_try_issue_directly(data.hctx, same_queue_rq, &amp;cookie);
+                }
+        } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> ((q-&gt;nr_hw_queues &gt; <span class="hljs-number">1</span> &amp;&amp; is_sync) || (!q-&gt;elevator &amp;&amp;
+                        !data.hctx-&gt;dispatch_busy)) {     <span class="hljs-comment">/* 分支四：直发 */</span>
+                blk_mq_put_ctx(data.ctx);
+                blk_mq_bio_to_request(rq, bio);
+                blk_mq_try_issue_directly(data.hctx, rq, &amp;cookie);
+        } <span class="hljs-keyword">else</span> {                                          <span class="hljs-comment">/* 分支五：进调度器 */</span>
+                blk_mq_put_ctx(data.ctx);
+                blk_mq_bio_to_request(rq, bio);
+                blk_mq_sched_insert_request(rq, <span class="hljs-literal">false</span>, <span class="hljs-literal">true</span>, <span class="hljs-literal">true</span>);
+        }
+        <span class="hljs-keyword">return</span> cookie;
+</code></pre></div></code></pre>
+<p>一句话对照五条分支：flush/FUA 绕过调度器进 flush 队列；有 plug 且单队列或驱动实现了 <code>commit_rqs</code> 就攒进 <code>plug-&gt;mq_list</code>，到阈值一次下发；有 plug 且允许 merge 时 plug 里最多留一条，旧的同队列请求直发；多队列同步 I/O 或无调度器且 hctx 不忙走 <code>blk_mq_try_issue_directly</code>，省一次入队出队；其余进调度器排队。</p>
+<p>同步判定的规则很干脆：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/linux/blk_types.h，Linux 5.2.8 */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">bool</span> <span class="hljs-title function_">op_is_sync</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> op)</span>
+{
+        <span class="hljs-keyword">return</span> (op &amp; REQ_OP_MASK) == REQ_OP_READ ||
+                (op &amp; (REQ_SYNC | REQ_FUA | REQ_PREFLUSH));
+}
+</code></pre></div></code></pre>
+<p><strong>所有读都算同步</strong>，加上带 <code>REQ_SYNC</code> / <code>REQ_FUA</code> / <code>REQ_PREFLUSH</code> 的写。读多写少的负载更容易走直发路径，原因就在这里。</p>
+<p>真正落到 <code>queue_rq</code> 的三个入口，最要紧的是返回值处理：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8，节选 */</span>
+        ret = q-&gt;mq_ops-&gt;queue_rq(hctx, &amp;bd);     <span class="hljs-comment">/* 驱动在这里被调用 */</span>
+        <span class="hljs-keyword">switch</span> (ret) {
+        <span class="hljs-keyword">case</span> BLK_STS_OK:
+                blk_mq_update_dispatch_busy(hctx, <span class="hljs-literal">false</span>);
+                *cookie = new_cookie;
+                <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">case</span> BLK_STS_RESOURCE:
+        <span class="hljs-keyword">case</span> BLK_STS_DEV_RESOURCE:
+                blk_mq_update_dispatch_busy(hctx, <span class="hljs-literal">true</span>);
+                __blk_mq_requeue_request(rq);     <span class="hljs-comment">/* 释放 tag，挂回 dispatch */</span>
+                <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">default</span>:
+                blk_mq_update_dispatch_busy(hctx, <span class="hljs-literal">false</span>);
+                *cookie = BLK_QC_T_NONE;
+                <span class="hljs-keyword">break</span>;
+        }
+        <span class="hljs-keyword">return</span> ret;
+</code></pre></div></code></pre>
+<p>返回值语义必须背下来，这是驱动和块层之间唯一的握手协议：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>返回</th>
+<th>含义</th>
+<th>块层动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BLK_STS_OK</code></td>
+<td>已受理（不代表已完成）</td>
+<td>标记 hctx 不忙，继续</td>
+</tr>
+<tr>
+<td><code>BLK_STS_RESOURCE</code></td>
+<td>缺内核资源，暂时发不出去</td>
+<td>标记 hctx 忙，释放 tag，request 挂回 <code>hctx-&gt;dispatch</code></td>
+</tr>
+<tr>
+<td><code>BLK_STS_DEV_RESOURCE</code></td>
+<td>设备侧资源耗尽</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>其他（如 <code>BLK_STS_IOERR</code>）</td>
+<td>这条已经失败了</td>
+<td>视为派发结束，由块层走完成路径</td>
+</tr>
+</tbody>
+</table></div><p>直发路径的前置检查，<code>__blk_mq_try_issue_directly()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">blk_status_t</span> __blk_mq_try_issue_directly(<span class="hljs-keyword">struct</span> blk_mq_hw_ctx *hctx,
+                                                <span class="hljs-keyword">struct</span> request *rq,
+                                                <span class="hljs-type">blk_qc_t</span> *cookie,
+                                                <span class="hljs-type">bool</span> bypass_insert, <span class="hljs-type">bool</span> last)
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request_queue</span> *<span class="hljs-title">q</span> =</span> rq-&gt;q;
+        <span class="hljs-type">bool</span> run_queue = <span class="hljs-literal">true</span>;
+        <span class="hljs-keyword">if</span> (blk_mq_hctx_stopped(hctx) || blk_queue_quiesced(q)) {
+                run_queue = <span class="hljs-literal">false</span>;
+                bypass_insert = <span class="hljs-literal">false</span>;
+                <span class="hljs-keyword">goto</span> insert;
+        }
+        <span class="hljs-keyword">if</span> (q-&gt;elevator &amp;&amp; !bypass_insert)
+                <span class="hljs-keyword">goto</span> insert;
+        <span class="hljs-keyword">if</span> (!blk_mq_get_dispatch_budget(hctx))
+                <span class="hljs-keyword">goto</span> insert;
+        <span class="hljs-keyword">if</span> (!blk_mq_get_driver_tag(rq)) {
+                blk_mq_put_dispatch_budget(hctx);
+                <span class="hljs-keyword">goto</span> insert;
+        }
+        <span class="hljs-keyword">return</span> __blk_mq_issue_directly(hctx, rq, cookie, last);
+insert:
+        <span class="hljs-keyword">if</span> (bypass_insert)
+                <span class="hljs-keyword">return</span> BLK_STS_RESOURCE;
+        blk_mq_request_bypass_insert(rq, run_queue);
+        <span class="hljs-keyword">return</span> BLK_STS_OK;
+}
+</code></pre></div></code></pre>
+<p>这里出现了第二个「拿 tag」的动作，很多人会疑惑为什么前面 <code>blk_mq_get_request()</code> 已经拿过还要再拿：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8，节选 */</span>
+<span class="hljs-type">bool</span> <span class="hljs-title function_">blk_mq_get_driver_tag</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> request *rq)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_alloc_data</span> <span class="hljs-title">data</span> =</span> {
+                .q = rq-&gt;q,
+                .hctx = rq-&gt;mq_hctx,
+                .flags = BLK_MQ_REQ_NOWAIT,
+                .cmd_flags = rq-&gt;cmd_flags,
+        };
+        <span class="hljs-type">bool</span> shared;
+        <span class="hljs-keyword">if</span> (rq-&gt;tag != <span class="hljs-number">-1</span>)                <span class="hljs-comment">/* 已经拿到 driver tag，直接返回 */</span>
+                <span class="hljs-keyword">goto</span> done;
+        <span class="hljs-keyword">if</span> (blk_mq_tag_is_reserved(data.hctx-&gt;sched_tags, rq-&gt;internal_tag))
+                data.flags |= BLK_MQ_REQ_RESERVED;
+        shared = blk_mq_tag_busy(data.hctx);
+        rq-&gt;tag = blk_mq_get_tag(&amp;data);  <span class="hljs-comment">/* 重新申请 */</span>
+        <span class="hljs-keyword">if</span> (rq-&gt;tag &gt;= <span class="hljs-number">0</span>) {
+                <span class="hljs-keyword">if</span> (shared) {
+                        rq-&gt;rq_flags |= RQF_MQ_INFLIGHT;
+                        atomic_inc(&amp;data.hctx-&gt;nr_active);
+                }
+                data.hctx-&gt;tags-&gt;rqs[rq-&gt;tag] = rq;
+        }
+done:
+        <span class="hljs-keyword">return</span> rq-&gt;tag != <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p>答案是：<strong>派发失败会把 tag 还回去</strong>。request 被塞进 <code>hctx-&gt;dispatch</code> 等待时，<code>rq-&gt;tag</code> 已经是 -1，真正要发的时候得重新要一个。这解释了为什么 <code>request</code> 里 <code>tag</code> 和 <code>internal_tag</code> 两个字段必须分开存 —— 前者是可以反复申请、反复释放的，后者在整个生命周期里稳定。</p>
+<p><code>blk_mq_run_hw_queue()</code> 是另一条派发入口，粒度是整个硬件队列：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8 */</span>
+<span class="hljs-type">bool</span> <span class="hljs-title function_">blk_mq_run_hw_queue</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_hw_ctx *hctx, <span class="hljs-type">bool</span> async)</span>
+{
+        <span class="hljs-type">int</span> srcu_idx;
+        <span class="hljs-type">bool</span> need_run;
+        hctx_lock(hctx, &amp;srcu_idx);
+        need_run = !blk_queue_quiesced(hctx-&gt;<span class="hljs-built_in">queue</span>) &amp;&amp;
+                blk_mq_hctx_has_pending(hctx);
+        hctx_unlock(hctx, srcu_idx);
+        <span class="hljs-keyword">if</span> (need_run) {
+                __blk_mq_delay_run_hw_queue(hctx, async, <span class="hljs-number">0</span>);
+                <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+        }
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+}
+</code></pre></div></code></pre>
+<p><code>async</code> 是这里的核心分岔：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> __blk_mq_delay_run_hw_queue(<span class="hljs-keyword">struct</span> blk_mq_hw_ctx *hctx, <span class="hljs-type">bool</span> async,
+                                        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> msecs)
+{
+        <span class="hljs-keyword">if</span> (unlikely(blk_mq_hctx_stopped(hctx)))
+                <span class="hljs-keyword">return</span>;
+        <span class="hljs-keyword">if</span> (!async &amp;&amp; !(hctx-&gt;flags &amp; BLK_MQ_F_BLOCKING)) {  <span class="hljs-type">int</span> cpu = get_cpu();
+                <span class="hljs-keyword">if</span> (cpumask_test_cpu(cpu, hctx-&gt;cpumask)) {
+                        __blk_mq_run_hw_queue(hctx);
+                        put_cpu();
+                        <span class="hljs-keyword">return</span>;
+                }
+                put_cpu();
+        }
+        kblockd_mod_delayed_work_on(blk_mq_hctx_next_cpu(hctx), &amp;hctx-&gt;run_work,
+                                    msecs_to_jiffies(msecs));
+}
+</code></pre></div></code></pre>
+<p>同步走：当前 CPU 在这个 hctx 的 <code>cpumask</code> 里、且驱动没标 <code>BLK_MQ_F_BLOCKING</code>，就在原地直接跑 <code>__blk_mq_run_hw_queue()</code>。否则一律丢给 kblockd 内核线程异步跑。这就是「CPU 亲和」在派发路径上的第一个体现。</p>
+<p><code>__blk_mq_run_hw_queue()</code> 里还有一道 DEBUG 级检查：<code>run queue from wrong CPU %d, hctx %s</code>，并附 <code>dump_stack()</code>。看到它说明驱动在错误的 CPU 上同步调用了派发，或者 hctx 的 cpumask 配得跟中断亲和不一致。</p>
+<p>最后是真正的派发总调度，<code>blk_mq_sched_dispatch_requests()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq-sched.c，Linux 5.2.8 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">blk_mq_sched_dispatch_requests</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_hw_ctx *hctx)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request_queue</span> *<span class="hljs-title">q</span> =</span> hctx-&gt;<span class="hljs-built_in">queue</span>;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">elevator_queue</span> *<span class="hljs-title">e</span> =</span> q-&gt;elevator;
+        <span class="hljs-type">const</span> <span class="hljs-type">bool</span> has_sched_dispatch = e &amp;&amp; e-&gt;type-&gt;ops.dispatch_request;
+        LIST_HEAD(rq_list);
+        <span class="hljs-keyword">if</span> (unlikely(blk_mq_hctx_stopped(hctx) || blk_queue_quiesced(q)))
+                <span class="hljs-keyword">return</span>;
+        hctx-&gt;run++;
+        <span class="hljs-comment">/* 先把 hctx-&gt;dispatch 上的残留搬到 rq_list */</span>
+        <span class="hljs-keyword">if</span> (!list_empty_careful(&amp;hctx-&gt;dispatch)) {
+                spin_lock(&amp;hctx-&gt;lock);
+                <span class="hljs-keyword">if</span> (!list_empty(&amp;hctx-&gt;dispatch))
+                        list_splice_init(&amp;hctx-&gt;dispatch, &amp;rq_list);
+                spin_unlock(&amp;hctx-&gt;lock);
+        }
+        <span class="hljs-keyword">if</span> (!list_empty(&amp;rq_list)) {
+                blk_mq_sched_mark_restart_hctx(hctx);
+                <span class="hljs-keyword">if</span> (blk_mq_dispatch_rq_list(q, &amp;rq_list, <span class="hljs-literal">false</span>)) {
+                        <span class="hljs-keyword">if</span> (has_sched_dispatch)
+                                blk_mq_do_dispatch_sched(hctx);
+                        <span class="hljs-keyword">else</span>
+                                blk_mq_do_dispatch_ctx(hctx);
+                }
+        } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (has_sched_dispatch) {
+                blk_mq_do_dispatch_sched(hctx);      <span class="hljs-comment">/* 有调度器：从调度器队列取 */</span>
+        } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (hctx-&gt;dispatch_busy) {
+                blk_mq_do_dispatch_ctx(hctx);        <span class="hljs-comment">/* 设备忙：一条条从 sw queue 取 */</span>
+        } <span class="hljs-keyword">else</span> {
+                blk_mq_flush_busy_ctxs(hctx, &amp;rq_list);   <span class="hljs-comment">/* sw queue 一次扫空 */</span>
+                blk_mq_dispatch_rq_list(q, &amp;rq_list, <span class="hljs-literal">false</span>);
+        }
+}
+</code></pre></div></code></pre>
+<p>四种情况一目了然：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>优先顺序</th>
+<th>情况</th>
+<th>派发来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>hctx-&gt;dispatch</code> 非空</td>
+<td>先把残留的派发队列清干净，再考虑调度器</td>
+</tr>
+<tr>
+<td>2</td>
+<td>有调度器 <code>dispatch_request</code></td>
+<td><code>blk_mq_do_dispatch_sched()</code>，从调度器队列取</td>
+</tr>
+<tr>
+<td>3</td>
+<td>hctx 忙</td>
+<td><code>blk_mq_do_dispatch_ctx()</code>，一条条从软件队列取</td>
+</tr>
+<tr>
+<td>4</td>
+<td>都不忙</td>
+<td><code>blk_mq_flush_busy_ctxs()</code> 把各 sw queue 一次扫空，再批量派发</td>
+</tr>
+</tbody>
+</table></div><p>为什么非得先清 <code>dispatch</code>？注释说得明白：从调度器里取出来的 request 就不能再 merge 或排序了，所以能留在调度器里就尽量留着。但当 dispatch 队列里还有货时，得先发完，否则低队列深度的设备就永远只发出一小部分。</p>
+<p>最终都要落到 <code>blk_mq_dispatch_rq_list()</code>，它才是调 <code>queue_rq()</code> 的地方。派发失败时把剩余 request 挪回 <code>hctx-&gt;dispatch</code> 并启异步传输。</p>
+<p>plug 的收尾也是同一条路：<code>blk_flush_plug_list()</code> 检查 <code>plug-&gt;mq_list</code> 非空就转给 <code>blk_mq_flush_plug_list()</code>；后者先按 <code>plug-&gt;rq_count &gt; 2 &amp;&amp; plug-&gt;multiple_queues</code> 决定要不要 <code>list_sort</code>（按磁盘位置排，让下发前还能合并），再按 (q, ctx, hctx) 三元组分组，每组交给 <code>blk_mq_sched_insert_requests()</code>。<code>blk_mq_sched_insert_requests()</code> 对无调度器的快速路径是：hctx 不忙、没调度器、不要求异步，就 <code>blk_mq_try_issue_list_directly()</code> 直接下发，省掉一次 sw queue 的入队出队；否则 <code>blk_mq_insert_requests()</code> 进软件队列，末尾 <code>blk_mq_run_hw_queue(hctx, run_queue_async)</code> 顶一脚。</p>
+<h2 id="十完成路径blk_mq_complete_request" tabindex="-1">十、完成路径：blk_mq_complete_request <a class="header-anchor" href="#十完成路径blk_mq_complete_request"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>派发出去只是开始，request 怎么结束才是驱动最容易写错的地方。</p>
+<p>z2ram 的做法简单粗暴 —— <code>memcpy</code> 是同步的，硬件没有真正意义上的异步完成，所以它在 <code>queue_rq</code> 里搬完数据就直接调 <code>blk_mq_end_request()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        spin_unlock_irq(&amp;z2ram_lock);
+        blk_mq_end_request(req, BLK_STS_OK);
+        <span class="hljs-keyword">return</span> BLK_STS_OK;
+</code></pre></div></code></pre>
+<p>这段代码能跑，但有两个必须说清的边界。</p>
+<p>第一，<code>blk_mq_start_request()</code> 已经在前面调过。它会启动 request 的超时计时；如果你在 <code>queue_rq</code> 里同步完成，最好让块层走「快速完成」的判定，否则每个请求都要等超时工作来收尾。z2ram 用 <code>BLK_MQ_F_SHOULD_MERGE</code> 单队列 + 同步完成，实测跑得通（见第十四章日志）。</p>
+<p>第二，<code>blk_mq_end_request()</code> 是「块层侧结束」，适合在 request 真正完成后、且处在可以安全回调的上下文时调用。真实的异步设备（NVMe、virtio-blk、自研卡）走的是一条更长的链：完成中断里从自己的完成队列取出 tag / status → 用 <code>tags-&gt;rqs[tag]</code> 找回 request → 走 <code>rq-&gt;end_io</code> 或块层默认完成 → 最后落到 <code>blk_mq_end_request()</code>，或者抬软中断走 <code>blk_mq_complete_softirq()</code>。</p>
+<p>三个函数的职责边界：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>函数</th>
+<th>干什么</th>
+<th>你在哪用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>blk_mq_start_request(rq)</code></td>
+<td>记起点、启动超时计时</td>
+<td><code>queue_rq</code> 里，<strong>接受 request 后第一件事</strong></td>
+</tr>
+<tr>
+<td><code>blk_mq_end_request(rq, status)</code></td>
+<td>结束 request、统计、返 tag、唤醒</td>
+<td><code>queue_rq</code> 同步完成时，或完成中断里</td>
+</tr>
+<tr>
+<td><code>blk_mq_complete_request(rq)</code></td>
+<td>请求远程 CPU 完成（需要时会发 IPI 到提交的 CPU）</td>
+<td>完成发生在别的 CPU、想让完成回到提交 CPU 时</td>
+</tr>
+</tbody>
+</table></div><p><code>blk_mq_complete_request()</code> 的存在意义是让<strong>完成也亲和提交 CPU</strong>。派发出去的 CPU 和收中断的 CPU 常常不是同一个，如果完成时直接处理，就把 request 的数据结构和 bio 的 <code>bi_end_io</code> 都拉到远端节点上了。<code>complete</code> 回调（<code>blk_mq_ops.complete</code>）就是给驱动在这一步插手用的：块层准备「标记完成」的时候先问你一句。</p>
+<blockquote>
+<p>版本注记：5.2.8 里 <code>blk_mq_complete_request()</code> 内部走 <code>__blk_mq_complete_request()</code> → 判断 <code>rq-&gt;mq_ctx-&gt;cpu</code> 是否等于当前 CPU → 不等就 <code>blk_mq_complete_remote_or_requeue()</code> 发 IPI，相等就走软中断 <code>blk_mq_complete_softirq()</code>。6.x 里这段被重写为 <code>blk_mq_complete_request_remote()</code> 加 <code>rq-&gt;mq_hctx-&gt;cpumask</code> 的判定，函数名和内部结构有变化，具体分支标「未验证」。驱动侧只依赖 <code>blk_mq_end_request()</code> / <code>blk_mq_complete_request()</code> 两个入口，这两个的语义在各版本间保持一致。</p>
+</blockquote>
+<h2 id="十一超时与错误处理" tabindex="-1">十一、超时与错误处理 <a class="header-anchor" href="#十一超时与错误处理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>超时时间来自 <code>set-&gt;timeout</code>，单位 jiffies。填 0 不等于关超时，是走默认值：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8，blk_mq_init_allocated_queue() 里 */</span>
+INIT_WORK(&amp;q-&gt;timeout_work, blk_mq_timeout_work);
+blk_queue_rq_timeout(q, <span class="hljs-built_in">set</span>-&gt;timeout ? <span class="hljs-built_in">set</span>-&gt;timeout : <span class="hljs-number">30</span> * HZ);
+</code></pre></div></code></pre>
+<p>不填 <code>timeout</code> 拿到的是 30 秒。要改就用 <code>blk_queue_rq_timeout()</code>，想彻底不超时做不到 —— 块层不允许。</p>
+<p><code>blk_mq_timeout_work()</code> 扫 <code>hctx-&gt;tags</code> 上所有 tag 的 <code>deadline</code>，把过期的交给驱动的 <code>timeout</code> 回调。回调返回值只有两种有意义的取法：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>返回</th>
+<th>含义</th>
+<th>块层接着做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BLK_EH_DONE</code></td>
+<td>已处理（自己复位了硬件）</td>
+<td>不再重试，等驱动完成</td>
+</tr>
+<tr>
+<td><code>BLK_EH_RESET_TIMER</code></td>
+<td>还没到放弃的时候</td>
+<td>重置 <code>deadline</code>，继续等</td>
+</tr>
+</tbody>
+</table></div><p>不实现 <code>timeout</code> 的设备，超时后由块层按错误终止，<code>bi_status</code> 置 <code>BLK_STS_TIMEOUT</code>，数据不可重试。自研卡至少要实现一个「标记失败并触发控制器复位」的 <code>timeout</code>。</p>
+<p><code>queue_rq</code> 的返回状态别混，「设备忙」返回成 <code>BLK_STS_IOERR</code> 是最常见的错，结果是大批 I/O 被误判成介质错误，文件系统上抛 <code>EIO</code>。四种语义见第九章的表。</p>
+<p>z2ram 只有一处错误处理，写法基本标准：越界立即拒绝，返回 <code>BLK_STS_IOERR</code>。它先 <code>blk_mq_start_request()</code> 再判断越界、越界直接 <code>return</code>，少了一次 <code>blk_mq_end_request(req, BLK_STS_IOERR)</code>。5.2.8 的 <code>blk_mq_dispatch_rq_list()</code> 对错误返回值有兜底，功能上不卡死，但这是可改进之处，见第十八章。</p>
+<h2 id="十二调度器与-elevator" tabindex="-1">十二、调度器与 elevator <a class="header-anchor" href="#十二调度器与-elevator"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>blk-mq 时代的调度器和 blk-sq 时代是两套东西，老的只有一部分被改造过来：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>调度器</th>
+<th>blk-sq 时代</th>
+<th>blk-mq 时代</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>noop</code></td>
+<td>有</td>
+<td><code>none</code></td>
+<td>5.x 里 <code>none</code> 表示不装调度器</td>
+</tr>
+<tr>
+<td><code>deadline</code></td>
+<td>有</td>
+<td><code>mq-deadline</code></td>
+<td>每 hctx 一份实例</td>
+</tr>
+<tr>
+<td><code>cfq</code></td>
+<td>有</td>
+<td><strong>无对应物，已删除</strong></td>
+<td>5.0 移除 blk-sq 时一起走</td>
+</tr>
+<tr>
+<td><code>bfq</code></td>
+<td>有</td>
+<td><code>bfq</code>（mq 版）</td>
+<td><code>CONFIG_IOSCHED_BFQ</code></td>
+</tr>
+<tr>
+<td><code>kyber</code></td>
+<td>无</td>
+<td><code>kyber</code></td>
+<td>只有 mq 版</td>
+</tr>
+</tbody>
+</table></div><p>机制上，调度器挂在 <code>request_queue</code> 的一个 <code>elevator_queue</code> 上，但每个 hctx 各有自己的调度器数据结构（<code>hctx-&gt;sched_data</code>）和一套 <code>sched_tags</code>。所以 <code>nr_hw_queues = 8</code> 时调度器在内存里有 8 份独立实例。</p>
+<p>驱动的唯一开关是 <code>BLK_MQ_F_NO_SCHED</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* block/blk-mq.c，Linux 5.2.8，blk_mq_init_allocated_queue() 末尾 */</span>
+<span class="hljs-keyword">if</span> (!(<span class="hljs-built_in">set</span>-&gt;flags &amp; BLK_MQ_F_NO_SCHED)) {
+        <span class="hljs-type">int</span> ret = elevator_init_mq(q);
+        <span class="hljs-keyword">if</span> (ret)
+                <span class="hljs-keyword">return</span> ERR_PTR(ret);
+}
+</code></pre></div></code></pre>
+<p>设了它，<code>q-&gt;elevator</code> 恒为 NULL，所有 request 走软件队列直发路径。RAM 盘、纯内存设备该设它 —— 调度只增加延迟。z2ram 没设，所以它跑的是带 <code>mq-deadline</code> 的路径。</p>
+<p>调度器对驱动的影响有三点：tag 分两套（internal tag 来自 <code>sched_tags</code>，driver tag 来自 <code>hctx-&gt;tags</code>，总数可超过 <code>queue_depth</code>）；merge 由调度器的 <code>bio_merge</code> / <code>allow_merge</code> 决定，驱动设的 <code>BLK_MQ_F_SHOULD_MERGE</code> 只在无调度器时管用；<code>has_sched_dispatch</code> 为真时派发来源就是调度器，不再扫软件队列。</p>
+<blockquote>
+<p>版本注记：5.x 切调度器靠往 <code>/sys/block/&lt;dev&gt;/queue/scheduler</code> 写字符串，<code>elevator_switch_mq()</code> 走 quiesce → 冻结 → 换 → 解冻。6.x 里 <code>elevator</code> 一层的内部结构有变动，<code>none</code> 的行为也调整过（不再等同于无调度器）。本篇只断言 5.2.8。</p>
+</blockquote>
+<h2 id="十三多队列与中断亲和" tabindex="-1">十三、多队列与中断亲和 <a class="header-anchor" href="#十三多队列与中断亲和"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>多队列要真跑出并发，光有软件分层不够 —— 中断得跟着队列走。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>cpumask</th>
+<th>谁设</th>
+<th>含义</th>
+<th>设错会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hctx-&gt;cpumask</code></td>
+<td><code>blk_mq_map_swqueue()</code></td>
+<td>哪些 CPU 的 I/O 走这个 hctx</td>
+<td>派发落到不该跑的 CPU，打 <code>run queue from wrong CPU</code></td>
+</tr>
+<tr>
+<td>中断亲和性</td>
+<td>驱动 <code>request_irq()</code> 前后自己设</td>
+<td>该 hw queue 的完成中断落在哪些 CPU</td>
+<td>完成与派发错位，远端内存访问回来了</td>
+</tr>
+<tr>
+<td><code>map[i].mq_map[cpu]</code></td>
+<td><code>map_queues</code> 或默认算法</td>
+<td>CPU → hctx 编号</td>
+<td>映射不均，某个 hctx 被压满</td>
+</tr>
+</tbody>
+</table></div><p>理想状态是一条直线：<strong>CPU N 提交 → hctx N 派发 → hctx N 中断回到 CPU N → 在 CPU N 完成</strong>，全程不出 CPU，<code>ctx</code>、<code>tags</code>、bio 数据都留在本地缓存。</p>
+<p>中断数不够时，<code>nr_hw_queues</code> 只能开到中断数，靠加大 <code>queue_depth</code> 补吞吐。NVMe 那种一队列一中断的硬件，<code>nr_hw_queues</code> 直接等于 CPU 数，<code>numa_node</code> 再按 CPU 所在节点配，才算把多队列用满。</p>
+<p>z2ram 完全不走中断（<code>memcpy</code> 同步完成），<code>nr_hw_queues = 1</code> 就够，没有亲和可谈。这个反差本身就是好材料：只有异步硬件才需要多队列。</p>
+<h2 id="十四z2ram-实例一个完整的-blk-mq-驱动" tabindex="-1">十四、z2ram 实例：一个完整的 blk-mq 驱动 <a class="header-anchor" href="#十四z2ram-实例一个完整的-blk-mq-驱动"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前十三章全是架构。现在看一个真东西：<code>drivers/block/z2ram.c</code>。Amiga 平台的 RAM 盘驱动，小到能一口气读完，但一样不少：块操作集、gendisk、tag set、blk_mq_ops、queue_rq、模块出入口。</p>
+<p>它的 Kconfig 决定了能不能编出来：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>config AMIGA_Z2RAM
+        tristate &quot;Amiga Zorro II ramdisk support&quot;
+        depends on ZORRO
+        help
+          This enables support for using Chip RAM and Zorro II RAM as a
+          ramdisk or as a swap partition. Say Y if you want to include this
+          driver in the kernel.
+          To compile this driver as a module, choose M here: the
+          module will be called z2ram.
+</code></pre></div></code></pre>
+<p><code>depends on ZORRO</code> 意味着只有 m68k 的 Amiga 能编。<code>CONFIG_ZORRO</code> 在 <code>arch/m68k/configs/amiga_defconfig</code> 里是 <code>y</code>，Mini2440 这类 ARM 板子碰不到。Zorro 的 platform 驱动（<code>amiga_zorro_probe()</code>）负责初始化 <code>zorro_unused_z2ram</code> 位图 —— 那张位图后面被 z2ram 当「哪些 64KB 切片能拿来当磁盘」的账本。</p>
+<h3 id="14.1-全局变量" tabindex="-1">14.1 全局变量 <a class="header-anchor" href="#14.1-全局变量"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> DEVICE_NAME <span class="hljs-string">&quot;Z2RAM&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/blk-mq.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/bitops.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/mutex.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/slab.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/vmalloc.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/zorro.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;asm/setup.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;asm/amigahw.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;asm/pgtable.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> Z2MINOR_COMBINED      (0)   <span class="hljs-comment">/* 合并 Zorro II + Chip RAM */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> Z2MINOR_Z2ONLY        (1)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> Z2MINOR_CHIPONLY      (2)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> Z2MINOR_MEMLIST1      (4)   <span class="hljs-comment">/* 4~7：直接取 m68k_memory[] 的一段 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> Z2MINOR_MEMLIST2      (5)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> Z2MINOR_MEMLIST3      (6)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> Z2MINOR_MEMLIST4      (7)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> Z2MINOR_COUNT         (8)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> Z2RAM_CHUNK1024       ( Z2RAM_CHUNKSIZE &gt;&gt; 10 )</span>
+<span class="hljs-type">static</span> <span class="hljs-title function_">DEFINE_MUTEX</span><span class="hljs-params">(z2ram_mutex)</span>;
+<span class="hljs-type">static</span> u_long *z2ram_map    = <span class="hljs-literal">NULL</span>;   <span class="hljs-comment">/* 每个元素是一个切片的起始地址 */</span>
+<span class="hljs-type">static</span> u_long z2ram_size    = <span class="hljs-number">0</span>;      <span class="hljs-comment">/* 先当切片数，后当字节数 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> z2_count         = <span class="hljs-number">0</span>;      <span class="hljs-comment">/* Zorro II RAM 切片数 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> chip_count       = <span class="hljs-number">0</span>;      <span class="hljs-comment">/* Chip RAM 切片数 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> list_count       = <span class="hljs-number">0</span>;
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> current_device   = <span class="hljs-number">-1</span>;     <span class="hljs-comment">/* 当前占用设备的次设备号 */</span>
+<span class="hljs-type">static</span> <span class="hljs-title function_">DEFINE_SPINLOCK</span><span class="hljs-params">(z2ram_lock)</span>;
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">gendisk</span> *<span class="hljs-title">z2ram_gendisk</span>;</span>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request_queue</span> *<span class="hljs-title">z2_queue</span>;</span>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_tag_set</span> <span class="hljs-title">tag_set</span>;</span>
+<span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_ops</span> <span class="hljs-title">z2_mq_ops</span> =</span> {
+        .queue_rq       = z2_queue_rq,
+};
+</code></pre></div></code></pre>
+<p><code>Z2RAM_CHUNK1024</code> 是「一个切片有多少 KB」，只用在 printk 里把切片数换算成 KB。真正的几何参数来自 <code>include/linux/zorro.h</code>：<code>Z2RAM_CHUNKSIZE</code> 为 <code>0x0000ffff</code>（原文如此，实际按 64KB 用）、<code>Z2RAM_CHUNKSHIFT</code> 为 16、<code>Z2RAM_CHUNKMASK</code> 为 <code>0x0000ffff</code>、<code>Z2RAM_START</code> 为 <code>0x00200000</code>、<code>Z2RAM_SIZE</code> 为 <code>0x00800000</code>（8MB）。</p>
+<p>8MB / 64KB = 128 个切片，<code>z2ram_map</code> 就是这个长度的一维数组，每个元素存一个切片的虚拟起始地址。<code>Z2RAM_CHUNKSIZE</code> 定义成 <code>0xffff</code> 而代码按 <code>&gt;&gt; 16</code> / <code>&amp; 0xffff</code> 使用，是原代码的一处不严谨（正确值 <code>0x10000</code>），见勘误。</p>
+<h3 id="14.2-块设备操作集与-z2_open" tabindex="-1">14.2 块设备操作集与 z2_open <a class="header-anchor" href="#14.2-块设备操作集与-z2_open"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">block_device_operations</span> <span class="hljs-title">z2_fops</span> =</span>
+{
+        .owner          = THIS_MODULE,
+        .open           = z2_open,
+        .release        = z2_release,
+};
+</code></pre></div></code></pre>
+<p>只有 open / release 两个回调，没有 <code>ioctl</code>、没有 <code>getgeo</code>。<code>z2_open()</code> 是这个驱动逻辑最重的一段，因为第一次打开时要把 8MB 内存准备好。核心骨架如下（分片挑选部分见第十五章）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">z2_open</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> block_device *bdev, <span class="hljs-type">fmode_t</span> mode)</span>
+{
+    <span class="hljs-type">int</span> device;
+    <span class="hljs-type">int</span> max_z2_map = ( Z2RAM_SIZE / Z2RAM_CHUNKSIZE ) * <span class="hljs-keyword">sizeof</span>( z2ram_map[<span class="hljs-number">0</span>] );
+    <span class="hljs-type">int</span> max_chip_map = ( amiga_chip_size / Z2RAM_CHUNKSIZE ) * <span class="hljs-keyword">sizeof</span>( z2ram_map[<span class="hljs-number">0</span>] );
+    <span class="hljs-type">int</span> rc = -ENOMEM;
+    device = MINOR(bdev-&gt;bd_dev);
+    mutex_lock(&amp;z2ram_mutex);
+    <span class="hljs-keyword">if</span> ( current_device != <span class="hljs-number">-1</span> &amp;&amp; current_device != device )
+    {
+        rc = -EBUSY;
+        <span class="hljs-keyword">goto</span> err_out;
+    }
+    <span class="hljs-keyword">if</span> ( current_device == <span class="hljs-number">-1</span> )                 <span class="hljs-comment">/* 首次打开才真正分配 */</span>
+    {
+        z2_count = <span class="hljs-number">0</span>; chip_count = <span class="hljs-number">0</span>; list_count = <span class="hljs-number">0</span>; z2ram_size = <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">if</span> (device &gt;= Z2MINOR_MEMLIST1 &amp;&amp; device &lt;= Z2MINOR_MEMLIST4) {
+                <span class="hljs-comment">/* 次设备号 4~7：从 m68k_memory[] 取一段，先用 z_remap_nocache_nonser()
+                   映射成虚拟地址，再按 64KB 切片填进 z2ram_map，同时算 list_count */</span>
+        } <span class="hljs-keyword">else</span> <span class="hljs-keyword">switch</span> ( device )
+        {
+            <span class="hljs-keyword">case</span> Z2MINOR_COMBINED:              <span class="hljs-comment">/* 0，正常走这里 */</span>
+                <span class="hljs-comment">/* kmalloc(max_z2_map + max_chip_map) 后依次 get_z2ram()
+                   + get_chipram()，再按 z2_count / chip_count 打印两段用量 */</span>
+            <span class="hljs-keyword">case</span> Z2MINOR_Z2ONLY:                <span class="hljs-comment">/* 1，只 Zorro II，只调 get_z2ram() */</span>
+            <span class="hljs-keyword">case</span> Z2MINOR_CHIPONLY:              <span class="hljs-comment">/* 2，只 Chip RAM，只调 get_chipram() */</span>
+            <span class="hljs-keyword">default</span>:
+                rc = -ENODEV;
+                <span class="hljs-keyword">goto</span> err_out;
+        }
+        <span class="hljs-keyword">if</span> ( z2ram_size == <span class="hljs-number">0</span> ) {
+            printk( KERN_NOTICE DEVICE_NAME <span class="hljs-string">&quot;: no unused ZII/Chip RAM found\n&quot;</span> );
+            <span class="hljs-keyword">goto</span> err_out_kfree;
+        }
+        current_device = device;
+        z2ram_size &lt;&lt;= Z2RAM_CHUNKSHIFT;                 <span class="hljs-comment">/* 切片数 -&gt; 字节数 */</span>
+        set_capacity(z2ram_gendisk, z2ram_size &gt;&gt; <span class="hljs-number">9</span>);    <span class="hljs-comment">/* 字节 -&gt; 扇区 */</span>
+    }
+    mutex_unlock(&amp;z2ram_mutex);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+err_out_kfree:
+    kfree(z2ram_map);
+err_out:
+    mutex_unlock(&amp;z2ram_mutex);
+    <span class="hljs-keyword">return</span> rc;
+}
+</code></pre></div></code></pre>
+<p>四个要点：<code>current_device == -1</code> 时才真分配，之后重复 open 直接返回 0，用一个次设备号变量当「内存已就绪」的锁；<code>set_capacity()</code> 单位是 512 字节扇区，<code>&gt;&gt; 9</code> 漏了就是容量为 0 的盘；<code>z2ram_size</code> 在同一个变量里先当切片数再当字节数，<code>&lt;&lt;= Z2RAM_CHUNKSHIFT</code> 之后语义就换了；<code>err_out_kfree</code> 之后 <code>z2ram_map</code> 没置 NULL，重复 open 会二次 free（见勘误）。</p>
+<p>释放回调基本是空的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">z2_release</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> gendisk *disk, <span class="hljs-type">fmode_t</span> mode)</span>
+{
+    mutex_lock(&amp;z2ram_mutex);
+    <span class="hljs-keyword">if</span> ( current_device == <span class="hljs-number">-1</span> ) {
+        mutex_unlock(&amp;z2ram_mutex);
+        <span class="hljs-keyword">return</span>;
+    }
+    mutex_unlock(&amp;z2ram_mutex);
+    <span class="hljs-comment">/*
+     * <span class="hljs-doctag">FIXME:</span> unmap memory
+     */</span>
+}
+</code></pre></div></code></pre>
+<p>内存不随 release 归还，只在模块卸载时统一释放。对 RAM 盘是合理取舍。</p>
+<h3 id="14.3-模块入口串起-gendiskqueuetag-set" tabindex="-1">14.3 模块入口：串起 gendisk、queue、tag set <a class="header-anchor" href="#14.3-模块入口串起-gendiskqueuetag-set"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> __init
+<span class="hljs-title function_">z2_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">int</span> ret;
+    <span class="hljs-keyword">if</span> (!MACH_IS_AMIGA)
+        <span class="hljs-keyword">return</span> -ENODEV;
+    ret = -EBUSY;
+    <span class="hljs-keyword">if</span> (register_blkdev(Z2RAM_MAJOR, DEVICE_NAME))
+        <span class="hljs-keyword">goto</span> err;
+    ret = -ENOMEM;
+    z2ram_gendisk = alloc_disk(<span class="hljs-number">1</span>);
+    <span class="hljs-keyword">if</span> (!z2ram_gendisk)
+        <span class="hljs-keyword">goto</span> out_disk;
+    z2_queue = blk_mq_init_sq_queue(&amp;tag_set, &amp;z2_mq_ops, <span class="hljs-number">16</span>,
+                                        BLK_MQ_F_SHOULD_MERGE);
+    <span class="hljs-keyword">if</span> (IS_ERR(z2_queue)) {
+        ret = PTR_ERR(z2_queue);
+        z2_queue = <span class="hljs-literal">NULL</span>;
+        <span class="hljs-keyword">goto</span> out_queue;
+    }
+    z2ram_gendisk-&gt;major = Z2RAM_MAJOR;
+    z2ram_gendisk-&gt;first_minor = <span class="hljs-number">0</span>;
+    z2ram_gendisk-&gt;fops = &amp;z2_fops;
+    <span class="hljs-built_in">sprintf</span>(z2ram_gendisk-&gt;disk_name, <span class="hljs-string">&quot;z2ram&quot;</span>);
+    z2ram_gendisk-&gt;<span class="hljs-built_in">queue</span> = z2_queue;
+    add_disk(z2ram_gendisk);
+    blk_register_region(MKDEV(Z2RAM_MAJOR, <span class="hljs-number">0</span>), Z2MINOR_COUNT, THIS_MODULE,
+                                z2_find, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+out_queue:
+    put_disk(z2ram_gendisk);
+out_disk:
+    unregister_blkdev(Z2RAM_MAJOR, DEVICE_NAME);
+err:
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<p>顺序不能乱，出错的回退路径（<code>out_queue</code> → <code>out_disk</code> → <code>err</code>）就是初始化顺序的反向。</p>
+<p><code>blk_mq_init_sq_queue()</code> 的 <code>16</code> 是队列深度，<code>BLK_MQ_F_SHOULD_MERGE</code> 允许合并。走了这个封装，<code>tag_set</code> 的 <code>nr_hw_queues</code> / <code>nr_maps</code> / <code>numa_node</code> 被强制成 1 / 1 / <code>NUMA_NO_NODE</code>，<code>cmd_size</code> / <code>timeout</code> / <code>reserved_tags</code> 被 <code>memset</code> 清 0。<code>Z2RAM_MAJOR</code> 是 37，<code>DEVICE_NAME</code> 是 <code>&quot;Z2RAM&quot;</code>，而 <code>disk_name</code> 用的是小写 <code>&quot;z2ram&quot;</code> —— <code>/dev/z2ram</code> 才是设备节点名。<code>z2_find()</code> 是 <code>blk_register_region()</code> 的回调，负责把设备号映射回 gendisk：<code>*part = 0; return get_disk_and_module(z2ram_gendisk);</code>。</p>
+<h3 id="14.4-queue_rq真正干活的地方" tabindex="-1">14.4 queue_rq：真正干活的地方 <a class="header-anchor" href="#14.4-queue_rq真正干活的地方"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">blk_status_t</span> <span class="hljs-title function_">z2_queue_rq</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_hw_ctx *hctx,
+                                <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> blk_mq_queue_data *bd)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request</span> *<span class="hljs-title">req</span> =</span> bd-&gt;rq;
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> start = blk_rq_pos(req) &lt;&lt; <span class="hljs-number">9</span>;   <span class="hljs-comment">/* 起始扇区 -&gt; 字节偏移 */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> len  = blk_rq_cur_bytes(req);   <span class="hljs-comment">/* 当前 bio 段字节数 */</span>
+        blk_mq_start_request(req);                    <span class="hljs-comment">/* 启动超时计时 */</span>
+        <span class="hljs-keyword">if</span> (start + len &gt; z2ram_size) {
+                pr_err(DEVICE_NAME <span class="hljs-string">&quot;: bad access: block=%llu, count=%u\n&quot;</span>,
+                       (<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-type">long</span>)blk_rq_pos(req),
+                       blk_rq_cur_sectors(req));
+                <span class="hljs-keyword">return</span> BLK_STS_IOERR;
+        }
+        spin_lock_irq(&amp;z2ram_lock);
+        <span class="hljs-keyword">while</span> (len) {
+                <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> addr = start &amp; Z2RAM_CHUNKMASK;   <span class="hljs-comment">/* 切片内偏移 */</span>
+                <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> size = Z2RAM_CHUNKSIZE - addr;    <span class="hljs-comment">/* 本切片还能用多少 */</span>
+                <span class="hljs-type">void</span> *buffer = bio_data(req-&gt;bio);              <span class="hljs-comment">/* 内存侧地址 */</span>
+                <span class="hljs-keyword">if</span> (len &lt; size)
+                        size = len;
+                addr += z2ram_map[ start &gt;&gt; Z2RAM_CHUNKSHIFT ]; <span class="hljs-comment">/* 加上切片基地址 */</span>
+                <span class="hljs-keyword">if</span> (rq_data_dir(req) == READ)
+                        <span class="hljs-built_in">memcpy</span>(buffer, (<span class="hljs-type">char</span> *)addr, size);
+                <span class="hljs-keyword">else</span>
+                        <span class="hljs-built_in">memcpy</span>((<span class="hljs-type">char</span> *)addr, buffer, size);
+                start += size;
+                len -= size;
+        }
+        spin_unlock_irq(&amp;z2ram_lock);
+        blk_mq_end_request(req, BLK_STS_OK);
+        <span class="hljs-keyword">return</span> BLK_STS_OK;
+}
+</code></pre></div></code></pre>
+<p>逐条拆，这就是「RAM 模拟块设备」的全部秘密：<code>blk_rq_pos(req)</code> 拿起始扇区（512 字节）左移 9 位换成字节偏移；<code>blk_rq_cur_bytes(req)</code> 拿当前 bio 段的字节数，<strong>是 <code>cur</code> 不是整条 request 的总长</strong>，一条 request 挂多个 bio 时这里只处理当前那段；<code>blk_mq_start_request()</code> 必须受理后立刻调，它置 <code>deadline</code>、启超时；<code>while (len)</code> 跨切片搬运，每次只搬「当前切片剩余的部分」，一条跨 3 个切片的 200KB 请求循环 4 次；<code>z2ram_map[start &gt;&gt; 16]</code> 是切片基地址、<code>start &amp; 0xffff</code> 是切片内偏移，相加就是真实地址；<code>rq_data_dir(req) == READ</code> 判方向，读是「器件 → 内存」，写反过来，别搞反；最后 <code>blk_mq_end_request()</code> 同步完成，返回 <code>BLK_STS_OK</code> 告诉块层「已受理」。</p>
+<p><code>bio_data()</code> 取当前 bio 段的内核地址，对无数据请求返回 NULL：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">bool</span> <span class="hljs-title function_">bio_has_data</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> bio *bio)</span>
+{
+        <span class="hljs-keyword">if</span> (bio &amp;&amp;
+            bio-&gt;bi_iter.bi_size &amp;&amp;
+            bio_op(bio) != REQ_OP_DISCARD &amp;&amp;
+            bio_op(bio) != REQ_OP_SECURE_ERASE &amp;&amp;
+            bio_op(bio) != REQ_OP_WRITE_ZEROES)
+                <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+}
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">bio_data</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> bio *bio)</span>
+{
+        <span class="hljs-keyword">if</span> (bio_has_data(bio))
+                <span class="hljs-keyword">return</span> page_address(bio_page(bio)) + bio_offset(bio);
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p><code>bio_page()</code> / <code>bio_offset()</code> 从 <code>bi_io_vec[bi_iter.bi_idx]</code> 里取页和页内偏移。所以 DISCARD / WRITE_ZEROES 这类请求拿到的是 NULL，用之前先确认 <code>bio_has_data()</code>。</p>
+<h3 id="14.5-模块出口反序拆" tabindex="-1">14.5 模块出口：反序拆 <a class="header-anchor" href="#14.5-模块出口反序拆"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> __exit <span class="hljs-title function_">z2_exit</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">int</span> i, j;
+    blk_unregister_region(MKDEV(Z2RAM_MAJOR, <span class="hljs-number">0</span>), Z2MINOR_COUNT);
+    unregister_blkdev(Z2RAM_MAJOR, DEVICE_NAME);
+    del_gendisk(z2ram_gendisk);
+    put_disk(z2ram_gendisk);
+    blk_cleanup_queue(z2_queue);
+    blk_mq_free_tag_set(&amp;tag_set);
+    <span class="hljs-keyword">if</span> ( current_device != <span class="hljs-number">-1</span> )
+    {
+        i = <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">for</span> ( j = <span class="hljs-number">0</span> ; j &lt; z2_count; j++ )
+        {
+            set_bit( i++, zorro_unused_z2ram );      <span class="hljs-comment">/* 归还 Zorro II 切片 */</span>
+        }
+        <span class="hljs-keyword">for</span> ( j = <span class="hljs-number">0</span> ; j &lt; chip_count; j++ )
+        {
+            <span class="hljs-keyword">if</span> ( z2ram_map[ i ] )
+            {
+                amiga_chip_free( (<span class="hljs-type">void</span> *) z2ram_map[ i++ ] );
+            }
+        }
+        <span class="hljs-keyword">if</span> ( z2ram_map != <span class="hljs-literal">NULL</span> )
+        {
+            kfree( z2ram_map );
+        }
+    }
+}
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>出口步骤</th>
+<th>对应入口步骤</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>blk_unregister_region()</code> → <code>unregister_blkdev()</code></td>
+<td><code>blk_register_region()</code> → <code>register_blkdev()</code></td>
+</tr>
+<tr>
+<td><code>del_gendisk()</code> → <code>put_disk()</code></td>
+<td><code>add_disk()</code> → <code>alloc_disk()</code></td>
+</tr>
+<tr>
+<td><code>blk_cleanup_queue()</code> → <code>blk_mq_free_tag_set()</code></td>
+<td><code>blk_mq_init_sq_queue()</code> 里的 <code>blk_mq_init_queue()</code> → <code>blk_mq_alloc_tag_set()</code></td>
+</tr>
+</tbody>
+</table></div><p><strong><code>blk_cleanup_queue()</code> 必须在 <code>blk_mq_free_tag_set()</code> 之前</strong>：队列还引用着 <code>set-&gt;tags</code> 里的 request，先拆 tag set 就是 use-after-free。</p>
+<p><code>set_bit(i++, ...)</code> 依赖 <code>get_z2ram()</code> 从低位往高位顺序扫，前 <code>z2_count</code> 个 bit 正好是它占掉的。这个假设在 <code>chip_count == 0</code> 时成立，两者混用时顺序会错乱（见勘误）。</p>
+<h2 id="十五z2ram-的数据组织" tabindex="-1">十五、z2ram 的数据组织 <a class="header-anchor" href="#十五z2ram-的数据组织"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>z2ram 没有一个字节是「磁盘」，全是 <code>z2ram_map</code> 这一层间接。8MB 切成 128 个 64KB 切片，<code>z2ram_map[i]</code> 存第 i 个切片的虚拟起始地址。地址换算只三条式子：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>要什么</th>
+<th>式子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>request 的字节偏移</td>
+<td><code>blk_rq_pos(req) &lt;&lt; 9</code></td>
+</tr>
+<tr>
+<td>落在哪个切片</td>
+<td><code>start &gt;&gt; Z2RAM_CHUNKSHIFT</code>（即 <code>&gt;&gt; 16</code>）</td>
+</tr>
+<tr>
+<td>切片内偏移</td>
+<td><code>start &amp; Z2RAM_CHUNKMASK</code>（即 <code>&amp; 0xffff</code>）</td>
+</tr>
+<tr>
+<td>真实地址</td>
+<td><code>z2ram_map[start &gt;&gt; 16] + (start &amp; 0xffff)</code></td>
+</tr>
+</tbody>
+</table></div><p>切片从哪儿来，由两个函数决定。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">get_z2ram</span><span class="hljs-params">( <span class="hljs-type">void</span> )</span>
+{
+    <span class="hljs-type">int</span> i;
+    <span class="hljs-keyword">for</span> ( i = <span class="hljs-number">0</span>; i &lt; Z2RAM_SIZE / Z2RAM_CHUNKSIZE; i++ )   <span class="hljs-comment">/* 128 次 */</span>
+    {
+        <span class="hljs-keyword">if</span> ( test_bit( i, zorro_unused_z2ram ) )           <span class="hljs-comment">/* 这个 64KB 块没人用 */</span>
+        {
+            z2_count++;
+            z2ram_map[z2ram_size++] = (<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>)ZTWO_VADDR(Z2RAM_START) +
+                                      (i &lt;&lt; Z2RAM_CHUNKSHIFT);
+            clear_bit( i, zorro_unused_z2ram );            <span class="hljs-comment">/* 占住 */</span>
+        }
+    }
+}
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">get_chipram</span><span class="hljs-params">( <span class="hljs-type">void</span> )</span>
+{
+    <span class="hljs-keyword">while</span> ( amiga_chip_avail() &gt; ( Z2RAM_CHUNKSIZE * <span class="hljs-number">4</span> ) )
+    {
+        chip_count++;
+        z2ram_map[ z2ram_size ] = (u_long)amiga_chip_alloc( Z2RAM_CHUNKSIZE, <span class="hljs-string">&quot;z2ram&quot;</span> );
+        <span class="hljs-keyword">if</span> ( z2ram_map[ z2ram_size ] == <span class="hljs-number">0</span> )
+                <span class="hljs-keyword">break</span>;
+        z2ram_size++;
+    }
+}
+</code></pre></div></code></pre>
+<p><code>zorro_unused_z2ram</code> 是 128 位位图，由 <code>amiga_zorro_probe()</code> 里的 <code>mark_region()</code> 填：先把所有 Zorro II 内存按 64KB 全置 1，再把系统已用区间清 0。<code>get_z2ram()</code> 顺着扫，<code>test_bit</code> 为 1 的就归自己。</p>
+<p>两者来源不同，语义就分叉了：<code>z2ram_map[0 .. z2_count)</code> 是借来的物理 RAM 的虚拟地址，只能 <code>set_bit</code> 归还标记；<code>z2ram_map[z2_count .. z2ram_size)</code> 是 <code>amiga_chip_alloc()</code> 新分配的内存地址，必须 <code>amiga_chip_free()</code>。这就是 <code>z2_exit()</code> 要分两段循环的原因。</p>
+<p>好处是零拷贝：读数据时 <code>memcpy</code> 直接从 Zorro II RAM 搬到页缓存，没有中间缓冲区，也不用建 DMA 描述符。代价是只能在 m68k Amiga 上跑，<code>ZTWO_VADDR</code> 离开那个平台没意义。</p>
+<p><code>m68k_memory[]</code> 是另一种切片来源，次设备号为 4~7 时从内核内存描述表里拿一整段。<code>struct m68k_mem_info</code> 只有 <code>addr</code> 和 <code>size</code> 两个字段，<code>m68k_memory[NUM_MEMINFO]</code>（<code>NUM_MEMINFO = 4</code>）配 <code>m68k_realnum_memory</code> 使用。这条路径代码里有，但 <code>alloc_disk(1)</code> 只暴露了 1 个次设备（0 号），实际走不到。</p>
+<h2 id="十六从零写一个-blk-mq-驱动的步骤" tabindex="-1">十六、从零写一个 blk-mq 驱动的步骤 <a class="header-anchor" href="#十六从零写一个-blk-mq-驱动的步骤"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把上面的东西压成一张可执行清单。目标：一个能在 <code>/dev/xxx</code> 上 <code>mkfs</code> + <code>mount</code> 的 RAM 盘。</p>
+<p><strong>第 1 步：定义设备参数</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> DEVICE_NAME   <span class="hljs-string">&quot;ramdisk&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> DEVICE_MAJOR  240         <span class="hljs-comment">/* 自己挑一个未用的主设备号 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SECTOR_SHIFT  9           <span class="hljs-comment">/* 512 字节扇区 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> RAMDISK_SIZE  (2 * 1024 * 1024)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> RAMDISK_CHUNKSHIFT 12     <span class="hljs-comment">/* 4KB 切片 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> RAMDISK_CHUNKSIZE  (1 &lt;&lt; RAMDISK_CHUNKSHIFT)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> RAMDISK_CHUNKMASK  (RAMDISK_CHUNKSIZE - 1)</span>
+<span class="hljs-type">static</span> <span class="hljs-title function_">DEFINE_MUTEX</span><span class="hljs-params">(ramdisk_mutex)</span>;
+<span class="hljs-type">static</span> <span class="hljs-title function_">DEFINE_SPINLOCK</span><span class="hljs-params">(ramdisk_lock)</span>;
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">gendisk</span> *<span class="hljs-title">ram_gendisk</span>;</span>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request_queue</span> *<span class="hljs-title">ramdisk_queue</span>;</span>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">blk_mq_tag_set</span> <span class="hljs-title">tag_set</span>;</span>
+<span class="hljs-type">static</span> u_long **ramdisk_map;
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> current_device = <span class="hljs-number">-1</span>;
+</code></pre></div></code></pre>
+<p><strong>第 2 步：写 <code>queue_rq</code></strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">blk_status_t</span> <span class="hljs-title function_">ramdisk_queue_rq</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> blk_mq_hw_ctx *hctx,
+                                     <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> blk_mq_queue_data *bd)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">request</span> *<span class="hljs-title">req</span> =</span> bd-&gt;rq;
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> start = blk_rq_pos(req) &lt;&lt; SECTOR_SHIFT;
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> len = blk_rq_cur_bytes(req);
+        blk_mq_start_request(req);
+        <span class="hljs-keyword">if</span> (start + len &gt; RAMDISK_SIZE) {
+                pr_err(DEVICE_NAME <span class="hljs-string">&quot;: bad access: block=%llu, count=%u\n&quot;</span>,
+                       (<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-type">long</span>)blk_rq_pos(req),
+                       blk_rq_cur_sectors(req));
+                blk_mq_end_request(req, BLK_STS_IOERR);
+                <span class="hljs-keyword">return</span> BLK_STS_IOERR;
+        }
+        spin_lock_irq(&amp;ramdisk_lock);
+        <span class="hljs-keyword">while</span> (len) {
+                <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> off = start &amp; RAMDISK_CHUNKMASK;
+                <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> size = RAMDISK_CHUNKSIZE - off;
+                <span class="hljs-type">void</span> *buffer = bio_data(req-&gt;bio);
+                <span class="hljs-type">char</span> *addr;
+                <span class="hljs-keyword">if</span> (len &lt; size)
+                        size = len;
+                addr = (<span class="hljs-type">char</span> *)ramdisk_map[start &gt;&gt; RAMDISK_CHUNKSHIFT] + off;
+                <span class="hljs-keyword">if</span> (rq_data_dir(req) == READ)
+                        <span class="hljs-built_in">memcpy</span>(buffer, addr, size);
+                <span class="hljs-keyword">else</span>
+                        <span class="hljs-built_in">memcpy</span>(addr, buffer, size);
+                start += size;
+                len -= size;
+        }
+        spin_unlock_irq(&amp;ramdisk_lock);
+        blk_mq_end_request(req, BLK_STS_OK);
+        <span class="hljs-keyword">return</span> BLK_STS_OK;
+}
+</code></pre></div></code></pre>
+<p>比 z2ram 改进两处：越界分支补了 <code>blk_mq_end_request()</code>；<code>off</code> 提出来单独算，避免「先算 size 再算 addr」那个容易看错顺序的写法。配套的 <code>blk_mq_ops</code> 只有一行：<code>static struct blk_mq_ops ramdisk_mq_ops = { .queue_rq = ramdisk_queue_rq, };</code>。</p>
+<p><strong>第 3 步：建队列（顺序不能反）</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ram_gendisk = alloc_disk(<span class="hljs-number">2</span>);           <span class="hljs-comment">/* &gt;= 2 才允许一个分区表 */</span>
+<span class="hljs-keyword">if</span> (!ram_gendisk)
+        <span class="hljs-keyword">goto</span> out_disk;
+ramdisk_queue = blk_mq_init_sq_queue(&amp;tag_set, &amp;ramdisk_mq_ops, <span class="hljs-number">16</span>,
+                                     BLK_MQ_F_SHOULD_MERGE);
+<span class="hljs-keyword">if</span> (IS_ERR(ramdisk_queue)) {
+        ret = PTR_ERR(ramdisk_queue);
+        <span class="hljs-keyword">goto</span> out_queue;
+}
+</code></pre></div></code></pre>
+<p><code>alloc_disk(1)</code> 只有一个次设备，分区表写了也存不住，<code>fdisk</code> 直接报错。</p>
+<p><strong>第 5 步：挂 gendisk、注册、设容量</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ram_gendisk-&gt;major = DEVICE_MAJOR;
+ram_gendisk-&gt;first_minor = <span class="hljs-number">0</span>;
+ram_gendisk-&gt;fops = &amp;ramdisk_fops;
+<span class="hljs-built_in">sprintf</span>(ram_gendisk-&gt;disk_name, DEVICE_NAME);
+ram_gendisk-&gt;<span class="hljs-built_in">queue</span> = ramdisk_queue;
+add_disk(ram_gendisk);
+set_capacity(ram_gendisk, RAMDISK_SIZE &gt;&gt; SECTOR_SHIFT);
+</code></pre></div></code></pre>
+<p><code>set_capacity()</code> 参数是 512 字节扇区数。2MB 就是 4096 个扇区。</p>
+<p><strong>第 6 步：模块出口反序拆</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">ramdisk_exit</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+        <span class="hljs-type">int</span> i;
+        del_gendisk(ram_gendisk);
+        put_disk(ram_gendisk);
+        blk_cleanup_queue(ramdisk_queue);
+        blk_mq_free_tag_set(&amp;tag_set);
+        unregister_blkdev(DEVICE_MAJOR, DEVICE_NAME);
+        <span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; RAMDISK_SIZE / RAMDISK_CHUNKSIZE; i++)
+                kfree(ramdisk_map[i]);
+        kfree(ramdisk_map);
+}
+</code></pre></div></code></pre>
+<p><strong>第 7 步：编译、加载、验证</strong></p>
+<pre><code class="language-makefile"><div class="code-block" data-lang="makefile"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">makefile</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>KERN_DIR := /work/sambashare/linux-5.2.8
+<span class="hljs-section">all:</span>
+        make -C <span class="hljs-variable">$(KERN_DIR)</span> M=`pwd` modules
+<span class="hljs-section">clean:</span>
+        make -C <span class="hljs-variable">$(KERN_DIR)</span> M=`pwd` modules clean
+        rm -rf modules.order
+obj-m += ramdisk_dev.o
+</code></pre></div></code></pre>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>make
+<span class="hljs-built_in">cp</span> ramdisk_dev.ko /work/nfs_root/rootfs/
+<span class="hljs-comment"># 目标板上</span>
+insmod ramdisk_dev.ko
+mkdosfs /dev/ramdisk
+mount /dev/ramdisk /tmp/
+<span class="hljs-built_in">echo</span> <span class="hljs-string">&quot;hello,world&quot;</span> &gt; /tmp/1.txt &amp;&amp; <span class="hljs-built_in">cat</span> /tmp/1.txt
+umount /tmp/
+</code></pre></div></code></pre>
+<p>实测日志里能直接看到 <code>queue_rq</code> 被调用的痕迹，以及 <code>mkdosfs</code> 会先读前几个扇区、再往 0 号扇区写一次分区表：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>[root@zy:/]# insmod ramdisk_dev.ko
+ramdisk_dev: loading out-of-tree module taints kernel.
+[root@zy:/]# mkdosfs /dev/ramdisk
+every chunk size 4096,chunk count 512
+device major 37, minor 0
+open block device success
+read from disk address 0,length 4096,bio segment count 1;disk mapping ram c30b1000
+write to disk address 0,length 4096,bio segment count 1;disk mapping ram c30b1000
+release block device success
+</code></pre></div></code></pre>
+<p>越界保护之外还有一处要留神：日志里出现过 <code>bio segment count 0</code> 的行，那是 <code>cat /dev/ramdisk &gt; file</code> 下单段合并的结果。这类请求如果 <code>bio_data()</code> 返回 NULL，驱动里没判断 <code>bio_has_data()</code> 就会崩在 <code>memcpy</code>。</p>
+<p><strong>第 8 步：进阶改法（真实硬件）</strong></p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>需求</th>
+<th>改哪儿</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每个 request 要存驱动私有描述符</td>
+<td>不用 <code>sq</code> 封装，自己填 <code>set-&gt;cmd_size</code>，用 <code>blk_mq_rq_to_pdu()</code> 取</td>
+</tr>
+<tr>
+<td>多个硬件队列</td>
+<td>自己填 <code>set-&gt;nr_hw_queues</code> + 实现 <code>ops-&gt;map_queues</code></td>
+</tr>
+<tr>
+<td>读写分队列</td>
+<td><code>set-&gt;nr_maps = 2</code> 或 3，并实现 <code>map_queues</code></td>
+</tr>
+<tr>
+<td>需要超时复位</td>
+<td>实现 <code>ops-&gt;timeout</code>，返回 <code>BLK_EH_RESET_TIMER</code> 或 <code>BLK_EH_DONE</code></td>
+</tr>
+<tr>
+<td>异步完成</td>
+<td><code>queue_rq</code> 只编程硬件并返回 <code>BLK_STS_OK</code>，完成中断里 <code>blk_mq_complete_request()</code></td>
+</tr>
+<tr>
+<td>关掉调度器</td>
+<td>`set-&gt;flags</td>
+</tr>
+<tr>
+<td>允许 <code>queue_rq</code> 睡眠</td>
+<td>`set-&gt;flags</td>
+</tr>
+<tr>
+<td>指定 NUMA 节点</td>
+<td><code>set-&gt;numa_node = dev_to_node(&amp;pdev-&gt;dev)</code></td>
+</tr>
+</tbody>
+</table></div><h2 id="十七调试手段与性能观测" tabindex="-1">十七、调试手段与性能观测 <a class="header-anchor" href="#十七调试手段与性能观测"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 1. 队列是不是 MQ、多少硬件队列</span>
+<span class="hljs-built_in">ls</span> /sys/block/&lt;dev&gt;/mq/
+<span class="hljs-built_in">cat</span> /sys/block/&lt;dev&gt;/queue/nr_requests
+<span class="hljs-built_in">cat</span> /sys/block/&lt;dev&gt;/queue/scheduler
+<span class="hljs-comment"># 2. 每个 hctx 挂了哪些 CPU</span>
+<span class="hljs-built_in">cat</span> /sys/block/&lt;dev&gt;/mq/*/cpu_list
+<span class="hljs-comment"># 3. 每个 hctx 的 tag 使用情况</span>
+mount -t debugfs none /sys/kernel/debug
+<span class="hljs-built_in">cat</span> /sys/kernel/debug/block/&lt;dev&gt;/hctx*/tags
+<span class="hljs-built_in">cat</span> /sys/kernel/debug/block/&lt;dev&gt;/hctx*/dispatch
+<span class="hljs-comment"># 4. I/O 统计与延迟</span>
+<span class="hljs-built_in">cat</span> /sys/block/&lt;dev&gt;/stat
+<span class="hljs-built_in">cat</span> /sys/block/&lt;dev&gt;/queue/*_latency_ns
+<span class="hljs-comment"># 5. 跟踪派发路径</span>
+<span class="hljs-built_in">echo</span> 1 &gt; /sys/kernel/debug/tracing/events/block/enable
+<span class="hljs-built_in">cat</span> /sys/kernel/debug/tracing/trace
+</code></pre></div></code></pre>
+<p><code>/sys/kernel/debug/block/&lt;dev&gt;/hctxN/tags</code> 信息量最大，能看到 <code>nr_tags</code> / <code>nr_reserved_tags</code> / <code>active_queues</code> / 已用与总数。<code>tags=</code> 长期贴上限说明深度不够或 <code>queue_rq</code> 太慢；长期是 0 而 I/O 还在跑，说明 request 根本没走到这个 hctx，映射配错了。</p>
+<p>trace 里 blk-mq 相关事件按触发顺序：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>trace 事件</th>
+<th>触发点</th>
+<th>能看出什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>block_getrq</code></td>
+<td><code>blk_mq_get_request()</code> 成功</td>
+<td>request 分配到，带 tag</td>
+</tr>
+<tr>
+<td><code>block_plug</code> / <code>block_unplug</code></td>
+<td>进/出 plug list</td>
+<td>攒了多少条一起下发</td>
+</tr>
+<tr>
+<td><code>block_bio_backmerge</code> / <code>block_bio_frontmerge</code></td>
+<td>合并成功</td>
+<td>合并率</td>
+</tr>
+<tr>
+<td><code>block_rq_issue</code></td>
+<td>进入 <code>queue_rq</code> 前后</td>
+<td>派发延迟起点</td>
+</tr>
+<tr>
+<td><code>block_rq_complete</code> / <code>block_rq_error</code></td>
+<td>完成 / 失败完成</td>
+<td>延迟终点、错误码</td>
+</tr>
+</tbody>
+</table></div><p>代码里最好用的观测点是 <code>hctx-&gt;dispatch_busy</code>：长期为 1 说明 <code>queue_rq</code> 一直在返回 <code>BLK_STS_RESOURCE</code> / <code>BLK_STS_DEV_RESOURCE</code>，硬件吃不下，队列深度或提交速率要调。</p>
+<p>还有一条日志必须留意：<code>blk-mq: reduced tag depth (256 -&gt; 128)</code>。出现它说明 <code>blk_mq_alloc_rq_maps()</code> 内存不足把深度砍了，<code>set-&gt;queue_depth</code> 已被改写，驱动里按老值算的东西都会错。<code>reduced tag depth to 10240</code> 是超过 <code>BLK_MQ_MAX_DEPTH</code> 被截断。</p>
+<p>中断分布用 <code>/proc/interrupts</code> 看。如果所有中断都堆在 CPU0，多队列等于没开 —— 查 <code>request_irq()</code> 之后有没有 <code>irq_set_affinity_hint()</code>。</p>
+<h2 id="十八易错点速查" tabindex="-1">十八、易错点速查 <a class="header-anchor" href="#十八易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>症状</th>
+<th>原因</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>blk_mq_alloc_tag_set()</code> 返回 <code>-EINVAL</code></td>
+<td><code>queue_rq</code> 为空、<code>nr_hw_queues</code> 或 <code>queue_depth</code> 为 0、<code>get_budget</code>/<code>put_budget</code> 只填了一个、<code>nr_maps &gt; HCTX_MAX_TYPES</code></td>
+<td>逐条对第五节表格</td>
+</tr>
+<tr>
+<td>内核 BUG <code>nr_maps &gt; 1</code></td>
+<td>声明了多份 map 但没实现 <code>ops-&gt;map_queues</code></td>
+<td>实现 <code>map_queues</code>，或把 <code>nr_maps</code> 设 1</td>
+</tr>
+<tr>
+<td>盘容量是 0</td>
+<td><code>set_capacity()</code> 没除 512，或 <code>z2ram_size</code> 没 <code>&lt;&lt;</code> 回来</td>
+<td><code>set_capacity(disk, bytes &gt;&gt; 9)</code></td>
+</tr>
+<tr>
+<td><code>fdisk</code> 报分区写不进去</td>
+<td><code>alloc_disk(1)</code> 只给一个次设备</td>
+<td>改成实际需要的次设备数</td>
+</tr>
+<tr>
+<td>I/O 全部 <code>EIO</code></td>
+<td><code>queue_rq</code> 把「设备忙」返回成 <code>BLK_STS_IOERR</code></td>
+<td>设备忙返回 <code>BLK_STS_DEV_RESOURCE</code> 或 <code>BLK_STS_RESOURCE</code></td>
+</tr>
+<tr>
+<td>卸载时 oops / use-after-free</td>
+<td>先 <code>blk_mq_free_tag_set()</code> 后 <code>blk_cleanup_queue()</code></td>
+<td>顺序反过来，队列先拆</td>
+</tr>
+<tr>
+<td>每个请求都等 30 秒</td>
+<td><code>queue_rq</code> 里漏了 <code>blk_mq_start_request()</code>，或同步完成后没 <code>blk_mq_end_request()</code></td>
+<td>两头都必须调</td>
+</tr>
+<tr>
+<td>超时时间改了没生效</td>
+<td>改的是 <code>q-&gt;rq_timeout</code> 旧字段</td>
+<td>用 <code>blk_queue_rq_timeout()</code></td>
+</tr>
+<tr>
+<td>日志刷 <code>run queue from wrong CPU</code></td>
+<td>在不在 <code>hctx-&gt;cpumask</code> 里的 CPU 上同步派发</td>
+<td>查 <code>map_queues</code> 结果和中断亲和</td>
+</tr>
+<tr>
+<td><code>cmd_size</code> 改了没用</td>
+<td>tag set 已建，<code>rq_size</code> 在 <code>blk_mq_alloc_rqs()</code> 里定死</td>
+<td>拆掉整个 tag set 重建</td>
+</tr>
+<tr>
+<td><code>queue_depth</code> 跟你填的不一样</td>
+<td>超 <code>BLK_MQ_MAX_DEPTH</code> 被截断，或内存不足被减半</td>
+<td>看 dmesg 的 <code>reduced tag depth</code></td>
+</tr>
+<tr>
+<td>多队列没提速</td>
+<td>中断全落在 CPU0</td>
+<td><code>irq_set_affinity_hint()</code> 按 hctx 绑</td>
+</tr>
+<tr>
+<td><code>numa_node</code> 填了却全场远端访问</td>
+<td>设备在别的节点，或用 <code>blk_mq_init_sq_queue()</code> 被强制成 <code>NUMA_NO_NODE</code></td>
+<td>手工走 <code>blk_mq_alloc_tag_set()</code> 路径</td>
+</tr>
+<tr>
+<td>崩溃在 <code>memcpy</code></td>
+<td>DISCARD / WRITE_ZEROES 这类无数据请求，<code>bio_data()</code> 返回 NULL</td>
+<td>先判 <code>bio_has_data()</code></td>
+</tr>
+<tr>
+<td>只处理了第一个 bio 段</td>
+<td>用了 <code>blk_rq_bytes()</code> 而不是 <code>blk_rq_cur_bytes()</code></td>
+<td>用 <code>cur</code> 版本，并循环处理</td>
+</tr>
+<tr>
+<td><code>z2_open()</code> 重复打开二次 free</td>
+<td><code>err_out_kfree</code> 之后 <code>z2ram_map</code> 没置 NULL</td>
+<td>释放后 <code>z2ram_map = NULL</code></td>
+</tr>
+<tr>
+<td>卸载后 <code>/dev/xxx</code> 还在</td>
+<td>只 <code>del_gendisk()</code> 没 <code>unregister_blkdev()</code></td>
+<td>两个都要，顺序见 14.5</td>
+</tr>
+</tbody>
+</table></div><p>几条不属于 bug 但得心里有数：</p>
+<ul>
+<li><strong>5.0 之后没有回头路</strong>。<code>request_fn</code> 和老的 <code>make_request</code> 都没了。网上大量 3.x/4.x 的块设备驱动贴过来编不过，不要以为是头文件问题，是接口整体换了。</li>
+<li><strong><code>blk_mq_init_sq_queue()</code> 在 6.x 里没有了</strong>。迁移到 <code>blk_mq_alloc_tag_set()</code> + <code>blk_mq_alloc_disk()</code>，后者把 gendisk 和 queue 一起给你。</li>
+<li><strong><code>BLK_MQ_F_SHOULD_MERGE</code> 只影响无调度器路径</strong>。装了 <code>mq-deadline</code> 之后 merge 由调度器说了算。</li>
+<li><strong><code>reserved_tags</code> 不是保险</strong>。预留 tag 只给带 <code>BLK_MQ_REQ_RESERVED</code> 的关键路径（内存回收等）用，普通 I/O 抢不到。设太小没意义，太大浪费深度。</li>
+</ul>
+<h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="章节出处" tabindex="-1">章节出处 <a class="header-anchor" href="#章节出处"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>本篇由 <code>09-存储与块设备/linux驱动移植-linux块设备驱动blk-mq.md</code>（3474 行，主干）与 <code>09-存储与块设备/linux驱动移植-linux块设备驱动z2ram.md</code>（1648 行，完整实例）合并重排。原稿只有 6 个 H2（绪论、通用块层核心数据结构、blk-mq、blk-mq 数据结构、blk-mq API、blk_mq_make_request），结构扁平，本篇按章节树全部拆散。</p>
+<p>对应关系如下：一~三章来自 blk-mq 稿「绪论」与第二节；四~七章来自「blk-mq 数据结构」；八章来自「blk-mq API」全节；九~十章来自「blk_mq_make_request」全节；十一~十三章由原稿散落的超时、调度器、中断开销三段重组；十四~十五章来自 z2ram 稿第一至第五章与 <code>get_z2ram()</code> / <code>get_chipram()</code>；十六章来自 z2ram 稿第六章「编写 RAM 驱动」与第七章「测试运行」；十七章原稿无对应内容，按 5.2.8 的 sysfs / debugfs 布局补写；十八章汇总原稿各处的「注意」段落与本轮核对发现的问题。</p>
+<h3 id="清理掉的原始抓取痕迹" tabindex="-1">清理掉的原始抓取痕迹 <a class="header-anchor" href="#清理掉的原始抓取痕迹"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li><strong>分隔线</strong>：z2ram 稿开头的 <code>---...---</code> 装饰行整段删除。</li>
+<li><strong>重复段落</strong>：<code>blk_mq_tag_set</code> 字段说明重复两遍、<code>blk_mq_make_request()</code> 执行流程重复三遍、<code>blk_mq_realloc_hw_ctxs()</code> 初始化清单重复三次、<code>bio_attempt_*_merge</code> 说明重复两遍，全部合并为一份。</li>
+<li><strong>破损代码块</strong>：z2ram 稿 <code>z2_queue_rq()</code> 被切成两段（前段标 <code>c，后段错标成 </code>makefile），已拼回一个完整的 ```c 块。</li>
+<li><strong>错误语言标注</strong>：<code>umount</code> 输出、<code>fdisk -l</code> 输出、<code>ls /dev/ramdisk*</code> 输出在原稿里被标成 <code>yaml / </code>makefile，统一改成 ```text。</li>
+<li><strong>图丢失注记</strong>：原稿多处「如下图」「流程图如下」「关系图」后面没有图，删掉引导句，换成文字描述或表格。</li>
+<li><strong>空链接参考</strong>：原稿末尾「参考文章」清单（blk-mq 稿 17 条、z2ram 稿 2 条）全是无 URL 的纯标题，无法署名到具体来源，整段删除。</li>
+</ul>
+<h3 id="修正的错误" tabindex="-1">修正的错误 <a class="header-anchor" href="#修正的错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ol>
+<li><strong><code>Z2RAM_CHUNKSIZE</code> 的值与用法不一致</strong>。<code>include/linux/zorro.h</code> 里定义为 <code>0x0000ffff</code>，代码却全程按 <code>Z2RAM_CHUNKSHIFT = 16</code>（<code>&gt;&gt; 16</code> / <code>&amp; 0xffff</code>）使用，正确值应是 <code>0x10000</code>。原稿照抄并直接注释成「切片大小为 64kb」，没指出矛盾。本篇按 64KB 解释并在此标注。</li>
+<li><strong><code>get_z2ram()</code> 注释里基址写错</strong>。原稿写 <code>0x002000000</code>（多一个 0），正确是 <code>0x00200000</code>。<code>ZTWO_VADDR(Z2RAM_START) = 0x80000000 + 0x00200000 = 0x80200000</code>。</li>
+<li><strong><code>z2_open()</code> 的 <code>goto err_out_kfree</code> 之后 <code>z2ram_map</code> 未置 NULL</strong>。原稿未提。重复 open 会在 <code>kmalloc</code> 失败路径上二次 <code>kfree</code>。</li>
+<li><strong><code>z2_queue_rq()</code> 越界分支漏了 <code>blk_mq_end_request()</code></strong>。原稿照抄。本篇第十一章、第十六章指出并给出改法。</li>
+<li><strong><code>alloc_disk(1)</code> 的表述</strong>。原稿写「参数为1，表示磁盘不分区」，更准确是「只分配 1 个次设备，无法承载多个分区」。后文 <code>fdisk</code> 失败正是这个后果。</li>
+<li><strong><code>blk_mq_ops</code> 字段说明混入 6.x 内容</strong>。原稿字段列表里出现 <code>queue_rqs</code>、<code>set_rq_budget_token</code>、<code>get_rq_budget_token</code>、<code>cleanup_rq</code> 四个 5.2.8 结构体里并不存在的成员（来自后续内核版本文档）。本篇只保留 5.2.8 实际存在的字段。</li>
+<li><strong>两次拿 tag 的疑惑没解答</strong>。原稿只写「这里为啥又来了一遍呢」。本篇第九章给出结论：派发失败会 <code>__blk_mq_requeue_request()</code> 把 tag 还回去，<code>rq-&gt;tag</code> 变 -1，下发前必须重新申请。</li>
+<li><strong><code>generic_make_request()</code> 被描述成「do-while 只执行一次」</strong>。该结论只对非栈式设备成立，对 dm / md 这类会重入 <code>generic_make_request()</code> 的栈式设备不成立。本篇未沿用这个断言。</li>
+<li><strong><code>del__gendisk</code> 双下划线笔误</strong>。z2ram 稿「模块出口函数」一节写成 <code>del__gendisk</code>，正确是 <code>del_gendisk()</code>。</li>
+<li><strong><code>blk_mq_init_sq_queue()</code> 的隐含清 0 未说明</strong>。原稿没提它 <code>memset(set, 0, ...)</code> 一并清掉 <code>cmd_size</code> / <code>timeout</code> / <code>reserved_tags</code>，这些值无法通过该封装传递。本篇 8.4 节补上。</li>
+<li><strong><code>mkdosfs</code> 写 0 号扇区的推测被收窄</strong>。原稿据日志推测「前几个扇区保存的是磁盘分区信息」，该推测对 <code>mkdosfs</code>（FAT 引导扇区）成立，不能推广到所有格式化工具。本篇改写为「先读前几个扇区、再往 0 号扇区写一次」。</li>
+<li><strong>z2ram 稿「参考文章」无 URL</strong>。已删除，未用任何一条无法署名的引用。</li>
+</ol>
+<h3 id="未验证项" tabindex="-1">未验证项 <a class="header-anchor" href="#未验证项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>以下标注为未验证，不要当结论用：</p>
+<ul>
+<li>6.x 里 <code>blk_mq_ops</code> 的确切字段集合、<code>blk_mq_alloc_disk()</code> 的精确签名与出参顺序、<code>blk_mq_complete_request_remote()</code> 的内部分支。按「较新内核」描述，具体版本行为需实测。</li>
+<li><code>elevator</code> 在 6.x 的字段重命名范围。只确认「5.2.8 里存在且被 <code>elevator_init_mq()</code> 初始化」。</li>
+<li><code>BLK_MQ_MAX_DEPTH</code> 的确切值。原稿注释写 10240，本篇沿用该注释，未在 5.2.8 源码里逐行核对。</li>
+<li><code>BLK_MQ_TAG_MIN</code> 的确切值。原稿注释推断为 1，未核对。</li>
+<li><code>HCTX_MAX_TYPES</code> 的确切值。按三种类型（DEFAULT / READ / POLL）推断为 3，未核对宏定义。</li>
+<li><code>Z2RAM_END</code> 与 <code>Z2RAM_SIZE</code> 的边界对应关系。原稿只给 <code>Z2RAM_START</code>，8MB 与实际 RAM 区间的对齐关系未给出。</li>
+<li><code>amiga_chip_size</code> / <code>amiga_chip_avail()</code> 的实际值。原稿自己注明「姑且当做 0」，本篇沿用，<code>chip_count</code> 视为 0。</li>
+<li><code>zorro_unused_z2ram</code> 位图与 <code>z2ram_map</code> 索引的一一对应。<code>chip_count != 0</code> 时 <code>z2_exit()</code> 的 <code>set_bit(i++)</code> 归还方式与 <code>get_z2ram()</code> 的扫描顺序会错位。推断来自代码阅读，未在硬件上验证。</li>
+<li>第十七章的 sysfs / debugfs 路径按 5.2.8 通用布局给出，<code>hctx*/tags</code>、<code>hctx*/dispatch</code> 的具体文件名在不同 5.x 小版本间有出入，用前先 <code>ls</code> 一遍。</li>
+<li>第十六章验证日志中的 <code>bio segment count 0</code>，原稿未解释 <code>bio_data()</code> 返回 NULL 时该段数据从何而来，本篇按「合出来的纯物理连续段」推测，未验证。</li>
+</ul>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一为什么要-blk-mq单队列的瓶颈" data-toc-target="一为什么要-blk-mq单队列的瓶颈">一、为什么要 blk-mq：单队列的瓶颈</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二从-request_fn-到-mq架构的改变" data-toc-target="二从-request_fn-到-mq架构的改变">二、从 request_fn 到 MQ：架构的改变</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三软件队列与硬件队列" data-toc-target="三软件队列与硬件队列">三、软件队列与硬件队列</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四tag-与请求的生命周期" data-toc-target="四tag-与请求的生命周期">四、tag 与请求的生命周期</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五struct-blk_mq_tag_set驱动要填什么" data-toc-target="五struct-blk_mq_tag_set驱动要填什么">五、struct blk_mq_tag_set：驱动要填什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六struct-blk_mq_ops驱动要实现的回调" data-toc-target="六struct-blk_mq_ops驱动要实现的回调">六、struct blk_mq_ops：驱动要实现的回调</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七队列映射cpu-到硬件队列" data-toc-target="七队列映射cpu-到硬件队列">七、队列映射：CPU 到硬件队列</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八blk_mq_init_queue-的完整流程" data-toc-target="八blk_mq_init_queue-的完整流程">八、blk_mq_init_queue 的完整流程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.1-tag_set-的分配blk_mq_alloc_tag_set" data-toc-target="8.1-tag_set-的分配blk_mq_alloc_tag_set">8.1 tag_set 的分配：blk_mq_alloc_tag_set</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.2-tags-与-request-池的分配" data-toc-target="8.2-tags-与-request-池的分配">8.2 tags 与 request 池的分配</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.3-request_queue-的初始化blk_mq_init_allocated_queue" data-toc-target="8.3-request_queue-的初始化blk_mq_init_allocated_queue">8.3 request_queue 的初始化：blk_mq_init_allocated_queue</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.4-便捷封装blk_mq_init_sq_queue" data-toc-target="8.4-便捷封装blk_mq_init_sq_queue">8.4 便捷封装：blk_mq_init_sq_queue</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九请求的分发queue_rq" data-toc-target="九请求的分发queue_rq">九、请求的分发：queue_rq</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十完成路径blk_mq_complete_request" data-toc-target="十完成路径blk_mq_complete_request">十、完成路径：blk_mq_complete_request</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一超时与错误处理" data-toc-target="十一超时与错误处理">十一、超时与错误处理</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二调度器与-elevator" data-toc-target="十二调度器与-elevator">十二、调度器与 elevator</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三多队列与中断亲和" data-toc-target="十三多队列与中断亲和">十三、多队列与中断亲和</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四z2ram-实例一个完整的-blk-mq-驱动" data-toc-target="十四z2ram-实例一个完整的-blk-mq-驱动">十四、z2ram 实例：一个完整的 blk-mq 驱动</a>
+                    
+                    <a class="toc-item toc-lv3" href="#14.1-全局变量" data-toc-target="14.1-全局变量">14.1 全局变量</a>
+                    
+                    <a class="toc-item toc-lv3" href="#14.2-块设备操作集与-z2_open" data-toc-target="14.2-块设备操作集与-z2_open">14.2 块设备操作集与 z2_open</a>
+                    
+                    <a class="toc-item toc-lv3" href="#14.3-模块入口串起-gendiskqueuetag-set" data-toc-target="14.3-模块入口串起-gendiskqueuetag-set">14.3 模块入口：串起 gendisk、queue、tag set</a>
+                    
+                    <a class="toc-item toc-lv3" href="#14.4-queue_rq真正干活的地方" data-toc-target="14.4-queue_rq真正干活的地方">14.4 queue_rq：真正干活的地方</a>
+                    
+                    <a class="toc-item toc-lv3" href="#14.5-模块出口反序拆" data-toc-target="14.5-模块出口反序拆">14.5 模块出口：反序拆</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五z2ram-的数据组织" data-toc-target="十五z2ram-的数据组织">十五、z2ram 的数据组织</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六从零写一个-blk-mq-驱动的步骤" data-toc-target="十六从零写一个-blk-mq-驱动的步骤">十六、从零写一个 blk-mq 驱动的步骤</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十七调试手段与性能观测" data-toc-target="十七调试手段与性能观测">十七、调试手段与性能观测</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十八易错点速查" data-toc-target="十八易错点速查">十八、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#章节出处" data-toc-target="章节出处">章节出处</a>
+                    
+                    <a class="toc-item toc-lv3" href="#清理掉的原始抓取痕迹" data-toc-target="清理掉的原始抓取痕迹">清理掉的原始抓取痕迹</a>
+                    
+                    <a class="toc-item toc-lv3" href="#修正的错误" data-toc-target="修正的错误">修正的错误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#未验证项" data-toc-target="未验证项">未验证项</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/C.驱动/09-存储与块设备/blk-mq-多队列：从请求队列到实际驱动/","title":"blk-mq 多队列：从请求队列到实际驱动","url":"/C.驱动/09-存储与块设备/blk-mq-多队列：从请求队列到实际驱动/","type":"current"},{"id":"/C.驱动/09-存储与块设备/Linux-MMC-子系统与-eMMC-驱动调试/","title":"Linux MMC 子系统与 eMMC 驱动调试","url":"/C.驱动/09-存储与块设备/Linux-MMC-子系统与-eMMC-驱动调试/","type":"neighbor"},{"id":"/C.驱动/09-存储与块设备/MTD-子系统与-Flash：NOR、NAND-与-ONFI/","title":"MTD 子系统与 Flash：NOR、NAND 与 ONFI","url":"/C.驱动/09-存储与块设备/MTD-子系统与-Flash：NOR、NAND-与-ONFI/","type":"neighbor"},{"id":"/C.驱动/09-存储与块设备/SD-卡驱动开发：从协议到控制器/","title":"SD 卡驱动开发：从协议到控制器","url":"/C.驱动/09-存储与块设备/SD-卡驱动开发：从协议到控制器/","type":"neighbor"},{"id":"/C.驱动/09-存储与块设备/块设备驱动基础：从-bio-到-gendisk/","title":"块设备驱动基础：从 bio 到 gendisk","url":"/C.驱动/09-存储与块设备/块设备驱动基础：从-bio-到-gendisk/","type":"neighbor"}],"links":[{"source":"/C.驱动/09-存储与块设备/blk-mq-多队列：从请求队列到实际驱动/","target":"/C.驱动/09-存储与块设备/Linux-MMC-子系统与-eMMC-驱动调试/","type":"neighbor"},{"source":"/C.驱动/09-存储与块设备/blk-mq-多队列：从请求队列到实际驱动/","target":"/C.驱动/09-存储与块设备/MTD-子系统与-Flash：NOR、NAND-与-ONFI/","type":"neighbor"},{"source":"/C.驱动/09-存储与块设备/blk-mq-多队列：从请求队列到实际驱动/","target":"/C.驱动/09-存储与块设备/SD-卡驱动开发：从协议到控制器/","type":"neighbor"},{"source":"/C.驱动/09-存储与块设备/blk-mq-多队列：从请求队列到实际驱动/","target":"/C.驱动/09-存储与块设备/块设备驱动基础：从-bio-到-gendisk/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

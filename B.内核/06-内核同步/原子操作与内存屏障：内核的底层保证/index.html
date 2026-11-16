@@ -1,0 +1,2086 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>原子操作与内存屏障：内核的底层保证 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">原子操作与内存屏障：内核的底层保证</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">原子操作与内存屏障：内核的底层保证</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">原子操作与内存屏障：内核的底层保证</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>本篇讲内核同步的最底层，就两件事：单条指令的原子性，多条指令的可见顺序。上面的 spinlock、mutex、RCU 全部架在这两层之上。拿到锁的那一刻，锁的实现里一定有原子指令；解锁与加锁之间的数据可见性，靠屏障。</p>
+</blockquote>
+<blockquote>
+<p>讲什么：<code>atomic_t</code> / <code>atomic64_t</code>、全套原子与位操作接口、ARM 上 <code>ldrex</code>/<code>strex</code> 的实现、编译器与 CPU 各自怎么乱序、屏障 API 全表与配对规则、<code>barrier()</code>、<code>READ_ONCE</code>/<code>WRITE_ONCE</code>、<code>ACCESS_ONCE</code> 的兴衰、ARM 上 <code>dmb</code>/<code>dsb</code>/<code>isb</code> 的映射。</p>
+</blockquote>
+<blockquote>
+<p>不讲什么：spinlock / rwlock / mutex / completion / RCU 的实现，那几篇在 <code>03-spinlock与读写锁</code>、<code>04-互斥锁信号量与completion</code>、<code>01-RCU机制</code>。Cache 一致性协议、MESI 状态机、store buffer 的微架构细节，B 目录那篇《内存屏障与乱序》已写透，本篇只做最小必要背景。</p>
+</blockquote>
+<blockquote>
+<p>版本：素材横跨 2.6.x ~ 4.x。随版本变动的接口正文标出年份。<code>ACCESS_ONCE</code> 在 4.15 前后被 <code>READ_ONCE</code>/<code>WRITE_ONCE</code> 取代，单独一章讲清。</p>
+</blockquote>
+<h2 id="一为什么需要原子操作一条-c-语句不等于一条指令" tabindex="-1">一、为什么需要原子操作：一条 C 语句不等于一条指令 <a class="header-anchor" href="#一为什么需要原子操作一条-c-语句不等于一条指令"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>你写的是一行自增，CPU 执行的是三条：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>v-&gt;counter++;
+</code></pre></div></code></pre>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">ldr</span>     <span class="hljs-built_in">r3</span>, [<span class="hljs-built_in">r2</span>]        <span class="hljs-comment">@ ① 从内存读到寄存器</span>
+<span class="hljs-keyword">add</span>     <span class="hljs-built_in">r3</span>, <span class="hljs-built_in">r3</span>, <span class="hljs-number">#1</span>      <span class="hljs-comment">@ ② 寄存器里加一</span>
+<span class="hljs-keyword">str</span>     <span class="hljs-built_in">r3</span>, [<span class="hljs-built_in">r2</span>]        <span class="hljs-comment">@ ③ 写回内存</span>
+</code></pre></div></code></pre>
+<p>三条指令中间，任何东西都可以插进来。这就是全部问题的起点。</p>
+<p>多 CPU 上两个核同时跑这段代码，内存里 <code>counter</code> 初始是 5：两个核各自 <code>ldr</code> 拿到 5，各自算出 6，先后写回。两个核各加了一次，结果应该是 7，实际是 6——CPU0 的修改被 CPU1 覆盖了，这叫丢失更新（lost update）。</p>
+<p>单 CPU 也一样出错，只是插进来的不是另一个 CPU，是中断。系统调用路径 <code>ldr</code> 拿到 5、算完还没写回，硬件触发中断，handler 把 <code>counter</code> 从 5 加到 6 写回，中断返回，系统调用路径把寄存器里那个陈旧的 6 写回——handler 的那次加一没了。</p>
+<p>两件事说的是同一件事：<strong>读-改-写（read-modify-write，RMW）不是不可分割的操作</strong>。</p>
+<p>两个概念要分开，很多混淆都来自没分开。单次访问的原子性指一次对齐的 load 或 store 会不会读到半个值：一个字长对齐的 <code>int</code> 访问，ARM、x86、PowerPC 都不撕裂，硬件保证；但 <code>atomic64_t</code> 在 32 位机器上跨两个字，那就不是单次访问了。<strong>复合操作的原子性</strong>指 <code>read → modify → write</code> 三步作为一个整体不被插入，这个硬件不白送，要么总线锁，要么独占监视器，要么关中断。内核要的是第二个。</p>
+<h2 id="二原子操作的源由lock-bus-的代价" tabindex="-1">二、原子操作的源由：lock bus 的代价 <a class="header-anchor" href="#二原子操作的源由lock-bus-的代价"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>多个 CPU 和内存芯片挂在同一条总线上，任意时刻只能有一个总线 master 访问 RAM 这个 slave。两个 CPU 的读被总线仲裁串行化，各自拿到同样的旧值；两次写也被串行化，一前一后落盘。串行化解决不了丢失更新，因为问题不在「同时」，在「中间被插了」。硬件给了三条路：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>手段</th>
+<th>做法</th>
+<th>代价</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>关中断</td>
+<td><code>raw_local_irq_save</code> 包住 RMW</td>
+<td>本核响应中断变慢；对其它核毫无作用</td>
+<td>单核（UP）</td>
+</tr>
+<tr>
+<td>总线锁 / <code>lock</code> 前缀</td>
+<td>RMW 期间锁总线，别的 master 一律等</td>
+<td>阻塞系统里所有总线主设备，几百周期起步</td>
+<td>多核，粗粒度</td>
+</tr>
+<tr>
+<td>独占监视器</td>
+<td><code>ldrex</code>/<code>strex</code>，只在提交时检查有没人插手</td>
+<td>冲突时白干一次，循环重试</td>
+<td>多核，细粒度</td>
+</tr>
+</tbody>
+</table></div><p>第三种是现代 ARM 的主流，第六节细讲。先说第二种的代价，因为它是「为什么不要滥用原子操作」的答案。x86 的 <code>lock addl $1, (%rax)</code>，<code>lock</code> 前缀会拉起锁。数据不跨 cacheline 时只锁那条 cacheline（靠 MESI 拉到 exclusive），不真拉总线；跨 cacheline 或访问不可缓存内存（UC）才退化成总线锁。这条细节未逐字核对 SDM，标在勘误。</p>
+<p>代价落在同一处：<strong>其它核想访问同一条 cacheline 就得等</strong>。一条 cacheline 塞多个热点计数器，所有核排队。这推出两条编码习惯：每个 CPU 各自的自增计数器用 per-CPU 变量（<code>this_cpu_inc</code>），不要挤在一个 <code>atomic_t</code> 上；能读到快照就算数的场景用 <code>READ_ONCE</code>，省掉多余动作。还有一条：<code>atomic_t</code> 不是「更快的 <code>int</code>」，是「用原子指令换正确性」的 <code>int</code>，只在真需要 RMW 原子性时用。</p>
+<h2 id="三内核原子操作-apiatomic_t-与-atomic64_t" tabindex="-1">三、内核原子操作 API：atomic_t 与 atomic64_t <a class="header-anchor" href="#三内核原子操作-apiatomic_t-与-atomic64_t"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核给原子变量一个专用类型，<code>include/linux/types.h</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-type">int</span> counter;
+} <span class="hljs-type">atomic_t</span>;
+</code></pre></div></code></pre>
+<p>就一个 <code>int</code>，包了一层 struct。这层不是为了对齐也不是填充，纯粹为了类型检查：拿普通 <code>int *</code> 去调 <code>atomic_inc</code> 编译不过，想混用就得显式强转；声明了 <code>atomic_t</code> 就没法写 <code>v++</code>、<code>v += 2</code>（struct 不能这么算），只能走接口；sparse 这类工具还能顺着类型把直接访问 <code>v.counter</code> 的地方挑出来。</p>
+<p><code>ATOMIC_INIT</code> 在 <code>arch/arm/include/asm/atomic.h</code>，用法 <code>atomic_t canopen = ATOMIC_INIT(1);</code>，定义是 <code>#define ATOMIC_INIT(i) { (i) }</code>。struct 是它必须是聚合类型的第二个理由：可以用初始化列表。</p>
+<p>读写这两个最基础的（4.15 的写法）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> atomic_read(v)  READ_ONCE((v)-&gt;counter)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> atomic_set(v,i) WRITE_ONCE(((v)-&gt;counter), (i))</span>
+</code></pre></div></code></pre>
+<p>这两行说明一件重要的事：<strong><code>atomic_read</code> 和 <code>atomic_set</code> 不是原子 RMW，只是一次性访问</strong>。4.15 起它们直接就是 <code>READ_ONCE</code>/<code>WRITE_ONCE</code>，连指令都没多一条。真正需要独占的是 <code>atomic_add</code> 那一类。</p>
+<p><code>atomic64_t</code> 在旁边，包在 <code>#ifndef CONFIG_GENERIC_ATOMIC64</code> 里——架构没提供原生 64 位原子操作时退回通用实现（<code>#include &lt;asm-generic/atomic64.h&gt;</code>），定义是 <code>typedef struct { long long counter; } atomic64_t;</code>。ARM 的实现分两档，看有没有 LPAE（Large Physical Address Extension，大物理地址扩展，Cortex-A7/A15 起支持，提供 <code>ldrd</code>/<code>strd</code> 双字访问）：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>配置</th>
+<th><code>atomic64_read</code> 实现</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CONFIG_ARM_LPAE=y</code></td>
+<td><code>ldrd %0, %H0, [%1]</code></td>
+<td>单条双字 load，硬件原子</td>
+</tr>
+<tr>
+<td><code>CONFIG_ARM_LPAE=n</code></td>
+<td><code>ldrexd %0, %H0, [%1]</code></td>
+<td>独占双字 load，配 <code>strexd</code></td>
+</tr>
+</tbody>
+</table></div><p>没有 LPAE 的 32 位 ARM 上 <code>ldrd</code>/<code>strd</code> 不保证原子，只能走 <code>ldrexd</code>/<code>strexd</code>。这就是 32 位机器上 <code>atomic64_t</code> 明显更贵的原因：每次操作都是一次带重试循环的独占序列。</p>
+<h2 id="四atomic-系列的完整接口" tabindex="-1">四、atomic 系列的完整接口 <a class="header-anchor" href="#四atomic-系列的完整接口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>按用途分组，语义和返回值逐个标出——这几个返回值最容易记混。</p>
+<h3 id="1初始化与简单访问" tabindex="-1">1、初始化与简单访问 <a class="header-anchor" href="#1初始化与简单访问"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>语义</th>
+<th>返回值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ATOMIC_INIT(i)</code></td>
+<td>静态初始化</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>atomic_read(v)</code></td>
+<td>读一次 <code>counter</code></td>
+<td>当前值（<code>READ_ONCE</code>）</td>
+</tr>
+<tr>
+<td><code>atomic_set(v, i)</code></td>
+<td>写一次 <code>counter</code></td>
+<td>—（<code>WRITE_ONCE</code>）</td>
+</tr>
+<tr>
+<td><code>atomic_read_acquire(v)</code></td>
+<td>读，带 acquire 语义</td>
+<td>当前值</td>
+</tr>
+<tr>
+<td><code>atomic_set_release(v, i)</code></td>
+<td>写，带 release 语义</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div><h3 id="2加减不返回结果" tabindex="-1">2、加减，不返回结果 <a class="header-anchor" href="#2加减不返回结果"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>atomic_add(int i, atomic_t *v)</code></td>
+<td><code>v += i</code></td>
+</tr>
+<tr>
+<td><code>atomic_sub(int i, atomic_t *v)</code></td>
+<td><code>v -= i</code></td>
+</tr>
+<tr>
+<td><code>atomic_inc(atomic_t *v)</code></td>
+<td><code>v += 1</code></td>
+</tr>
+<tr>
+<td><code>atomic_dec(atomic_t *v)</code></td>
+<td><code>v -= 1</code></td>
+</tr>
+</tbody>
+</table></div><p><code>atomic_inc</code> / <code>atomic_dec</code> 在 4.15 就是宏，展开是那套 <code>ldrex</code>/<code>strex</code>：<code>#define atomic_inc(v) atomic_add(1, v)</code>。</p>
+<h3 id="3加减并返回新值--旧值" tabindex="-1">3、加减并返回新值 / 旧值 <a class="header-anchor" href="#3加减并返回新值--旧值"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>语义</th>
+<th>返回值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>atomic_add_return(i, v)</code></td>
+<td><code>v += i</code></td>
+<td>加完后的<strong>新值</strong></td>
+</tr>
+<tr>
+<td><code>atomic_sub_return(i, v)</code></td>
+<td><code>v -= i</code></td>
+<td>减完后的<strong>新值</strong></td>
+</tr>
+<tr>
+<td><code>atomic_inc_return(v)</code></td>
+<td><code>v += 1</code></td>
+<td>新值</td>
+</tr>
+<tr>
+<td><code>atomic_dec_return(v)</code></td>
+<td><code>v -= 1</code></td>
+<td>新值</td>
+</tr>
+<tr>
+<td><code>atomic_fetch_add(i, v)</code></td>
+<td><code>v += i</code></td>
+<td>加之前的<strong>旧值</strong></td>
+</tr>
+<tr>
+<td><code>atomic_fetch_sub(i, v)</code></td>
+<td><code>v -= i</code></td>
+<td>减之前的<strong>旧值</strong></td>
+</tr>
+<tr>
+<td><code>atomic_fetch_inc(v)</code></td>
+<td><code>v += 1</code></td>
+<td>旧值</td>
+</tr>
+<tr>
+<td><code>atomic_fetch_dec(v)</code></td>
+<td><code>v -= 1</code></td>
+<td>旧值</td>
+</tr>
+</tbody>
+</table></div><p><code>atomic_add_return</code> 和 <code>atomic_fetch_add</code> 是两套不同的东西，ARM 上是两个不同的汇编块（<code>ATOMIC_OP_RETURN</code> 与 <code>ATOMIC_FETCH_OP</code>）。前者返回 <code>result</code>（<code>strex</code> 之后的新值），后者返回 <code>val</code>（<code>strex</code> 之前的旧值）。用错不报错，逻辑错。</p>
+<h3 id="4操作并测试" tabindex="-1">4、操作并测试 <a class="header-anchor" href="#4操作并测试"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>语义</th>
+<th>返回值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>atomic_inc_and_test(v)</code></td>
+<td><code>v += 1</code></td>
+<td>新值为 0 时真</td>
+</tr>
+<tr>
+<td><code>atomic_dec_and_test(v)</code></td>
+<td><code>v -= 1</code></td>
+<td>新值为 0 时真</td>
+</tr>
+<tr>
+<td><code>atomic_sub_and_test(i, v)</code></td>
+<td><code>v -= i</code></td>
+<td>新值为 0 时真</td>
+</tr>
+<tr>
+<td><code>atomic_add_negative(i, v)</code></td>
+<td><code>v += i</code></td>
+<td>新值小于 0 时真</td>
+</tr>
+<tr>
+<td><code>atomic_add_unless(v, a, u)</code></td>
+<td><code>v</code> 不等于 <code>u</code> 时 <code>v += a</code></td>
+<td>添加发生过时非零</td>
+</tr>
+<tr>
+<td><code>atomic_inc_not_zero(v)</code></td>
+<td><code>v</code> 非零时 <code>v += 1</code></td>
+<td>增加发生过时非零</td>
+</tr>
+<tr>
+<td><code>atomic_dec_if_positive(v)</code></td>
+<td><code>v</code> 大于 0 时减一</td>
+<td>旧值减一，减没减都返回</td>
+</tr>
+</tbody>
+</table></div><p>4.15 ARM 上这一组是宏，返回值关系写得直白：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> atomic_inc_and_test(v)  (atomic_add_return(1, v) == 0)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> atomic_dec_and_test(v)  (atomic_sub_return(1, v) == 0)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> atomic_sub_and_test(i, v) (atomic_sub_return(i, v) == 0)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> atomic_add_negative(i,v) (atomic_add_return(i, v) &lt; 0)</span>
+</code></pre></div></code></pre>
+<p>注意没有 <code>atomic_add_and_test</code>——只有减法和自增能测零，加法测零没意义。<code>atomic_add_unless</code> 的返回值有个坑，4.15 的 <code>include/linux/atomic.h</code> 这样收口：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">atomic_add_unless</span><span class="hljs-params">(<span class="hljs-type">atomic_t</span> *v, <span class="hljs-type">int</span> a, <span class="hljs-type">int</span> u)</span>
+{
+    <span class="hljs-keyword">return</span> __atomic_add_unless(v, a, u) != u;
+}
+</code></pre></div></code></pre>
+<p>底层 <code>__atomic_add_unless</code> 返回<strong>旧值</strong>，上层包装转成布尔。所以它返回非零的意思是「加了」，不是「值是多少」。</p>
+<p><code>atomic_dec_and_test</code> 是这组里用得最多的。它干一件并发代码里反复出现的事：<strong>减一，同时判断「我是不是最后一个」</strong>。减完是 0 说明我是最后一个持有者，可以释放；否则安静走人。引用计数、<code>kref_put</code>、文件描述符回收全在这个动作上。素材里那个字符设备例子是它的另一个用法——单开限制：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">atomic_t</span> canopen = ATOMIC_INIT(<span class="hljs-number">1</span>);
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">hello_open</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *p, <span class="hljs-keyword">struct</span> file *f)</span>
+{
+    <span class="hljs-keyword">if</span> (!atomic_dec_and_test(&amp;canopen)) {   <span class="hljs-comment">/* 自减 1 并判断是否为 0 */</span>
+        atomic_inc(&amp;canopen);              <span class="hljs-comment">/* 恢复原始值 */</span>
+        <span class="hljs-keyword">return</span> -EBUSY;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">hello_close</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-keyword">struct</span> file *file)</span>
+{
+    atomic_inc(&amp;canopen);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>第一次打开：1 减到 0，返回真，取反为假，<code>if</code> 不成立，成功。第二次打开：0 减到 -1，返回假，取反为真，进分支，先把值加回去再返回错误。之所以能这样恢复，是因为「减到 -1」这个状态不会让别人误判成功——只有减到 0 的那个线程才拿到。这个模式只在计数值不会被减很深的场景成立，负得越多恢复越粗糙。</p>
+<h3 id="5位运算交换与比较交换" tabindex="-1">5、位运算、交换与比较交换 <a class="header-anchor" href="#5位运算交换与比较交换"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>语义</th>
+<th>返回值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>atomic_and(i, v)</code></td>
+<td><code>v &amp;= i</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>atomic_or(i, v)</code></td>
+<td><code>v |= i</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>atomic_xor(i, v)</code></td>
+<td><code>v ^= i</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>atomic_andnot(i, v)</code></td>
+<td><code>v &amp;= ~i</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>atomic_fetch_and(i, v)</code> 等</td>
+<td>同上</td>
+<td>旧值</td>
+</tr>
+<tr>
+<td><code>atomic_xchg(v, new)</code></td>
+<td>原子置换</td>
+<td>旧值</td>
+</tr>
+<tr>
+<td><code>atomic_cmpxchg(v, old, new)</code></td>
+<td><code>*v == old</code> 时写 <code>new</code></td>
+<td>旧值</td>
+</tr>
+<tr>
+<td><code>atomic_try_cmpxchg(v, oldp, new)</code></td>
+<td>同上，<code>oldp</code> 带回实际旧值</td>
+<td>成功与否</td>
+</tr>
+</tbody>
+</table></div><p><code>atomic_andnot</code> 在 ARM 上映射到 <code>bic</code>（Bit Clear），不是先取反再 <code>and</code>：源码里就是 <code>ATOMIC_OPS(andnot, &amp;= ~, bic)</code>。<code>atomic_cmpxchg</code> 返回旧值，所以判断成功要写 <code>if (atomic_cmpxchg(v, old, new) == old)</code>。这是 CAS 循环的标准写法，也是无锁栈、无锁队列的地基。</p>
+<h3 id="6内存序变体" tabindex="-1">6、内存序变体 <a class="header-anchor" href="#6内存序变体"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>后缀</th>
+<th>语义</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无后缀</td>
+<td>全序（acquire + release 都占）</td>
+<td><code>atomic_add_return</code></td>
+</tr>
+<tr>
+<td><code>_relaxed</code></td>
+<td>不保证顺序，只保证原子</td>
+<td><code>atomic_add_return_relaxed</code></td>
+</tr>
+<tr>
+<td><code>_acquire</code></td>
+<td>只对 load 部分给 acquire</td>
+<td><code>atomic_fetch_add_acquire</code></td>
+</tr>
+<tr>
+<td><code>_release</code></td>
+<td>只对 store 部分给 release</td>
+<td><code>atomic_fetch_add_release</code></td>
+</tr>
+</tbody>
+</table></div><p><code>include/linux/atomic.h</code> 说明了构建方式：架构提供了 <code>_relaxed</code> 版本时，<code>_acquire</code>/<code>_release</code>/无后缀就在它外面套屏障：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> __atomic_op_acquire(op, args...)                    \
+({                                                          \
+    typeof(op##_relaxed(args)) __ret = op##_relaxed(args);  \
+    smp_mb__after_atomic();                                 \
+    __ret;                                                  \
+})</span>
+</code></pre></div></code></pre>
+<p>架构没提供 <code>_relaxed</code> 版本时全部别名到全序版本。这条规则的意思是：<strong>在弱的架构上用 <code>_relaxed</code> 能省钱，在强的架构上写 <code>_relaxed</code> 不亏，只是省不下来</strong>。<code>atomic64_*</code> 与 <code>atomic_*</code> 一一对应，参数换成 <code>long long</code>，初始化用 <code>ATOMIC64_INIT(0)</code>。</p>
+<h2 id="五位操作set_bit--test_and_set_bit" tabindex="-1">五、位操作：set_bit / test_and_set_bit <a class="header-anchor" href="#五位操作set_bit--test_and_set_bit"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>整型原子操作管「一个计数器」，位操作管「一个 bit」：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>语义</th>
+<th>返回值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>set_bit(nr, addr)</code></td>
+<td>第 <code>nr</code> 位置 1</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>clear_bit(nr, addr)</code></td>
+<td>第 <code>nr</code> 位清 0</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>change_bit(nr, addr)</code></td>
+<td>第 <code>nr</code> 位取反</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>test_bit(nr, addr)</code></td>
+<td>读第 <code>nr</code> 位</td>
+<td>该位值</td>
+</tr>
+<tr>
+<td><code>test_and_set_bit(nr, addr)</code></td>
+<td>置 1 并返回原值</td>
+<td>原来的位值</td>
+</tr>
+<tr>
+<td><code>test_and_clear_bit(nr, addr)</code></td>
+<td>清 0 并返回原值</td>
+<td>原来的位值</td>
+</tr>
+<tr>
+<td><code>test_and_change_bit(nr, addr)</code></td>
+<td>取反并返回原值</td>
+<td>原来的位值</td>
+</tr>
+<tr>
+<td><code>__set_bit</code> / <code>__clear_bit</code></td>
+<td>非原子版本</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div><p><code>addr</code> 的实际类型是 <code>volatile unsigned long *</code>，<code>nr</code> 是 <code>int</code>。前六个原子，双下划线那批不原子。<code>test_and_xxx_bit</code> 等价于「先 <code>test_bit</code> 再 <code>xxx_bit</code>」，但两步是原子的，中间别人插不进来。<code>test_bit</code> 本身不加任何锁，因为它只是一次 load，没有 RMW。</p>
+<h3 id="原子性从哪来" tabindex="-1">原子性从哪来 <a class="header-anchor" href="#原子性从哪来"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>arch/arm/include/asm/bitops.h</code> 有两条路径。C 那条：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span>
+____atomic_test_and_set_bit(<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> bit, <span class="hljs-keyword">volatile</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> *p)
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags, mask = BIT_MASK(bit);
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> res;
+
+    p += BIT_WORD(bit);
+
+    raw_local_irq_save(flags);
+    res = *p;
+    *p = res | mask;
+    raw_local_irq_restore(flags);
+
+    <span class="hljs-keyword">return</span> (res &amp; mask) != <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>靠关中断。前提是<strong>单核</strong>：关掉本核中断，就没有别的执行流能插进来。多核可用的是汇编那条，<code>_test_and_set_bit</code> 用 <code>ldrex</code>/<code>strex</code> 实现，逻辑和 <code>atomic_add</code> 同构。两条路径怎么选看这个宏：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">ifndef</span> CONFIG_SMP</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> ATOMIC_BITOP(name,nr,p)          \
+    (__builtin_constant_p(nr) ? ____atomic_##name(nr, p) : _##name(nr,p))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> ATOMIC_BITOP(name,nr,p)     _##name(nr,p)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+</code></pre></div></code></pre>
+<p><code>CONFIG_SMP=y</code> 时一律走汇编版本，没有例外；<code>CONFIG_SMP=n</code> 且位号是编译期常量时走关中断的 C 版本，省一次函数调用；<code>CONFIG_SMP=n</code> 且位号是变量时走汇编版本。<code>__builtin_constant_p(nr)</code> 是 GCC 内建，编译期就能判断是不是常量，这是内核里「常量走快路径」的常见套路。</p>
+<p>用在哪：bit lock（<code>include/asm-generic/bitops/lock.h</code> 的 <code>bit_spin_lock()</code> 就是 <code>test_and_set_bit</code> 循环，一个 bit 当一把锁，比 <code>spinlock_t</code> 省内存，代价是没调试信息、不能睡眠）；page flags（<code>PG_locked</code>、<code>PG_dirty</code>、<code>PG_writeback</code>，页是全局资源，必须在多核下原子）；<code>cpu_online_mask</code>（一个 <code>cpumask</code>，本质就是位数组）；等待队列标志（<code>wait_queue_head_t</code> 的 <code>flags</code>、工作队列的状态位）。</p>
+<h2 id="六原子操作在-arm-上的实现" tabindex="-1">六、原子操作在 ARM 上的实现 <a class="header-anchor" href="#六原子操作在-arm-上的实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>以 <code>atomic_add</code> 为例。<code>arch/arm/include/asm/atomic.h</code> 里接口是被宏生成出来的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> ATOMIC_OPS(op, c_op, asm_op)                    \
+    ATOMIC_OP(op, c_op, asm_op)                         \
+    ATOMIC_OP_RETURN(op, c_op, asm_op)                  \
+    ATOMIC_FETCH_OP(op, c_op, asm_op)</span>
+
+ATOMIC_OPS(add, +=, add)
+ATOMIC_OPS(sub, -=, sub)
+</code></pre></div></code></pre>
+<p><code>ATOMIC_OPS(add, +=, add)</code> 一个实参展开出三个函数：<code>atomic_add</code>、<code>atomic_add_return</code>、<code>atomic_fetch_add</code>。<code>c_op</code> 是 C 运算符（只给无独占指令的老架构用），<code>asm_op</code> 是汇编助记符（<code>add</code>/<code>sub</code>/<code>and</code>/<code>orr</code>/<code>eor</code>/<code>bic</code>）。<code>ATOMIC_OP</code> 本体，ARMv6 及以上：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> ATOMIC_OP(op, c_op, asm_op)                             \
+static inline void atomic_##op(int i, atomic_t *v)              \
+{                                                               \
+    unsigned long tmp;                                          \
+    int result;                                                 \
+                                                                \
+    prefetchw(&amp;v-&gt;counter);                                     \
+    __asm__ __volatile__(<span class="hljs-string">&quot;@ atomic_&quot;</span> #op <span class="hljs-string">&quot;\n&quot;</span>                   \
+<span class="hljs-string">&quot;1: ldrex   %0, [%3]\n&quot;</span>                                         \
+<span class="hljs-string">&quot;   &quot;</span> #asm_op <span class="hljs-string">&quot; %0, %0, %4\n&quot;</span>                                   \
+<span class="hljs-string">&quot;   strex   %1, %0, [%3]\n&quot;</span>                                     \
+<span class="hljs-string">&quot;   teq     %1, #0\n&quot;</span>                                           \
+<span class="hljs-string">&quot;   bne     1b&quot;</span>                                                 \
+    : <span class="hljs-string">&quot;=&amp;r&quot;</span> (result), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp), <span class="hljs-string">&quot;+Qo&quot;</span> (v-&gt;counter)           \
+    : <span class="hljs-string">&quot;r&quot;</span> (&amp;v-&gt;counter), <span class="hljs-string">&quot;Ir&quot;</span> (i)                               \
+    : <span class="hljs-string">&quot;cc&quot;</span>);                                                    \
+}</span>
+</code></pre></div></code></pre>
+<p>ARMv6 以下（<code>#else</code> 分支）用关中断：<code>raw_local_irq_save(flags); v-&gt;counter c_op i; raw_local_irq_restore(flags);</code>。分支开关是 <code>#if __LINUX_ARM_ARCH__ &gt;= 6</code>，老架构分支一开头就写着 <code>#ifdef CONFIG_SMP</code> / <code>#error SMP not supported on pre-ARMv6 CPUs</code>。意思明确：ARMv6 之前没有独占访问指令，原子性只能靠关中断，关中断只对单核成立，所以内核直接拒绝在老 ARM 上编译 SMP。</p>
+<h3 id="把宏展开成人能读的汇编" tabindex="-1">把宏展开成人能读的汇编 <a class="header-anchor" href="#把宏展开成人能读的汇编"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>ATOMIC_OP(add, +=, add)</code> 展开，<code>%0</code>→R0、<code>%1</code>→R1、<code>%3</code>→R3、<code>%4</code>→R4：</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>初始条件：
+    <span class="hljs-built_in">R3</span> = &amp;v-&gt;counter         <span class="hljs-comment">@ 待操作变量地址</span>
+    <span class="hljs-built_in">R4</span> = i                   <span class="hljs-comment">@ 待加的值</span>
+<span class="hljs-number">1</span>:  ldrex   <span class="hljs-built_in">R0</span>, [<span class="hljs-built_in">R3</span>]         <span class="hljs-comment">@ 独占读：R0 = v-&gt;counter，并在 [R3] 打独占标记</span>
+    <span class="hljs-keyword">add</span>     <span class="hljs-built_in">R0</span>, <span class="hljs-built_in">R0</span>, <span class="hljs-built_in">R4</span>       <span class="hljs-comment">@ R0 = R0 + R4</span>
+    <span class="hljs-keyword">strex</span>   <span class="hljs-built_in">R1</span>, <span class="hljs-built_in">R0</span>, [<span class="hljs-built_in">R3</span>]     <span class="hljs-comment">@ 独占写：成功则 [R3] = R0，R1 = 0</span>
+    <span class="hljs-keyword">teq</span>     <span class="hljs-built_in">R1</span>, <span class="hljs-number">#0</span>           <span class="hljs-comment">@ 测试 R1 是否等于 0</span>
+    <span class="hljs-keyword">bne</span>     <span class="hljs-number">1</span>b               <span class="hljs-comment">@ 非 0（写失败）回到标号 1 重来</span>
+返回结果：
+    result = <span class="hljs-built_in">R0</span>              <span class="hljs-comment">@ 新值，atomic_add_return 用它</span>
+    tmp    = <span class="hljs-built_in">R1</span>              <span class="hljs-comment">@ strex 的成败标记</span>
+</code></pre></div></code></pre>
+<h3 id="ldrex--strex-做了什么" tabindex="-1">ldrex / strex 做了什么 <a class="header-anchor" href="#ldrex--strex-做了什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>ldrex</code> 是 <code>ldr</code> 加独占语义（<code>LDREX &lt;Rt&gt;, [&lt;Rn&gt;]</code>）。<code>&lt;Rn&gt;</code> 是基址寄存器，<code>&lt;Rt&gt;</code> 是目的寄存器。执行时硬件额外放两条「狗」盯着这个地址：local monitor（本核）和 global monitor（全局）。<code>strex</code> 是 <code>str</code> 加条件（<code>STREX &lt;Rd&gt;, &lt;Rt&gt;, [&lt;Rn&gt;]</code>），<code>&lt;Rd&gt;</code> 保存成败，0 成功、1 失败。能不能写取决于监视器状态——狗还盯着这个地址就允许写，写完清标记；标记已经没了就拒绝写，返回 1。</p>
+<p>一次失败路径：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>序号</th>
+<th>进程 1</th>
+<th>进程 2</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>ldrex R0, [R3]</code> 置独占标记</td>
+<td></td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>add R0, R0, R4</code></td>
+<td></td>
+</tr>
+<tr>
+<td>3</td>
+<td></td>
+<td><code>ldrex R0, [R3]</code> 置独占标记</td>
+</tr>
+<tr>
+<td>4</td>
+<td></td>
+<td><code>add R0, R0, R4</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td></td>
+<td><code>strex</code> 成功，写回，清标记</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>strex</code> 标记已被清，失败</td>
+<td></td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>teq R1, #0</code> 不等，R1=1</td>
+<td><code>teq R1, #0</code> 相等，R1=0</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>b 1b</code> 重来</td>
+<td>继续往下</td>
+</tr>
+</tbody>
+</table></div><p>进程 2 提交成功后清了标记，进程 1 的 <code>strex</code> 必然失败，回到标号 1 重读。整个 RMW 白做一次，这是乐观策略的代价：无冲突时只要四条指令，有冲突时退化成自旋。</p>
+<p><code>exclusive</code> 是 ARMv6 引入的，不是 ARMv7。素材写「是 ARMv7 提供的」不对，内核判断的边界就是 <code>__LINUX_ARM_ARCH__ &gt;= 6</code>，记在勘误。监视器按地址标记而不按值，所以一次 <code>ldrex</code> 之后再 <code>ldrex</code> 别的地址，前一个标记会失效——写内联汇编时，<code>ldrex</code> 和 <code>strex</code> 之间不能插别的独占访问。</p>
+<h3 id="约束符逐个说" tabindex="-1">约束符逐个说 <a class="header-anchor" href="#约束符逐个说"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>&quot;=&amp;r&quot;</code> 里 <code>=</code> 表示只写，<code>&amp;</code> 是 earlyclobber。<code>&amp;</code> 禁止 GCC 把输出和输入分到同一个寄存器：不加 <code>&amp;</code> 时 GCC 倾向省寄存器让 <code>%0</code> 和 <code>%3</code> 共用，但 <code>%0</code> 在第一条 <code>ldrex</code> 就被写入，此时 <code>%3</code> 还要用，共用直接算错。<code>&quot;+Qo&quot;</code> 里 <code>+</code> 表示读写，<code>Qo</code> 是 ARM 约束，表示可用基址寄存器寻址的内存操作数。<code>&quot;r&quot;</code> 让 GCC 随便挑一个通用寄存器。</p>
+<p><code>&quot;Ir&quot;</code> 里 <code>I</code> 是 ARM 专用约束，要求能编码进 data-processing 指令的立即数——8 位数据配 4 位循环移位凑出的 32 位数。ARM 的 data-processing 指令 32 位里有 12 位表示立即数，8 位真数据、4 位循环量，所以「0~255 经 rotation 得到的数」合法，数值不合适时 GCC 先 <code>mov</code> 到寄存器。<code>&quot;cc&quot;</code> 告诉 GCC 这段改了条件码寄存器（<code>teq</code> 会改），别指望之前的标志位还在。<code>__volatile__</code> 禁止编译器对这段内联汇编优化、移动、删除，没有它 GCC 可以认为一段「没有输出」的汇编没用直接扔掉。<code>prefetchw(&amp;v-&gt;counter)</code> 是可选优化：<code>strex</code> 之前把目标内存预取到 cache，让独占访问更快命中，不是正确性的一部分。</p>
+<h2 id="七从单条指令到多条指令为什么还需要内存屏障" tabindex="-1">七、从单条指令到多条指令：为什么还需要内存屏障 <a class="header-anchor" href="#七从单条指令到多条指令为什么还需要内存屏障"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>atomic_add</code> 解决了「一条 RMW 不可分割」，不解决另一件事：<strong>两条独立访问之间谁先谁后</strong>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>data = <span class="hljs-number">42</span>;          <span class="hljs-comment">/* 第一条 store */</span>
+ready = <span class="hljs-number">1</span>;          <span class="hljs-comment">/* 第二条 store */</span>
+</code></pre></div></code></pre>
+<p>写代码的人想表达「数据准备好了才置标志」。读的一边 <code>while (!ready) cpu_relax(); use(data);</code>。三种情况下失效：编译器把两条 store 调换顺序（第八章）；CPU 把两条 store 投进不同顺序的 store buffer（第九章）；读的一边，<code>ready</code> 的读先于 <code>data</code> 的读完成（第九章的 invalidate queue）。</p>
+<p><code>atomic_t</code> 对这三种情况一个都不管。<code>atomic_add</code> 保证的是「这一个变量上的这一次 RMW 是独占的」，不保证这条 RMW 和别的访问之间的先后。所以原子操作不够。原子性是水平的（这一条操作不被切开），顺序性是垂直的（多条操作按我的顺序落地），两个维度要两套工具。<strong>这两件事在弱内存模型上不能互相替代。</strong></p>
+<p>再往下推：为什么 CPU 要乱序？因为它想快。一条 store 等不到 cacheline 所有权就卡住，流水线白等几十上百周期。硬件索性给 store 一个缓冲，先收下，回头再落地。这个缓冲一旦存在，<code>store A; store B</code> 落地成 <code>B; A</code> 就有了物理基础。所以屏障不是「修 bug 的补丁」，它是<strong>换性能的付款凭证</strong>：你容忍了乱序换吞吐，付出屏障换正确性。</p>
+<h2 id="八编译器优化会做什么" tabindex="-1">八、编译器优化会做什么 <a class="header-anchor" href="#八编译器优化会做什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>编译器只认一件事：单线程语义。它不知道 <code>lock-&gt;owner</code> 会被另一个 CPU 改，也不知道某个地址背后是外设寄存器。</p>
+<h3 id="1把循环里的-load-提到循环外" tabindex="-1">1、把循环里的 load 提到循环外 <a class="header-anchor" href="#1把循环里的-load-提到循环外"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>kernel/locking/mutex.c</code> 的 <code>__mutex_lock_common</code> 里有这样一段（<code>ACCESS_ONCE</code> 时代，4.15 之前）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">for</span> (;;) {
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">task_struct</span> *<span class="hljs-title">owner</span>;</span>
+
+    owner = ACCESS_ONCE(lock-&gt;owner);
+    <span class="hljs-keyword">if</span> (owner &amp;&amp; !mutex_spin_on_owner(lock, owner))
+        <span class="hljs-keyword">goto</span> slowpath;
+    <span class="hljs-comment">/* ... */</span>
+}
+</code></pre></div></code></pre>
+<p>意图是让 mutex 的持锁者还在跑时自旋等一会儿，比直接睡眠便宜。循环里每轮都要重新读 <code>lock-&gt;owner</code>。如果写的是裸的 <code>lock-&gt;owner</code>，编译器看到的循环体是：读一个循环内没人写的变量，判空，调函数。它完全可以判定「这个读是循环不变量」，把它提到循环外，变成进循环前读一次、之后一直用那个值。对单线程这个变换完全正确，对这段代码是致命的：<code>owner</code> 被另一个 CPU 释放了，循环永远看不到，只能到超时——如果它退得出来的话。</p>
+<h3 id="2把一次-load-拆成多次或者合并" tabindex="-1">2、把一次 load 拆成多次，或者合并 <a class="header-anchor" href="#2把一次-load-拆成多次或者合并"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>Linus 在邮件里举的例子：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (a &gt; MEMORY) {
+    do1;
+    do2;
+    do3;
+} <span class="hljs-keyword">else</span> {
+    do2;
+}
+</code></pre></div></code></pre>
+<p>GCC 可以把公共的 <code>do2</code> 提出来，变成 <code>if (a &gt; MEMORY) do1; do2; if (a &gt; MEMORY) do3;</code>。本身没问题，直到 <code>do2</code> 会改 <code>MEMORY</code>：原来只读一次，现在读两次，结果不一样，分支判断和 C 代码的语义就对不上。反方向也会发生：两次读同一个地址被合并成一次（CSE，公共子表达式消除），等标志位的场景里，等于把「反复看」变成「看一眼」。</p>
+<h3 id="3把相邻的内存访问调换顺序" tabindex="-1">3、把相邻的内存访问调换顺序 <a class="header-anchor" href="#3把相邻的内存访问调换顺序"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>编译器为了减少指令数、改善流水线，会把独立的访问重排。它认为这两条互不相关，因为它们碰的不是同一个对象——共享内存里它们相关不相关，编译器无从知道。</p>
+<h3 id="4对-volatile-的误解" tabindex="-1">4、对 volatile 的误解 <a class="header-anchor" href="#4对-volatile-的误解"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>volatile</code> 能防住第 1、2 类（不许合并、不许消除、每次访问真的落到内存），但对第 3 类只管一半：GCC 保证 <code>volatile</code> 访问之间保序，但<strong>不保证 <code>volatile</code> 与其他访问之间保序</strong>。这就是后来内核把 <code>ACCESS_ONCE</code>（本质是 <code>*(volatile T *)&amp;x</code>）换成 <code>READ_ONCE</code>/<code>WRITE_ONCE</code>、并在编译器层面加上依赖屏障的原因。<code>__READ_ONCE</code> 的定义见第十三章，结尾那句 <code>smp_read_barrier_depends()</code> 就是补的这一刀。</p>
+<p><code>READ_ONCE</code> 的作用范围比 <code>ACCESS_ONCE</code> 宽：明确承诺「编译器不许重排相邻的 <code>READ_ONCE</code>/<code>WRITE_ONCE</code>」，而且支持聚合类型，超过字长时退化成 <code>memcpy</code>。这些 <code>ACCESS_ONCE</code> 做不到。</p>
+<h2 id="九cpu-与-cache-的一致性会做什么" tabindex="-1">九、CPU 与 cache 的一致性会做什么 <a class="header-anchor" href="#九cpu-与-cache-的一致性会做什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>只交代最必要的背景。MESI 的完整推导、store buffer 与 invalidate queue 的状态迁移、带时序图的四个场景，在 B 目录那篇《内存屏障与乱序》里，这里不复述。记住三个硬件部件，以及每个部件对应的乱序类型：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>硬件部件</th>
+<th>存在的原因</th>
+<th>带来的乱序</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>cache（多核共享内存的副本）</td>
+<td>缩短访存延迟</td>
+<td>副本之间要同步，需要一致性协议</td>
+</tr>
+<tr>
+<td>store buffer</td>
+<td>store 不必等 cacheline 所有权到手</td>
+<td>StoreStore 重排、StoreLoad 提前可见</td>
+</tr>
+<tr>
+<td>invalidate queue</td>
+<td>收到 invalidate 不必立刻处理就能回 ack</td>
+<td>LoadLoad、LoadStore 读到过期副本</td>
+</tr>
+</tbody>
+</table></div><p>三个部件各自堵一个瓶颈，各自开一个乱序的口子，屏障指令就是封这些口子的。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>组合</th>
+<th>含义</th>
+<th>谁造成</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LoadLoad</td>
+<td>两次读，后一个跑到前一个之前</td>
+<td>invalidate queue</td>
+</tr>
+<tr>
+<td>LoadStore</td>
+<td>读之后的写跑到读之前</td>
+<td>invalidate queue / 编译器</td>
+</tr>
+<tr>
+<td>StoreStore</td>
+<td>两次写，后一个跑到前一个之前</td>
+<td>store buffer / 编译器</td>
+</tr>
+<tr>
+<td>StoreLoad</td>
+<td>写之后的读跑到写之前</td>
+<td>store buffer + invalidate queue / 编译器</td>
+</tr>
+</tbody>
+</table></div><p><code>StoreLoad</code> 最贵也最难：它要求「我写的所有人都看见了，我再去读」。这一条天然要求等对方 ack，x86 上靠 <code>mfence</code> 或带 <code>lock</code> 前缀的指令，ARM 上靠 <code>dmb ish</code>。</p>
+<p>另一点必须交代：<strong>外设寄存器的内存映射</strong>。ARM 上外设寄存器映射到一段内存地址，编译器不知道那块地址背后是硬件：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">do</span> {
+    status = readl(base + TX_STATUS);   <span class="hljs-comment">/* 读 TX FIFO 状态寄存器 */</span>
+    barrier();
+} <span class="hljs-keyword">while</span> (status &amp; TX_BUSY);
+
+writel(data, base + TX_FIFO);           <span class="hljs-comment">/* 写 TX FIFO 寄存器 */</span>
+</code></pre></div></code></pre>
+<p>没有 <code>barrier()</code>，编译器可以把 <code>writel</code> 提到循环前面——那就成了往没准备好的 FIFO 里灌数据。ARM 架构对 Device 和 Strongly-ordered 类型的内存访问本身保证 program order（A1 先于 A2，则 A1 先被观察到），所以这里 <code>barrier()</code> 足够，不需要 CPU 屏障。x86 的 IO 端口指令天然有序，同理。</p>
+<h2 id="十内核内存屏障-api-全表" tabindex="-1">十、内核内存屏障 API 全表 <a class="header-anchor" href="#十内核内存屏障-api-全表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>API</th>
+<th>层次</th>
+<th>约束的访问对</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>barrier()</code></td>
+<td>编译器屏障</td>
+<td>全部</td>
+<td>一条空的 <code>asm volatile(&quot;&quot;:::&quot;memory&quot;)</code></td>
+</tr>
+<tr>
+<td><code>mb()</code></td>
+<td>通用屏障</td>
+<td>四种组合全覆盖</td>
+<td>所有 CPU 与设备，最贵</td>
+</tr>
+<tr>
+<td><code>rmb()</code></td>
+<td>通用屏障</td>
+<td>LoadLoad + LoadStore</td>
+<td>只约束读</td>
+</tr>
+<tr>
+<td><code>wmb()</code></td>
+<td>通用屏障</td>
+<td>StoreStore</td>
+<td>只约束写</td>
+</tr>
+<tr>
+<td><code>smp_mb()</code></td>
+<td>SMP 屏障</td>
+<td>同 <code>mb()</code></td>
+<td>UP 上退化为 <code>barrier()</code></td>
+</tr>
+<tr>
+<td><code>smp_rmb()</code></td>
+<td>SMP 屏障</td>
+<td>同 <code>rmb()</code></td>
+<td>UP 上退化为 <code>barrier()</code></td>
+</tr>
+<tr>
+<td><code>smp_wmb()</code></td>
+<td>SMP 屏障</td>
+<td>同 <code>wmb()</code></td>
+<td>UP 上退化为 <code>barrier()</code></td>
+</tr>
+<tr>
+<td><code>smp_mb__before_atomic()</code></td>
+<td>原子操作专用</td>
+<td>之前的访问 vs 其后的原子 RMW</td>
+<td>给原子 RMW 加 release</td>
+</tr>
+<tr>
+<td><code>smp_mb__after_atomic()</code></td>
+<td>原子操作专用</td>
+<td>原子 RMW vs 之后的访问</td>
+<td>给原子 RMW 加 acquire</td>
+</tr>
+<tr>
+<td><code>smp_mb__before_spinlock()</code></td>
+<td>原子操作专用</td>
+<td>加锁前的访问 vs 加锁</td>
+<td>4.x 早期移除</td>
+</tr>
+<tr>
+<td><code>smp_mb__after_spinlock()</code></td>
+<td>原子操作专用</td>
+<td>加锁 vs 临界区</td>
+<td>4.x 新增</td>
+</tr>
+<tr>
+<td><code>smp_load_acquire(p)</code></td>
+<td>acquire/release</td>
+<td>读 <code>*p</code> vs 之后的访问</td>
+<td>读-获取</td>
+</tr>
+<tr>
+<td><code>smp_store_release(p, v)</code></td>
+<td>acquire/release</td>
+<td>之前的访问 vs 写 <code>*p</code></td>
+<td>写-释放</td>
+</tr>
+<tr>
+<td><code>smp_cond_load_acquire(p, c)</code></td>
+<td>acquire/release</td>
+<td>条件轮询 + acquire</td>
+<td>4.x 新增，自旋等待专用</td>
+</tr>
+<tr>
+<td><code>read_barrier_depends()</code></td>
+<td>依赖屏障</td>
+<td>依赖型读 vs 后续读</td>
+<td>只有 DEC Alpha 需要真指令</td>
+</tr>
+<tr>
+<td><code>smp_read_barrier_depends()</code></td>
+<td>依赖屏障</td>
+<td>同上</td>
+<td>4.15 后在多数架构上是空操作</td>
+</tr>
+<tr>
+<td><code>dma_rmb()</code></td>
+<td>设备/DMA</td>
+<td>DMA 读 vs CPU 读</td>
+<td>ARM 映射为 <code>dmb(osh)</code></td>
+</tr>
+<tr>
+<td><code>dma_wmb()</code></td>
+<td>设备/DMA</td>
+<td>DMA 写 vs CPU 写</td>
+<td>ARM 映射为 <code>dmb(oshst)</code></td>
+</tr>
+<tr>
+<td><code>set_mb(var, value)</code></td>
+<td>通用屏障</td>
+<td>赋值 + 全屏障</td>
+<td><code>do { var = value; smp_mb(); } while (0)</code></td>
+</tr>
+</tbody>
+</table></div><p>（<code>smp_mb__after_atomic_cond</code> 一类的边界接口在版本间有增减，用法对照你手上的头文件，本文不做逐版本确认。）</p>
+<p><code>mb()</code> 与 <code>smp_mb()</code> 的分界线必须记清楚，写错就是性能事故：<code>mb()</code> 约束所有 CPU 和所有设备，用于和硬件对话——DMA 描述符、设备寄存器；<code>smp_mb()</code> 只约束其它 CPU，用于纯 CPU 之间的通信——内核数据结构、锁、标志位。UP（<code>CONFIG_SMP=n</code>）编译时 <code>smp_mb()</code> 全部退化成 <code>barrier()</code>，一条指令都不生成；<code>mb()</code> 不退化，因为即使单核，外设和 CPU 之间的可见性仍需处理。<strong>分界线的判据是「对面是谁」：对面是设备就是 <code>mb()</code>，对面是另一个 CPU 就是 <code>smp_mb()</code>。</strong></p>
+<h2 id="十一smp_mb--smp_rmb--smp_wmb-的语义与配对" tabindex="-1">十一、smp_mb / smp_rmb / smp_wmb 的语义与配对 <a class="header-anchor" href="#十一smp_mb--smp_rmb--smp_wmb-的语义与配对"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>Documentation/memory-barriers.txt</code> 用「memory barrier」这个词，但它约束的不是「内存」，是访问的观察顺序。<strong><code>smp_mb()</code> 保证：在它之前的所有 load 和 store，对于其它 CPU 而言，都先于它之后的所有 load 和 store 被观察到。</strong></p>
+<p>三个词要抠：「对它之前的/之后的」——屏障有两个方向，不是单向的；「其它 CPU」——不管本核自己看到的顺序，本核永远看到自己的写（store-to-load forwarding），别的核看到的才有乱序问题；「被观察到」——不是「执行完」，是「结果对别人可见」。<code>smp_rmb()</code> 弱一档，只管 load 对 load、load 对 store；<code>smp_wmb()</code> 只管 store 对 store。<strong>把「被观察到」读成「执行完」是最常见的理解偏差。</strong></p>
+<p>屏障必须成对使用才有意义。这不是形式要求：一半的屏障等于没有屏障。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>一侧</th>
+<th>另一侧</th>
+<th>保证</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>smp_wmb()</code>（写数据后）</td>
+<td><code>smp_rmb()</code>（读标志后）</td>
+<td>写侧数据先于标志可见；读侧读到标志后再读数据，读到新数据</td>
+</tr>
+<tr>
+<td><code>smp_mb()</code></td>
+<td><code>smp_mb()</code></td>
+<td>双向全序</td>
+</tr>
+<tr>
+<td><code>smp_store_release()</code></td>
+<td><code>smp_load_acquire()</code></td>
+<td>释放/获取配对，最推荐</td>
+</tr>
+<tr>
+<td><code>smp_wmb()</code></td>
+<td>依赖屏障</td>
+<td>写侧写指针 + 初始化，读侧靠指针依赖保序</td>
+</tr>
+<tr>
+<td><code>dma_wmb()</code></td>
+<td><code>dma_rmb()</code></td>
+<td>CPU 与 device 之间的描述符顺序</td>
+</tr>
+</tbody>
+</table></div><p>配错是最常见的错误。三个典型错法：写侧 <code>smp_wmb()</code> 读侧什么都不用（写侧保证数据先落地，读侧仍会先读到标志、后读到旧副本）；两侧都用 <code>smp_wmb()</code>（读侧要的是读屏障，<code>wmb</code> 管不了读的顺序）；<code>smp_rmb()</code> 配 <code>smp_rmb()</code>（两边都只管自己内部的读序，跨 CPU 的「数据先于标志」没人保证）。</p>
+<p>发布-订阅是所有无锁通信的原型，模板背下来：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 写侧：发布 */</span>
+WRITE_ONCE(desc-&gt;data, value);
+smp_wmb();                       <span class="hljs-comment">/* 数据先落地 */</span>
+WRITE_ONCE(global_desc, desc);   <span class="hljs-comment">/* 再发布指针 */</span>
+
+<span class="hljs-comment">/* 读侧：订阅 */</span>
+p = READ_ONCE(global_desc);
+smp_rmb();                       <span class="hljs-comment">/* 读到指针之后，才去读它指向的东西 */</span>
+<span class="hljs-keyword">if</span> (p)
+    use(p-&gt;data);
+</code></pre></div></code></pre>
+<p>写成 acquire/release 更省事，语义等价且不容易配错：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>smp_store_release(&amp;global_desc, desc);      <span class="hljs-comment">/* 写侧 */</span>
+p = smp_load_acquire(&amp;global_desc);         <span class="hljs-comment">/* 读侧 */</span>
+</code></pre></div></code></pre>
+<p>好处是把「屏障 + 一次访问」打包成不可拆的表达式，你没法只写一半。老的 <code>smp_mb()</code> 风格里屏障和访问是两条独立语句，中间插进别的东西就错了。</p>
+<p>为什么两边都要加，不是可以省一边的性能问题。屏障约束的是<strong>本核</strong>把访问投向内存的顺序。A 核把 <code>data</code> 写在 <code>flag</code> 前面投向内存，B 核才会先看到 <code>flag</code> 再看到 <code>data</code>；B 核自己也需要屏障，否则它内部的读会先取 <code>data</code> 后取 <code>flag</code>——即使外部内存的顺序是对的，B 核照样读到旧 <code>data</code>。两侧各管一半，缺一半就漏一半。</p>
+<p><code>smp_mb__before_atomic</code> / <code>smp_mb__after_atomic</code> 是给原子操作补顺序语义的。原子操作本身不带顺序语义，而某些架构上「全屏障」很贵，「相对于原子操作的屏障」可以便宜实现：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>WRITE_ONCE(count, n);           <span class="hljs-comment">/* 让前面的 store 先于这次 atomic_inc 可见 */</span>
+smp_mb__before_atomic();
+atomic_inc(&amp;refcnt);
+</code></pre></div></code></pre>
+<p>命名要读准：<code>__before_atomic</code> 的语义是「屏障在原子操作之前，约束的是<strong>该原子操作之前</strong>的访问」，不是「约束该原子操作之前的原子访问」。</p>
+<h2 id="十二barrier只约束编译器" tabindex="-1">十二、barrier()：只约束编译器 <a class="header-anchor" href="#十二barrier只约束编译器"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>2.6 时代直接在头文件里写死 <code>#define barrier() __asm__ __volatile__(&quot;&quot;: : :&quot;memory&quot;)</code>。4.x 改成间接定义（<code>include/linux/compiler.h</code>）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* Optimization barrier */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifndef</span> barrier</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> barrier() __memory_barrier()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+</code></pre></div></code></pre>
+<p><code>__memory_barrier()</code> 由 <code>compiler-gcc.h</code> 提供，GCC 下展开就是上面那条空汇编。</p>
+<p>它一条机器指令都不生成（GCC 会把它优化掉，只留约束效果），但 <code>&quot;memory&quot;</code> 这个 clobber 项让 GCC 做三件事：不许把跨过这条语句的内存访问重排，它像一道栅栏把前后代码分成两段；不许假设寄存器里缓存的内存值仍然成立，GCC 必须重新从内存加载，因为它不知道这段汇编动了什么；不许把这条语句删掉，<code>volatile</code> 保证。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>[前一段 C 代码]  ← 段内可以随意重排
+=== barrier() ===        ← 跨越这条线不行
+[后一段 C 代码]  ← 段内可以随意重排
+</code></pre></div></code></pre>
+<p><code>barrier()</code> 管不了段内的顺序，也管不了 CPU 的顺序，只在编译器这一层生效。</p>
+<h3 id="用法一preempt_disable" tabindex="-1">用法一：preempt_disable <a class="header-anchor" href="#用法一preempt_disable"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_disable() \
+do { \
+    preempt_count_inc(); \
+    barrier(); \
+} while (0)</span>
+</code></pre></div></code></pre>
+<p>（2.6 / 3.x 的写法。4.14 起 <code>preempt_count</code> 变成 per-CPU 变量，实现改成 <code>preempt_count_add(1)</code> 一类的形式，<code>barrier()</code> 是否还在请对照你手上的版本，本文未逐版本核验。）</p>
+<p>为什么要 <code>barrier()</code>：<code>preempt_count_inc()</code> 只是给当前 task 的 <code>preempt_count</code> 加一。如果 GCC 把临界区第一条指令提到这条加一之前，「先加计数再进临界区」的语义就破了——临界区代码在 <code>preempt_count</code> 还没加的时候就跑了，抢占保护形同虚设。</p>
+<p>这个场景不需要 CPU 屏障，理由值得记：<code>preempt_count</code> 只被本核访问（task 调度到哪个核就由哪个核访问它的 <code>preempt_count</code>），不存在跨核通信。本核中断呢？硬件取中断时保证了「PC 之前的指令都执行完、之后的都没执行」，所以关中断/开中断与相邻指令之间不存在乱序，编译器屏障够了。</p>
+<h3 id="用法二外设轮询" tabindex="-1">用法二：外设轮询 <a class="header-anchor" href="#用法二外设轮询"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>第九章那个 TX FIFO 的例子。这里也不需要 CPU 屏障，因为 ARM 对 Device 内存本身保序。</p>
+<h3 id="什么时候-barrier-不够" tabindex="-1">什么时候 barrier() 不够 <a class="header-anchor" href="#什么时候-barrier-不够"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>只要涉及<strong>两个 CPU</strong>，<code>barrier()</code> 就不够。它只告诉 GCC 别动，没告诉 CPU 别动，CPU 该乱序还是乱序。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>需要什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只防 GCC，不跨 CPU，不跨外设</td>
+<td><code>barrier()</code></td>
+</tr>
+<tr>
+<td>跨 CPU 通信</td>
+<td><code>smp_mb()</code> 系列 / <code>smp_load_acquire</code> 系列</td>
+</tr>
+<tr>
+<td>跨 CPU 与设备</td>
+<td><code>mb()</code> 系列 / <code>dma_rmb()</code> 系列</td>
+</tr>
+<tr>
+<td>只想让一次访问「真读一次/真写一次」</td>
+<td><code>READ_ONCE</code> / <code>WRITE_ONCE</code></td>
+</tr>
+</tbody>
+</table></div><h2 id="十三read_once--write_once现代内核的做法" tabindex="-1">十三、READ_ONCE / WRITE_ONCE：现代内核的做法 <a class="header-anchor" href="#十三read_once--write_once现代内核的做法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>READ_ONCE</code> / <code>WRITE_ONCE</code> 在 4.15 前后引入，用来替代 <code>ACCESS_ONCE</code>。职责界定得很窄，只有两条：让这一次访问真的发生一次（不许合并、不许拆分、不许消除、不许用寄存器里的缓存值代替）；让相邻的 <code>READ_ONCE</code>/<code>WRITE_ONCE</code> 之间保持顺序（仅限编译器可判定的情况）。<strong>它们不提供任何 CPU 层面的顺序保证</strong>，需要 CPU 顺序时另配 <code>smp_mb()</code>，或直接用 <code>smp_load_acquire</code> / <code>smp_store_release</code>。</p>
+<p>实现上，读走一条按尺寸特化的路径：1/2/4/8 字节各一条 <code>volatile</code> 访问，超过字长退化到 <code>memcpy</code> 两侧夹 <code>barrier()</code>（4.15 的 <code>__READ_ONCE_SIZE</code>）。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> __READ_ONCE(x, check)                               \
+({                                                          \
+    union { typeof(x) __val; char __c[1]; } __u;            \
+    <span class="hljs-keyword">if</span> (check)                                              \
+        __read_once_size(&amp;(x), __u.__c, sizeof(x));         \
+    <span class="hljs-keyword">else</span>                                                    \
+        __read_once_size_nocheck(&amp;(x), __u.__c, sizeof(x)); \
+    smp_read_barrier_depends(); <span class="hljs-comment">/* 强制 x 的依赖顺序 */</span>     \
+    __u.__val;                                              \
+})</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> READ_ONCE(x)    __READ_ONCE(x, 1)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> WRITE_ONCE(x, val)                                  \
+({                                                          \
+    union { typeof(x) __val; char __c[1]; } __u =           \
+        { .__val = (__force typeof(x)) (val) };             \
+    __write_once_size(&amp;(x), __u.__c, sizeof(x));            \
+    __u.__val;                                              \
+})</span>
+</code></pre></div></code></pre>
+<p>四个设计细节，每个都有出处。<code>char __c[1]</code> 在 union 里，把任意类型的读写降级成「按字节缓冲区操作」，绕开类型系统的别名分析——<code>-fstrict-aliasing</code> 会认为不同类型指针不指向同一块内存从而做出致命优化，用 union 的字节视图走 <code>memcpy</code> 语义规避掉。<code>__force typeof(x)</code> 里 <code>__force</code> 是 sparse 注解，意思是「我知道这里在做类型转换，别报警」。<code>check</code> 参数：<code>READ_ONCE</code> 传 1 走带 KASAN 检查的版本，<code>READ_ONCE_NOCHECK</code> 传 0 走 <code>__read_once_size_nocheck</code>，用于 KASAN 自己内部读栈的场合——一边检查一边被检查就死循环了。<code>smp_read_barrier_depends()</code> 在 4.15 的 <code>__READ_ONCE</code> 里是硬编码的，给「读指针然后解引用」的依赖链加保序，DEC Alpha 是唯一需要真指令的架构，别的架构上是空的。</p>
+<p>回到第三章那两行：<code>atomic_read(v)</code> 展开就是 <code>READ_ONCE((v)-&gt;counter)</code>。所以它<strong>不是</strong>「原子读」，它就是「读一次，别优化」。这个认知能省掉很多乱加屏障的代码。</p>
+<p><code>smp_load_acquire</code> / <code>smp_store_release</code> 是 4.x 之后写无锁代码的首选。<code>smp_load_acquire(p)</code> 等于「<code>READ_ONCE(*p)</code> + 之后的访问不许提前」，<code>smp_store_release(p, v)</code> 等于「之前的访问不许拖后 + <code>WRITE_ONCE(*p)</code>」。ARM 上它们能用上 <code>ldar</code>/<code>stlr</code> 这种专用指令（ARMv8），或者在 ARMv7 上仍比全屏障省：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 不好：三步，容易漏 */</span>
+WRITE_ONCE(data, <span class="hljs-number">1</span>);
+smp_wmb();
+WRITE_ONCE(flag, <span class="hljs-number">1</span>);
+
+<span class="hljs-comment">/* 好：一步，成对 */</span>
+WRITE_ONCE(data, <span class="hljs-number">1</span>);
+smp_store_release(&amp;flag, <span class="hljs-number">1</span>);
+</code></pre></div></code></pre>
+<h2 id="十四access_once它解决了什么又为什么被取代" tabindex="-1">十四、ACCESS_ONCE：它解决了什么，又为什么被取代 <a class="header-anchor" href="#十四access_once它解决了什么又为什么被取代"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> ACCESS_ONCE(x) (*(volatile typeof(x) *)&amp;(x))</span>
+</code></pre></div></code></pre>
+<p>拆开：<code>&amp;(x)</code> 取地址，<code>(volatile typeof(x) *)</code> 强转成 volatile 指针，<code>*</code> 解引用，效果是「对这一块内存做一次 <code>volatile</code> 访问」。<code>volatile</code> 在 GCC 下的含义是「每次访问都真的去内存取/写，不许优化掉，不许合并」，所以 <code>ACCESS_ONCE(x)</code> = 「读一次 <code>x</code>，就一次，别自作聪明」。</p>
+<p>4.14 的 <code>compiler.h</code> 有个更绕的版本，为的是绕开 sparse 告警：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> __ACCESS_ONCE(x) ({ \
+     __maybe_unused typeof(x) __var = (__force typeof(x)) 0; \
+    (volatile typeof(x) *)&amp;(x); })</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> ACCESS_ONCE(x) (*__ACCESS_ONCE(x))</span>
+</code></pre></div></code></pre>
+<p><code>__var</code> 声明了不用，纯粹让 sparse 记住 <code>x</code> 的类型。两个典型场景，一个防「多次读变一次读」，一个防「一次读变多次读」。第一个是轮询一个会被别人改的变量：<code>owner = ACCESS_ONCE(lock-&gt;owner);</code> 不加这个宏，GCC 会把读提到循环外（第八章），加了之后每轮都真的去读。第二个是第八章那个 <code>if (a &gt; MEMORY)</code> 的例子：GCC 把 <code>do2</code> 提出来后 <code>a &gt; MEMORY</code> 被求值两次，这两次之间如果 <code>MEMORY</code> 被别人改了，走的分支和 C 代码不一致，对 <code>a</code> 用 <code>ACCESS_ONCE(a)</code> 就能钉住，只读一次，读到的值之后随便用。</p>
+<p>一句话：<code>ACCESS_ONCE</code> 让 C 代码能对编译器说「这个地址的访问，就是一次，不许合并、不许拆分、不许省略」。</p>
+<h3 id="为什么被取代" tabindex="-1">为什么被取代 <a class="header-anchor" href="#为什么被取代"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>三个硬伤，全部跟 <code>volatile</code> 这个实现手段有关。</p>
+<p><strong>硬伤一：<code>volatile</code> 在这是「恰好管用」，不是「本来正确」。</strong> <code>volatile</code> 的语义是为内存映射 IO 设计的，本意是「这个地址会被硬件改」。拿它约束编译器对普通内存的优化属于借用。内核文档里明确说过，<code>volatile</code> 能少用就少用，因为语义太强、管得太宽，反而妨碍优化。</p>
+<p><strong>硬伤二：不保序。</strong> <code>ACCESS_ONCE(a); ACCESS_ONCE(b);</code> 这两句，GCC 有权调换顺序。<code>volatile</code> 的保序范围是「<code>volatile</code> 访问之间」和「<code>volatile</code> 访问与序列点之间」，编译器对两个独立 <code>volatile</code> 访问的交叉重排、以及对 <code>volatile</code> 与普通访问的重排，规则比大家以为的松。<code>READ_ONCE</code>/<code>WRITE_ONCE</code> 的注释把这条明确写下来：编译器不许重排相邻的实例。</p>
+<p><strong>硬伤三：只支持标量。</strong> <code>ACCESS_ONCE(struct_foo)</code> 编译不过——<code>__ACCESS_ONCE</code> 里那句 <code>typeof(x) __var = ... 0</code> 的初始化就没法写。4.14 的注释老实承认：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code> * ACCESS_ONCE will only work on scalar types. For union types, ACCESS_ONCE
+ * on a union member will work as long as the size of the member matches the
+ * size of the union and the size is smaller than word size.
+</code></pre></div></code></pre>
+<p><code>READ_ONCE</code>/<code>WRITE_ONCE</code> 用 union + <code>memcpy</code> 解决了这条，聚合类型直接能用。</p>
+<h3 id="时间线" tabindex="-1">时间线 <a class="header-anchor" href="#时间线"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>版本</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.6.x ~ 4.14</td>
+<td><code>ACCESS_ONCE</code> 是标准做法，<code>READ_ONCE</code>/<code>WRITE_ONCE</code> 逐步引入</td>
+</tr>
+<tr>
+<td>4.14</td>
+<td>两者并存，注释里明写 &quot;If possible use READ_ONCE()/WRITE_ONCE() instead.&quot;</td>
+</tr>
+<tr>
+<td>4.15 前后</td>
+<td><code>ACCESS_ONCE</code> 从 <code>include/linux/compiler.h</code> 移除，<code>READ_ONCE</code>/<code>WRITE_ONCE</code> 接管</td>
+</tr>
+<tr>
+<td>4.16+</td>
+<td>4.14 的 <code>__ACCESS_ONCE</code> 也不在了；<code>lockless_dereference()</code> 在 5.x 被废弃</td>
+</tr>
+</tbody>
+</table></div><p>上表 4.14 与 4.15 两行有源码支撑：4.14 的 <code>compiler.h</code> 里 <code>ACCESS_ONCE</code> 与 <code>READ_ONCE</code> 并存且带「优先用 <code>READ_ONCE</code>」的注释；4.15 的同一文件里已经找不到 <code>ACCESS_ONCE</code>。移除的确切 commit 号未逐条核验，标在勘误。所以读老代码时的心态要调整：看到 <code>ACCESS_ONCE</code>，立刻知道这是 4.15 之前的代码；看到 <code>READ_ONCE</code>，是 4.15 之后。</p>
+<h3 id="一处遗留lockless_dereference" tabindex="-1">一处遗留：lockless_dereference <a class="header-anchor" href="#一处遗留lockless_dereference"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>4.14 的 <code>compiler.h</code> 里还有一个：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> lockless_dereference(p) \
+({ \
+    typeof(p) _________p1 = READ_ONCE(p); \
+    typeof(*(p)) *__typecheck_p __maybe_unused; \
+    smp_read_barrier_depends(); <span class="hljs-comment">/* Dependency order vs. p above. */</span> \
+    (_________p1); \
+})</span>
+</code></pre></div></code></pre>
+<p>用途是「读一个指针，然后安全解引用，这个指针的生命周期不归 RCU 管（归引用计数或永生对象管）」。<code>smp_read_barrier_depends()</code> 保证「先读到指针，再去读指针指向的内容」不被 CPU 重排——否则你读到指针之后，CPU 先把 <code>p-&gt;field</code> 读了，才发现 <code>p</code> 是新的，读到的是旧的 <code>field</code>。这个宏在 5.x 被删，等价写法是 <code>smp_load_acquire(p)</code> 或 <code>rcu_dereference</code>。</p>
+<h2 id="十五内存屏障在-arm-中的实现" tabindex="-1">十五、内存屏障在 ARM 中的实现 <a class="header-anchor" href="#十五内存屏障在-arm-中的实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>指令</th>
+<th>全称</th>
+<th>语义</th>
+<th>类比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dmb</code></td>
+<td>Data Memory Barrier</td>
+<td>保证之前的访问先于之后的被观察到，<strong>不等待完成</strong></td>
+<td>交警放行，不等到场</td>
+</tr>
+<tr>
+<td><code>dsb</code></td>
+<td>Data Synchronization Barrier</td>
+<td>保证之前的访问<strong>全部完成</strong>才继续</td>
+<td>交警清场，等到场才放行</td>
+</tr>
+<tr>
+<td><code>isb</code></td>
+<td>Instruction Synchronization Barrier</td>
+<td>清空流水线，之后的指令重新取指</td>
+<td>改页表/开 MMU 之后必须用</td>
+</tr>
+</tbody>
+</table></div><p><code>dmb</code> 只保证顺序：屏障前的写还在 store buffer 里没落地，只要别人看到它的时间点晚于屏障后的写就行。<code>dsb</code> 保证完成：屏障前的写必须真的到了内存（对设备是到了设备）才执行后面的指令，切换页表、改 TTBR、进 WFI 之前要用它。<code>isb</code> 管取指，和内存顺序无关，处理的是「我改了指令流相关的东西，流水线里预取的旧指令得丢掉」。<code>dsb</code> 能替代 <code>dmb</code>（更强），反过来不行；<code>isb</code> 不能替代任何一个。<strong>三条指令里只有 <code>dsb</code> 等真正完成，<code>dmb</code> 只管顺序。</strong></p>
+<p>ARMv7+ 的映射（<code>arch/arm/include/asm/barrier.h</code>，4.19）带了个 <code>option</code> 参数，就是共享域（shareability domain）限定词：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">if</span> __LINUX_ARM_ARCH__ &gt;= 7</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> isb(option) __asm__ __volatile__ (<span class="hljs-string">&quot;isb &quot;</span> #option : : : <span class="hljs-string">&quot;memory&quot;</span>)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> dsb(option) __asm__ __volatile__ (<span class="hljs-string">&quot;dsb &quot;</span> #option : : : <span class="hljs-string">&quot;memory&quot;</span>)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> dmb(option) __asm__ __volatile__ (<span class="hljs-string">&quot;dmb &quot;</span> #option : : : <span class="hljs-string">&quot;memory&quot;</span>)</span>
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>option</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sy</code></td>
+<td>全系统（默认，等于不带参数）</td>
+</tr>
+<tr>
+<td><code>ish</code></td>
+<td>Inner Shareable，内部共享域（多核 cluster 内）</td>
+</tr>
+<tr>
+<td><code>ishst</code></td>
+<td>只对 store 生效的 <code>ish</code></td>
+</tr>
+<tr>
+<td><code>osh</code></td>
+<td>Outer Shareable，外部共享域</td>
+</tr>
+<tr>
+<td><code>oshst</code></td>
+<td>只对 store 生效的 <code>osh</code></td>
+</tr>
+<tr>
+<td><code>nsh</code></td>
+<td>Non-shareable</td>
+</tr>
+</tbody>
+</table></div><p><code>smp_mb()</code> 用 <code>dmb(ish)</code>：只约束本 coherence domain 内所有核的可见性，没必要惊动外系统，这是性能上的精确取舍。ARMv6 没有这几条名前指令，得用 CP15 协处理器操作代替：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">elif</span> defined(CONFIG_CPU_XSC3) || __LINUX_ARM_ARCH__ == 6</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> isb(x) __asm__ __volatile__ (<span class="hljs-string">&quot;mcr p15, 0, %0, c7, c5, 4&quot;</span> \
+                    : : <span class="hljs-string">&quot;r&quot;</span> (0) : <span class="hljs-string">&quot;memory&quot;</span>)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> dsb(x) __asm__ __volatile__ (<span class="hljs-string">&quot;mcr p15, 0, %0, c7, c10, 4&quot;</span> \
+                    : : <span class="hljs-string">&quot;r&quot;</span> (0) : <span class="hljs-string">&quot;memory&quot;</span>)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> dmb(x) __asm__ __volatile__ (<span class="hljs-string">&quot;mcr p15, 0, %0, c7, c10, 5&quot;</span> \
+                    : : <span class="hljs-string">&quot;r&quot;</span> (0) : <span class="hljs-string">&quot;memory&quot;</span>)</span>
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>语义</th>
+<th>ARMv7+ 指令</th>
+<th>ARMv6 CP15 操作</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>指令同步</td>
+<td><code>isb</code></td>
+<td><code>mcr p15, 0, r0, c7, c5, 4</code></td>
+<td>c7 是 cache 操作寄存器，c5 子操作</td>
+</tr>
+<tr>
+<td>数据同步</td>
+<td><code>dsb</code></td>
+<td><code>mcr p15, 0, r0, c7, c10, 4</code></td>
+<td>c10 是 cache 清理/屏障寄存器</td>
+</tr>
+<tr>
+<td>数据内存屏障</td>
+<td><code>dmb</code></td>
+<td><code>mcr p15, 0, r0, c7, c10, 5</code></td>
+<td>操作码 5 是 DMB</td>
+</tr>
+</tbody>
+</table></div><p>更老的架构上还有坑：某些核（如 FA526）没有 DMB，<code>dmb()</code> 被定义成空的 <code>__asm__ __volatile__(&quot;&quot; ::: &quot;memory&quot;)</code>，只剩编译器屏障。这时 <code>smp_mb()</code> 在硬件层不存在，靠单核假设兜底。</p>
+<p><code>mb()</code> / <code>smp_mb()</code> 在 ARM 上的分派：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_ARM_HEAVY_MB</span>
+<span class="hljs-keyword">extern</span> <span class="hljs-title function_">void</span> <span class="hljs-params">(*soc_mb)</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>;
+<span class="hljs-keyword">extern</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arm_heavy_mb</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>;
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __arm_heavy_mb(x...) do { dsb(x); arm_heavy_mb(); } while (0)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __arm_heavy_mb(x...) dsb(x)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">if</span> defined(CONFIG_ARM_DMA_MEM_BUFFERABLE) || defined(CONFIG_SMP)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> mb()        __arm_heavy_mb()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> rmb()       dsb()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> wmb()       __arm_heavy_mb(st)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> dma_rmb()   dmb(osh)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> dma_wmb()   dmb(oshst)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> mb()        barrier()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> rmb()       barrier()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> wmb()       barrier()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> dma_rmb()   barrier()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> dma_wmb()   barrier()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __smp_mb()  dmb(ish)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __smp_rmb() __smp_mb()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __smp_wmb() dmb(ishst)</span>
+</code></pre></div></code></pre>
+<p>三个细节值得盯：<code>mb()</code> 用 <code>dsb</code> 而不是 <code>dmb</code>，因为它是给设备用的，要等真正完成，而 <code>smp_mb()</code> 用 <code>dmb(ish)</code>，因为 CPU 之间只需要顺序；<code>rmb()</code> 就是 <code>dsb()</code> 不带 option，老代码的痕迹，没按共享域细分；<code>wmb()</code> 用 <code>__arm_heavy_mb(st)</code>，需要时额外调 <code>soc_mb()</code>——有些 SoC 的 bus fabric 有自己的乱序行为，光靠 <code>dsb(st)</code> 不够，得让平台代码补一刀，这就是 <code>CONFIG_ARM_HEAVY_MB</code> 和 <code>soc_mb</code> 回调存在的理由。</p>
+<p>四种架构的屏障指令对照：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>语义</th>
+<th>ARMv7</th>
+<th>ARMv6</th>
+<th>x86</th>
+<th>PowerPC</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mb()</code> 全屏障</td>
+<td><code>dsb</code></td>
+<td><code>mcr p15,0,r0,c7,c10,4</code></td>
+<td><code>mfence</code></td>
+<td><code>sync</code></td>
+</tr>
+<tr>
+<td><code>rmb()</code> 读屏障</td>
+<td><code>dsb</code></td>
+<td>同上</td>
+<td><code>lfence</code></td>
+<td><code>lwsync</code></td>
+</tr>
+<tr>
+<td><code>wmb()</code> 写屏障</td>
+<td><code>dsb st</code></td>
+<td>同上</td>
+<td><code>sfence</code></td>
+<td><code>lwsync</code></td>
+</tr>
+<tr>
+<td><code>smp_mb()</code></td>
+<td><code>dmb ish</code></td>
+<td><code>mcr p15,0,r0,c7,c10,5</code></td>
+<td><code>lock; addl $0,0(%rsp)</code> 或 <code>mfence</code></td>
+<td><code>sync</code></td>
+</tr>
+<tr>
+<td><code>smp_rmb()</code></td>
+<td><code>dmb ish</code></td>
+<td>同上</td>
+<td>空</td>
+<td><code>lwsync</code></td>
+</tr>
+<tr>
+<td><code>smp_wmb()</code></td>
+<td><code>dmb ishst</code></td>
+<td>同上</td>
+<td>空</td>
+<td><code>lwsync</code></td>
+</tr>
+<tr>
+<td>编译器屏障</td>
+<td><code>barrier()</code></td>
+<td><code>barrier()</code></td>
+<td><code>barrier()</code></td>
+<td><code>barrier()</code></td>
+</tr>
+</tbody>
+</table></div><p>两个要点。x86 的 <code>smp_rmb()</code>/<code>smp_wmb()</code> 是空的——x86 的 TSO 模型保证 load-load、load-store、store-store 有序，只允许 store-load 重排，所以只需 <code>smp_mb()</code>，这也解释了为什么在 x86 上开发的无锁代码搬到 ARM 上会挂：你少写的屏障，编译器不报，CPU 不报，ARM 直接给错误结果。PowerPC 的 <code>lwsync</code> 便宜、<code>sync</code> 贵——<code>lwsync</code> 覆盖 load-load、load-store、store-store 但不覆盖 store-load，所以 <code>smp_mb()</code> 用 <code>sync</code>，其余用 <code>lwsync</code>。<strong>这张表最该记住的是 x86 那两格是空的。</strong></p>
+<p>ARM 两列有源码支撑（<code>arch/arm/include/asm/barrier.h</code>，3.10 与 4.19 对照）。x86 与 PowerPC 两列是通用知识，未逐一对照对应版本的原文，标在勘误。</p>
+<h2 id="十六一个容易写错的例子无锁标志位" tabindex="-1">十六、一个容易写错的例子：无锁标志位 <a class="header-anchor" href="#十六一个容易写错的例子无锁标志位"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>场景：生产者往共享缓冲区写数据，写完置「就绪」标志；消费者看到标志就去读数据。不用锁，靠屏障。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 生产者 */</span>
+buf-&gt;len = n;
+<span class="hljs-built_in">memcpy</span>(buf-&gt;data, src, n);
+ready = <span class="hljs-number">1</span>;
+
+<span class="hljs-comment">/* 消费者 */</span>
+<span class="hljs-keyword">while</span> (!ready)
+    cpu_relax();
+consume(buf-&gt;len, buf-&gt;data);
+</code></pre></div></code></pre>
+<p>错在四处：<code>ready = 1</code> 之前没有屏障，CPU 可以把 <code>ready</code> 的写提前到 <code>memcpy</code> 之前（九，StoreStore）；编译器可以把 <code>ready = 1</code> 提到 <code>memcpy</code> 之前（八，编译器重排）；<code>while (!ready)</code> 没有 <code>READ_ONCE</code>，读可以被提到循环外变成死循环（八）；循环退出后没有屏障，读到 <code>ready</code> 之后 <code>buf-&gt;len</code> 的读先完成（九，LoadLoad）。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 生产者 */</span>
+buf-&gt;len = n;
+<span class="hljs-built_in">memcpy</span>(buf-&gt;data, src, n);
+smp_wmb();              <span class="hljs-comment">/* 数据先于 flag 可见 */</span>
+WRITE_ONCE(ready, <span class="hljs-number">1</span>);
+
+<span class="hljs-comment">/* 消费者 */</span>
+<span class="hljs-keyword">while</span> (!READ_ONCE(ready))
+    cpu_relax();
+smp_rmb();              <span class="hljs-comment">/* 读到 flag 之后才读数据 */</span>
+consume(buf-&gt;len, buf-&gt;data);
+</code></pre></div></code></pre>
+<p><code>WRITE_ONCE</code>/<code>READ_ONCE</code> 解决编译器的合并与提升，<code>smp_wmb()</code>/<code>smp_rmb()</code> 解决 CPU 顺序，四处全覆盖，且配对正确（写侧 wmb，读侧 rmb）。换成 acquire/release 写法语义等价，少写两行，不会配错：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 生产者 */</span>
+buf-&gt;len = n;
+<span class="hljs-built_in">memcpy</span>(buf-&gt;data, src, n);
+smp_store_release(&amp;ready, <span class="hljs-number">1</span>);
+
+<span class="hljs-comment">/* 消费者 */</span>
+<span class="hljs-keyword">while</span> (!smp_load_acquire(&amp;ready))
+    cpu_relax();
+consume(buf-&gt;len, buf-&gt;data);
+</code></pre></div></code></pre>
+<p>ARMv8 上 <code>smp_store_release</code> 直接编成 <code>stlr</code>，比 <code>dmb + str</code> 便宜。但这里还有一个坑：<code>memcpy</code> 本身不保证按顺序写，现代 GCC 把它展开成一串 SIMD store，这些 store 之间的顺序在弱内存模型架构上不保证。第三版为什么对：那几条 <code>strd</code> 之间的顺序由硬件保证（同地址序），最后一条和 <code>stlr</code> 之间由 <code>stlr</code> 的 release 语义保证。真正会挂的是把 <code>smp_store_release</code> 换成裸的 <code>WRITE_ONCE(&amp;ready, 1)</code> 再补一个事后 <code>smp_mb()</code>——屏障放在标志写之后，等于没有。</p>
+<p>高吞吐场景还有一层优化：消费者不想每次都读 <code>ready</code>，想批量，这就变成环形缓冲区，用 <code>head</code>/<code>tail</code> 两个索引而不是布尔标志。正确性由索引的单调性和配对屏障保证，<code>Documentation/circular-buffers.txt</code> 里有完整推导。</p>
+<h2 id="十七易错点速查" tabindex="-1">十七、易错点速查 <a class="header-anchor" href="#十七易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1原子操作类" tabindex="-1">1、原子操作类 <a class="header-anchor" href="#1原子操作类"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>症状</th>
+<th>原因</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>计数偶尔少加</td>
+<td>用了 <code>v-&gt;counter++</code> 而不是 <code>atomic_inc(v)</code></td>
+<td>换接口，编译器看到 <code>atomic_t</code> 会拒绝</td>
+</tr>
+<tr>
+<td>空载正常，压力大了就挂</td>
+<td>一条 cacheline 塞了多个热点 <code>atomic_t</code></td>
+<td>拆 cacheline，或改 per-CPU</td>
+</tr>
+<tr>
+<td><code>atomic_add_return</code> 返回值不对</td>
+<td>需要旧值却用了 return 版本</td>
+<td>要旧值用 <code>atomic_fetch_add</code></td>
+</tr>
+<tr>
+<td>引用计数偶发泄漏</td>
+<td>有路径绕过 <code>atomic_dec_and_test</code></td>
+<td>所有路径统一走同一组接口</td>
+</tr>
+<tr>
+<td>32 位机器上 64 位计数撕裂</td>
+<td>架构没 <code>CONFIG_ARM_LPAE</code>，落到通用锁实现</td>
+<td>查 <code>CONFIG_GENERIC_ATOMIC64</code></td>
+</tr>
+<tr>
+<td><code>-EBUSY</code> 判断反了</td>
+<td><code>atomic_dec_and_test</code> 测的是<strong>新值</strong>是否为 0</td>
+<td>记住语义是「新值为 0 返回真」</td>
+</tr>
+</tbody>
+</table></div><h3 id="2屏障类" tabindex="-1">2、屏障类 <a class="header-anchor" href="#2屏障类"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>症状</th>
+<th>原因</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只在 ARM 上挂，x86 正常</td>
+<td>x86 缺的屏障正好是 <code>smp_rmb</code>/<code>smp_wmb</code>，在那为空</td>
+<td>按最弱架构写代码，用 acquire/release</td>
+</tr>
+<tr>
+<td>加了 <code>barrier()</code> 还是挂</td>
+<td><code>barrier()</code> 只管编译器</td>
+<td>跨 CPU 用 <code>smp_mb()</code> 系列</td>
+</tr>
+<tr>
+<td>加了 <code>smp_mb()</code> 性能掉一半</td>
+<td>全屏障最贵</td>
+<td>能 <code>rmb</code>/<code>wmb</code> 解决就别上全屏障</td>
+</tr>
+<tr>
+<td>配了屏障还是不生效</td>
+<td>只在一侧加</td>
+<td>写侧 <code>wmb</code>，读侧 <code>rmb</code>，必须配对</td>
+</tr>
+<tr>
+<td>加了屏障仍读到旧值</td>
+<td>屏障位置错了</td>
+<td>屏障必须在两次访问<strong>之间</strong>，不在之后</td>
+</tr>
+<tr>
+<td>改页表之后不生效</td>
+<td>缺 <code>isb</code></td>
+<td><code>dsb</code> + <code>isb</code> 一起用</td>
+</tr>
+<tr>
+<td>设备寄存器读写顺序错</td>
+<td>用了 <code>smp_mb()</code> 而不是 <code>mb()</code></td>
+<td>设备侧用 <code>mb()</code>/<code>dma_rmb()</code></td>
+</tr>
+<tr>
+<td>DMA 描述符被设备读到半个</td>
+<td>缺 <code>dma_wmb()</code></td>
+<td>提交描述符前 <code>dma_wmb()</code></td>
+</tr>
+</tbody>
+</table></div><h3 id="3read_once--write_once-类" tabindex="-1">3、<code>READ_ONCE</code> / <code>WRITE_ONCE</code> 类 <a class="header-anchor" href="#3read_once--write_once-类"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>症状</th>
+<th>原因</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>轮询循环不退出</td>
+<td>裸变量读被提到循环外</td>
+<td>用 <code>READ_ONCE</code></td>
+</tr>
+<tr>
+<td>读到了撕裂的值（结构体）</td>
+<td>超过字长还没保护</td>
+<td><code>READ_ONCE</code> 对大对象走 <code>memcpy</code>，但<strong>不保证跨核原子</strong>，要 seqcount 或锁</td>
+</tr>
+<tr>
+<td><code>READ_ONCE</code> 之后解引用拿到旧值</td>
+<td>缺依赖屏障</td>
+<td>用 <code>smp_load_acquire</code> 或 <code>rcu_dereference</code></td>
+</tr>
+<tr>
+<td>老代码编译不过</td>
+<td><code>ACCESS_ONCE</code> 在新内核里没了</td>
+<td>换 <code>READ_ONCE</code>/<code>WRITE_ONCE</code></td>
+</tr>
+<tr>
+<td>以为 <code>atomic_read</code> 会加锁</td>
+<td>它就是 <code>READ_ONCE</code></td>
+<td>需要 RMW 用 <code>atomic_add</code> 一族</td>
+</tr>
+</tbody>
+</table></div><h3 id="4版本类" tabindex="-1">4、版本类 <a class="header-anchor" href="#4版本类"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>版本界限</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ACCESS_ONCE</code> 找不到</td>
+<td>4.15 前后被移除</td>
+</tr>
+<tr>
+<td><code>lockless_dereference</code> 找不到</td>
+<td>5.x 被移除</td>
+</tr>
+<tr>
+<td><code>smp_mb__before_spinlock</code> 找不到</td>
+<td>4.x 早期移除，改用 <code>smp_mb__after_spinlock</code></td>
+</tr>
+<tr>
+<td><code>read_barrier_depends()</code> 变成空</td>
+<td>4.15 起多数架构上 <code>smp_read_barrier_depends()</code> 是空操作</td>
+</tr>
+<tr>
+<td><code>atomic_*_relaxed</code> 不存在</td>
+<td>4.x 之前没有内存序变体，全部全序</td>
+</tr>
+</tbody>
+</table></div><h3 id="5三条能背下来的判断" tabindex="-1">5、三条能背下来的判断 <a class="header-anchor" href="#5三条能背下来的判断"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ol>
+<li><strong>要一条 RMW 不被切开 → <code>atomic_*</code>。要两条访问有先后 → 屏障。</strong></li>
+<li><strong><code>barrier()</code> 管编译器，<code>smp_*</code> 管 CPU，<code>mb()</code> 连设备一起管。</strong></li>
+<li><strong><code>READ_ONCE</code>/<code>WRITE_ONCE</code> 只管「读一次/写一次」，不管顺序。</strong></li>
+</ol>
+<h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1章节出处" tabindex="-1">1、章节出处 <a class="header-anchor" href="#1章节出处"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>本文章节</th>
+<th>主要素材</th>
+<th>素材行号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一、为什么需要原子操作</td>
+<td>素材 1《Linux内核同步机制之一原子操作》「一、源由」</td>
+<td>1–17</td>
+</tr>
+<tr>
+<td>二、lock bus 的代价</td>
+<td>素材 1「二、对策」+ 总线仲裁部分</td>
+<td>13, 19–29</td>
+</tr>
+<tr>
+<td>三、<code>atomic_t</code> 与 <code>atomic64_t</code></td>
+<td>素材 2「一、原子操作」「二、整型原子操作实现源码」+ 素材 1 类型设计意图</td>
+<td>11–117, 21–29</td>
+</tr>
+<tr>
+<td>四、atomic 系列完整接口</td>
+<td>素材 2「一、原子操作」全部接口清单</td>
+<td>11–99</td>
+</tr>
+<tr>
+<td>四.4、<code>atomic_dec_and_test</code> 用例</td>
+<td>素材 2「三、原子操作示例程序」</td>
+<td>256–365</td>
+</tr>
+<tr>
+<td>五、位操作</td>
+<td>素材 2 位操作段</td>
+<td>59–99</td>
+</tr>
+<tr>
+<td>六、ARM 实现</td>
+<td>素材 1「三、ARM中的实现」+ 素材 2「二、整型原子操作实现源码」</td>
+<td>33–126, 119–254</td>
+</tr>
+<tr>
+<td>七、为什么还需要内存屏障</td>
+<td>素材 3《memory barrier》「一、前言」</td>
+<td>1–12</td>
+</tr>
+<tr>
+<td>八、编译器优化会做什么</td>
+<td>素材 3「1、编译器的优化」+ 素材 4「一」</td>
+<td>16–69, 1–71</td>
+</tr>
+<tr>
+<td>九、CPU 与 cache 一致性</td>
+<td>素材 3「2、cpu architecture 和 cache 的组织」<strong>仅取结构性结论</strong></td>
+<td>71–199</td>
+</tr>
+<tr>
+<td>十、屏障 API 全表</td>
+<td>素材 3「三、linux kernel 的 API」</td>
+<td>201–221</td>
+</tr>
+<tr>
+<td>十一、屏障配对</td>
+<td>素材 3 preempt 例子推导 + <code>Documentation/memory-barriers.txt</code></td>
+<td>16–45</td>
+</tr>
+<tr>
+<td>十二、<code>barrier()</code></td>
+<td>素材 3「三」中 barrier 详解</td>
+<td>207–221</td>
+</tr>
+<tr>
+<td>十三、<code>READ_ONCE</code>/<code>WRITE_ONCE</code></td>
+<td>素材 4 全文 + 4.15 源码</td>
+<td>73–81</td>
+</tr>
+<tr>
+<td>十四、<code>ACCESS_ONCE</code> 演进</td>
+<td>素材 4 全文</td>
+<td>1–81</td>
+</tr>
+<tr>
+<td>十五、ARM 屏障实现</td>
+<td>素材 3「四、内存屏障在 ARM 中的实现」——<strong>该章正文为 <code>TODO</code></strong>，全部由源码补写</td>
+<td>225–227</td>
+</tr>
+<tr>
+<td>十六、无锁标志位</td>
+<td>素材 3「2、Store buffer」与「3、Invalidate Queue」的例子改写</td>
+<td>93–199</td>
+</tr>
+<tr>
+<td>十七、易错点速查</td>
+<td>四篇归纳</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div><h3 id="2合并说明与修正" tabindex="-1">2、合并说明与修正 <a class="header-anchor" href="#2合并说明与修正"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>素材 1（126 行）与素材 2（375 行）同题，<strong>合并只留一份</strong>，以素材 2 的详细版为主干（宏展开、<code>ATOMIC_OPS</code> 机制、示例驱动），素材 1 的独有内容补齐：单 CPU 中断交错的时序（第一章）、总线仲裁串行化分析（第二章）、<code>atomic_t</code> 类型设计意图（第三章）、local/global monitor 概念与 <code>ldrex</code>/<code>strex</code> 状态机时序表（第六章）、内嵌汇编 output/input/clobber list 的完整解释与 <code>&amp;</code> 的 earlyclobber 作用、<code>Ir</code> 立即数与 ARM 12 位立即数编码（第六章「约束符逐个说」）、<code>prefetchw</code> 的性能意图（第六章末）。素材 2 里的完整示例驱动（256–365 行）只保留 <code>open</code>/<code>close</code> 与 <code>canopen</code> 定义，<code>cdev</code>、<code>class_create</code>、<code>module_init</code> 等样板删掉，与同步主题无关。</p>
+<p>原文的错误与本文的处理：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>编号</th>
+<th>原文</th>
+<th>问题</th>
+<th>本文处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>E1</td>
+<td>素材 1 第 92 行：「<code>ldrex</code>/<code>strex</code> 是 <strong>ARMv7</strong> 提供的」</td>
+<td>独占访问是 ARMv6 引入，内核判断边界是 <code>__LINUX_ARM_ARCH__ &gt;= 6</code></td>
+<td>第六章改为 ARMv6，并给出源码依据</td>
+</tr>
+<tr>
+<td>E2</td>
+<td>素材 1「一、源由」「二、对策」与素材 2「一、原子操作」编号冲突</td>
+<td>两篇同题、章节重复</td>
+<td>合并为一套章节树，来源列在附表</td>
+</tr>
+<tr>
+<td>E3</td>
+<td>素材 2 第 161 行：「<strong>armv6 及以下</strong>指令集实现」</td>
+<td>实际是 <code>#else</code> 分支，即 <code>&lt; 6</code>，不含 v6</td>
+<td>改为「ARMv6 以下」</td>
+</tr>
+<tr>
+<td>E4</td>
+<td>素材 2 第 198 行：「我们使用 R0 替代 R0，R1 替代 %1」</td>
+<td>第一处应为「%0 替代 R0」，笔误</td>
+<td>第六章直接给 <code>%0→R0</code>、<code>%1→R1</code>、<code>%3→R3</code>、<code>%4→R4</code></td>
+</tr>
+<tr>
+<td>E5</td>
+<td>素材 2 第 249 行：S3C2440 展开代码写 <code>v-&gt;counter + i;</code></td>
+<td>无赋值的表达式语句，等于什么都没做；应为 <code>v-&gt;counter += i;</code></td>
+<td>不沿用该片段，改引 <code>ATOMIC_OP</code> 宏的 <code>c_op</code> 形式</td>
+</tr>
+<tr>
+<td>E6</td>
+<td>素材 3 第 227 行：「四、内存屏障在 ARM 中的实现 / TODO」</td>
+<td>原文此章为空</td>
+<td>第十五章整章由 <code>arch/arm/include/asm/barrier.h</code>（3.10 与 4.19 对照）补写</td>
+</tr>
+<tr>
+<td>E7</td>
+<td>素材 3 第 205 行：「屏障 API 表在抓取中丢失」</td>
+<td>表格缺失</td>
+<td>第十、十一章按 4.x 实际接口重建</td>
+</tr>
+<tr>
+<td>E8</td>
+<td>素材 3 五处「原文附图，抓取丢失」</td>
+<td>时序图与状态迁移表缺失</td>
+<td>第九章改为文字交代三个硬件部件与四类重排，不虚构图形</td>
+</tr>
+<tr>
+<td>E9</td>
+<td>素材 4 第 78 行 <code>ACCESS_ONCE</code> 定义</td>
+<td>那是 4.14 之前的简版；4.14 已改为 <code>__ACCESS_ONCE</code> + 解引用两段式（绕 sparse）</td>
+<td>第十四章两个版本都给并说明差别</td>
+</tr>
+<tr>
+<td>E10</td>
+<td>素材 4 只讲「解决什么问题」，未提被取代</td>
+<td>读者会以为它还是现役接口</td>
+<td>新增第十四章「为什么被取代」与「时间线」</td>
+</tr>
+<tr>
+<td>E11</td>
+<td>素材 2 第 46 行：「执行自增、自减和减操作后（注意没有加）」</td>
+<td>表述绕，漏 <code>atomic_add_negative</code></td>
+<td>第四章第 4 节表格重列，补 <code>atomic_add_negative</code>/<code>atomic_add_unless</code>/<code>atomic_dec_if_positive</code></td>
+</tr>
+<tr>
+<td>E12</td>
+<td>素材 2 第 86 行 <code>test_bit(nr, void *addr)</code> 无返回类型</td>
+<td>应为 <code>int</code>（实参为 <code>unsigned long *</code>）</td>
+<td>第五章表内补全返回类型并注明 <code>addr</code> 类型</td>
+</tr>
+<tr>
+<td>E13</td>
+<td>素材 2 第 62 行等 <code>void set_bit(nr, void *addr)</code></td>
+<td>实际签名是 <code>void set_bit(int nr, volatile unsigned long *addr)</code></td>
+<td>第五章正文标注实际类型</td>
+</tr>
+</tbody>
+</table></div><h3 id="3未验证项" tabindex="-1">3、未验证项 <a class="header-anchor" href="#3未验证项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>以下内容素材中没有或只有概述，本文按通用知识写入但<strong>未逐条核对对应版本的源码或手册原文</strong>，引用前请自查：</p>
+<ol>
+<li><strong>x86 与 PowerPC 的屏障指令映射</strong>（第十五章末表后两列）。<code>mfence</code>/<code>lfence</code>/<code>sfence</code>、<code>sync</code>/<code>lwsync</code> 的对应是通用知识，未对照 <code>arch/x86/include/asm/barrier.h</code> 与 <code>arch/powerpc/include/asm/barrier.h</code> 的具体版本原文。</li>
+<li><strong>x86 <code>lock</code> 前缀在跨 cacheline 时退化为总线锁</strong>（第二章）。来自 Intel SDM 的描述，未逐字核对章节号。</li>
+<li><strong><code>ACCESS_ONCE</code> 被移除的确切 commit 与版本号</strong>（第十四章）。依据是 4.14 与 4.15 两版 <code>include/linux/compiler.h</code> 实际内容对比（4.14 有、4.15 无），没有追 commit。素材称「4.15 前后」，本文沿用。</li>
+<li><strong><code>lockless_dereference</code> 在 5.x 被移除的确切版本</strong>（第十四章末）。只写「5.x」，未定位具体版本。</li>
+<li><strong><code>preempt_disable()</code> 在 4.14 之后的具体实现</strong>（第十二章）。4.14 起 <code>preempt_count</code> 改为 per-CPU，<code>barrier()</code> 是否保留在宏里，未核对该版本 <code>include/linux/preempt.h</code> 原文。</li>
+<li><strong><code>smp_mb__after_atomic_cond</code> 等边界接口的存在性与版本</strong>（第十章表末）。4.x 各版本对这些接口有增减，本文列出但标注为边界值。</li>
+<li><strong><code>read_barrier_depends()</code> 在 4.15 之后的削弱范围</strong>：本文写「多数架构上是空操作」，未逐架构确认。</li>
+<li><strong><code>arm_heavy_mb</code> 与 <code>soc_mb</code> 的实际使用场景</strong>（第十五章）。<code>CONFIG_ARM_HEAVY_MB</code> 的存在与宏展开有源码依据，但哪些具体 SoC 需要它、<code>soc_mb</code> 由谁注册，未追。</li>
+</ol>
+<h3 id="4原始链接" tabindex="-1">4、原始链接 <a class="header-anchor" href="#4原始链接"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li>素材 1：<a href="http://www.wowotech.net/linux_kenrel/atomic.html" target="_blank" rel="noopener noreferrer">http://www.wowotech.net/linux_kenrel/atomic.html</a></li>
+<li>素材 3：<a href="http://www.wowotech.net/kernel_synchronization/memory-barrier.html" target="_blank" rel="noopener noreferrer">http://www.wowotech.net/kernel_synchronization/memory-barrier.html</a></li>
+<li>素材 2：无原始链接，文末列了四篇参考（《七、Linux驱动之并发控制》《10.按键之互斥、阻塞机制(详解)》《ARM平台下独占访问指令LDREX和STREX的原理与使用详解》《读写一气呵成 - Linux中的原子操作》）</li>
+<li>素材 4：无原始链接，文中引用自 Linus 邮件与 <code>kernel/locking/mutex.c</code></li>
+<li>源码依据：<code>arch/arm/include/asm/atomic.h</code>（v4.15）、<code>arch/arm/include/asm/barrier.h</code>（v3.10、v4.19）、<code>arch/arm/include/asm/bitops.h</code>（v4.15）、<code>include/linux/compiler.h</code>（v4.14、v4.15、v4.19）、<code>include/linux/atomic.h</code>（v4.15）</li>
+<li>延伸阅读：<code>Documentation/memory-barriers.txt</code>、<code>Documentation/atomic_ops.txt</code>、Paul E. McKenney 的 <em>Why memory barriers</em>（素材 3 第九章明确引用）</li>
+</ul>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一为什么需要原子操作一条-c-语句不等于一条指令" data-toc-target="一为什么需要原子操作一条-c-语句不等于一条指令">一、为什么需要原子操作：一条 C 语句不等于一条指令</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二原子操作的源由lock-bus-的代价" data-toc-target="二原子操作的源由lock-bus-的代价">二、原子操作的源由：lock bus 的代价</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三内核原子操作-apiatomic_t-与-atomic64_t" data-toc-target="三内核原子操作-apiatomic_t-与-atomic64_t">三、内核原子操作 API：atomic_t 与 atomic64_t</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四atomic-系列的完整接口" data-toc-target="四atomic-系列的完整接口">四、atomic 系列的完整接口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1初始化与简单访问" data-toc-target="1初始化与简单访问">1、初始化与简单访问</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2加减不返回结果" data-toc-target="2加减不返回结果">2、加减，不返回结果</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3加减并返回新值--旧值" data-toc-target="3加减并返回新值--旧值">3、加减并返回新值 / 旧值</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4操作并测试" data-toc-target="4操作并测试">4、操作并测试</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5位运算交换与比较交换" data-toc-target="5位运算交换与比较交换">5、位运算、交换与比较交换</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6内存序变体" data-toc-target="6内存序变体">6、内存序变体</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五位操作set_bit--test_and_set_bit" data-toc-target="五位操作set_bit--test_and_set_bit">五、位操作：set_bit / test_and_set_bit</a>
+                    
+                    <a class="toc-item toc-lv3" href="#原子性从哪来" data-toc-target="原子性从哪来">原子性从哪来</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六原子操作在-arm-上的实现" data-toc-target="六原子操作在-arm-上的实现">六、原子操作在 ARM 上的实现</a>
+                    
+                    <a class="toc-item toc-lv3" href="#把宏展开成人能读的汇编" data-toc-target="把宏展开成人能读的汇编">把宏展开成人能读的汇编</a>
+                    
+                    <a class="toc-item toc-lv3" href="#ldrex--strex-做了什么" data-toc-target="ldrex--strex-做了什么">ldrex / strex 做了什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#约束符逐个说" data-toc-target="约束符逐个说">约束符逐个说</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七从单条指令到多条指令为什么还需要内存屏障" data-toc-target="七从单条指令到多条指令为什么还需要内存屏障">七、从单条指令到多条指令：为什么还需要内存屏障</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八编译器优化会做什么" data-toc-target="八编译器优化会做什么">八、编译器优化会做什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1把循环里的-load-提到循环外" data-toc-target="1把循环里的-load-提到循环外">1、把循环里的 load 提到循环外</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2把一次-load-拆成多次或者合并" data-toc-target="2把一次-load-拆成多次或者合并">2、把一次 load 拆成多次，或者合并</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3把相邻的内存访问调换顺序" data-toc-target="3把相邻的内存访问调换顺序">3、把相邻的内存访问调换顺序</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4对-volatile-的误解" data-toc-target="4对-volatile-的误解">4、对 volatile 的误解</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九cpu-与-cache-的一致性会做什么" data-toc-target="九cpu-与-cache-的一致性会做什么">九、CPU 与 cache 的一致性会做什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十内核内存屏障-api-全表" data-toc-target="十内核内存屏障-api-全表">十、内核内存屏障 API 全表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一smp_mb--smp_rmb--smp_wmb-的语义与配对" data-toc-target="十一smp_mb--smp_rmb--smp_wmb-的语义与配对">十一、smp_mb / smp_rmb / smp_wmb 的语义与配对</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二barrier只约束编译器" data-toc-target="十二barrier只约束编译器">十二、barrier()：只约束编译器</a>
+                    
+                    <a class="toc-item toc-lv3" href="#用法一preempt_disable" data-toc-target="用法一preempt_disable">用法一：preempt_disable</a>
+                    
+                    <a class="toc-item toc-lv3" href="#用法二外设轮询" data-toc-target="用法二外设轮询">用法二：外设轮询</a>
+                    
+                    <a class="toc-item toc-lv3" href="#什么时候-barrier-不够" data-toc-target="什么时候-barrier-不够">什么时候 barrier() 不够</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三read_once--write_once现代内核的做法" data-toc-target="十三read_once--write_once现代内核的做法">十三、READ_ONCE / WRITE_ONCE：现代内核的做法</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四access_once它解决了什么又为什么被取代" data-toc-target="十四access_once它解决了什么又为什么被取代">十四、ACCESS_ONCE：它解决了什么，又为什么被取代</a>
+                    
+                    <a class="toc-item toc-lv3" href="#为什么被取代" data-toc-target="为什么被取代">为什么被取代</a>
+                    
+                    <a class="toc-item toc-lv3" href="#时间线" data-toc-target="时间线">时间线</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一处遗留lockless_dereference" data-toc-target="一处遗留lockless_dereference">一处遗留：lockless_dereference</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五内存屏障在-arm-中的实现" data-toc-target="十五内存屏障在-arm-中的实现">十五、内存屏障在 ARM 中的实现</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六一个容易写错的例子无锁标志位" data-toc-target="十六一个容易写错的例子无锁标志位">十六、一个容易写错的例子：无锁标志位</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十七易错点速查" data-toc-target="十七易错点速查">十七、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1原子操作类" data-toc-target="1原子操作类">1、原子操作类</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2屏障类" data-toc-target="2屏障类">2、屏障类</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3read_once--write_once-类" data-toc-target="3read_once--write_once-类">3、READ_ONCE / WRITE_ONCE 类</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4版本类" data-toc-target="4版本类">4、版本类</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5三条能背下来的判断" data-toc-target="5三条能背下来的判断">5、三条能背下来的判断</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1章节出处" data-toc-target="1章节出处">1、章节出处</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2合并说明与修正" data-toc-target="2合并说明与修正">2、合并说明与修正</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3未验证项" data-toc-target="3未验证项">3、未验证项</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4原始链接" data-toc-target="4原始链接">4、原始链接</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","title":"原子操作与内存屏障：内核的底层保证","url":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","type":"current"},{"id":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","title":"RCU：从 classic 到 sleepable 的实现演进","url":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","type":"neighbor"},{"id":"/B.内核/06-内核同步/RCU：原理、API-与使用/","title":"RCU：原理、API 与使用","url":"/B.内核/06-内核同步/RCU：原理、API-与使用/","type":"neighbor"},{"id":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","title":"spinlock：自旋锁的原理、实现与陷阱","url":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","type":"neighbor"},{"id":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","title":"信号量、completion 与 Per-CPU","url":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","type":"neighbor"}],"links":[{"source":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","target":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","type":"neighbor"},{"source":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","target":"/B.内核/06-内核同步/RCU：原理、API-与使用/","type":"neighbor"},{"source":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","target":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","type":"neighbor"},{"source":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","target":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

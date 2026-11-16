@@ -1,0 +1,1546 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RCU：从 classic 到 sleepable 的实现演进 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">RCU：从 classic 到 sleepable 的实现演进</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">RCU：从 classic 到 sleepable 的实现演进</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">RCU：从 classic 到 sleepable 的实现演进</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>本篇讲 RCU 的内部实现与版本演进：2.5.43 的第一次尝试、2.6.11 的 classic RCU、2.6.23 的 sleepable RCU。不讲 API 用法，不讲 <code>rcu_read_lock</code> 该怎么配 <code>rcu_dereference</code>，那些在同批的《RCU：原理、API 与使用》里。本篇也不做 perfbook 全文翻译，只把第 9.3 节里「RCU 到底是什么」的几小节压成第十五章。</p>
+<p>读法建议：手边放一份 2.6 的 <code>kernel/rcupdate.c</code>，下面每段代码都能对上文件里的行。对不上的地方我在最后一章标了「未验证」。版本号逐处标，别混着看。</p>
+</blockquote>
+<h2 id="一rcu-实现了什么承诺读侧零开销" tabindex="-1">一、RCU 实现了什么承诺：读侧零开销 <a class="header-anchor" href="#一rcu-实现了什么承诺读侧零开销"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先把承诺说清楚，不然下面所有数据结构看起来都是自找麻烦。</p>
+<p>RCU 的读侧原语，在 2.6.11 / 2.6.12 的 <code>include/linux/rcupdate.h</code> 里就两行：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> rcu_read_lock()        preempt_disable()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> rcu_read_unlock()    preempt_enable()</span>
+</code></pre></div></code></pre>
+<p>就这样。不配置 <code>CONFIG_PREEMPT</code> 的内核，<code>preempt_disable()</code> 展开成空，进出临界区一条指令都没有。三个后果：读侧不写共享变量；读侧不碰全局 cacheline，多个 CPU 同读一份数据各自的 cache 保持 shared；读侧不需要原子指令，没有 <code>lock</code> 前缀。<code>rcu_dereference</code> 在 x86 上是空的，只在 Alpha 这类弱序机器上补 <code>smp_read_barrier_depends()</code>。</p>
+<p>代价全转移到写侧。写侧付出的是时间不是锁：等一个宽限期（grace period，下称 GP），确认所有「在改动之前就已进入读临界区」的读者都走完了，才能回收旧版本。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>角色</th>
+<th>付出什么</th>
+<th>拿到什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读者</td>
+<td>一条 <code>preempt_disable()</code>，不可抢占内核下为 0</td>
+<td>免锁、免原子操作、免 cacheline 争用</td>
+</tr>
+<tr>
+<td>写者</td>
+<td>一次 GP 的等待时间，外加一次 callback 调度</td>
+<td>不用管读者是谁、有多少</td>
+</tr>
+<tr>
+<td>系统</td>
+<td>每 CPU 一份状态，GP 期间一轮扫描</td>
+<td>读者再多也不增加开销</td>
+</tr>
+</tbody>
+</table></div><p>这个账能成立，前提是读者守规矩。三条规矩从 2.5.43 起没变过：读侧不能阻塞；读侧临界区不能跨任务传递；写者之间必须自己用别的机制互斥。2.6.12 的 <code>rcupdate.h</code> 里注释写得很直白：「So where is rcu_write_lock()? It does not exist」。</p>
+<h2 id="二2.5.43-的第一次尝试" tabindex="-1">二、2.5.43 的第一次尝试 <a class="header-anchor" href="#二2.5.43-的第一次尝试"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>2.5.43 是第一个带 RCU 的内核版本。代码少，结构直白，正因为直白，问题看得清清楚楚。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.5.43 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_head</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">list</span>;</span>
+    <span class="hljs-type">void</span> (*func)(<span class="hljs-type">void</span> *obj);
+    <span class="hljs-type">void</span> *arg;
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_data</span> {</span>
+    <span class="hljs-type">long</span>            qsctr;          <span class="hljs-comment">/* 本 CPU 的 QS 计数器，只增不减 */</span>
+    <span class="hljs-type">long</span>            last_qsctr;     <span class="hljs-comment">/* GP 起点那一刻记下的值 */</span>
+    <span class="hljs-type">long</span>            batch;          <span class="hljs-comment">/* 本 CPU curlist 里那批请求的批次号 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">nxtlist</span>;</span>       <span class="hljs-comment">/* 新提交的 callback */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">curlist</span>;</span>       <span class="hljs-comment">/* 已分配批次号、正在等 GP 的 callback */</span>
+} ____cacheline_aligned_in_smp;
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_ctrlblk</span> {</span>
+    <span class="hljs-type">spinlock_t</span>      mutex;
+    <span class="hljs-type">long</span>            curbatch;       <span class="hljs-comment">/* 正在检测 GP 的批次号 */</span>
+    <span class="hljs-type">long</span>            maxbatch;       <span class="hljs-comment">/* 已分配出去的最大批次号 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>   rcu_cpu_mask;   <span class="hljs-comment">/* 还没上报 QS 的 CPU 位图 */</span>
+};
+</code></pre></div></code></pre>
+<p>初始化是 <code>{ .curbatch = 1, .maxbatch = 1, .rcu_cpu_mask = 0 }</code>。</p>
+<p><code>qsctr</code> 只增不减，每次本 CPU 离开读临界区就加一。GP 开始时把当前值抄进 <code>last_qsctr</code>，之后只要两个值不等，就说明这个 CPU 至少经历过一次静止状态。注意这是「两个计数器做差」，不是标志位。<code>rcu_cpu_mask</code> 的语义很干脆：GP 开始时置成 <code>cpu_online_map</code>，每个 CPU 上报 QS 就清掉自己那一位，全 0 则 GP 结束。</p>
+<h3 id="提交与推进" tabindex="-1">提交与推进 <a class="header-anchor" href="#提交与推进"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.5.43 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">call_rcu</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> rcu_head *head, <span class="hljs-type">void</span> (*func)(<span class="hljs-type">void</span> *arg), <span class="hljs-type">void</span> *arg)</span>
+{
+    <span class="hljs-type">int</span> cpu;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+
+    head-&gt;func = func;
+    head-&gt;arg = arg;
+    local_irq_save(flags);
+    cpu = smp_processor_id();
+    list_add_tail(&amp;head-&gt;<span class="hljs-built_in">list</span>, &amp;RCU_nxtlist(cpu));
+    local_irq_restore(flags);
+}
+</code></pre></div></code></pre>
+<p>挂进本 CPU 的 <code>nxtlist</code>，完事。没有批次号，也不启动 GP。<code>struct rcu_head</code> 用双向链表、<code>arg</code> 单独传参，这两处 2.6 都砍了，理由在第三章和第七章。</p>
+<p>批次号在 tick 里分配。每个 tick <code>rcu_check_callbacks()</code> 都会 <code>tasklet_schedule(&amp;RCU_tasklet(cpu))</code>，tasklet 里跑 <code>rcu_process_callbacks()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.5.43，删掉无关代码 */</span>
+    local_irq_disable();
+    <span class="hljs-keyword">if</span> (!list_empty(&amp;RCU_nxtlist(cpu)) &amp;&amp; list_empty(&amp;RCU_curlist(cpu))) {
+        list_splice(&amp;RCU_nxtlist(cpu), &amp;RCU_curlist(cpu));
+        INIT_LIST_HEAD(&amp;RCU_nxtlist(cpu));
+        local_irq_enable();
+        spin_lock(&amp;rcu_ctrlblk.mutex);
+        RCU_batch(cpu) = rcu_ctrlblk.curbatch + <span class="hljs-number">1</span>;
+        rcu_start_batch(RCU_batch(cpu));
+        spin_unlock(&amp;rcu_ctrlblk.mutex);
+    } <span class="hljs-keyword">else</span> {
+        local_irq_enable();
+    }
+</code></pre></div></code></pre>
+<p>两个条件同时满足才动手：<code>nxtlist</code> 非空（有新请求）、<code>curlist</code> 为空（上一批已经搬走了）。满足就把 <code>nxtlist</code> 整条拼进 <code>curlist</code>，分配批次号 <code>curbatch + 1</code>。</p>
+<p>为什么 <code>+1</code>？因为 <code>curbatch</code> 那批的 GP 还在检测中，新来的这批只能排队，它是 pending 批次。<code>maxbatch</code> 就是记账用的：记住最大分配出去的批次号，等 <code>curbatch</code> 那批过了 GP，<code>maxbatch</code> 大于 <code>curbatch</code> 就再启动一批。<code>rcu_start_batch(newbatch)</code> 做两件事——把 <code>maxbatch</code> 抬到 <code>newbatch</code>；如果 <code>maxbatch</code> 不低于 <code>curbatch</code> 且 <code>rcu_cpu_mask == 0</code>，把 <code>rcu_cpu_mask</code> 重置成 <code>cpu_online_map</code>，这就是 GP 的起点。</p>
+<h3 id="qs-上报" tabindex="-1">QS 上报 <a class="header-anchor" href="#qs-上报"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.5.43 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">rcu_check_quiescent_state</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">int</span> cpu = smp_processor_id();
+
+    <span class="hljs-keyword">if</span> (!test_bit(cpu, &amp;rcu_ctrlblk.rcu_cpu_mask))          <span class="hljs-comment">/* (1) */</span>
+        <span class="hljs-keyword">return</span>;
+    <span class="hljs-keyword">if</span> (RCU_last_qsctr(cpu) == RCU_QSCTR_INVALID) {         <span class="hljs-comment">/* (2) */</span>
+        RCU_last_qsctr(cpu) = RCU_qsctr(cpu);
+        <span class="hljs-keyword">return</span>;
+    }
+    <span class="hljs-keyword">if</span> (RCU_qsctr(cpu) == RCU_last_qsctr(cpu))              <span class="hljs-comment">/* (3) */</span>
+        <span class="hljs-keyword">return</span>;
+
+    spin_lock(&amp;rcu_ctrlblk.mutex);                          <span class="hljs-comment">/* (4) */</span>
+    <span class="hljs-keyword">if</span> (!test_bit(cpu, &amp;rcu_ctrlblk.rcu_cpu_mask)) {        <span class="hljs-comment">/* (5) */</span>
+        spin_unlock(&amp;rcu_ctrlblk.mutex);
+        <span class="hljs-keyword">return</span>;
+    }
+    clear_bit(cpu, &amp;rcu_ctrlblk.rcu_cpu_mask);              <span class="hljs-comment">/* (6) */</span>
+    RCU_last_qsctr(cpu) = RCU_QSCTR_INVALID;                <span class="hljs-comment">/* (7) */</span>
+    <span class="hljs-keyword">if</span> (rcu_ctrlblk.rcu_cpu_mask != <span class="hljs-number">0</span>) {                    <span class="hljs-comment">/* (8) */</span>
+        spin_unlock(&amp;rcu_ctrlblk.mutex);
+        <span class="hljs-keyword">return</span>;
+    }
+    rcu_ctrlblk.curbatch++;                                 <span class="hljs-comment">/* (9) */</span>
+    rcu_start_batch(rcu_ctrlblk.maxbatch);                  <span class="hljs-comment">/* (10) */</span>
+    spin_unlock(&amp;rcu_ctrlblk.mutex);
+}
+</code></pre></div></code></pre>
+<p>这段是 2.5.43 的心脏，逐条对：(1) 本 CPU 的位已经清了，这一轮 QS 早报过了；(2) <code>last_qsctr</code> 是 <code>RCU_QSCTR_INVALID</code>，说明这是新一轮 GP 的第一次检查，先记基准值，没有可比的东西；(3) 计数器和基准一样，本 CPU 还没经历过 QS；(4) 到这里说明确实经历过，要改全局位图了，加锁；(5) 拿锁后复查，拿锁期间别的路径先清了位；(6) 清掉自己的位；(7) 把 <code>last_qsctr</code> 打回 <code>INVALID</code>，为下一轮重置基准；(8) 还有别的 CPU 没上报，等它们；(9) 位图全 0，GP 过了，<code>curbatch</code> 加一，等于向全系统宣布「<code>curbatch</code> 那批的 GP 已完成」；(10) 试着启动下一批。</p>
+<p><code>curbatch</code> 这条自增就是广播方式：没有 IPI，没有通知，其他 CPU 下次看 <code>curbatch</code> 自然就知道进度变了。</p>
+<h3 id="callback-在哪跑" tabindex="-1">callback 在哪跑 <a class="header-anchor" href="#callback-在哪跑"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>同一个 tasklet 函数里还有另一半：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.5.43 */</span>
+    LIST_HEAD(<span class="hljs-built_in">list</span>);
+    <span class="hljs-keyword">if</span> (!list_empty(&amp;RCU_curlist(cpu)) &amp;&amp;
+        rcu_batch_after(rcu_ctrlblk.curbatch, RCU_batch(cpu))) {
+        list_splice(&amp;RCU_curlist(cpu), &amp;<span class="hljs-built_in">list</span>);
+        INIT_LIST_HEAD(&amp;RCU_curlist(cpu));
+    }
+    ...
+    <span class="hljs-keyword">if</span> (!list_empty(&amp;<span class="hljs-built_in">list</span>))
+        rcu_do_batch(&amp;<span class="hljs-built_in">list</span>);
+</code></pre></div></code></pre>
+<p>判定条件是 <code>rcu_batch_after(curbatch, batch)</code>——全局批次号跑到本 CPU 批次号前面去了，说明本 CPU 这批的 GP 已经过了。把 <code>curlist</code> 整条摘到临时链表，一次性跑完。这个「一次性跑完」是 2.5.43 最短的那块板。</p>
+<h2 id="三那次尝试为什么会失败" tabindex="-1">三、那次尝试为什么会失败 <a class="header-anchor" href="#三那次尝试为什么会失败"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>原文开头作者自述「我这篇写得的确不怎么样」。这话说的是文档不是代码，但 2.5.43 的实现在工程上确实站不住。五个问题，一个比一个实。</p>
+<p><strong>问题一：<code>rcu_cpu_mask</code> 是全局写热点。</strong> <code>rcu_ctrlblk</code> 是单个全局变量，每个 CPU 每次过 QS 都要 <code>clear_bit</code> 写它的一个 bit，CPU 一多这个 cacheline 就在核间来回弹。</p>
+<p>更贵的是读，它出现在五处：<code>rcu_pending()</code> 里一次 <code>test_bit</code>；<code>rcu_check_quiescent_state()</code> 的 A 点 <code>test_bit</code>、B 点拿锁后复查、C 点 <code>clear_bit</code>、D 点判 0；<code>rcu_start_batch()</code> 里的非零判断和赋值。<code>rcu_pending()</code> 那个 <code>test_bit</code> 原本是为省 CPU 加的优化：位已经清了，这个 CPU 这一轮没活干，早点返回。结果就是把一个跨核写的变量变成了每 tick 每 CPU 都要读的变量，省下几条指令，赔进去的是 cache miss。A 点和 B 点是同一句 <code>test_bit</code>，中间夹着 <code>spin_lock</code>，B 点那次复查在只从这里调用的前提下没有意义，作者的评语是「我没有看出有任何的必要」。</p>
+<p><strong>问题二：<code>rcu_do_batch()</code> 一次跑完整批，实时性没救。</strong> callback 跑在 tasklet 里，tasklet 是 softirq，softirq 是中断上下文，优先级高于任何进程。2.5.43 的 <code>rcu_do_batch()</code> 没有数量上限，一个批次挂上几千个 callback，全在这一次 softirq 里跑完，跑的过程中高优先级进程一个都调度不上。这不是理论问题，网络收包路径上 <code>kfree_skb</code> 走 RCU 的场合很多，包一多 callback 就堆起来。</p>
+<p><strong>问题三：接口把内存屏障甩给调用者。</strong> 2.5.43 对外只有四个符号：<code>rcu_read_lock()</code> 就是 <code>preempt_disable()</code>、<code>rcu_read_unlock()</code> 就是 <code>preempt_enable()</code>、<code>call_rcu(head, func, arg)</code>、<code>synchronize_kernel()</code>。<code>rcu_dereference()</code> 和 <code>rcu_assign_pointer()</code> 还没出生。写者发布指针要自己插 <code>smp_wmb()</code>，读者取指针要自己防编译器重排。一个同步机制把内存序的正确性外包给调用者，抽象就漏了。同一个 <code>synchronize_kernel()</code> 还背了太多语义：它不只等 RCU 读者，还要等 NMI handler 跑完、等所有中断 handler 跑完，一个名字干四件事，调用者根本说不清自己在等什么。</p>
+<p><strong>问题四：内存浪费。</strong> <code>struct rcu_head</code> 用双向链表，callback 只需要单向遍历，白白多一个指针；<code>arg</code> 也没必要，<code>rcu_head</code> 基本都嵌在业务结构体里，callback 拿到 <code>struct rcu_head *</code> 用 <code>container_of</code> 就还原了。另一处是 <code>qsctr</code> 加 <code>last_qsctr</code> 两个 <code>long</code>——判 QS 只关心「至少经历过一次没有」，经历 3 次和 5 次没区别，两个 <code>long</code> 干一个 bit 的活。</p>
+<p><strong>问题五：<code>curbatch</code> / <code>maxbatch</code> 语义糊。</strong> 看名字猜不出谁大谁小、谁等谁。读代码读到 <code>maxbatch</code> 那段，作者的评语是「一个 flag 的事，干嘛搞这么复杂」。它全部作用就是回答一个问题：当前这批过了 GP 之后要不要立刻启动下一批？<code>curbatch == maxbatch</code> 就不启动，不等就启动。这就是 2.6 的 <code>next_pending</code> 标志。</p>
+<p><strong>附带一个真 bug：</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.5.43，有 bug 的版本 */</span>
+<span class="hljs-keyword">if</span> (user ||
+    (idle_cpu(cpu) &amp;&amp; !in_softirq() &amp;&amp; hardirq_count() &lt;= <span class="hljs-number">1</span>))
+    RCU_qsctr(cpu)++;
+</code></pre></div></code></pre>
+<p><code>hardirq_count()</code> 返回的是被打断的硬中断嵌套层数移位后的值，不是层数本身。判「不在硬中断里」应该写 <code>hardirq_count() &lt;= (1 &lt;&lt; HARDIRQ_SHIFT)</code>。写成 <code>&lt;= 1</code>，而这个函数本身就在 timer 的 interrupt handler 里跑，条件永远不成立，idle 分支整条是死代码。2.6.12 的 <code>rcu_check_callbacks()</code> 里已经是 <code>(1 &lt;&lt; HARDIRQ_SHIFT)</code>，对得上。</p>
+<h2 id="四2.6.11-classic-rcu-的总体设计" tabindex="-1">四、2.6.11 classic RCU 的总体设计 <a class="header-anchor" href="#四2.6.11-classic-rcu-的总体设计"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>2.6.11 是重写不是修补。改法一句话：<strong>把「全局的 GP 状态」和「本 CPU 的 QS 状态」彻底分开，让每个 CPU 只读自己的 per-CPU 变量，全局位图只在真正要改的时候碰。</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_state</span> {</span>
+    <span class="hljs-type">spinlock_t</span>  lock;       <span class="hljs-comment">/* 保护本结构和 rcu_ctrlblk 的写 */</span>
+    <span class="hljs-type">cpumask_t</span>   cpumask;    <span class="hljs-comment">/* 还没过 QS 的 CPU */</span>
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_ctrlblk</span> {</span>
+    <span class="hljs-type">long</span>    cur;            <span class="hljs-comment">/* 当前正在检测 GP 的批次号 */</span>
+    <span class="hljs-type">long</span>    completed;      <span class="hljs-comment">/* 最近一个已完成 GP 的批次号 */</span>
+    <span class="hljs-type">int</span>     next_pending;   <span class="hljs-comment">/* 下一批是否已经在等 */</span>
+} ____cacheline_maxaligned_in_smp;
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_head</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_head</span> *<span class="hljs-title">next</span>;</span>
+    <span class="hljs-type">void</span> (*func)(<span class="hljs-keyword">struct</span> rcu_head *head);
+};
+</code></pre></div></code></pre>
+<p>全局状态搬进 <code>struct rcu_state</code>，只留位图和锁；控制块瘦成三个字段。<code>struct rcu_head</code> 砍掉一半——双向链表变单向，<code>arg</code> 没了，<code>func</code> 的入参改成 <code>struct rcu_head *</code>。省 50% 的定义，也顺手把 callback 的写法定死了：要传参数就把 <code>rcu_head</code> 嵌进自己的结构体，用 <code>container_of</code> 取回来。</p>
+<p>per-CPU 数据长出 QS 相关的三个新成员：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_data</span> {</span>
+    <span class="hljs-type">long</span>                quiescbatch;    <span class="hljs-comment">/* 本 CPU 正在为哪个批次检测 QS */</span>
+    <span class="hljs-type">int</span>                 passed_quiesc;  <span class="hljs-comment">/* 自 GP 起点起至少过了一次 QS */</span>
+    <span class="hljs-type">int</span>                 qs_pending;     <span class="hljs-comment">/* 还要等本 CPU 上报 QS */</span>
+    <span class="hljs-type">long</span>                batch;          <span class="hljs-comment">/* 本 CPU curlist 那批的批次号 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_head</span>     *<span class="hljs-title">nxtlist</span>, **<span class="hljs-title">nxttail</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_head</span>     *<span class="hljs-title">curlist</span>, **<span class="hljs-title">curtail</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_head</span>     *<span class="hljs-title">donelist</span>, **<span class="hljs-title">donetail</span>;</span>
+    <span class="hljs-type">int</span>                 cpu;
+};
+</code></pre></div></code></pre>
+<h3 id="三个批次号同时活着" tabindex="-1">三个批次号同时活着 <a class="header-anchor" href="#三个批次号同时活着"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这是最容易读错的地方。系统里同时存在的批次号最多三个：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>名字</th>
+<th>存在哪</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>current</td>
+<td><code>rcp-&gt;cur</code></td>
+<td>正在检测 GP 的那批</td>
+</tr>
+<tr>
+<td>last completed</td>
+<td><code>rcp-&gt;completed</code></td>
+<td>最近完成 GP 的那批</td>
+</tr>
+<tr>
+<td>next pending</td>
+<td>各个 <code>rdp-&gt;batch</code></td>
+<td>已分配号、还没能启动 GP 的那批</td>
+</tr>
+</tbody>
+</table></div><p><code>cur</code> 和 <code>completed</code> 最多差 1。<code>next_pending</code> 只有 1 bit，记的是「有没有 pending 批次」，具体号在 CPU 自己的 <code>rdp-&gt;batch</code> 里。</p>
+<p>为什么是三个？因为「分配批次号」和「启动这批的 GP」是两件事。CPU 把 <code>nxtlist</code> 移进 <code>curlist</code> 时就得有个号，但这时候 <code>cur</code> 那批还没过 GP，新批次只能挂着等。这个号就是 next pending。</p>
+<p><code>rdp-&gt;quiescbatch</code> 是第四个概念：本 CPU 正在为哪批检测 QS。它和 <code>rcp-&gt;cur</code> 不相等，说明新的一批 GP 已经启动、本 CPU 还没跟上，下一次 tick 要做状态重置。这个比较是整套机制的启动开关：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12，rcu_check_quiescent_state() 开头 */</span>
+<span class="hljs-keyword">if</span> (rdp-&gt;quiescbatch != rcp-&gt;cur) {
+    rdp-&gt;qs_pending = <span class="hljs-number">1</span>;
+    rdp-&gt;passed_quiesc = <span class="hljs-number">0</span>;
+    rdp-&gt;quiescbatch = rcp-&gt;cur;
+    <span class="hljs-keyword">return</span>;
+}
+</code></pre></div></code></pre>
+<p>批次号比较不用 <code>a &lt; b</code>，用补码溢出的减法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12，include/linux/rcupdate.h */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">rcu_batch_before</span><span class="hljs-params">(<span class="hljs-type">long</span> a, <span class="hljs-type">long</span> b)</span> { <span class="hljs-keyword">return</span> (a - b) &lt; <span class="hljs-number">0</span>; }
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">rcu_batch_after</span><span class="hljs-params">(<span class="hljs-type">long</span> a, <span class="hljs-type">long</span> b)</span>  { <span class="hljs-keyword">return</span> (a - b) &gt; <span class="hljs-number">0</span>; }
+</code></pre></div></code></pre>
+<p>批次号一路加下去总会回绕，减法在回绕后依然正确，只要两个号相差不超过半个字长。2.6.12 里两个控制块的初值都是 <code>{ .cur = -300, .completed = -300 }</code>，也是考虑这个。</p>
+<h3 id="三个版本放一起看" tabindex="-1">三个版本放一起看 <a class="header-anchor" href="#三个版本放一起看"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>2.5.43</th>
+<th>2.6.11 / 2.6.12</th>
+<th>2.6.23</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GP 位图存放</td>
+<td><code>rcu_ctrlblk.rcu_cpu_mask</code></td>
+<td><code>rcu_state.cpumask</code>（拆出去了）</td>
+<td>并回 <code>rcu_ctrlblk.cpumask</code></td>
+</tr>
+<tr>
+<td>QS 判定</td>
+<td><code>qsctr</code> + <code>last_qsctr</code> 两个计数器</td>
+<td><code>passed_quiesc</code> 一个 flag</td>
+<td>同左</td>
+</tr>
+<tr>
+<td>「本 CPU 还没上报」</td>
+<td>看全局位图 <code>test_bit</code></td>
+<td>看 <code>rdp-&gt;qs_pending</code>，不碰全局</td>
+<td>同左</td>
+</tr>
+<tr>
+<td>批次号语义</td>
+<td><code>curbatch</code> / <code>maxbatch</code></td>
+<td><code>cur</code> / <code>completed</code> / <code>next_pending</code></td>
+<td>同左</td>
+</tr>
+<tr>
+<td>callback 链表</td>
+<td><code>list_head</code> 双向</td>
+<td><code>rcu_head</code> 单链表 + tail</td>
+<td>同左</td>
+</tr>
+<tr>
+<td>单次跑多少 callback</td>
+<td>无上限</td>
+<td><code>maxbatch = 10</code></td>
+<td><code>blimit</code>，配 <code>qhimark</code>/<code>qlowmark</code> 自适应</td>
+</tr>
+<tr>
+<td><code>call_rcu</code> 签名</td>
+<td><code>(head, func, arg)</code></td>
+<td><code>(head, func)</code></td>
+<td><code>(head, func)</code></td>
+</tr>
+<tr>
+<td>reader 能否睡眠</td>
+<td>不能</td>
+<td>不能</td>
+<td>classic 不能，SRCU 能</td>
+</tr>
+<tr>
+<td>对外接口</td>
+<td><code>call_rcu</code> / <code>synchronize_kernel</code></td>
+<td><code>call_rcu</code> / <code>call_rcu_bh</code> / <code>synchronize_rcu</code></td>
+<td>多出 <code>rcu_barrier</code> / <code>srcu_*</code></td>
+</tr>
+</tbody>
+</table></div><h2 id="五宽限期的判定每个-cpu-都经历过静止状态" tabindex="-1">五、宽限期的判定：每个 CPU 都经历过静止状态 <a class="header-anchor" href="#五宽限期的判定每个-cpu-都经历过静止状态"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>GP 的判定就是一句话：位图全 0。但这个 0 是谁清出来的、谁负责广播，决定了整套机制能不能扩展。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">cpu_quiet</span><span class="hljs-params">(<span class="hljs-type">int</span> cpu, <span class="hljs-keyword">struct</span> rcu_ctrlblk *rcp, <span class="hljs-keyword">struct</span> rcu_state *rsp)</span>
+{
+    cpu_clear(cpu, rsp-&gt;cpumask);
+
+    <span class="hljs-keyword">if</span> (cpus_empty(rsp-&gt;cpumask)) {
+        <span class="hljs-comment">/* batch completed ! */</span>
+        rcp-&gt;completed = rcp-&gt;cur;
+        rcu_start_batch(rcp, rsp, <span class="hljs-number">0</span>);
+    }
+}
+</code></pre></div></code></pre>
+<p><code>cpu_clear</code> 清自己那位，清完非空就返回等着。清完空了，说明自己就是最后一个过 QS 的 CPU，责任重大：它得把「<code>cur</code> 那批过了」告诉全系统。做法不是发 IPI，是 <code>rcp-&gt;completed = rcp-&gt;cur</code>——把结果写进一个所有人都读的变量，谁需要谁去看。写完立刻 <code>rcu_start_batch(rcp, rsp, 0)</code> 试着启动下一批；这里传的 <code>next_pending</code> 是 0，意思是「我这次调用不新增 pending 请求」，但如果之前已经有 CPU 把 <code>next_pending</code> 置上了，条件照样成立，下一批就地启动。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">rcu_start_batch</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> rcu_ctrlblk *rcp, <span class="hljs-keyword">struct</span> rcu_state *rsp,
+                            <span class="hljs-type">int</span> next_pending)</span>
+{
+    <span class="hljs-keyword">if</span> (next_pending)
+        rcp-&gt;next_pending = <span class="hljs-number">1</span>;
+
+    <span class="hljs-keyword">if</span> (rcp-&gt;next_pending &amp;&amp; rcp-&gt;completed == rcp-&gt;cur) {
+        <span class="hljs-comment">/* Can&#x27;t change, since spin lock held. */</span>
+        cpus_andnot(rsp-&gt;cpumask, cpu_online_map, nohz_cpu_mask);
+        rcp-&gt;next_pending = <span class="hljs-number">0</span>;
+        <span class="hljs-comment">/* next_pending == 0 必须先于 cur 的新值对
+         * __rcu_process_callbacks() 可见 */</span>
+        smp_wmb();
+        rcp-&gt;cur++;
+    }
+}
+</code></pre></div></code></pre>
+<p>四个动作一个都不能少：位图重置成 <code>cpu_online_map</code> 减掉 <code>nohz_cpu_mask</code>（dynamic tick 下已经停 tick 的 CPU），这是 GP 起点，从这一刻起所有还在跑 tick 的 CPU 都欠一次 QS；<code>next_pending = 0</code>，pending 已经扶正成 current；<code>smp_wmb()</code> 保证 <code>next_pending = 0</code> 对其他 CPU 可见在先、<code>cur</code> 的新值在后；<code>cur++</code> 就是「新一批 GP 已启动」的广播。</p>
+<p>那个屏障为什么要？看另一侧：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12，__rcu_process_callbacks() 里 */</span>
+rdp-&gt;batch = rcp-&gt;cur + <span class="hljs-number">1</span>;
+smp_rmb();                      <span class="hljs-comment">/* 见 rcu_start_batch() 里的 wmb() */</span>
+<span class="hljs-keyword">if</span> (!rcp-&gt;next_pending) {
+    spin_lock(&amp;rsp-&gt;lock);
+    rcu_start_batch(rcp, rsp, <span class="hljs-number">1</span>);
+    spin_unlock(&amp;rsp-&gt;lock);
+}
+</code></pre></div></code></pre>
+<p>CPU A 读 <code>cur</code>（拿到 B 加一之后的新值）算新批次号，然后读 <code>next_pending</code>，<code>smp_rmb()</code> 保证这个读发生在读 <code>cur</code> 之后。如果 A 看到 B 的 <code>cur++</code>，屏障保证 A 也一定看到 B 的 <code>next_pending = 0</code>，于是 A 进 <code>rcu_start_batch</code> 把新批次挂上 pending。少了这个屏障，A 看到新 <code>cur</code> 却看到旧的 <code>next_pending == 1</code>，就会跳过这次启动，新批次一直挂着没人管。</p>
+<h3 id="谁把-passed_quiesc-变成位图上的-0" tabindex="-1">谁把 <code>passed_quiesc</code> 变成位图上的 0 <a class="header-anchor" href="#谁把-passed_quiesc-变成位图上的-0"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>中间还隔一层。<code>passed_quiesc</code> 是 per-CPU flag，置位它的人在下一章。把它翻译成「清位图」的是：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">rcu_check_quiescent_state</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> rcu_ctrlblk *rcp,
+                                      <span class="hljs-keyword">struct</span> rcu_state *rsp,
+                                      <span class="hljs-keyword">struct</span> rcu_data *rdp)</span>
+{
+    <span class="hljs-keyword">if</span> (rdp-&gt;quiescbatch != rcp-&gt;cur) {
+        rdp-&gt;qs_pending = <span class="hljs-number">1</span>;
+        rdp-&gt;passed_quiesc = <span class="hljs-number">0</span>;
+        rdp-&gt;quiescbatch = rcp-&gt;cur;
+        <span class="hljs-keyword">return</span>;
+    }
+
+    <span class="hljs-comment">/* GP 对本 CPU 已经完成？查 qs_pending 而不是位图，
+     * 就是为了避免 cacheline thrashing。 */</span>
+    <span class="hljs-keyword">if</span> (!rdp-&gt;qs_pending)
+        <span class="hljs-keyword">return</span>;
+    <span class="hljs-keyword">if</span> (!rdp-&gt;passed_quiesc)
+        <span class="hljs-keyword">return</span>;
+
+    rdp-&gt;qs_pending = <span class="hljs-number">0</span>;
+    spin_lock(&amp;rsp-&gt;lock);
+    <span class="hljs-comment">/* CPU 上线期间 quiescbatch / cur 和位图会短暂不同步，忽略 */</span>
+    <span class="hljs-keyword">if</span> (likely(rdp-&gt;quiescbatch == rcp-&gt;cur))
+        cpu_quiet(rdp-&gt;cpu, rcp, rsp);
+    spin_unlock(&amp;rsp-&gt;lock);
+}
+</code></pre></div></code></pre>
+<p>第二个 <code>if</code> 是全部改动的核心：<code>qs_pending</code> 是 per-CPU 变量，读它不产生跨核 cacheline 流量。2.5.43 要靠 <code>test_bit</code> 读全局位图来省事，2.6.11 靠一个本地 flag 省事，代价为零。只有确认要上报了，才进临界区改全局位图。全局写得少，读几乎没有。</p>
+<h2 id="六静止状态quiescent-state与-qs-上报" tabindex="-1">六、静止状态（quiescent state）与 QS 上报 <a class="header-anchor" href="#六静止状态quiescent-state与-qs-上报"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12，include/linux/rcupdate.h */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">rcu_qsctr_inc</span><span class="hljs-params">(<span class="hljs-type">int</span> cpu)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_data</span> *<span class="hljs-title">rdp</span> =</span> &amp;per_cpu(rcu_data, cpu);
+    rdp-&gt;passed_quiesc = <span class="hljs-number">1</span>;
+}
+</code></pre></div></code></pre>
+<p>函数名叫 <code>inc</code>，实际只写一个 1。注释写得很直白：「The counter is a bit degenerated: We do not need to know how many quiescent states passed, just if there was at least one since the start of the grace period. Thus just a flag.」</p>
+<p>三处调用点：<strong>进程切换</strong>，<code>schedule()</code> 里对换下来的 CPU 调 <code>rcu_qsctr_inc(task_cpu(prev))</code>——进程切走了，它必然不在读临界区里，因为读临界区里 <code>preempt_disable()</code> 了，切不动；<strong>tick 命中用户态</strong>，<code>user</code> 为真说明中断打断的是用户态代码，那会儿内核还没回去，读临界区早出了；<strong>tick 命中 idle</strong>。</p>
+<p>第三处为什么必须存在？设想一个 CPU 长期 idle，没有别的进程可切，<code>schedule()</code> 不执行，tick 每次都命中内核态，<code>user</code> 永远是 0。只靠前两处，这个 CPU 的 <code>passed_quiesc</code> 永远不置位，GP 无限长。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">rcu_check_callbacks</span><span class="hljs-params">(<span class="hljs-type">int</span> cpu, <span class="hljs-type">int</span> user)</span>
+{
+    <span class="hljs-keyword">if</span> (user ||
+        (idle_cpu(cpu) &amp;&amp; !in_softirq() &amp;&amp;
+         hardirq_count() &lt;= (<span class="hljs-number">1</span> &lt;&lt; HARDIRQ_SHIFT))) {
+        rcu_qsctr_inc(cpu);
+        rcu_bh_qsctr_inc(cpu);
+    } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (!in_softirq())
+        rcu_bh_qsctr_inc(cpu);
+
+    tasklet_schedule(&amp;per_cpu(rcu_tasklet, cpu));
+}
+</code></pre></div></code></pre>
+<p>最后那个 <code>tasklet_schedule()</code> 是无条件的。tick 一到就把 tasklet 排上，至于里面有没有活干，由 <code>rcu_pending()</code> 判断。它在 <code>TASKLET_STATE_SCHED</code> 上是幂等的，重复调用只置位不重复排队，所以每 tick 排一次的开销很小。这也解释了为什么 <code>rcu_pending()</code> 要写得那么省——它每个 tick 都被调一次，热路径。</p>
+<h3 id="qs-判定条件汇总" tabindex="-1">QS 判定条件汇总 <a class="header-anchor" href="#qs-判定条件汇总"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>触发场景</th>
+<th>判定条件</th>
+<th>覆盖哪套 RCU</th>
+<th>落在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>进程切换</td>
+<td><code>schedule()</code> 执行</td>
+<td>classic + bh</td>
+<td><code>rcu_qsctr_inc</code> / <code>rcu_bh_qsctr_inc</code></td>
+</tr>
+<tr>
+<td>tick 打断用户态</td>
+<td><code>user != 0</code></td>
+<td>classic + bh</td>
+<td><code>rcu_check_callbacks</code></td>
+</tr>
+<tr>
+<td>tick 打断 idle</td>
+<td><code>idle_cpu() &amp;&amp; !in_softirq() &amp;&amp; hardirq_count() &lt;= (1 &lt;&lt; HARDIRQ_SHIFT)</code></td>
+<td>classic + bh</td>
+<td><code>rcu_check_callbacks</code></td>
+</tr>
+<tr>
+<td>tick 不在 softirq 里</td>
+<td><code>!in_softirq()</code></td>
+<td>仅 bh</td>
+<td><code>rcu_check_callbacks</code></td>
+</tr>
+</tbody>
+</table></div><p><code>bh</code> 那套是 2.6 新增的：读者的临界区全在 softirq 上下文时，用 <code>call_rcu_bh</code> 加 <code>rcu_read_lock_bh()</code>（也就是 <code>local_bh_disable()</code>），QS 条件可以放宽到「跑完一个 softirq handler 就算过」。两套各有自己的控制块，互不干扰：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_ctrlblk</span> <span class="hljs-title">rcu_ctrlblk</span>    =</span> { .cur = <span class="hljs-number">-300</span>, .completed = <span class="hljs-number">-300</span> };
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_ctrlblk</span> <span class="hljs-title">rcu_bh_ctrlblk</span> =</span> { .cur = <span class="hljs-number">-300</span>, .completed = <span class="hljs-number">-300</span> };
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">rcu_process_callbacks</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> unused)</span>
+{
+    __rcu_process_callbacks(&amp;rcu_ctrlblk, &amp;rcu_state,
+                            &amp;__get_cpu_var(rcu_data));
+    __rcu_process_callbacks(&amp;rcu_bh_ctrlblk, &amp;rcu_bh_state,
+                            &amp;__get_cpu_var(rcu_bh_data));
+}
+</code></pre></div></code></pre>
+<h3 id="tasklet-里做什么" tabindex="-1">tasklet 里做什么 <a class="header-anchor" href="#tasklet-里做什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> __rcu_process_callbacks(<span class="hljs-keyword">struct</span> rcu_ctrlblk *rcp,
+                                    <span class="hljs-keyword">struct</span> rcu_state *rsp,
+                                    <span class="hljs-keyword">struct</span> rcu_data *rdp)
+{
+    <span class="hljs-keyword">if</span> (rdp-&gt;curlist &amp;&amp; !rcu_batch_before(rcp-&gt;completed, rdp-&gt;batch)) {
+        <span class="hljs-comment">/* 本 CPU 这批的 GP 过了，整条挂到 donelist 尾巴上 */</span>
+        *rdp-&gt;donetail = rdp-&gt;curlist;
+        rdp-&gt;donetail = rdp-&gt;curtail;
+        rdp-&gt;curlist = <span class="hljs-literal">NULL</span>;
+        rdp-&gt;curtail = &amp;rdp-&gt;curlist;
+    }
+
+    local_irq_disable();
+    <span class="hljs-keyword">if</span> (rdp-&gt;nxtlist &amp;&amp; !rdp-&gt;curlist) {
+        rdp-&gt;curlist = rdp-&gt;nxtlist;
+        rdp-&gt;curtail = rdp-&gt;nxttail;
+        rdp-&gt;nxtlist = <span class="hljs-literal">NULL</span>;
+        rdp-&gt;nxttail = &amp;rdp-&gt;nxtlist;
+        local_irq_enable();
+
+        rdp-&gt;batch = rcp-&gt;cur + <span class="hljs-number">1</span>;
+        smp_rmb();
+        <span class="hljs-keyword">if</span> (!rcp-&gt;next_pending) {
+            spin_lock(&amp;rsp-&gt;lock);
+            rcu_start_batch(rcp, rsp, <span class="hljs-number">1</span>);
+            spin_unlock(&amp;rsp-&gt;lock);
+        }
+    } <span class="hljs-keyword">else</span> {
+        local_irq_enable();
+    }
+
+    rcu_check_quiescent_state(rcp, rsp, rdp);
+
+    <span class="hljs-keyword">if</span> (rdp-&gt;donelist)
+        rcu_do_batch(rdp);
+}
+</code></pre></div></code></pre>
+<p>顺序不能变：先看旧批次能不能转 donelist，再把 nxtlist 提成 curlist 并分配新批次号，然后处理 QS，最后跑 callback。<code>rcu_do_batch()</code> 放最后是因为它最耗时，前面几步都是簿记。<code>if (rdp-&gt;nxtlist &amp;&amp; !rdp-&gt;curlist)</code> 里没有判断「新批次能不能启动」，<code>rcu_start_batch()</code> 内部会判——这是 2.6 的风格，条件判断集中一处，调用方少操心。</p>
+<h3 id="tick-之外还有谁推进-gp" tabindex="-1">tick 之外还有谁推进 GP <a class="header-anchor" href="#tick-之外还有谁推进-gp"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>只有 tick 和进程切换，没有专门的内核线程扫位图。直接后果：<strong>GP 的长度以 tick 为粒度</strong>。一个 CPU 从「欠 QS」到「上报 QS」，最快下一次 tick，最慢要等它真的发生一次进程切换或进 idle。这就是 idle 判定那条不能少的原因——少一条，GP 时长就没有上界。</p>
+<h2 id="七callback-链表的组织" tabindex="-1">七、callback 链表的组织 <a class="header-anchor" href="#七callback-链表的组织"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>2.6 把 <code>list_head</code> 双向链表换成手工单链表，靠尾指针维护。三条链，每条一个头一个尾，<code>nxttail</code> 不是指向最后一个节点，而是<strong>指向最后一个节点的 <code>next</code> 字段的地址</strong>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12 */</span>
+<span class="hljs-type">void</span> fastcall <span class="hljs-title function_">call_rcu</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> rcu_head *head,
+                       <span class="hljs-type">void</span> (*func)(<span class="hljs-keyword">struct</span> rcu_head *rcu))</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_data</span> *<span class="hljs-title">rdp</span>;</span>
+
+    head-&gt;func = func;
+    head-&gt;next = <span class="hljs-literal">NULL</span>;
+    local_irq_save(flags);
+    rdp = &amp;__get_cpu_var(rcu_data);
+    *rdp-&gt;nxttail = head;       <span class="hljs-comment">/* 接到尾巴上 */</span>
+    rdp-&gt;nxttail = &amp;head-&gt;next; <span class="hljs-comment">/* 尾巴挪到新节点的 next */</span>
+    local_irq_restore(flags);
+}
+</code></pre></div></code></pre>
+<p>空链时 <code>nxttail = &amp;nxtlist</code>，<code>*nxttail = head</code> 等价于 <code>nxtlist = head</code>，同一个写法处理空链和非空链。这里没有任何锁，只有 <code>local_irq_save()</code>——三条链都是 per-CPU 的，只有本 CPU 碰，唯一要防的是本 CPU 的中断抢进来插一刀，用 irq disable 就够。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>链表</th>
+<th>装什么</th>
+<th>谁往里放</th>
+<th>谁往外取</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nxtlist</code></td>
+<td>刚 <code>call_rcu</code> 提交、还没有批次号的请求</td>
+<td><code>call_rcu</code>，任意上下文</td>
+<td><code>__rcu_process_callbacks</code>，tasklet 里</td>
+</tr>
+<tr>
+<td><code>curlist</code></td>
+<td>已分配批次号、正在等 GP 的请求</td>
+<td>上一步整批搬过来</td>
+<td><code>__rcu_process_callbacks</code>，GP 过后搬去 donelist</td>
+</tr>
+<tr>
+<td><code>donelist</code></td>
+<td>GP 已过、等着跑 callback 的请求</td>
+<td>上一步整批搬过来</td>
+<td><code>rcu_do_batch</code>，tasklet 里</td>
+</tr>
+</tbody>
+</table></div><p>整批搬运用同一个手法，改指针不改节点：<code>*donetail = curlist</code> 接上尾巴，<code>donetail = curtail</code> 挪尾指针，<code>curlist = NULL</code> 清空，<code>curtail = &amp;curlist</code> 回到空链状态。<code>donelist</code> 之所以存在，是因为单轮有数量上限：一批跑不完，剩下的留在 <code>donelist</code> 里，再 <code>tasklet_schedule()</code> 一次，下个 tick 接着跑。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">rcu_do_batch</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> rcu_data *rdp)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_head</span> *<span class="hljs-title">next</span>, *<span class="hljs-title">list</span>;</span>
+    <span class="hljs-type">int</span> count = <span class="hljs-number">0</span>;
+
+    <span class="hljs-built_in">list</span> = rdp-&gt;donelist;
+    <span class="hljs-keyword">while</span> (<span class="hljs-built_in">list</span>) {
+        next = rdp-&gt;donelist = <span class="hljs-built_in">list</span>-&gt;next;
+        <span class="hljs-built_in">list</span>-&gt;func(<span class="hljs-built_in">list</span>);
+        <span class="hljs-built_in">list</span> = next;
+        <span class="hljs-keyword">if</span> (++count &gt;= maxbatch)
+            <span class="hljs-keyword">break</span>;
+    }
+    <span class="hljs-keyword">if</span> (!rdp-&gt;donelist)
+        rdp-&gt;donetail = &amp;rdp-&gt;donelist;
+    <span class="hljs-keyword">else</span>
+        tasklet_schedule(&amp;per_cpu(rcu_tasklet, rdp-&gt;cpu));
+}
+</code></pre></div></code></pre>
+<p>跑满 <code>maxbatch</code>（默认 10）个就收工，剩下的重新排 tasklet。2.5.43 的实时性问题在这里有了答案：把一个不可中断的长操作切成每 tick 一小片。每片 10 个是写死的常量，高负载下偏小——这个问题 2.6.23 用三个旋钮解了，第十章说。</p>
+<h2 id="八call_rcu-的完整流程" tabindex="-1">八、call_rcu 的完整流程 <a class="header-anchor" href="#八call_rcu-的完整流程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把上面几节串起来走一遍。假设双 CPU，初始状态：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>                    全局                CPU0                  CPU1
+    cur          5        quiescbatch  5     passed_quiesc 1   0
+    completed    4        qs_pending   0     batch         5   5
+    next_pending 0        curlist   (==)     curlist   (===)
+</code></pre></div></code></pre>
+<p>批次 5 正在检测 GP，批次 4 已完成，没有 pending。CPU0 已上报过 QS，CPU1 还没，两边的 <code>curlist</code> 里都有批次 5 的请求。</p>
+<h3 id="第一步cpu0-的-tick什么都不做" tabindex="-1">第一步：CPU0 的 tick，什么都不做 <a class="header-anchor" href="#第一步cpu0-的-tick什么都不做"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.12 */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> __rcu_pending(<span class="hljs-keyword">struct</span> rcu_ctrlblk *rcp, <span class="hljs-keyword">struct</span> rcu_data *rdp)
+{
+    <span class="hljs-comment">/* 本 CPU 有请求，且 GP 已经过了 → 要搬到 donelist */</span>
+    <span class="hljs-keyword">if</span> (rdp-&gt;curlist &amp;&amp; !rcu_batch_before(rcp-&gt;completed, rdp-&gt;batch))
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+    <span class="hljs-comment">/* 没有在途批次，但有新请求 → 要分批次号 */</span>
+    <span class="hljs-keyword">if</span> (!rdp-&gt;curlist &amp;&amp; rdp-&gt;nxtlist)
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+    <span class="hljs-comment">/* donelist 里有活要干 */</span>
+    <span class="hljs-keyword">if</span> (rdp-&gt;donelist)
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+    <span class="hljs-comment">/* 内核在等本 CPU 的 QS，或者新批次已启动而本 CPU 没跟上 */</span>
+    <span class="hljs-keyword">if</span> (rdp-&gt;quiescbatch != rcp-&gt;cur || rdp-&gt;qs_pending)
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>对着快照逐条：<code>completed = 4</code> 而 <code>batch = 5</code>，<code>rcu_batch_before(4, 5)</code> 为真，取反为假，第 1 条不成立；<code>curlist</code> 非空，第 2 条不成立；<code>donelist</code> 空；<code>quiescbatch == cur</code> 且 <code>qs_pending == 0</code>。返回 0。这就是 2.6.11 相对 2.5.43 最直接的收益：没有 RCU 活干的 tick，判断过程只读 per-CPU 变量加两个全局 <code>long</code>，不碰位图。</p>
+<h3 id="第二步cpu1-进程切换然后-tick" tabindex="-1">第二步：CPU1 进程切换，然后 tick <a class="header-anchor" href="#第二步cpu1-进程切换然后-tick"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>schedule()</code> 里调 <code>rcu_qsctr_inc(task_cpu(prev))</code>，CPU1 的 <code>passed_quiesc</code> 变成 1。下一个 tick <code>__rcu_pending()</code> 第 4 条成立，进 <code>__rcu_process_callbacks()</code>。前面两步都不满足（<code>completed &lt; batch</code>，<code>curlist</code> 非空），只走到 <code>rcu_check_quiescent_state()</code> 的后半段：<code>qs_pending</code> 置 0，拿锁，<code>quiescbatch == cur</code> 成立，调 <code>cpu_quiet()</code>。</p>
+<p><code>cpu_quiet()</code> 清掉 CPU1 那位，位图空了，<code>completed</code> 从 4 跳到 5，再 <code>rcu_start_batch(rcp, rsp, 0)</code>——因为 <code>next_pending == 0</code>，没有新批次可启动，直接返回。GP 过了，但两边的 <code>curlist</code> 都还没搬，搬迁要等各自的 tick。</p>
+<h3 id="第三步cpu0-来新请求然后-tick" tabindex="-1">第三步：CPU0 来新请求，然后 tick <a class="header-anchor" href="#第三步cpu0-来新请求然后-tick"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>新 head 挂进 CPU0 的 <code>nxtlist</code>，没批次号，不参与 GP 检测。这次 tick <code>__rcu_pending()</code> 第 1 条成立（<code>completed = 5</code>、<code>batch = 5</code>，<code>rcu_batch_before(5, 5)</code> 为假，取反为真），开头那段先把 <code>curlist</code> 搬到 <code>donelist</code>，<code>curlist</code> 空出来，接着 <code>nxtlist</code> 提成 <code>curlist</code>，分配 <code>rdp-&gt;batch = rcp-&gt;cur + 1 = 6</code>。</p>
+<p>因为 <code>next_pending</code> 还是 0，进 <code>rcu_start_batch(rcp, rsp, 1)</code>：先置 <code>next_pending = 1</code>，然后 <code>completed == cur</code>（5 == 5）成立，位图重置、<code>next_pending</code> 清 0、<code>cur++</code>。批次 5 刚完成，批次 6 又新鲜出炉，就地扶正。这次 tick 的最后，<code>donelist</code> 非空，<code>rcu_do_batch()</code> 跑掉最多 10 个 callback。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    cur 6   completed 5   next_pending 0
+    CPU0: quiescbatch 6  passed_quiesc 0  qs_pending 1  batch 6  curlist (**)  donelist (==)
+    CPU1: quiescbatch 5  passed_quiesc 1  qs_pending 0  batch 5  curlist (===)
+</code></pre></div></code></pre>
+<p>容易读错的点：<strong>CPU1 的 <code>batch</code> 还是 5、<code>curlist</code> 里还是批次 5 的请求，但批次 5 的 GP 早就过了，只是 CPU1 还没在自己的 tick 里搬。</strong> 全局 <code>cur</code> 已经是 6，不影响批次 5 的处理，因为搬迁判定用的是 <code>completed</code> 和 <code>rdp-&gt;batch</code>，不是 <code>cur</code>。</p>
+<h3 id="第四步cpu1-的-tick然后新请求" tabindex="-1">第四步：CPU1 的 tick，然后新请求 <a class="header-anchor" href="#第四步cpu1-的-tick然后新请求"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>completed = 5</code>、<code>rdp-&gt;batch = 5</code>，第 1 条成立，<code>curlist</code> 搬到 <code>donelist</code>。<code>rcu_check_quiescent_state()</code> 发现 <code>quiescbatch(5) != cur(6)</code>，重置本地状态：<code>passed_quiesc = 0</code>、<code>qs_pending = 1</code>、<code>quiescbatch = 6</code>。此时 <code>batch = 5</code> 已经没有意义——<code>curlist</code> 空，不存在「在途批次」。</p>
+<p>之后 CPU1 来新请求，下一次 tick 里 <code>nxtlist</code> 提成 <code>curlist</code>，<code>batch = rcp-&gt;cur + 1 = 7</code>。但这次 <code>completed(5) != cur(6)</code>，批次 6 的 GP 还没过，<code>rcu_start_batch()</code> 里那个 <code>if</code> 不成立，7 号只能挂着，<code>next_pending</code> 置 1。系统里同时存在三个批次：6 是 current（检测中），5 是 last completed，7 是 pending。这就是第四章那张表的具体形态。</p>
+<h3 id="第五步批次-6-的-gp-过去" tabindex="-1">第五步：批次 6 的 GP 过去 <a class="header-anchor" href="#第五步批次-6-的-gp-过去"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>最后过 QS 的 CPU 在 <code>cpu_quiet()</code> 里做 <code>completed = 6</code>，然后 <code>rcu_start_batch(rcp, rsp, 0)</code>。这次 <code>next_pending</code> 已是 1，<code>completed == cur</code> 也成立，7 号立刻扶正，<code>cur</code> 变 7。</p>
+<p>一个批次跑完下一个自动接上，全程没有 IPI，没有专门的 GP 线程。所有协调都通过 <code>cur</code>、<code>completed</code>、<code>next_pending</code> 三个格子加上每 CPU 的 <code>qs_pending</code> 完成。</p>
+<h2 id="九rcu_check_callbacks-与软中断的配合" tabindex="-1">九、rcu_check_callbacks 与软中断的配合 <a class="header-anchor" href="#九rcu_check_callbacks-与软中断的配合"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>rcu_check_callbacks()</code> 在 tick handler 里被调用，是整套机制的心跳。它做两件事：给 QS 记账，然后无条件排 tasklet。代码在第六章，这里只说它跟软中断的配合。</p>
+<p><code>call_rcu_bh()</code> 的语义是「读侧临界区在 softirq handler 结束时就结束」，对应 <code>rcu_read_lock_bh()</code> 展开成 <code>local_bh_disable()</code>。</p>
+<p>一旦读者用 bh 版本，QS 判定可以放宽：不需要等进程切换，只要当前不在 softirq 里，就说明之前那些 softirq handler 已经跑完，它们对应的读临界区自然结束。看最后的 <code>else if (!in_softirq())</code>：tick 不打断 softirq，说明排队都跑干净了，<code>rcu_bh_qsctr_inc(cpu)</code> 成立。而 classic 那一路只在 <code>user</code> 或 idle 时记账。两套 RCU 各有自己的 <code>rcu_ctrlblk</code>、<code>rcu_state</code>、<code>rcu_data</code>，<code>rcu_process_callbacks()</code> 一次 tasklet 里把两套都跑一遍（代码见第六章）。</p>
+<p>这也是 2.6.11 新增的两项能力之一：CPU HOTPLUG 支持（<code>rcu_offline_cpu()</code> 把离线 CPU 的三个链表搬到当前 CPU，并替它 <code>cpu_quiet()</code>，否则 GP 会永远等一个不会上报的 CPU），以及 softirq 上下文的 QS 判定。</p>
+<h2 id="十classic-rcu-的局限只能保护不可睡眠的读侧" tabindex="-1">十、classic RCU 的局限：只能保护不可睡眠的读侧 <a class="header-anchor" href="#十classic-rcu-的局限只能保护不可睡眠的读侧"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>整套 classic RCU 的正确性压在一个假设上：<strong>读侧临界区里不会阻塞。</strong></p>
+<p>这个假设被用在两个地方，缺一不可：<code>rcu_read_lock()</code> 就是 <code>preempt_disable()</code>，读侧不可抢占，进程被换出去的时候一定不在读临界区里；<code>passed_quiesc</code> 的置位靠进程切换，切走了 → 不在临界区 → 这个 CPU 过了 QS。</p>
+<p>一旦允许读侧睡眠，两条同时失效：进程在临界区里主动睡眠让出 CPU，<code>schedule()</code> 照样执行，<code>passed_quiesc</code> 照样置位，但进程还没走完临界区。写者以为安全了，把旧版本释放了，读者醒来访问的就是已释放内存。所以 2.6.11 的 <code>rcu_read_lock()</code> 注释里那句「It is illegal to block while in an RCU read-side critical section」不是建议，是正确性前提。</p>
+<p>在 2.6.11 上写「读侧需要睡眠」的场景只有几条路，都不好走：把需要睡眠的部分挪出临界区——而带出去引用就需要引用计数，绕回自己；整段改成 <code>mutex</code>——写少读多的场景性能塌下来；拆成「临界区内只取指针 + 临界区外自己保证生命周期」——等于自己发明一套 RCU 变种。</p>
+<p>这个矛盾在 realtime 场景里最尖锐。realtime 内核要求所有不可抢占的临界区尽量短，spinlock 的临界区为此改成可抢占的（只保留 raw spinlock 不可抢占）。RCU 的读临界区如果还坚持不可抢占，就成了这套改造里剩下的硬块。</p>
+<h3 id="顺带2.6.23-还修了-classic-的其余毛病" tabindex="-1">顺带：2.6.23 还修了 classic 的其余毛病 <a class="header-anchor" href="#顺带2.6.23-还修了-classic-的其余毛病"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>修了 <code>rcu_start_batch()</code> 里的竞态。</strong> 2.6.12 的写法是 <code>cpus_andnot()</code> → <code>next_pending = 0</code> → <code>smp_wmb()</code> → <code>cur++</code>。读 <code>nohz_cpu_mask</code> 在 <code>cur++</code> 之前，这两步之间如果某个 CPU 进了 idle 并停了 tick，它会被算进 <code>cpumask</code>，但它根本不跑 tick，也就不会上报 QS，GP 被白白拖长。2.6.23 把 <code>cpus_andnot</code> 挪到 <code>cur++</code> 之后并补一个 <code>smp_mb()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.23 */</span>
+rcp-&gt;cur++;
+smp_mb();
+cpus_andnot(rcp-&gt;cpumask, cpu_online_map, nohz_cpu_mask);
+rcp-&gt;signaled = <span class="hljs-number">0</span>;
+</code></pre></div></code></pre>
+<p>顺便去掉了 <code>rcu_start_batch()</code> 的 <code>next_pending</code> 参数，改由调用者自己置位。同时把 <code>rcu_ctrlblk</code> 和 <code>rcu_state</code> 合了——两个结构一起看才有意义，分开只让参数传递变长。2.6.23 里 <code>cpumask</code> 和 <code>lock</code> 直接进了 <code>rcu_ctrlblk</code>，初始化写成 <code>{ .cur = -300, .completed = -300, .lock = __SPIN_LOCK_UNLOCKED(&amp;rcu_ctrlblk.lock), .cpumask = CPU_MASK_NONE }</code>。</p>
+<p><strong>给 callback 加了水位控制。</strong> 2.6.11 的 <code>maxbatch = 10</code> 是死的，2.6.23 换成三个旋钮，<code>blimit</code> 是每轮 tasklet 跑多少个，<code>qhimark</code> 是队列上限水位，<code>qlowmark</code> 是下限：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.23 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> blimit = <span class="hljs-number">10</span>;
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> qhimark = <span class="hljs-number">10000</span>;
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> qlowmark = <span class="hljs-number">100</span>;
+
+<span class="hljs-comment">/* call_rcu 尾部 */</span>
+<span class="hljs-keyword">if</span> (unlikely(++rdp-&gt;qlen &gt; qhimark)) {
+    rdp-&gt;blimit = INT_MAX;
+    force_quiescent_state(rdp, &amp;rcu_ctrlblk);
+}
+
+<span class="hljs-comment">/* rcu_do_batch 尾部 */</span>
+<span class="hljs-keyword">if</span> (rdp-&gt;blimit == INT_MAX &amp;&amp; rdp-&gt;qlen &lt;= qlowmark)
+    rdp-&gt;blimit = blimit;
+</code></pre></div></code></pre>
+<p>per-CPU 的 <code>qlen</code> 记账，每提交一个 callback 加一、跑一个减一。超上限就双管齐下：<code>blimit</code> 提到 <code>INT_MAX</code>（不再限制单轮跑多少），同时 <code>force_quiescent_state()</code> 逼所有 CPU 快点过 QS——本 CPU <code>set_need_resched()</code>，其他 CPU 发 reschedule IPI（<code>smp_send_reschedule()</code>，用 <code>rcp-&gt;signaled</code> 防止重复发）。<code>qlen</code> 回落到 <code>qlowmark</code> 以下，<code>blimit</code> 复位。这是自适应：平静时每轮 10 个保证调度延迟，积压时放开限制并加速 GP，保证不爆内存。</p>
+<p><strong>加了 <code>rcu_barrier()</code>。</strong> <code>synchronize_rcu()</code> 只保证 GP 过了，不保证 callback 跑完了。模块卸载和文件系统 umount 必须等 callback 真正执行完——callback 里还要操作这个模块或 super block。做法是每 CPU 一个专用的 <code>rdp-&gt;barrier</code> head：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.23 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">rcu_barrier_func</span><span class="hljs-params">(<span class="hljs-type">void</span> *notused)</span>
+{
+    <span class="hljs-type">int</span> cpu = smp_processor_id();
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_data</span> *<span class="hljs-title">rdp</span> =</span> &amp;per_cpu(rcu_data, cpu);
+
+    atomic_inc(&amp;rcu_barrier_cpu_count);
+    call_rcu(&amp;rdp-&gt;barrier, rcu_barrier_callback);
+}
+</code></pre></div></code></pre>
+<p>给每个 CPU 塞一个 barrier callback，用原子计数跟踪执行完的个数，减到 0 就 <code>complete()</code>。等在 <code>wait_for_completion()</code> 上的调用者醒来，说明调用那一刻之前提交的所有 callback 都跑完了。</p>
+<h2 id="十一2.6.23-sleepable-rcu-的设计动机" tabindex="-1">十一、2.6.23 sleepable RCU 的设计动机 <a class="header-anchor" href="#十一2.6.23-sleepable-rcu-的设计动机"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>SRCU 全称 sleepable RCU，名字就说明了它要干什么：读侧临界区里可以睡眠。一放开这个口子，classic RCU 的两根支柱全断。所以直觉上 SRCU 不能实现，两个理由听起来都成立：读侧一睡眠 GP 就没上界，系统怎么受得了；进程切换判定 QS 的机制直接失效。那为什么还做？因为 realtime 的需求压过来了（上一章末尾）。当所有不可抢占临界区都要变短的时候，RCU 的读侧不能豁免。</p>
+<p>既然必须做，先得解决「GP 会很长」这个副作用。2.6.23 的解法两条，都很干脆。</p>
+<p><strong>不给异步接口。</strong> 只有 <code>synchronize_srcu()</code>，没有 <code>call_srcu()</code>。理由值得记：如果提供 <code>call_srcu()</code>，任何线程都能在循环里提交任意多个 callback，GP 一长队列就失控。而同步接口会阻塞当前线程，一个线程在任一时刻最多一个请求在途，提交速率被线程数天然限住。</p>
+<p><strong>GP 细分到子系统。</strong> classic RCU 只有一个全局 GP，一个子系统里某个读者卡住，全系统的 callback 都跟着等。SRCU 允许每个使用方有自己的 <code>struct srcu_struct</code>，各自独立算 GP：一个读者卡住只影响它所属那一个 <code>srcu_struct</code>，副作用是使用方要自己管生命周期。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.23，include/linux/srcu.h */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">init_srcu_struct</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> srcu_struct *sp)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">cleanup_srcu_struct</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> srcu_struct *sp)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">srcu_read_lock</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> srcu_struct *sp)</span> __<span class="hljs-title function_">acquires</span><span class="hljs-params">(sp)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">srcu_read_unlock</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> srcu_struct *sp, <span class="hljs-type">int</span> idx)</span> __<span class="hljs-title function_">releases</span><span class="hljs-params">(sp)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">synchronize_srcu</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> srcu_struct *sp)</span>;
+<span class="hljs-type">long</span> <span class="hljs-title function_">srcu_batches_completed</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> srcu_struct *sp)</span>;
+</code></pre></div></code></pre>
+<p><code>srcu_read_lock()</code> 带返回值，返回的 <code>idx</code> 必须原样传给对应的 <code>srcu_read_unlock()</code>。这是 SRCU 最反直觉的一处，也是它比 classic RCU 贵的根源，下一章讲。</p>
+<p>分工上别混：classic RCU 读侧极轻，可以用在中断上下文、NMI 上下文；SRCU 读侧要做 per-CPU 计数，<code>srcu_read_lock()</code> 里带 <code>preempt_disable()</code>，2.6.23 的实现明确要求从进程上下文调用，<code>synchronize_srcu()</code> 更是会睡眠。SRCU 填的是「读侧需要睡眠」这个空档，不是替换 classic RCU。</p>
+<h2 id="十二srcu-的-per-srcu_struct-计数" tabindex="-1">十二、SRCU 的 per-srcu_struct 计数 <a class="header-anchor" href="#十二srcu-的-per-srcu_struct-计数"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.23，include/linux/srcu.h */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">srcu_struct_array</span> {</span>
+    <span class="hljs-type">int</span> c[<span class="hljs-number">2</span>];
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">srcu_struct</span> {</span>
+    <span class="hljs-type">int</span> completed;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">srcu_struct_array</span> *<span class="hljs-title">per_cpu_ref</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">mutex</span> <span class="hljs-title">mutex</span>;</span>
+};
+</code></pre></div></code></pre>
+<p>三个字段各管一件事：<code>completed</code> 是 GP 编号，同时它的 LSB 决定当前用 <code>c[0]</code> 还是 <code>c[1]</code>；<code>per_cpu_ref</code> 是 per-CPU 计数器数组，每个 CPU 两个 <code>int</code>；<code>mutex</code> 串行化 <code>synchronize_srcu()</code>。</p>
+<p><code>c[2]</code> 这两个槽位是 SRCU 的全部秘密，轮换使用：<code>completed</code> 是偶数，<code>c[0]</code> 是 current（正在等待清零的那轮），<code>c[1]</code> 是 next pending；<code>completed</code> 是奇数则反过来。</p>
+<p>为什么不只用一个计数器？因为一个计数器没法区分「新读者」和「旧读者」。<code>synchronize_srcu()</code> 要等的是「调用那一刻之前进入的读者」，之后进入的不该算进来。混在一起永远等不到 0。两个槽轮换，等 current 槽清零，新读者都进了 next 槽，互不干扰。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.23，kernel/srcu.c */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">srcu_read_lock</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> srcu_struct *sp)</span>
+{
+    <span class="hljs-type">int</span> idx;
+
+    preempt_disable();
+    idx = sp-&gt;completed &amp; <span class="hljs-number">0x1</span>;
+    barrier();  <span class="hljs-comment">/* 确保编译器只读一次 sp-&gt;completed */</span>
+    per_cpu_ptr(sp-&gt;per_cpu_ref, smp_processor_id())-&gt;c[idx]++;
+    srcu_barrier(); <span class="hljs-comment">/* 确保编译器不会把临界区重排到计数之前 */</span>
+    preempt_enable();
+    <span class="hljs-keyword">return</span> idx;
+}
+</code></pre></div></code></pre>
+<p>三个细节。<code>preempt_disable()</code> 只包住计数，不包住整个临界区——这是 SRCU 和 classic RCU 最本质的区别。classic 的 <code>rcu_read_lock()</code> 本身就是 <code>preempt_disable()</code>，整段临界区不可抢占；SRCU 的计数做完就把抢占打开了，临界区里该睡就睡。preempt disable 在这里只保证「取 <code>idx</code> — 计数 — 记录当前 CPU」这三步原子，不被迁移到别的 CPU 上。<code>barrier()</code> 保证 <code>completed</code> 只读一次。没有它，编译器读两次，一次算 <code>idx</code>、一次干别的；两次之间 <code>completed</code> 若被 <code>synchronize_srcu()</code> 改了，算出的 <code>idx</code> 就和实际加一的槽位对不上。</p>
+<p><code>srcu_barrier()</code> 的作用随配置变：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.23 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifndef</span> CONFIG_PREEMPT</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> srcu_barrier()  barrier()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> srcu_barrier()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+</code></pre></div></code></pre>
+<p>不可抢占内核下退化成编译器屏障；可抢占内核下定义为空，因为编译期重排已被依赖挡住，运行期重排由硬件内存模型保证。这个定义对弱序架构是否成立，我没找到 2.6.23 当时的论证，标为未验证。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.23 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">srcu_read_unlock</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> srcu_struct *sp, <span class="hljs-type">int</span> idx)</span>
+{
+    preempt_disable();
+    srcu_barrier();
+    per_cpu_ptr(sp-&gt;per_cpu_ref, smp_processor_id())-&gt;c[idx]--;
+    preempt_enable();
+}
+</code></pre></div></code></pre>
+<p>它减的是 <code>c[idx]</code>，<code>idx</code> 是 <code>srcu_read_lock()</code> 返回的那个值，不是重新算的。源码注释写得很清楚：</p>
+<blockquote>
+<p>Removes the count for the old reader from the appropriate per-CPU element of the srcu_struct. Note that this may well be a different CPU than that which was incremented by the corresponding srcu_read_lock().</p>
+</blockquote>
+<p>为什么必须是返回值？因为临界区里会睡眠，醒来已在别的 CPU 上；更关键的是，临界区里调了 <code>synchronize_srcu()</code> 把某个别的 <code>srcu_struct</code> 的 <code>completed</code> 加了，GP 编号变了。这时重新算 <code>completed &amp; 0x1</code> 会选错槽位，减到不该减的地方去。<code>idx</code> 就是「你进入时用的是哪个槽」的凭据，跨睡眠、跨 CPU 迁移都成立。</p>
+<p>计数之所以 per-CPU，是因为 <code>srcu_read_lock()</code> 在热路径上。一个全局计数器的话，所有 CPU 都在同一个 cacheline 上加加减减，CPU 一多就废。per-CPU 数组每个 CPU 独占一个 <code>srcu_struct_array</code>（两个 int 共 8 字节），没有跨核争用。代价是 <code>synchronize_srcu()</code> 要遍历所有 CPU 求和：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.23 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">srcu_readers_active_idx</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> srcu_struct *sp, <span class="hljs-type">int</span> idx)</span>
+{
+    <span class="hljs-type">int</span> cpu, sum = <span class="hljs-number">0</span>;
+
+    for_each_possible_cpu(cpu)
+        sum += per_cpu_ptr(sp-&gt;per_cpu_ref, cpu)-&gt;c[idx];
+    <span class="hljs-keyword">return</span> sum;
+}
+</code></pre></div></code></pre>
+<p>求和不是原子的，源码注释明说了「this is not an atomic primitive, and can therefore suffer severe errors when invoked on an active srcu_struct」。它只适合 GP 判定这种「反复采样直到为 0」的场合。<code>srcu_readers_active()</code> 把两个槽加起来，只在 <code>cleanup_srcu_struct()</code> 里做泄漏检查。</p>
+<h2 id="十三synchronize_srcu-与宽限期判定" tabindex="-1">十三、synchronize_srcu 与宽限期判定 <a class="header-anchor" href="#十三synchronize_srcu-与宽限期判定"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这是 SRCU 里最需要小心的函数。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.23 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">synchronize_srcu</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> srcu_struct *sp)</span>
+{
+    <span class="hljs-type">int</span> idx;
+
+    idx = sp-&gt;completed;
+    mutex_lock(&amp;sp-&gt;mutex);
+
+    <span class="hljs-comment">/* 有人替我们干完了？
+     * 我们需要计数器走 -两- 步，不是一步。 */</span>
+    <span class="hljs-keyword">if</span> ((sp-&gt;completed - idx) &gt;= <span class="hljs-number">2</span>) {
+        mutex_unlock(&amp;sp-&gt;mutex);
+        <span class="hljs-keyword">return</span>;
+    }
+
+    synchronize_sched();    <span class="hljs-comment">/* 在所有 CPU 上强制内存屏障 */</span>
+
+    idx = sp-&gt;completed &amp; <span class="hljs-number">0x1</span>;
+    sp-&gt;completed++;
+
+    synchronize_sched();    <span class="hljs-comment">/* 在所有 CPU 上强制内存屏障 */</span>
+
+    <span class="hljs-keyword">while</span> (srcu_readers_active_idx(sp, idx))
+        schedule_timeout_interruptible(<span class="hljs-number">1</span>);
+
+    synchronize_sched();    <span class="hljs-comment">/* 在所有 CPU 上强制内存屏障 */</span>
+
+    mutex_unlock(&amp;sp-&gt;mutex);
+}
+</code></pre></div></code></pre>
+<p>数一下，是<strong>三轮 <code>synchronize_sched()</code> 夹一轮轮询</strong>，每轮都有不可替代的作用。</p>
+<p><strong>第一轮（翻槽之前）</strong>：保证「任何看到新 <code>completed</code> 的 CPU，也能看到本 CPU 在此之前做的所有数据结构改动」。没有它，别的 CPU 把它读临界区里的访存重排到 <code>srcu_read_lock()</code> 之前，读到的就是一个还没发布完的版本。</p>
+<p><strong>翻槽</strong>：<code>idx = sp-&gt;completed &amp; 0x1</code> 取出 current 槽，<code>sp-&gt;completed++</code> 让后进来的 <code>srcu_read_lock()</code> 都用另一个槽。翻完之后 current 槽里的计数只减不增。</p>
+<p><strong>第二轮（翻槽之后）</strong>：保证所有用旧槽的 <code>srcu_read_lock()</code> 调用本身都执行完了。注意这里保证的是「原语执行完」，不是「临界区执行完」——两者差得远，临界区还在睡。但计数已经加上了，所以后面能等到。</p>
+<p><strong>轮询等清零</strong>：反复读 current 槽的和，非 0 就 <code>schedule_timeout_interruptible(1)</code> 睡一个 jiffy 再来。「等读者走完」就发生在这里。</p>
+<p><strong>第三轮（解锁之前）</strong>：强制那些和轮询同时进行的 <code>srcu_read_unlock()</code> 执行完。更要紧的是，它顺带保证了对应的读临界区也执行完、引用也放掉了。</p>
+<p>常见的说法是「synchronize_srcu 两轮等待」，对不上 2.6.23 源码——代码注释里那个「两轮」说的是 <code>completed</code> 要走两步（见下一节），跟这里的三轮不是一回事。实际是三段 <code>synchronize_sched()</code> 加一轮轮询。</p>
+<h3 id="那个---2-的判断" tabindex="-1">那个 <code>- 2</code> 的判断 <a class="header-anchor" href="#那个---2-的判断"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>idx</code> 是拿锁之前读的 <code>completed</code>，所以 <code>completed - idx</code> 是「等锁的这段时间里别人把 GP 推进了几步」。为什么要 2 步不是 1 步？源码注释解释得很细：</p>
+<blockquote>
+<p>We need -two- advances of the counter, not just one. If there was but one, we might have shown up -after- our helper's first synchronize_sched(), thus having failed to prevent CPU-reordering races with concurrent srcu_read_unlock()s on other CPUs.</p>
+</blockquote>
+<p>如果只要 1 步，我们是在别人的第一轮 <code>synchronize_sched()</code> <strong>之后</strong>才出现的，那样就漏掉了它提供的那层保护，没法阻止别的 CPU 把 <code>srcu_read_unlock()</code> 重排到临界区之前。注释还给了替代方案：把 <code>2</code> 改成 <code>3</code> 也能保证正确，但批量场景下延迟会变大，所以选了现在这个。</p>
+<p>第三轮为什么必须留在 <code>mutex_unlock()</code> 之前？注释专门强调了一整段。假设允许提前退出的路径在解锁之后才做 <code>synchronize_sched()</code>：某个 CPU 上的 <code>srcu_read_unlock()</code> 刚执行过 <code>c[idx]--</code>；我们的 <code>srcu_readers_active_idx()</code> 检查在它之后，看到 0，以为安全了；但那个 CPU 把这条 <code>srcu_read_unlock()</code> 重排到了某个临界区之后，实际上还有一个读者在用旧数据；我们这边释放内存，那边正在访问。第三轮把这种重排全掐掉。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>classic RCU（2.6.11/2.6.12）</th>
+<th>SRCU（2.6.23）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GP 的载体</td>
+<td>全局 <code>rcu_ctrlblk.cur</code> / <code>completed</code></td>
+<td>每个 <code>srcu_struct.completed</code></td>
+</tr>
+<tr>
+<td>读者是否被计数</td>
+<td>不计数，只看 CPU 是否过了 QS</td>
+<td>每 CPU 两个计数器，进临界区加一</td>
+</tr>
+<tr>
+<td>判定「读者走完」</td>
+<td>位图全 0（每 CPU 上报一次 QS）</td>
+<td>遍历所有 CPU 求 current 槽的和，为 0 则过</td>
+</tr>
+<tr>
+<td>异步 callback</td>
+<td>有（<code>call_rcu</code> → tasklet）</td>
+<td>没有，只有同步 <code>synchronize_srcu()</code></td>
+</tr>
+<tr>
+<td>谁来推进</td>
+<td>tick + 进程切换</td>
+<td><code>synchronize_srcu()</code> 自己轮询</td>
+</tr>
+<tr>
+<td>GP 时长上界</td>
+<td>一个 tick 到几个 tick</td>
+<td>取决于最慢的读者，可以到秒级</td>
+</tr>
+<tr>
+<td>调用上下文</td>
+<td>任意</td>
+<td>进程上下文</td>
+</tr>
+</tbody>
+</table></div><p>最本质的差别在两行：classic 判断的是「CPU 有没有离开过读侧」，SRCU 判断的是「计数器有没有归零」。前者不需要知道读者是谁，后者必须计数。</p>
+<h2 id="十四srcu-的代价为什么它比-classic-rcu-慢" tabindex="-1">十四、SRCU 的代价：为什么它比 classic RCU 慢 <a class="header-anchor" href="#十四srcu-的代价为什么它比-classic-rcu-慢"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><strong>读侧多了几次操作。</strong> classic 的 <code>rcu_read_lock()</code> 在不可抢占内核下零条指令；SRCU 的 <code>srcu_read_lock()</code> 至少要 <code>preempt_disable()</code>、读 <code>completed</code>、算 <code>idx</code>、<code>c[idx]++</code>、<code>preempt_enable()</code>。多出来的还有一个写动作——写本 CPU 的计数器，虽然不跨核，但也是一次 store。外加 <code>idx</code> 要一路活到 <code>srcu_read_unlock()</code>，宿主的寄存器分配压力上去了，编译器会在别处 spill。</p>
+<p><strong>每个 <code>srcu_struct</code> 一份 per-CPU 数组。</strong> <code>for_each_possible_cpu()</code> 个 <code>srcu_struct_array</code>，每个 8 字节。CONFIG_NR_CPUS 大的机器上，一个 <code>srcu_struct</code> 就是几百字节，子系统多了这个数会堆起来。<strong><code>synchronize_srcu()</code> 的等待还是轮询。</strong> 睡一个 jiffy 醒来遍历所有 CPU 求和，CONFIG_HZ=250 就是 4ms 一个周期，CONFIG_HZ=100 就是 10ms。读者少的时候这个粒度太粗——GP 明明已经过了，还要多睡最多一个 jiffy。外加三轮 <code>synchronize_sched()</code>，每次都是一轮全局 QS 等待，虽然比 classic 的完整 GP 轻，但也不是免费。</p>
+<p>所以 2.6.23 的定位很清楚：<strong>SRCU 是给「确实需要睡」的场景用的，不是 classic RCU 的升级版。</strong> 能用 classic 的地方别用 SRCU。</p>
+<h2 id="十五rcu-与引用计数的关系不是一回事" tabindex="-1">十五、RCU 与引用计数的关系：不是一回事 <a class="header-anchor" href="#十五rcu-与引用计数的关系不是一回事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一节压的是 perfbook 第 9.3 节的几小节（9.3.3.2 到 9.3.3.4）。原文论证很长，结论就三句话。</p>
+<h3 id="它是受限的引用计数" tabindex="-1">它是「受限的引用计数」 <a class="header-anchor" href="#它是受限的引用计数"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>perfbook 9.3.3.2 的标题是「RCU is a Restricted Reference-Counting Mechanism」。论点用两段代码就说完：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* perfbook 9.3.3.2 的示例 */</span>
+rcu_read_lock();                  <span class="hljs-comment">/* 获取引用 */</span>
+p = rcu_dereference(head);
+<span class="hljs-comment">/* 用 p 干活 */</span>
+rcu_read_unlock();                <span class="hljs-comment">/* 释放引用 */</span>
+
+spin_lock(&amp;mylock);               <span class="hljs-comment">/* 写侧照样能安全删 */</span>
+p = head;
+rcu_assign_pointer(head, <span class="hljs-literal">NULL</span>);   <span class="hljs-comment">/* 断掉后来者的获取路径 */</span>
+spin_unlock(&amp;mylock);
+synchronize_rcu();                <span class="hljs-comment">/* 等已获得的引用全部释放 */</span>
+kfree(p);
+</code></pre></div></code></pre>
+<p>在 <code>rcu_dereference()</code> 之后才开始的 GP，必须等你走到 <code>rcu_read_unlock()</code> 才能结束。「受限」在两处：读侧不能阻塞；临界区不能从一个任务交给另一个任务。和传统引用计数的本质差别：<strong>没有人真的在记账。</strong> <code>rcu_read_lock()</code> 不碰任何计数器，写侧也没有一个地方能读出「现在有几个读者」。所谓「引用」是逻辑上的，由「GP 不会在读者走完之前结束」这条性质保证出来。</p>
+<h3 id="它是批量引用计数" tabindex="-1">它是「批量引用计数」 <a class="header-anchor" href="#它是批量引用计数"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>perfbook 9.3.3.3 接着讲。传统引用计数是 per-object 的：一个结构体嵌一个 <code>atomic_t</code>，谁持有谁加一。问题是如果要给一大堆各不相同的结构体维护<strong>一个</strong>全局计数器，那条 cacheline 会在核间来回弹，性能崩掉。RCU 反过来：读侧太轻，轻到可以给「一大批数据结构」共用同一套保护而不付代价。这就是 bulk reference-counting。</p>
+<p>这一节还给了一个 SRCU 的适用边界：单个任务跨一段会阻塞的代码持有一个引用，交给 SRCU 处理。而「引用从一个任务传给另一个任务」的场景（发起 I/O 时取引用、在完成中断里放引用）SRCU 盖不住——理论上能改，实际上权衡没算清。同节还列了 SRCU 自身的两条限制：<code>srcu_read_lock()</code> 的返回值必须传给对应的 <code>srcu_read_unlock()</code>；SRCU 原语不能在硬中断和 NMI handler 里调用。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>传统引用计数</th>
+<th>classic RCU</th>
+<th>SRCU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读者是否写共享状态</td>
+<td>是，原子加一</td>
+<td>否</td>
+<td>是，per-CPU 计数</td>
+</tr>
+<tr>
+<td>读者开销</td>
+<td>一次原子 RMW</td>
+<td>0（不可抢占内核）</td>
+<td>一次 preempt 开关 + 一次 store</td>
+</tr>
+<tr>
+<td>cacheline 争用</td>
+<td>有，集中在一个 counter 上</td>
+<td>无</td>
+<td>无，计数 per-CPU</td>
+</tr>
+<tr>
+<td>能否保护任意多个对象</td>
+<td>每个对象一个 counter</td>
+<td>一套机制保护任意多对象</td>
+<td>同左，但要按子系统分 <code>srcu_struct</code></td>
+</tr>
+<tr>
+<td>读者能否睡眠</td>
+<td>能</td>
+<td>不能</td>
+<td>能</td>
+</tr>
+<tr>
+<td>引用能否跨任务传递</td>
+<td>能</td>
+<td>不能</td>
+<td>不能（2.6.23 的实现）</td>
+</tr>
+<tr>
+<td>谁来定何时释放</td>
+<td>计数归零</td>
+<td>写侧调 <code>synchronize_rcu</code> / <code>call_rcu</code></td>
+<td>写侧调 <code>synchronize_srcu</code></td>
+</tr>
+</tbody>
+</table></div><p>一句话收口：RCU 用「等一段时间」换掉了「记一个数」。它不是引用计数的变种，是把「谁还在用」这个问题从空间（计数器）搬到了时间（宽限期）。perfbook 9.3.3.4 还专门批了「RCU 像垃圾回收器」这个比喻：GC 要扫描找出不可达对象，RCU 不扫描、不判断可达性，它只是等。写侧自己决定什么时候释放、释放什么，RCU 只提供「现在安全了」这个时间点。</p>
+<h2 id="十六从-2.6-到现代这个实现后来怎么变的" tabindex="-1">十六、从 2.6 到现代：这个实现后来怎么变的 <a class="header-anchor" href="#十六从-2.6-到现代这个实现后来怎么变的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>2.6.11 这套东西的命运一句话：<strong>结构留下来了，位图被换掉了。</strong> 下面这些版本号里，能确认的写版本，不确定的标未验证。</p>
+<h3 id="位图方案撑不住" tabindex="-1">位图方案撑不住 <a class="header-anchor" href="#位图方案撑不住"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>rcu_state.cpumask</code> 是一个 <code>cpumask_t</code>。CPU 数一多问题回来了：每次 GP 起点要 <code>cpus_andnot()</code> 遍历整个位图，每次 GP 结束要 <code>cpus_empty()</code> 判一遍，位图本身占的 cacheline 数随 CPU 数线性增长。4096 核的机器上一个 GP 要扫 64 个 <code>long</code>。这不是理论担忧，是 SGI 那类大机器上的实测问题。</p>
+<p>替代方案把「所有 CPU 一个位图」改成「一棵树，叶子是一小组 CPU」：每个内部节点只管它下面那一小撮，聚合上报，根节点空了才算 GP 过。这就是 tree RCU（<code>rcu_node</code> 树）。引入时间在 2.6.16 前后（未验证具体 commit），和 classic 版本并存过一段时间，用 <code>CONFIG_CLASSIC_RCU</code> / <code>CONFIG_TREE_RCU</code> 二选一，后来前者被删掉，只剩 tiny 和 tree 两个实现——tiny 给 UP 和小型 SMP，tree 给其余。「每个 CPU 上报 QS」这一条 tree RCU 保留了，只是上报粒度从「全局位图的一位」变成「叶子节点的一位，然后逐层合并」。</p>
+<h3 id="可抢占-rcuclassic-那条假设被正面拆开" tabindex="-1">可抢占 RCU：classic 那条假设被正面拆开 <a class="header-anchor" href="#可抢占-rcuclassic-那条假设被正面拆开"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>第十章说 classic RCU 依赖「读侧不可抢占」。realtime 的需求把这条件去掉了，于是需要一套在读侧可抢占时依然正确的 RCU。做法是把「不计数、只看 CPU 过没过 QS」换掉，改成显式跟踪被抢占的读者：读侧进入时记 <code>rcu_read_lock_nesting</code>，如果在临界区里被抢占，把任务挂到一个 per-CPU 链表上，GP 要等这些任务都被恢复并退出临界区。这套叫 RCU-preempt，<code>CONFIG_PREEMPT_RCU</code>，进了主线（2.6.26 前后，未验证具体版本）。</p>
+<p>它和 SRCU 的关系：两者都允许读侧睡眠，但 RCU-preempt 只允许<strong>被抢占</strong>，不允许读者主动 <code>schedule()</code>。要主动睡，还是得 SRCU。</p>
+<h3 id="srcu-本身也在变" tabindex="-1">SRCU 本身也在变 <a class="header-anchor" href="#srcu-本身也在变"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>2.6.23 的做法</th>
+<th>后来的做法</th>
+<th>为什么改</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>synchronize_srcu()</code> 用 <code>schedule_timeout_interruptible(1)</code> 轮询</td>
+<td>改成等待队列 / completion，读者退出时唤醒</td>
+<td>轮询粒度最差一个 jiffy（4~10ms），白等</td>
+</tr>
+<tr>
+<td>每个 <code>srcu_struct</code> 一份扁平 per-CPU 数组</td>
+<td>引入 <code>srcu_node</code> 树和 per-CPU 的 <code>srcu_data</code></td>
+<td>CPU 数大时 <code>for_each_possible_cpu</code> 求和太贵</td>
+</tr>
+<tr>
+<td>GP 状态就是一个 <code>int completed</code></td>
+<td>加上 sequence counter 与状态机</td>
+<td>支持更复杂的并发与 NMI 场景</td>
+</tr>
+</tbody>
+</table></div><p>现代内核里 <code>srcu_read_lock()</code> 仍然返回 <code>idx</code>，仍然要传给 <code>srcu_read_unlock()</code>——这条接口约束从 2.6.23 至今没变，它已经不是实现细节，是 API 契约。</p>
+<h3 id="classic-那套里活下来的东西" tabindex="-1">classic 那套里活下来的东西 <a class="header-anchor" href="#classic-那套里活下来的东西"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>即使位图没了，2.6.11 定下的几个概念一直用到现在。</p>
+<p><strong>三态批次</strong>：<code>cur</code> / <code>completed</code> / <code>next_pending</code> 对应现代的 <code>gp_seq</code> 和一批状态位，语义没变——分配批次、启动 GP、广播完成是三件不同的事。</p>
+<p><strong>per-CPU 判断优先</strong>：先读本地变量决定要不要干活，只在必须改全局时才进临界区。这条是 2.6.11 相对 2.5.43 最大的改进，现在的 RCU 仍照这个原则写。</p>
+<p><strong>callback 分批执行加水位数控制</strong>：2.6.23 的 <code>blimit</code> / <code>qhimark</code> / <code>qlowmark</code> 演化成现代的 <code>qhimark</code> / <code>qlomark</code> 加 per-CPU callback 链表。</p>
+<p><strong><code>rcu_barrier()</code></strong>：2.6.23 加的那个接口至今还在，语义没动过。</p>
+<h2 id="十七易错点速查" tabindex="-1">十七、易错点速查 <a class="header-anchor" href="#十七易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>症状</th>
+<th>真实原因</th>
+<th>章节</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>以为 <code>rcu_read_lock()</code> 是「加锁」</td>
+<td>它只是 <code>preempt_disable()</code>，两个读者之间完全不互斥</td>
+<td>一</td>
+</tr>
+<tr>
+<td>在读临界区里调用会睡眠的函数</td>
+<td>classic RCU 的正确性前提就是读侧不阻塞</td>
+<td>十</td>
+</tr>
+<tr>
+<td>把 <code>srcu_read_unlock()</code> 的 <code>idx</code> 丢掉自己重算</td>
+<td>睡眠后换了 CPU，<code>completed</code> 也被推进过，必须用返回值</td>
+<td>十二</td>
+</tr>
+<tr>
+<td>在硬中断或 NMI 里用 SRCU</td>
+<td><code>srcu_read_lock()</code> 要 per-CPU 计数和 preempt 开关，<code>synchronize_srcu</code> 还会睡</td>
+<td>十二</td>
+</tr>
+<tr>
+<td>用 <code>synchronize_rcu()</code> 保证 callback 跑完</td>
+<td>它只保证 GP 过了，不保证 callback 执行了，要 <code>rcu_barrier()</code></td>
+<td>十</td>
+</tr>
+<tr>
+<td>在 <code>synchronize_srcu()</code> 对应的读临界区里再调它</td>
+<td>自己等自己，死锁</td>
+<td>十三</td>
+</tr>
+<tr>
+<td>以为 <code>call_rcu()</code> 之后 GP 一过 callback 立刻跑</td>
+<td>callback 跑在 tasklet 里，等下一个 tick 才排上</td>
+<td>七、九</td>
+</tr>
+<tr>
+<td>以为 <code>maxbatch</code> / <code>curbatch</code> 有大小关系语义</td>
+<td>2.5.43 里它们只是「当前批次」和「已分配最大批次」，等价于一个 pending 标志</td>
+<td>三</td>
+</tr>
+<tr>
+<td>改了 <code>rcu_head</code> 的 <code>func</code> 签名还按 <code>(void *arg)</code> 传参</td>
+<td>2.6 起 <code>func</code> 收的是 <code>struct rcu_head *</code>，参数靠 <code>container_of</code> 取</td>
+<td>四</td>
+</tr>
+</tbody>
+</table></div><h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="章节出处" tabindex="-1">章节出处 <a class="header-anchor" href="#章节出处"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>本篇章节</th>
+<th>主要素材</th>
+<th>版本</th>
+<th>核对情况</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一</td>
+<td>2.6.11 稿前言 + <code>rcupdate.h</code></td>
+<td>2.6.11 / 2.6.12</td>
+<td>源码核对</td>
+</tr>
+<tr>
+<td>二、三</td>
+<td>《Linux 2543版本的RCU实现废弃》</td>
+<td>2.5.43</td>
+<td>按素材转录，源码未直核</td>
+</tr>
+<tr>
+<td>四~九</td>
+<td>《Linux2611版本classic RCU的实现》</td>
+<td>2.6.11</td>
+<td>源码核对（用 2.6.12 的 <code>rcupdate.c</code> / <code>rcupdate.h</code>）</td>
+</tr>
+<tr>
+<td>十</td>
+<td>上述两篇 + 《Linux2623 sleepable RCU的实现》前两节</td>
+<td>2.6.11 → 2.6.23</td>
+<td>源码核对</td>
+</tr>
+<tr>
+<td>十一~十四</td>
+<td>《Linux2623 sleepable RCU的实现》</td>
+<td>2.6.23</td>
+<td>源码核对（<code>kernel/srcu.c</code>、<code>include/linux/srcu.h</code>）</td>
+</tr>
+<tr>
+<td>十五</td>
+<td>《Perf book 93章节翻译下》，perfbook 第 9.3 节（9.3.3.2 / 9.3.3.3 / 9.3.3.4）</td>
+<td>—</td>
+<td>原文与译文对照</td>
+</tr>
+<tr>
+<td>十六</td>
+<td>各节汇总</td>
+<td>2.6 → 现代</td>
+<td>部分未验证，见下</td>
+</tr>
+</tbody>
+</table></div><p>素材 3 标题带「废弃」，作者开头自述「我这篇写得的确不怎么样」，Changelog 里说「整个算法实现其实分析得很简略」。本篇把它当「第一次尝试」的样本用，第三章专门讲它为什么被废弃——这一层比算法细节有价值。</p>
+<h3 id="修正的错误" tabindex="-1">修正的错误 <a class="header-anchor" href="#修正的错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>1. 素材 3 第 49 行，QS 判定方向写反。</strong> 原文：「当 <code>last_qsctr – qsctr &lt; 0</code> 的时候，说明该 CPU 已经至少经历一次 Quiescent state。」<code>qsctr</code> 只增不减，所以 <code>last_qsctr - qsctr &lt;= 0</code> 恒成立，条件永远为真。按原文同段自己的定义（<code>qsctr</code> 是当前值，<code>last_qsctr</code> 是起点值），正确写法是 <code>qsctr - last_qsctr &gt; 0</code>，或者等价地 <code>qsctr != last_qsctr</code>——后者正是同篇 <code>rcu_check_quiescent_state()</code> 里实际用的判据。本篇按后者表述。</p>
+<p><strong>2. 素材 3 第 149 行，对 <code>rcu_process_callbacks</code> 注释 (1) 的文字有误。</strong> 原文说第二个条件是「已经启动处理（不保证处理完毕）上一个批次的 RCU callback 请求」，但代码判的是 <code>list_empty(&amp;RCU_curlist(cpu))</code>，即 <code>curlist</code> <strong>为空</strong>。正确表述是「上一个批次的请求已经从 <code>curlist</code> 搬走」。</p>
+<p><strong>3. 素材 3 说 <code>hardirq_count() &lt;= 1</code> 永不成立，但只说修在 2.5.45。</strong> 这句来自素材自述，未独立核对。能确认的是 2.6.12 源码里已经是 <code>hardirq_count() &lt;= (1 &lt;&lt; HARDIRQ_SHIFT)</code>。</p>
+<p><strong>4. 素材 2 说 <code>synchronize_kernel</code> 被 <code>synchronize_rcu</code> 和 <code>synchronize_sched</code> 取代，但 2.6.12 里它还在。</strong> 核对 2.6.12 的 <code>rcupdate.c</code>，<code>synchronize_kernel()</code> 仍存在，是个只调 <code>synchronize_rcu()</code> 的 deprecated 包装；同一份 <code>rcupdate.h</code> 里 <code>#define synchronize_sched() synchronize_rcu()</code>。到 2.6.23 的 <code>rcupdate.c</code>，它已经完全消失。本篇按「2.6.23 才彻底拆掉」表述。</p>
+<p><strong>5. 素材 2 对 <code>synchronize_srcu()</code> 的描述漏了三轮 <code>synchronize_sched()</code>。</strong> 原文只写「确定当前 GP ID → <code>completed++</code> → 等待 current 的 counter 在各 CPU 上变成 0 → 返回」。2.6.23 源码实际是三段 <code>synchronize_sched()</code> 夹一轮轮询，缺任何一段都有明确竞态（源码注释逐段写了）。第十三章补全，并保留原始注释里 <code>- 2</code> 判断的理由。</p>
+<p><strong>6. 素材 2 说 <code>cpus_andnot()</code> 的竞态修法是「将 A 处的代码放到 B 之后」，方向对，但漏了 <code>smp_mb()</code>。</strong> 2.6.23 源码在 <code>rcp-&gt;cur++</code> 与 <code>cpus_andnot()</code> 之间还有一个 <code>smp_mb()</code>，并顺带把 <code>rcp-&gt;signaled = 0</code> 一起放进临界区。只挪位置不加屏障，在弱序机器上不成立。</p>
+<p><strong>7. 素材 4（perfbook 9.3 译文）9.3.3.6 末段整段漏译。</strong> 原文该节末尾有「Therefore, although type-safety-based lockless algorithms can be extremely helpful in a very few difficult situations, you should instead use existence guarantees where possible. Simpler is after all almost always better!」一整段，译文跳过只译到前一段。本篇第十五章未采用该节内容，仅在此记录。</p>
+<p><strong>8. 素材 4 里 Figure 9.30 / 9.31 的图在抓取时丢失。</strong> 译文自己加了注。本篇未引用这两张图的数据，任何「RCU 比引用计数快 N 倍」的具体数字都不写——没有原图就不编数据。</p>
+<h3 id="未验证项" tabindex="-1">未验证项 <a class="header-anchor" href="#未验证项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li><strong>2.5.43 的源码未直接核对。</strong> 该版本的 tag 在可用镜像上取不到，第二、三章的代码与结构体按素材 3 转录。<code>struct rcu_data</code> 的字段顺序、<code>RCU_QSCTR_INVALID</code> 的具体取值未核对。</li>
+<li><strong><code>hardirq_count() &lt;= 1</code> 修在 2.5.45</strong> 来自素材 3 自述，未独立核对。</li>
+<li><strong>2.6.11 与 2.6.12 的差异未逐行比对。</strong> 本篇第四到九章的代码取自 2.6.12 的 <code>rcupdate.c</code> / <code>rcupdate.h</code>（2.6.11 的 tag 同样取不到）。素材 1 描述的是 2.6.11，两者在这几个结构体上一致。</li>
+<li><strong><code>srcu_barrier()</code> 在 <code>CONFIG_PREEMPT</code> 下被定义为空，其内存序论证未找到依据。</strong> 2.6.23 源码确实这么定义，但为什么在弱序 SMP 上够用，<code>srcu.h</code> 里没有注释。第十二章已标出。</li>
+<li><strong>第十六章涉及现代内核的版本号</strong>（tree RCU 引入于 2.6.16 前后、RCU-preempt 进主线于 2.6.26 前后、<code>srcu_node</code> 树的引入版本）均为大致范围，未逐 commit 核对。这一章给方向，不做精确版本考古。</li>
+<li><strong>2.6.12 的 <code>rcu_do_batch()</code> 没有 <code>prefetch(next)</code></strong>，那行是 2.6.23 才加的。第七章引的是 2.6.12 版本。</li>
+</ul>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一rcu-实现了什么承诺读侧零开销" data-toc-target="一rcu-实现了什么承诺读侧零开销">一、RCU 实现了什么承诺：读侧零开销</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二2.5.43-的第一次尝试" data-toc-target="二2.5.43-的第一次尝试">二、2.5.43 的第一次尝试</a>
+                    
+                    <a class="toc-item toc-lv3" href="#提交与推进" data-toc-target="提交与推进">提交与推进</a>
+                    
+                    <a class="toc-item toc-lv3" href="#qs-上报" data-toc-target="qs-上报">QS 上报</a>
+                    
+                    <a class="toc-item toc-lv3" href="#callback-在哪跑" data-toc-target="callback-在哪跑">callback 在哪跑</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三那次尝试为什么会失败" data-toc-target="三那次尝试为什么会失败">三、那次尝试为什么会失败</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四2.6.11-classic-rcu-的总体设计" data-toc-target="四2.6.11-classic-rcu-的总体设计">四、2.6.11 classic RCU 的总体设计</a>
+                    
+                    <a class="toc-item toc-lv3" href="#三个批次号同时活着" data-toc-target="三个批次号同时活着">三个批次号同时活着</a>
+                    
+                    <a class="toc-item toc-lv3" href="#三个版本放一起看" data-toc-target="三个版本放一起看">三个版本放一起看</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五宽限期的判定每个-cpu-都经历过静止状态" data-toc-target="五宽限期的判定每个-cpu-都经历过静止状态">五、宽限期的判定：每个 CPU 都经历过静止状态</a>
+                    
+                    <a class="toc-item toc-lv3" href="#谁把-passed_quiesc-变成位图上的-0" data-toc-target="谁把-passed_quiesc-变成位图上的-0">谁把 passed_quiesc 变成位图上的 0</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六静止状态quiescent-state与-qs-上报" data-toc-target="六静止状态quiescent-state与-qs-上报">六、静止状态（quiescent state）与 QS 上报</a>
+                    
+                    <a class="toc-item toc-lv3" href="#qs-判定条件汇总" data-toc-target="qs-判定条件汇总">QS 判定条件汇总</a>
+                    
+                    <a class="toc-item toc-lv3" href="#tasklet-里做什么" data-toc-target="tasklet-里做什么">tasklet 里做什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#tick-之外还有谁推进-gp" data-toc-target="tick-之外还有谁推进-gp">tick 之外还有谁推进 GP</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七callback-链表的组织" data-toc-target="七callback-链表的组织">七、callback 链表的组织</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八call_rcu-的完整流程" data-toc-target="八call_rcu-的完整流程">八、call_rcu 的完整流程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#第一步cpu0-的-tick什么都不做" data-toc-target="第一步cpu0-的-tick什么都不做">第一步：CPU0 的 tick，什么都不做</a>
+                    
+                    <a class="toc-item toc-lv3" href="#第二步cpu1-进程切换然后-tick" data-toc-target="第二步cpu1-进程切换然后-tick">第二步：CPU1 进程切换，然后 tick</a>
+                    
+                    <a class="toc-item toc-lv3" href="#第三步cpu0-来新请求然后-tick" data-toc-target="第三步cpu0-来新请求然后-tick">第三步：CPU0 来新请求，然后 tick</a>
+                    
+                    <a class="toc-item toc-lv3" href="#第四步cpu1-的-tick然后新请求" data-toc-target="第四步cpu1-的-tick然后新请求">第四步：CPU1 的 tick，然后新请求</a>
+                    
+                    <a class="toc-item toc-lv3" href="#第五步批次-6-的-gp-过去" data-toc-target="第五步批次-6-的-gp-过去">第五步：批次 6 的 GP 过去</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九rcu_check_callbacks-与软中断的配合" data-toc-target="九rcu_check_callbacks-与软中断的配合">九、rcu_check_callbacks 与软中断的配合</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十classic-rcu-的局限只能保护不可睡眠的读侧" data-toc-target="十classic-rcu-的局限只能保护不可睡眠的读侧">十、classic RCU 的局限：只能保护不可睡眠的读侧</a>
+                    
+                    <a class="toc-item toc-lv3" href="#顺带2.6.23-还修了-classic-的其余毛病" data-toc-target="顺带2.6.23-还修了-classic-的其余毛病">顺带：2.6.23 还修了 classic 的其余毛病</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一2.6.23-sleepable-rcu-的设计动机" data-toc-target="十一2.6.23-sleepable-rcu-的设计动机">十一、2.6.23 sleepable RCU 的设计动机</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二srcu-的-per-srcu_struct-计数" data-toc-target="十二srcu-的-per-srcu_struct-计数">十二、SRCU 的 per-srcu_struct 计数</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三synchronize_srcu-与宽限期判定" data-toc-target="十三synchronize_srcu-与宽限期判定">十三、synchronize_srcu 与宽限期判定</a>
+                    
+                    <a class="toc-item toc-lv3" href="#那个---2-的判断" data-toc-target="那个---2-的判断">那个 - 2 的判断</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四srcu-的代价为什么它比-classic-rcu-慢" data-toc-target="十四srcu-的代价为什么它比-classic-rcu-慢">十四、SRCU 的代价：为什么它比 classic RCU 慢</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五rcu-与引用计数的关系不是一回事" data-toc-target="十五rcu-与引用计数的关系不是一回事">十五、RCU 与引用计数的关系：不是一回事</a>
+                    
+                    <a class="toc-item toc-lv3" href="#它是受限的引用计数" data-toc-target="它是受限的引用计数">它是「受限的引用计数」</a>
+                    
+                    <a class="toc-item toc-lv3" href="#它是批量引用计数" data-toc-target="它是批量引用计数">它是「批量引用计数」</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六从-2.6-到现代这个实现后来怎么变的" data-toc-target="十六从-2.6-到现代这个实现后来怎么变的">十六、从 2.6 到现代：这个实现后来怎么变的</a>
+                    
+                    <a class="toc-item toc-lv3" href="#位图方案撑不住" data-toc-target="位图方案撑不住">位图方案撑不住</a>
+                    
+                    <a class="toc-item toc-lv3" href="#可抢占-rcuclassic-那条假设被正面拆开" data-toc-target="可抢占-rcuclassic-那条假设被正面拆开">可抢占 RCU：classic 那条假设被正面拆开</a>
+                    
+                    <a class="toc-item toc-lv3" href="#srcu-本身也在变" data-toc-target="srcu-本身也在变">SRCU 本身也在变</a>
+                    
+                    <a class="toc-item toc-lv3" href="#classic-那套里活下来的东西" data-toc-target="classic-那套里活下来的东西">classic 那套里活下来的东西</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十七易错点速查" data-toc-target="十七易错点速查">十七、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#章节出处" data-toc-target="章节出处">章节出处</a>
+                    
+                    <a class="toc-item toc-lv3" href="#修正的错误" data-toc-target="修正的错误">修正的错误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#未验证项" data-toc-target="未验证项">未验证项</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","title":"RCU：从 classic 到 sleepable 的实现演进","url":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","type":"current"},{"id":"/B.内核/06-内核同步/RCU：原理、API-与使用/","title":"RCU：原理、API 与使用","url":"/B.内核/06-内核同步/RCU：原理、API-与使用/","type":"neighbor"},{"id":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","title":"spinlock：自旋锁的原理、实现与陷阱","url":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","type":"neighbor"},{"id":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","title":"信号量、completion 与 Per-CPU","url":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","type":"neighbor"},{"id":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","title":"原子操作与内存屏障：内核的底层保证","url":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","type":"neighbor"}],"links":[{"source":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","target":"/B.内核/06-内核同步/RCU：原理、API-与使用/","type":"neighbor"},{"source":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","target":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","type":"neighbor"},{"source":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","target":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","type":"neighbor"},{"source":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","target":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

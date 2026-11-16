@@ -1,0 +1,2320 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>中断子系统综述：从外设到内核的分发链 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">中断子系统综述：从外设到内核的分发链</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/05-中断与异常/中断子系统综述：从外设到内核的分发链/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">中断子系统综述：从外设到内核的分发链</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">中断子系统综述：从外设到内核的分发链</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>本文由三篇旧稿合并改写：《Linux kernel 的中断子系统之一·综述》（系列总纲）、《之四·high level irq event handler》、《之六·ARM 中断处理过程》。</p>
+<p>讲什么：一次外设中断从电气信号走到你写的 handler 的完整链路；generic irq 的三层分工与几种典型 flow handler 的实现差异；ARM32 上从异常向量到 <code>svc_entry</code> 的逐条汇编路径；最后把两套代码对齐成一张时序表。不讲什么：irq domain 的内部实现（之二）、中断描述符与驱动 API 的逐字段细节（之三、之五）、GIC 驱动的逐行分析（之七）、softirq/tasklet/workqueue（之八、之九），这些只在需要时引用结论。</p>
+<p>版本与架构：ARM 部分的代码出自 3.14 内核（原稿自述）；high level handler 部分的代码是 <code>handle_xxx_irq(unsigned int irq, struct irq_desc *desc)</code> 两参数签名的时代，比 3.14 更早。无法从代码直接确认的地方，文中标「未验证」。</p>
+</blockquote>
+<h2 id="一为什么驱动工程师必须懂中断子系统" tabindex="-1">一、为什么驱动工程师必须懂中断子系统 <a class="header-anchor" href="#一为什么驱动工程师必须懂中断子系统"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>写驱动不是调 API。中断这条线上 API 只是最后一米，往前有流控、有硬件手册没写清的边角、有 SMP 下的并发。不搞清楚会怎样，三个具体后果：<strong>API 用错</strong>——<code>request_threaded_irq</code> 的 <code>handler</code> 在硬中断上下文跑，只能做「确认是我的中断 + 关掉设备侧中断 + 返回 <code>IRQ_WAKE_THREAD</code>」，<code>thread_fn</code> 才在 irq thread 里跑，<code>IRQF_ONESHOT</code>、<code>IRQF_SHARED</code>、<code>IRQF_TRIGGER_*</code> 各管一件事，混着填就是给自己埋雷；<strong>临界区保护错</strong>——你以为关中断就够了，代码在 SMP 上被另一个 CPU 并行进来，<code>desc-&gt;lock</code> 保护的是中断描述符不是你的设备状态，你的锁得自己拿；<strong>下半部选错</strong>——softirq、tasklet、workqueue 的上下文、并发度、能否睡眠完全不同，而它们全部由中断退出路径驱动，不懂退出路径就不知道它们什么时候跑。</p>
+<p>还有一个很现实的理由：线上看到 <code>irq 47: nobody cared (try booting with the &quot;irqfixup&quot; kernel parameter)</code>，如果你不知道 <code>note_interrupt</code> 的判定条件就只能瞎猜；知道 10 万次触发 / 99900 次未处理这个阈值和 10 个 jiffies 的重置窗口，你就知道该去查谁没返回 <code>IRQ_HANDLED</code>。</p>
+<h2 id="二一个中断从外设到-handler-的完整路径" tabindex="-1">二、一个中断从外设到 handler 的完整路径 <a class="header-anchor" href="#二一个中断从外设到-handler-的完整路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先把骨架立起来。一次中断的处理分四步，四步分属四个不同的代码层：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>步</th>
+<th>谁在做</th>
+<th>做什么</th>
+<th>关键函数/位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>CPU 架构相关代码</td>
+<td>现场保护，跳异常向量，最终进 C 代码</td>
+<td><code>__vectors_start</code> → <code>vector_irq</code> → <code>vector_stub</code> → <code>__irq_usr</code>/<code>__irq_svc</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>machine 相关代码 + irq domain</td>
+<td>从控制器读出 HW interrupt ID，翻译成 IRQ number</td>
+<td><code>gic_handle_irq</code> → <code>irq_find_mapping</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>generic irq 层</td>
+<td>流控（嵌套、pending、SMP 竞争），遍历 action 链表</td>
+<td><code>generic_handle_irq</code> → <code>desc-&gt;handle_irq</code> → <code>handle_irq_event</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>CPU 架构相关代码</td>
+<td>现场恢复，检查抢占与信号</td>
+<td><code>svc_exit</code> / <code>restore_user_regs</code></td>
+</tr>
+</tbody>
+</table></div><p>第 1、4 步是 ARM 汇编，第十章到第十三章拆开讲。第 2 步的关键是中断号翻译，第三章讲关系、第十四章讲衔接。第 3 步是本文主线，第八章逐个 handler 过。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>外设 assert irq line
+  -&gt; Interrupt Controller 采样、锁存、按 target 分发
+    -&gt; CPU 核（ARM 的 nIRQ 信号）
+      -&gt; CPSR.M 切 IRQ mode，返回地址存进 lr_irq
+        -&gt; vector_irq（IRQ mode 的 12 字节栈）
+          -&gt; __irq_svc / __irq_usr（SVC mode，内核栈上搭 pt_regs）
+            -&gt; irq_handler
+              -&gt; handle_arch_irq（machine 层）
+                -&gt; gic_handle_irq  读 IAR 拿 hwirq
+                  -&gt; irq_find_mapping  hwirq -&gt; IRQ number
+                    -&gt; generic_handle_irq
+                      -&gt; desc-&gt;handle_irq（flow handler）
+                        -&gt; handle_irq_event
+                          -&gt; action 链表里你的 handler
+</code></pre></div></code></pre>
+<p>记住一句话：中断处理跨不过中断控制器这一层。CPU 只知道有人拉了它的 nIRQ，剩下的信息全在控制器寄存器里，得靠控制器驱动去读。</p>
+<h2 id="三中断号hw-interrupt-idirq-number-与它们的关系" tabindex="-1">三、中断号：HW interrupt ID、IRQ number 与它们的关系 <a class="header-anchor" href="#三中断号hw-interrupt-idirq-number-与它们的关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这是最容易糊掉的一节。一个中断在系统里至少有三个名字，用途完全不同：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>名字</th>
+<th>谁产生</th>
+<th>取值范围（GIC 例子）</th>
+<th>用途</th>
+<th>代码里的样子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>外设 irq line</td>
+<td>硬件连线</td>
+<td>板级连线，无编号</td>
+<td>电气信号</td>
+<td>原理图上的 NET 名</td>
+</tr>
+<tr>
+<td>HW interrupt ID（hwirq）</td>
+<td>中断控制器</td>
+<td>GIC 下 0~1023</td>
+<td>定位控制器内部哪个中断源</td>
+<td><code>irq_data.hwirq</code></td>
+</tr>
+<tr>
+<td>IRQ number（virq）</td>
+<td>内核 irq domain 分配</td>
+<td>全局 <code>nr_irqs</code> 以内</td>
+<td>索引 <code>irq_desc</code> 数组</td>
+<td><code>unsigned int irq</code></td>
+</tr>
+<tr>
+<td>中断描述符</td>
+<td>内核静态数组/树</td>
+<td>与 IRQ number 一一对应</td>
+<td>存状态、chip、action 链表</td>
+<td><code>struct irq_desc *desc</code></td>
+</tr>
+</tbody>
+</table></div><p>转换发生在 machine 层，就两行：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>irqnr = irqstat &amp; ~<span class="hljs-number">0x1c00</span>;                      <span class="hljs-comment">/* 从 IAR 里剥出 interrupt ID */</span>
+irqnr = irq_find_mapping(gic-&gt;domain, irqnr);   <span class="hljs-comment">/* hwirq -&gt; IRQ number */</span>
+handle_IRQ(irqnr, regs);
+</code></pre></div></code></pre>
+<p>hwirq 和 IRQ number 不是同一个数，也不需要相等。控制器级联时两个控制器的 hwirq 可以都是 5，但它们的 IRQ number 绝不重复，这是 irq domain 存在的全部理由。GIC 的 ID 空间按用途切片，<code>gic_handle_irq</code> 里的判断就是照着这个切法写的：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>ID 区间</th>
+<th>类型</th>
+<th>含义</th>
+<th>代码分支</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0~15</td>
+<td>SGI</td>
+<td>软件产生，IPI 用</td>
+<td><code>if (irqnr &lt; 16)</code> → <code>handle_IPI</code></td>
+</tr>
+<tr>
+<td>16~31</td>
+<td>PPI</td>
+<td>每 CPU 私有外设中断</td>
+<td>走通用分支</td>
+</tr>
+<tr>
+<td>32~1019</td>
+<td>SPI</td>
+<td>共享外设中断，外设都挂这儿</td>
+<td>走通用分支</td>
+</tr>
+<tr>
+<td>1020~1023</td>
+<td>特殊</td>
+<td>保留；1023 表示 spurious</td>
+<td>不进 handler</td>
+</tr>
+</tbody>
+</table></div><p>原稿的判断写的是 <code>irqnr &gt; 15 &amp;&amp; irqnr &lt; 1021</code>，覆盖 SPI + PPI；<code>irqnr &lt; 16</code> 走 IPI。1020~1023 的特殊 ID 是 GIC 规范的定义，不在本文代码里体现，标为规范依据。</p>
+<h2 id="四中断处理的三层分工硬件--流控层--handler" tabindex="-1">四、中断处理的三层分工：硬件 → 流控层 → handler <a class="header-anchor" href="#四中断处理的三层分工硬件--流控层--handler"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>generic irq 的设计哲学只有一句：把流的逻辑和芯片的细节切开。内核文档 <code>genericirq.rst</code> 开篇就写了这件事——旧时代的 <code>__do_IRQ()</code> 超级 handler 把两者揉在一起，i386 上于是出现了 <code>ioapic_level_irq</code> 和 <code>ioapic_edge_irq</code> 这种低层细节重复、流控不同的怪胎。切开之后是三层：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层</th>
+<th>职责</th>
+<th>代码实体</th>
+<th>谁写</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>驱动 API 层</td>
+<td>申请/释放/开关中断</td>
+<td><code>request_threaded_irq</code>、<code>free_irq</code>、<code>disable_irq</code></td>
+<td>你</td>
+</tr>
+<tr>
+<td>flow handler 层</td>
+<td>流控：mask/ack/unmask/EOI 的时序，遍历 action 链表</td>
+<td><code>handle_level_irq</code> 等</td>
+<td>内核通用代码</td>
+</tr>
+<tr>
+<td>chip 层</td>
+<td>硬件寄存器操作</td>
+<td><code>irq_chip</code> 的一堆 callback</td>
+<td>中断控制器驱动</td>
+</tr>
+</tbody>
+</table></div><p>对应四拨人：硬件无关的通用模块（<code>kernel/irq/</code>，不认识任何 CPU 和控制器）、CPU 架构相关代码（<code>arch/arm/kernel/entry-armv.S</code> 这类）、中断控制器驱动（GIC、GPIO 控制器各自一份）、普通外设驱动（用第一类的 API 写自己的逻辑）。数据结构把三层绑在一起，这是骨架，字段按主线 generic irq 整理、顺序做了简化：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irq_desc</span> {</span>                 <span class="hljs-comment">/* 一个中断一份，IRQ number 就是它的下标 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irq_common_data</span> <span class="hljs-title">irq_common_data</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irq_data</span>        <span class="hljs-title">irq_data</span>;</span>      <span class="hljs-comment">/* 指向 chip 与 chip_data，含 hwirq */</span>
+    <span class="hljs-type">irq_flow_handler_t</span>     handle_irq;    <span class="hljs-comment">/* 流控层入口，第五章那个 desc-&gt;handle_irq */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irqaction</span>      *<span class="hljs-title">action</span>;</span>        <span class="hljs-comment">/* 你的 handler 挂这条链表上，可共享 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>           irq_count;     <span class="hljs-comment">/* note_interrupt 用的统计 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>          last_unhandled;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>           irqs_unhandled;
+};
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irq_data</span> {</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>      irq;          <span class="hljs-comment">/* IRQ number */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>     hwirq;        <span class="hljs-comment">/* HW interrupt ID */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irq_chip</span>  *<span class="hljs-title">chip</span>;</span>         <span class="hljs-comment">/* 芯片层 callback 表 */</span>
+    <span class="hljs-type">void</span>             *chip_data;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irq_domain</span> *<span class="hljs-title">domain</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irq_data</span>  *<span class="hljs-title">parent_data</span>;</span>  <span class="hljs-comment">/* 级联时的上一层 */</span>
+};
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irq_chip</span> {</span>
+    <span class="hljs-type">void</span> (*irq_ack)(<span class="hljs-keyword">struct</span> irq_data *);
+    <span class="hljs-type">void</span> (*irq_mask)(<span class="hljs-keyword">struct</span> irq_data *);
+    <span class="hljs-type">void</span> (*irq_mask_ack)(<span class="hljs-keyword">struct</span> irq_data *);   <span class="hljs-comment">/* 可选，性能优化 */</span>
+    <span class="hljs-type">void</span> (*irq_unmask)(<span class="hljs-keyword">struct</span> irq_data *);
+    <span class="hljs-type">void</span> (*irq_eoi)(<span class="hljs-keyword">struct</span> irq_data *);        <span class="hljs-comment">/* 可选，fasteoi 类型必需 */</span>
+    <span class="hljs-type">int</span>  (*irq_retrigger)(<span class="hljs-keyword">struct</span> irq_data *);  <span class="hljs-comment">/* 可选，resend 用 */</span>
+    <span class="hljs-type">int</span>  (*irq_set_type)(<span class="hljs-keyword">struct</span> irq_data *, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>);
+    <span class="hljs-type">int</span>  (*irq_set_wake)(<span class="hljs-keyword">struct</span> irq_data *, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>);
+};
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irqaction</span> {</span>                <span class="hljs-comment">/* 一次 request_irq 就是一个 irqaction */</span>
+    <span class="hljs-type">irq_handler_t</span>     handler;    <span class="hljs-comment">/* 硬中断上下文 */</span>
+    <span class="hljs-type">irq_handler_t</span>     thread_fn;  <span class="hljs-comment">/* 线程化后半段 */</span>
+    <span class="hljs-type">void</span>             *dev_id;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>      irq;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>     flags;
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span>       *name;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irqaction</span> *<span class="hljs-title">next</span>;</span>       <span class="hljs-comment">/* 共享中断靠这条链串起来 */</span>
+};
+</code></pre></div></code></pre>
+<p>三层的关系一句话讲完：flow handler 只碰 <code>irq_data.chip</code>，绝不碰外设寄存器；外设寄存器只有你挂在 action 链表上的 handler 才碰。这条界线被打破，代码就再也理不清。</p>
+<h2 id="五进入-high-level-handler-的路径" tabindex="-1">五、进入 high level handler 的路径 <a class="header-anchor" href="#五进入-high-level-handler-的路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1从-arm-异常向量到-machine-层" tabindex="-1">1、从 ARM 异常向量到 machine 层 <a class="header-anchor" href="#1从-arm-异常向量到-machine-层"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>irq_handler</code> 宏只有两种形态，取决于 <code>CONFIG_MULTI_IRQ_HANDLER</code>：配了就直接跳 <code>handle_arch_irq</code> 这个函数指针（<code>ldr r1, =handle_arch_irq</code>；<code>mov r0, sp</code> 传 <code>pt_regs</code>；<code>adr lr, BSYM(9997f)</code> 设返回地址；<code>ldr pc, [r1]</code> 跳过去），没配就走 <code>arch_irq_handler_default</code>（完整汇编在第十二章第 6 小节再贴一次，两处是同一段代码）。运行期决定去哪的理由：一份 kernel image 要支持多个硬件平台，启动时认清平台再装 handler。原稿说这是「猜想」，我也照实标为理解，不是定论。函数指针不是 per-CPU 的，全局一份，初始化一次就够。单类型控制器（比如两个级联 GIC）在控制器初始化时设：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (gic_nr == <span class="hljs-number">0</span>) {
+    set_handle_irq(gic_handle_irq);
+}
+</code></pre></div></code></pre>
+<p><code>gic_nr</code> 是 GIC 编号，第一个 GIC 是 0，第二个是 1。混用多种控制器时（例如 S3C2451 有 GPIO 型和 SOC 上两种），在 machine driver 里按平台设 <code>handle_arch_irq = mdesc-&gt;handle_irq;</code>。</p>
+<h3 id="2控制器驱动这一层" tabindex="-1">2、控制器驱动这一层 <a class="header-anchor" href="#2控制器驱动这一层"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>以两个级联 GIC 为例，注释是本文补的（原稿把说明直接贴在语句后面）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> asmlinkage <span class="hljs-type">void</span> __exception_irq_entry <span class="hljs-title function_">gic_handle_irq</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> pt_regs *regs)</span>
+{
+    u32 irqstat, irqnr;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">gic_chip_data</span> *<span class="hljs-title">gic</span> =</span> &amp;gic_data[<span class="hljs-number">0</span>];      <span class="hljs-comment">/* 只处理 root GIC */</span>
+    <span class="hljs-type">void</span> __iomem *cpu_base = gic_data_cpu_base(gic);
+
+    <span class="hljs-keyword">do</span> {
+        irqstat = readl_relaxed(cpu_base + GIC_CPU_INTACK);   <span class="hljs-comment">/* ack + 拿 ID */</span>
+        irqnr = irqstat &amp; ~<span class="hljs-number">0x1c00</span>;
+        <span class="hljs-keyword">if</span> (likely(irqnr &gt; <span class="hljs-number">15</span> &amp;&amp; irqnr &lt; <span class="hljs-number">1021</span>)) {   <span class="hljs-comment">/* SPI / PPI */</span>
+            irqnr = irq_find_mapping(gic-&gt;domain, irqnr);
+            handle_IRQ(irqnr, regs);
+            <span class="hljs-keyword">continue</span>;
+        }
+        <span class="hljs-keyword">if</span> (irqnr &lt; <span class="hljs-number">16</span>) {                           <span class="hljs-comment">/* IPI */</span>
+            writel_relaxed(irqstat, cpu_base + GIC_CPU_EOI);
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_SMP</span>
+            handle_IPI(irqnr, regs);
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+            <span class="hljs-keyword">continue</span>;
+        }
+        <span class="hljs-keyword">break</span>;                                      <span class="hljs-comment">/* 特殊 ID，退出 */</span>
+    } <span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>);
+}
+</code></pre></div></code></pre>
+<p>读 <code>GIC_CPU_INTACK</code> 这一个动作干两件事：ack 中断、拿到 HW interrupt ID。循环是因为一次异常里常常有好几个中断排队。</p>
+<h3 id="3从-irq-number-到-high-level-handler" tabindex="-1">3、从 IRQ number 到 high level handler <a class="header-anchor" href="#3从-irq-number-到-high-level-handler"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>ARM 这一层只有薄薄一层包装（中间略），真正干活的是 generic irq：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">handle_IRQ</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> irq, <span class="hljs-keyword">struct</span> pt_regs *regs)</span>
+{
+    generic_handle_irq(irq);
+}
+<span class="hljs-type">int</span> <span class="hljs-title function_">generic_handle_irq</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> irq)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irq_desc</span> *<span class="hljs-title">desc</span> =</span> irq_to_desc(irq);   <span class="hljs-comment">/* IRQ number -&gt; 描述符 */</span>
+    <span class="hljs-keyword">if</span> (!desc)
+        <span class="hljs-keyword">return</span> -EINVAL;
+    generic_handle_irq_desc(irq, desc);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">generic_handle_irq_desc</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> irq, <span class="hljs-keyword">struct</span> irq_desc *desc)</span>
+{
+    desc-&gt;handle_irq(irq, desc);               <span class="hljs-comment">/* 流控层入口 */</span>
+}
+</code></pre></div></code></pre>
+<p><code>desc-&gt;handle_irq</code> 指向哪一个 <code>handle_xxx_irq</code>，在控制器驱动初始化时按触发类型装好。装错了，中断要么丢，要么卡死。</p>
+<h2 id="六理解-high-level-handler-需要的三个前置知识" tabindex="-1">六、理解 high level handler 需要的三个前置知识 <a class="header-anchor" href="#六理解-high-level-handler-需要的三个前置知识"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>flow handler 里全是 <code>IRQS_PENDING</code>、<code>IRQS_REPLAY</code>、<code>IRQS_WAITING</code> 这些位，因为它们背后是三个独立机制。不搞清这三个，读 handler 就是看天书。</p>
+<h3 id="1自动探测-irq" tabindex="-1">1、自动探测 IRQ <a class="header-anchor" href="#1自动探测-irq"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>老硬件没有设备树，驱动得自己试出 IRQ 号，两个函数配一对：<code>irqs = probe_irq_on();</code> 启动探测，让待探测的硬件产生一次中断，<code>irq = probe_irq_off(irqs);</code> 结束探测拿结果。<code>probe_irq_on</code> 返回一个 32 bit 掩码，标出备选的那几个 IRQ：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-title function_">probe_irq_on</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> mask = <span class="hljs-number">0</span>;
+    for_each_irq_desc_reverse(i, desc) {      <span class="hljs-comment">/* 从 nr_irqs-1 倒着扫到 0 */</span>
+        raw_spin_lock_irq(&amp;desc-&gt;lock);
+        <span class="hljs-keyword">if</span> (!desc-&gt;action &amp;&amp; irq_settings_can_probe(desc)) {   <span class="hljs-comment">/* (1) */</span>
+            desc-&gt;istate |= IRQS_AUTODETECT | IRQS_WAITING;
+            <span class="hljs-keyword">if</span> (irq_startup(desc, <span class="hljs-literal">false</span>))
+                desc-&gt;istate |= IRQS_PENDING;
+        }
+        raw_spin_unlock_irq(&amp;desc-&gt;lock);
+    }
+    msleep(<span class="hljs-number">100</span>);                              <span class="hljs-comment">/* (2) */</span>
+    for_each_irq_desc(i, desc) {
+        raw_spin_lock_irq(&amp;desc-&gt;lock);
+        <span class="hljs-keyword">if</span> (desc-&gt;istate &amp; IRQS_AUTODETECT) {
+            <span class="hljs-keyword">if</span> (!(desc-&gt;istate &amp; IRQS_WAITING)) {
+                desc-&gt;istate &amp;= ~IRQS_AUTODETECT;
+                irq_shutdown(desc);
+            } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (i &lt; <span class="hljs-number">32</span>)                <span class="hljs-comment">/* (3) */</span>
+                mask |= <span class="hljs-number">1</span> &lt;&lt; i;
+        }
+        raw_spin_unlock_irq(&amp;desc-&gt;lock);
+    }
+    <span class="hljs-keyword">return</span> mask;
+}
+<span class="hljs-comment">/* 之后驱动让硬件产生一次中断，再调 probe_irq_off 收结果：
+ * 扫所有描述符，只处理还在 IRQS_AUTODETECT 里的；IRQS_WAITING 已被
+ * high level handler 清掉的那个就是候选，其余 irq_shutdown；候选多于
+ * 一个就把 irq_found 取负返回表示失败。 */</span>
+</code></pre></div></code></pre>
+<p>(1) 两个条件：没有 <code>irqaction</code>（没人申请过）、允许探测（没设 <code>IRQ_NOPROBE</code>）。(2) 这 100ms 里中断照常进来，任何一个 flow handler 执行时都会干这一行，把 <code>IRQS_WAITING</code> 清掉：<code>desc-&gt;istate &amp;= ~(IRQS_REPLAY | IRQS_WAITING);</code>。(3) 探测范围封在 31 号以内，因为 mask 是 32 bit。返回值语义：一个候选就是 IRQ 号，多于一个返回负数表示失败，一个都没有返回 0。这套机制在设备树普及后基本退役，但 <code>IRQS_WAITING</code> 这个位还留在 flow handler 里，你得知道它的来历。</p>
+<h3 id="2resend-一个中断" tabindex="-1">2、resend 一个中断 <a class="header-anchor" href="#2resend-一个中断"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>电平触发和边沿触发的差别在这里变成实打实的 bug 源。电平触发简单直接：硬件事件来了就 assert 电平，CPU ack 之后电平撤销。边沿触发只给一个跳变，状态不持续，软件一步没跟上就丢。丢中断的经典剧本：CPU A 正在处理外设 x 的中断；x 的中断又来了（A 已经 ack，硬件允许再触发），另一个 CPU 抢到它，mask + ack，然后在描述符上打 <code>IRQS_PENDING</code>，把活儿委托给 A；CPU B 因为同步需求 disable 了 x 的 IRQ，A 看到 disabled 就直接退出，pending 没人处理；等 enable 时必须查 pending，补发一次，不然这个中断永远消失。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">check_irq_resend</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> irq_desc *desc, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> irq)</span>
+{
+    <span class="hljs-keyword">if</span> (irq_settings_is_level(desc)) {        <span class="hljs-comment">/* 电平中断没这问题 */</span>
+        desc-&gt;istate &amp;= ~IRQS_PENDING;
+        <span class="hljs-keyword">return</span>;
+    }
+    <span class="hljs-keyword">if</span> (desc-&gt;istate &amp; IRQS_REPLAY)           <span class="hljs-comment">/* 已经安排过了，别重复 */</span>
+        <span class="hljs-keyword">return</span>;
+    <span class="hljs-keyword">if</span> (desc-&gt;istate &amp; IRQS_PENDING) {
+        desc-&gt;istate &amp;= ~IRQS_PENDING;
+        desc-&gt;istate |= IRQS_REPLAY;
+        <span class="hljs-keyword">if</span> (!desc-&gt;irq_data.chip-&gt;irq_retrigger ||
+            !desc-&gt;irq_data.chip-&gt;irq_retrigger(&amp;desc-&gt;irq_data)) {
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_HARDIRQS_SW_RESEND</span>
+            <span class="hljs-comment">/* 硬件不会重触发，就走软件补发 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        }
+    }
+}
+</code></pre></div></code></pre>
+<p>优先让硬件重触发，硬件不支持时走 <code>CONFIG_HARDIRQS_SW_RESEND</code> 的软件补发。flow handler 里清 <code>IRQS_REPLAY</code> 就是宣告这次补发结束。</p>
+<h3 id="3unhandled-interrupt-与-spurious-interrupt" tabindex="-1">3、unhandled interrupt 与 spurious interrupt <a class="header-anchor" href="#3unhandled-interrupt-与-spurious-interrupt"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>中断进来了但没人认领，两种情形：根本没注册 handler；注册了但所有 handler 都返回 <code>IRQ_NONE</code>。内核不会立刻 disable 这条线，因为中断线允许共享，一刀切太狠。它的策略是观察：触发 10 万次，其中 99900 次以上没人处理，才动手。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">note_interrupt</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> irq, <span class="hljs-keyword">struct</span> irq_desc *desc, <span class="hljs-type">irqreturn_t</span> action_ret)</span>
+{
+    <span class="hljs-keyword">if</span> (desc-&gt;istate &amp; IRQS_POLL_INPROGRESS || irq_settings_is_polled(desc))
+        <span class="hljs-keyword">return</span>;
+    <span class="hljs-keyword">if</span> (action_ret == IRQ_WAKE_THREAD)         <span class="hljs-comment">/* 线程化中断的正常返回 */</span>
+        <span class="hljs-keyword">return</span>;
+    <span class="hljs-keyword">if</span> (bad_action_ret(action_ret)) {          <span class="hljs-comment">/* 返回值本身非法 */</span>
+        report_bad_irq(irq, desc, action_ret);
+        <span class="hljs-keyword">return</span>;
+    }
+    <span class="hljs-keyword">if</span> (unlikely(action_ret == IRQ_NONE)) {
+        <span class="hljs-keyword">if</span> (time_after(jiffies, desc-&gt;last_unhandled + HZ/<span class="hljs-number">10</span>))   <span class="hljs-comment">/* (1) */</span>
+            desc-&gt;irqs_unhandled = <span class="hljs-number">1</span>;                            <span class="hljs-comment">/* 重新计数 */</span>
+        <span class="hljs-keyword">else</span>
+            desc-&gt;irqs_unhandled++;
+        desc-&gt;last_unhandled = jiffies;
+    }
+    <span class="hljs-keyword">if</span> (unlikely(try_misrouted_irq(irq, desc, action_ret))) {    <span class="hljs-comment">/* (2) */</span>
+        <span class="hljs-type">int</span> ok = misrouted_irq(irq);
+        <span class="hljs-keyword">if</span> (action_ret == IRQ_NONE)
+            desc-&gt;irqs_unhandled -= ok;
+    }
+    desc-&gt;irq_count++;
+    <span class="hljs-keyword">if</span> (likely(desc-&gt;irq_count &lt; <span class="hljs-number">100000</span>))      <span class="hljs-comment">/* (3) */</span>
+        <span class="hljs-keyword">return</span>;
+    desc-&gt;irq_count = <span class="hljs-number">0</span>;
+    <span class="hljs-keyword">if</span> (unlikely(desc-&gt;irqs_unhandled &gt; <span class="hljs-number">99900</span>)) {
+        __report_bad_irq(irq, desc, action_ret);
+        desc-&gt;istate |= IRQS_SPURIOUS_DISABLED;
+        desc-&gt;depth++;
+        irq_disable(desc);                     <span class="hljs-comment">/* 关掉这条线 */</span>
+        mod_timer(&amp;poll_spurious_irq_timer,    <span class="hljs-comment">/* (4) */</span>
+                  jiffies + POLL_SPURIOUS_IRQ_INTERVAL);
+    }
+    desc-&gt;irqs_unhandled = <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>(1) 时间窗口为什么必要：硬件抽风时会在极短时间内疯狂触发，如果一次 unhandled 距离上次已经超过 10 个 jiffies（HZ=100 时是 100ms），就得清零重算，否则计数随时间长跑，迟早把一条正常中断送上审判台。(2) <code>try_misrouted_irq</code> 是「IRQ 路由接错」的补救，把所有 handler 都试一遍看谁能认领。(3) 每 10 万次为一个检查周期，到期清零重新统计。(4) 关掉之后还不放心，起个 timer 定期轮询（<code>poll_spurious_irqs</code>），它只碰挂了 <code>IRQS_SPURIOUS_DISABLED</code> 的描述符，遇到 0 号（x86 上是 timer）跳过，靠 <code>irq_poll_active</code> 保证全局只有一个 poller，一旦起来就靠 <code>mod_timer</code> 自我续命。命令行参数 <code>noirqdebug</code> 可以整体关掉这套机制，生产环境调性能时偶尔会用到。</p>
+<h2 id="七中断控制器的硬件模型" tabindex="-1">七、中断控制器的硬件模型 <a class="header-anchor" href="#七中断控制器的硬件模型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1三种角色与四个接口" tabindex="-1">1、三种角色与四个接口 <a class="header-anchor" href="#1三种角色与四个接口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>中断硬件系统只有三种器件：外设、中断控制器、CPU。外设提供 irq request line，靠电气信号请求服务；中断控制器是两者的桥，外设线太多 CPU 需要中间人，线不够就级联；CPU 只管算数，不排优先级——那是控制器的事，它只认中断请求线：ARM 是 nIRQ 和 nFIQ，x86 是可屏蔽/不可屏蔽中断。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>方向</th>
+<th>干什么</th>
+<th>物理形态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>触发信号</td>
+<td>控制器 → CPU</td>
+<td>通知有中断</td>
+<td>ARM：nIRQ/nFIQ 线；x86：INT/NMI；PowerPC：MC/CRIT/NON-CRIT</td>
+</tr>
+<tr>
+<td>ack 信号</td>
+<td>CPU → 控制器</td>
+<td>取走这次中断的信息</td>
+<td>ARM+GIC：读 IAR；x86+8259：nINTA</td>
+</tr>
+<tr>
+<td>EOI 信号</td>
+<td>CPU → 控制器</td>
+<td>宣告处理完毕</td>
+<td>ARM+GIC：写 EOIR</td>
+</tr>
+<tr>
+<td>控制/数据总线</td>
+<td>双向</td>
+<td>读写控制器寄存器</td>
+<td>MMIO 或总线访问</td>
+</tr>
+</tbody>
+</table></div><p>Linux 只使用其中一条触发线，ARM 上只用 nIRQ，FIQ 不管（3.14 时代）。从 CPU 视角看，逻辑简单到极点：不区分优先级，线一 assert、中断没被 mask，就跳异常向量，处理完返回。控制器与外设之间只有一个接口：interrupt request 线，电平或边沿。</p>
+<h3 id="2多控制器与多-cpu-的拓扑" tabindex="-1">2、多控制器与多 CPU 的拓扑 <a class="header-anchor" href="#2多控制器与多-cpu-的拓扑"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>控制器分两类：支持多核的（GIC、APIC），不支持的（S3C2410 的控制器、x86 的 PIC）。单 GIC 平台上，改 GIC 寄存器就能把任意外设中断送给任意核。多个 GIC 怎么办？假设 8 核、2000 个外设中断，GIC 一个能管 1024 个 ID，那就得两个：一个 root，一个 secondary。两条路：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>方案</th>
+<th>接法</th>
+<th>好处</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一</td>
+<td>8 核全挂 root，secondary 不接 CPU，其输出接到 root 的某个 SPI</td>
+<td>软件简单，secondary 的 CPU interface 固定</td>
+<td>secondary 的 PPI/SGI 全废；挂它上面的外设中断只能统一送往一个核</td>
+</tr>
+<tr>
+<td>二</td>
+<td>root 接 CPU0~3，secondary 接 CPU4~7</td>
+<td>各管一段，中断可分担</td>
+<td>单条中断只能在 4 个核里分，8 核的力气使不出来</td>
+</tr>
+</tbody>
+</table></div><h3 id="3中断送给哪个-cpu" tabindex="-1">3、中断送给哪个 CPU <a class="header-anchor" href="#3中断送给哪个-cpu"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>只有多核控制器才有这个烦恼。外设中断送一个核就够——送到多个核，实际也只有一个人能和外设打交道，其余的在 handler 里发现已经被处理，直接返回。IPI 例外，它本来就是核间通信，广播毫无压力。用户侧的需求可以很复杂：绑定到某个核、几个核轮流。把复杂策略扔给硬件不合理，多一个晶体管就多一份功耗，常见做法是给每个中断一个 target CPU 寄存器（GIC 叫 Interrupt Processor Target），几位对应几个核：置 1 就上报，置 0 就不报，剩下的交给软件。</p>
+<p>轮流处理的算法就这么几行：CPU0 在 handler 里把自己对应的位清零、把 CPU1 的位打开；下次中断就送到 CPU1；CPU1 在 handler 里反过来操作。两个核的轮转就实现了。</p>
+<h2 id="八几种典型的-high-level-irq-event-handler" tabindex="-1">八、几种典型的 high level irq event handler <a class="header-anchor" href="#八几种典型的-high-level-irq-event-handler"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>选哪个 handler，不取决于「外设是电平还是边沿」，而取决于控制器在这个场景下的行为。原稿强调过这一点，判据整理成表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>handler</th>
+<th>触发类型</th>
+<th>控制器必须干什么</th>
+<th>代码里谁被调用</th>
+<th>典型硬件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>handle_edge_irq</code></td>
+<td>边沿</td>
+<td>锁存边沿状态，ack 才能再触发</td>
+<td><code>irq_ack</code> + 循环内 unmask</td>
+<td>GPIO 型控制器（写 1 清 pending）</td>
+</tr>
+<tr>
+<td><code>handle_level_irq</code></td>
+<td>电平</td>
+<td>电平在，中断就一直 active</td>
+<td><code>irq_mask_ack</code> 打头，末尾有条件 <code>irq_unmask</code></td>
+<td>多数 SoC 片上控制器</td>
+</tr>
+<tr>
+<td><code>handle_fasteoi_irq</code></td>
+<td>电平/边沿</td>
+<td>流控全在硬件里，软件只 EOI</td>
+<td>只调 <code>irq_eoi</code></td>
+<td>GIC 之类现代控制器</td>
+</tr>
+<tr>
+<td><code>handle_simple_irq</code></td>
+<td>任意</td>
+<td>不需要芯片操作</td>
+<td>谁都不调</td>
+<td>软件解复用的子中断</td>
+</tr>
+<tr>
+<td><code>handle_percpu_irq</code></td>
+<td>per-CPU</td>
+<td>每核各自控</td>
+<td>可选 <code>irq_ack</code>/<code>irq_eoi</code>，不加锁</td>
+<td>timer、IPI 之类</td>
+</tr>
+<tr>
+<td><code>handle_bad_irq</code></td>
+<td>—</td>
+<td>无 handler</td>
+<td>只报 spurious</td>
+<td>兜底</td>
+</tr>
+</tbody>
+</table></div><h3 id="1handle_edge_irq" tabindex="-1">1、handle_edge_irq <a class="header-anchor" href="#1handle_edge_irq"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>硬件行为：上升沿来了，控制器把 pending 状态锁进寄存器，同时拉中断线告 CPU。此时外设到控制器的 request 线保持高电平，控制器看不到新的沿，这个高电平一直保持到你调 <code>irq_ack</code>，ack 之后才能检测下一次沿。ARM+GIC 不属于这一类：GIC 有 IAR，但读 IAR 拿 HW ID 的动作发生在 flow handler 之前，所以 GIC 的 <code>irq_chip</code> 提供不了这个场景要的 <code>irq_ack</code>。很多 GPIO 型控制器符合：有 pending 状态寄存器，读它获取状态，写 1 清掉。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">handle_edge_irq</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> irq, <span class="hljs-keyword">struct</span> irq_desc *desc)</span>
+{
+    raw_spin_lock(&amp;desc-&gt;lock);                              <span class="hljs-comment">/* (0) */</span>
+    desc-&gt;istate &amp;= ~(IRQS_REPLAY | IRQS_WAITING);
+
+    <span class="hljs-keyword">if</span> (unlikely(irqd_irq_disabled(&amp;desc-&gt;irq_data) ||       <span class="hljs-comment">/* (1) */</span>
+                 irqd_irq_inprogress(&amp;desc-&gt;irq_data) || !desc-&gt;action)) {
+        <span class="hljs-keyword">if</span> (!irq_check_poll(desc)) {
+            desc-&gt;istate |= IRQS_PENDING;
+            mask_ack_irq(desc);
+            <span class="hljs-keyword">goto</span> out_unlock;
+        }
+    }
+    kstat_incr_irqs_this_cpu(irq, desc);
+    desc-&gt;irq_data.chip-&gt;irq_ack(&amp;desc-&gt;irq_data);            <span class="hljs-comment">/* (2) */</span>
+
+    <span class="hljs-keyword">do</span> {
+        <span class="hljs-keyword">if</span> (unlikely(!desc-&gt;action)) {                        <span class="hljs-comment">/* (3) */</span>
+            mask_irq(desc);
+            <span class="hljs-keyword">goto</span> out_unlock;
+        }
+        <span class="hljs-keyword">if</span> (unlikely(desc-&gt;istate &amp; IRQS_PENDING)) {          <span class="hljs-comment">/* (4) */</span>
+            <span class="hljs-keyword">if</span> (!irqd_irq_disabled(&amp;desc-&gt;irq_data) &amp;&amp;
+                irqd_irq_masked(&amp;desc-&gt;irq_data))
+                unmask_irq(desc);
+        }
+        handle_irq_event(desc);                               <span class="hljs-comment">/* (5) */</span>
+    } <span class="hljs-keyword">while</span> ((desc-&gt;istate &amp; IRQS_PENDING) &amp;&amp;                 <span class="hljs-comment">/* (6) */</span>
+             !irqd_irq_disabled(&amp;desc-&gt;irq_data));
+out_unlock:
+    raw_spin_unlock(&amp;desc-&gt;lock);                             <span class="hljs-comment">/* (7) */</span>
+}
+</code></pre></div></code></pre>
+<p><strong>(0) 锁不成对，这是故意的。</strong> 看上去 <code>raw_spin_lock</code> 和 (7) 是一对，实际不是，中间 (5) 调用的 <code>handle_irq_event</code> 自己先把锁放了：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">irqreturn_t</span> <span class="hljs-title function_">handle_irq_event</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> irq_desc *desc)</span>
+{
+    raw_spin_unlock(&amp;desc-&gt;lock);     <span class="hljs-comment">/* 和 (0) 配对 */</span>
+    <span class="hljs-comment">/* 遍历 action list，调你自己的 handler —— 不持锁 */</span>
+    raw_spin_lock(&amp;desc-&gt;lock);       <span class="hljs-comment">/* 和 (7) 配对 */</span>
+}
+</code></pre></div></code></pre>
+<p>为什么不持锁跑 handler？action list 里跑多久没人知道，持着 <code>desc-&gt;lock</code> 会让其他 CPU 在这条中断上排队，SMP 上直接变成串行化瓶颈。</p>
+<p><strong>(1) 三条不该继续的理由</strong>：中断已被别的 CPU 处理；中断被别的 CPU disable；描述符上没有 <code>irqaction</code>。前两条走同一招——打 pending、<code>mask_ack_irq</code>、退出。正在处理的那个 CPU 会检查 pending 并接手；被 disable 的那次，等 enable 时由 <code>check_irq_resend</code> 补发。这里为什么用 mask + ack 而不是单纯 ack？单纯 ack 意味着后续中断还会来，那 pending 叠 pending 怎么算？记次数？有意义吗？中断完全异步，你算的时候另一个 CPU 已经把 pending 改成 replay 了。事情变复杂就是方向错了，所以一次 mask + ack 断掉嵌套的念头。<code>irq_check_poll</code> 的存在是因为 spurious 轮询流程有时正碰着这个描述符：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">bool</span> <span class="hljs-title function_">irq_check_poll</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> irq_desc *desc)</span>
+{
+    <span class="hljs-keyword">if</span> (!(desc-&gt;istate &amp; IRQS_POLL_INPROGRESS))
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+    <span class="hljs-keyword">return</span> irq_wait_for_poll(desc);
+}
+</code></pre></div></code></pre>
+<p><strong>(2) ack</strong>：控制器一旦被 ack，硬件准备好接受下一次触发，而那次触发会被调度到别的核上。<strong>(3) handler 已注销</strong>：跑 action list 时不持锁，别的 CPU 会在这期间调用 <code>free_irq</code>，回来发现 <code>desc-&gt;action</code> 是 NULL，mask 掉走人。<strong>(4) pending 一定有别人下手</strong>：说明别的 CPU 又触发了这个中断源并把活儿委托给你，那就把之前 mask 住的 unmask 回来，unmask 之后新的中断继续由别的 CPU 接，它们继续打 pending 再委托给你。<strong>(6) 循环条件</strong>：还有 pending 就继续处理一轮，但只要有别的 CPU disable 了这个源，本轮到此为止。</p>
+<h3 id="2handle_level_irq" tabindex="-1">2、handle_level_irq <a class="header-anchor" href="#2handle_level_irq"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>硬件行为：高电平期间控制器就一直认为这个中断 active。ack 控制器不改电平状态，电平要等你 handler 里清了外设的状态寄存器才落下，落之前不 mask，控制器就一直 assert CPU。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">handle_level_irq</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> irq, <span class="hljs-keyword">struct</span> irq_desc *desc)</span>
+{
+    raw_spin_lock(&amp;desc-&gt;lock);
+    mask_ack_irq(desc);                                        <span class="hljs-comment">/* (1) */</span>
+
+    <span class="hljs-keyword">if</span> (unlikely(irqd_irq_inprogress(&amp;desc-&gt;irq_data)))        <span class="hljs-comment">/* (2) */</span>
+        <span class="hljs-keyword">if</span> (!irq_check_poll(desc))
+            <span class="hljs-keyword">goto</span> out_unlock;
+    desc-&gt;istate &amp;= ~(IRQS_REPLAY | IRQS_WAITING);
+    kstat_incr_irqs_this_cpu(irq, desc);
+
+    <span class="hljs-keyword">if</span> (unlikely(!desc-&gt;action || irqd_irq_disabled(&amp;desc-&gt;irq_data))) {   <span class="hljs-comment">/* (3) */</span>
+        desc-&gt;istate |= IRQS_PENDING;
+        <span class="hljs-keyword">goto</span> out_unlock;
+    }
+    handle_irq_event(desc);
+    cond_unmask_irq(desc);                                     <span class="hljs-comment">/* (4) */</span>
+out_unlock:
+    raw_spin_unlock(&amp;desc-&gt;lock);
+}
+</code></pre></div></code></pre>
+<p><strong>(1) 一进来就 mask_ack，和上一节的做法正好相反，这是全文最值得记住的对比。</strong> 看这条链：CPU ← 控制器 ← 设备。flow handler 只跟控制器打交道，设备寄存器归 action list 里的 handler 管。电平触发的特点：只要 request 线上的电平没撤，控制器就认为这个中断还在。你 ack 了控制器、电平没撤，控制器马上又 assert CPU，一个中断变成死循环，所以必须 mask 住，让控制器停止转发这个源，等 handler 清完外设状态再 unmask。边沿触发正好相反：沿稍纵即逝，你 mask 了很容易丢事件，所以只 ack 不 mask。这里的 ack 是写给控制器的，为的是清它在控制器侧的状态寄存器，但外部电平还在，能不能清干净取决于控制器实现。</p>
+<p><strong>(2) 既然一进来就 mask 了，为什么还查 in progress？</strong> 因为 spurious 轮询那条路会绕过正常流程直接调 handler，串行化假设不成立。<strong>(3) 两个出口</strong>：没注册 handler，保持 mask 加 pending（原稿作者说这个 pending 有什么用他也还没想明白，照实保留）；被别的 CPU disable，同样加 pending 退出，等 enable 时补发。<strong>(4) 为什么 unmask 要带条件？</strong> 正常情况 unmask 就完了，但线程化中断（<code>IRQF_ONESHOT</code>）要求 one shot：specific handler 里放一枪唤醒 irq thread，如果允许嵌套就会放好几枪，one shot 就破了，所以 <code>cond_unmask_irq</code> 在那种情况下不 unmask。</p>
+<h3 id="3handle_fasteoi_irq" tabindex="-1">3、handle_fasteoi_irq <a class="header-anchor" href="#3handle_fasteoi_irq"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>原稿这里是 <code>TODO</code>，只有一行小标题，我按内核文档补出流控，代码实现未逐行核对，标「未验证」。这类控制器的流控全在硬件里做完，软件只需在 handler 跑完之后说一声处理完了：不 mask、不 ack（进来前硬件已 ack 或不需要），跑 action list，然后 <code>irq_eoi</code>。判据是 <code>irq_chip</code> 的 <code>irq_eoi</code> 必须实现。GIC 用得上——读 IAR 时已经 ack，处理完写 EOIR 就行，这也解释了为什么 GIC 的 chip 上没有可用的 <code>irq_ack</code>。顺带说一个内核文档里的老坑：<code>handle_edge_eoi_irq</code> 是给 powerpc/cell 上一个残废控制器打的补丁，文档原话是「abnomination」（拼写错误，原文如此），只在那一处用。</p>
+<h3 id="4handle_simple_irq--handle_percpu_irq--handle_bad_irq" tabindex="-1">4、handle_simple_irq / handle_percpu_irq / handle_bad_irq <a class="header-anchor" href="#4handle_simple_irq--handle_percpu_irq--handle_bad_irq"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>handle_simple_irq</code> 不碰芯片，适用于软件解复用的子中断——上层控制器报了中断，软件再细分给哪个子源，调用者自己负责 ack、clear、mask、unmask，内核文档对此有一句明确提示。<code>handle_percpu_irq</code> 只存在于 SMP，因为每个核有自己的那份，不存在跨核竞争，所以省掉锁：有 <code>irq_ack</code> 就先 ack，跑 action list，有 <code>irq_eoi</code> 就 EOI。<code>handle_bad_irq</code> 是兜底，没装 handler 的中断落到这里只报 spurious，不是给你用的。flow handler 靠 <code>irq_set_handler()</code> 一类接口在启动或设备初始化时装到 <code>desc-&gt;handle_irq</code> 上，装它的人是架构代码或控制器驱动；装错了症状是「中断能进但行为怪」，比如电平中断用 edge handler，会看到中断风暴或者偶发丢中断。</p>
+<h2 id="九handle_irq_event-与-action-链表" tabindex="-1">九、handle_irq_event 与 action 链表 <a class="header-anchor" href="#九handle_irq_event-与-action-链表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>flow handler 把流控做完，最后一件事是把活儿交给具体设备，这一段就是遍历链表。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">irqreturn_t</span> <span class="hljs-title function_">handle_irq_event</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> irq_desc *desc)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">irqaction</span> *<span class="hljs-title">action</span> =</span> desc-&gt;action;
+    <span class="hljs-type">irqreturn_t</span> ret;
+
+    desc-&gt;istate &amp;= ~IRQS_PENDING;                    <span class="hljs-comment">/* 准备处理，清 pending */</span>
+    irqd_set(&amp;desc-&gt;irq_data, IRQD_IRQ_INPROGRESS);   <span class="hljs-comment">/* 打上 in progress */</span>
+    raw_spin_unlock(&amp;desc-&gt;lock);
+    ret = handle_irq_event_percpu(desc, action);      <span class="hljs-comment">/* 遍历链表 */</span>
+    raw_spin_lock(&amp;desc-&gt;lock);
+    irqd_clear(&amp;desc-&gt;irq_data, IRQD_IRQ_INPROGRESS); <span class="hljs-comment">/* 处理完，清标记 */</span>
+    <span class="hljs-keyword">return</span> ret;
+}
+<span class="hljs-comment">/* percpu 版本：对链上每个节点调 action-&gt;handler(irq, dev_id)，
+ * 处理 IRQ_WAKE_THREAD 唤醒 action-&gt;thread，把返回值或到 retval，
+ * 最后 if (!noirqdebug) note_interrupt(irq, desc, retval); */</span>
+</code></pre></div></code></pre>
+<p><code>IRQD_IRQ_INPROGRESS</code> 就是前面 <code>irqd_irq_inprogress()</code> 查的那个位，它保证 SMP 上同一条中断的 handler 不会有两个 CPU 同时跑——后到的那个看到 in progress，打 pending 走人。链表结构决定了共享中断的语义：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>链表状态</th>
+<th>遍历行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>独占中断</td>
+<td>一个 irqaction</td>
+<td>调一次，返回 <code>IRQ_HANDLED</code></td>
+</tr>
+<tr>
+<td>共享中断</td>
+<td>多个 irqaction，<code>next</code> 串起来</td>
+<td>每个都调，谁认领谁返回 <code>IRQ_HANDLED</code></td>
+</tr>
+<tr>
+<td>线程化</td>
+<td><code>handler</code> + <code>thread_fn</code> 都在</td>
+<td><code>handler</code> 返回 <code>IRQ_WAKE_THREAD</code> 唤醒 thread</td>
+</tr>
+<tr>
+<td>无人认领</td>
+<td>全部返回 <code>IRQ_NONE</code></td>
+<td>汇总成 <code>IRQ_NONE</code>，进 <code>note_interrupt</code> 计数</td>
+</tr>
+</tbody>
+</table></div><p><code>retval</code> 是「或」的关系：只要有一个 handler 认领，整条中断就算处理了，全是 <code>IRQ_NONE</code> 才进 spurious 计数。这也是为什么乱返回 <code>IRQ_HANDLED</code> 有害——你一个人吞掉了「没人认领」的信号。一个必须刻在脑子里的顺序是：<code>IRQS_PENDING</code> 清得比 <code>IRQD_IRQ_INPROGRESS</code> 置位早，<code>IRQD_IRQ_INPROGRESS</code> 清得比 <code>raw_spin_unlock</code> 早。这个时序保证别的 CPU 看到 in progress 时 pending 一定已经清干净，两边不会互相覆盖，改这几行的顺序就会造出偶发丢中断。</p>
+<h2 id="十arm-中断处理的准备工作栈与向量表" tabindex="-1">十、ARM 中断处理的准备工作：栈与向量表 <a class="header-anchor" href="#十arm-中断处理的准备工作栈与向量表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一切在开机时就摆好了。ARM 上要备三样：IRQ mode 的栈、SVC mode 的栈、异常向量表。</p>
+<h3 id="1irq-mode-的栈只有-12-字节" tabindex="-1">1、IRQ mode 的栈：只有 12 字节 <a class="header-anchor" href="#1irq-mode-的栈只有-12-字节"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>ARM 有多个 processor mode，中断一进来就在 IRQ mode，但那只是过路，很快就切到 SVC：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>M[4:0]</th>
+<th>模式</th>
+<th>缩写</th>
+<th>Linux 里的用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0b10000</td>
+<td>User</td>
+<td>usr</td>
+<td>用户空间程序</td>
+</tr>
+<tr>
+<td>0b10001</td>
+<td>FIQ</td>
+<td>fiq</td>
+<td>不用（3.14 ARM Linux）</td>
+</tr>
+<tr>
+<td>0b10010</td>
+<td>IRQ</td>
+<td>irq</td>
+<td>中断入口的过路站</td>
+</tr>
+<tr>
+<td>0b10011</td>
+<td>Supervisor</td>
+<td>svc</td>
+<td>内核态主体</td>
+</tr>
+<tr>
+<td>0b10111</td>
+<td>Abort</td>
+<td>abt</td>
+<td>数据/预取异常</td>
+</tr>
+<tr>
+<td>0b11011</td>
+<td>Undefined</td>
+<td>und</td>
+<td>未定义指令</td>
+</tr>
+<tr>
+<td>0b11111</td>
+<td>System</td>
+<td>sys</td>
+<td>特权级 user mode</td>
+</tr>
+<tr>
+<td>0b10110</td>
+<td>Monitor</td>
+<td>mon</td>
+<td>需 TrustZone，Linux 内核不用</td>
+</tr>
+<tr>
+<td>0b11010</td>
+<td>Hyp</td>
+<td>hyp</td>
+<td>需虚拟化扩展，Linux 内核不用</td>
+</tr>
+</tbody>
+</table></div><p>Linux 的中断处理大部分时间在 SVC mode 里跑，所以 IRQ mode 的栈极小，只有 12 字节——正好够存 r0、lr、spsr 三个字。ABT 和 UND 用同一套策略：短暂停留，然后切到 SVC 的栈，也就是发生异常那个时刻 current thread 的内核栈。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">stack</span> {</span>
+    u32 irq[<span class="hljs-number">3</span>];
+    u32 abt[<span class="hljs-number">3</span>];
+    u32 und[<span class="hljs-number">3</span>];
+} ____cacheline_aligned;
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">stack</span> <span class="hljs-title">stacks</span>[<span class="hljs-title">NR_CPUS</span>];</span>
+
+<span class="hljs-type">void</span> notrace <span class="hljs-title function_">cpu_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> cpu = smp_processor_id();
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">stack</span> *<span class="hljs-title">stk</span> =</span> &amp;stacks[cpu];
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_THUMB2_KERNEL</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> PLC <span class="hljs-string">&quot;r&quot;</span>        <span class="hljs-comment">/* Thumb-2 下 msr 只能用寄存器，不能立即数 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> PLC <span class="hljs-string">&quot;I&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+    __asm__ (
+    <span class="hljs-string">&quot;msr    cpsr_c, %1\n\t&quot;</span>        <span class="hljs-comment">/* 进 IRQ mode */</span>
+    <span class="hljs-string">&quot;add    r14, %0, %2\n\t&quot;</span>       <span class="hljs-comment">/* r14 = &amp;stk-&gt;irq[0] */</span>
+    <span class="hljs-string">&quot;mov    sp, r14\n\t&quot;</span>           <span class="hljs-comment">/* 设 IRQ mode 的 sp */</span>
+    <span class="hljs-string">&quot;msr    cpsr_c, %3\n\t&quot;</span>        <span class="hljs-comment">/* 同上，设 ABT mode 的 sp */</span>
+    <span class="hljs-string">&quot;add    r14, %0, %4\n\t&quot;</span>
+    <span class="hljs-string">&quot;mov    sp, r14\n\t&quot;</span>
+    <span class="hljs-string">&quot;msr    cpsr_c, %5\n\t&quot;</span>        <span class="hljs-comment">/* 同上，设 UND mode 的 sp */</span>
+    <span class="hljs-string">&quot;add    r14, %0, %6\n\t&quot;</span>
+    <span class="hljs-string">&quot;mov    sp, r14\n\t&quot;</span>
+    <span class="hljs-string">&quot;msr    cpsr_c, %7&quot;</span>            <span class="hljs-comment">/* 回 SVC mode */</span>
+        :
+        : <span class="hljs-string">&quot;r&quot;</span> (stk),                                            <span class="hljs-comment">/* %0 */</span>
+          PLC (PSR_F_BIT | PSR_I_BIT | IRQ_MODE),               <span class="hljs-comment">/* %1 */</span>
+          <span class="hljs-string">&quot;I&quot;</span> (offsetof(<span class="hljs-keyword">struct</span> <span class="hljs-built_in">stack</span>, irq[<span class="hljs-number">0</span>])),                 <span class="hljs-comment">/* %2 */</span>
+          PLC (PSR_F_BIT | PSR_I_BIT | ABT_MODE),
+          <span class="hljs-string">&quot;I&quot;</span> (offsetof(<span class="hljs-keyword">struct</span> <span class="hljs-built_in">stack</span>, abt[<span class="hljs-number">0</span>])),
+          PLC (PSR_F_BIT | PSR_I_BIT | UND_MODE),
+          <span class="hljs-string">&quot;I&quot;</span> (offsetof(<span class="hljs-keyword">struct</span> <span class="hljs-built_in">stack</span>, und[<span class="hljs-number">0</span>])),
+          PLC (PSR_F_BIT | PSR_I_BIT | SVC_MODE)
+        : <span class="hljs-string">&quot;r14&quot;</span>);
+}
+</code></pre></div></code></pre>
+<p>内联汇编四段结构：<code>asm(code : 输出 : 输入 : clobber)</code>。约束符 <code>&quot;I&quot;</code> 是立即数，<code>&quot;r&quot;</code> 走通用寄存器，clobber 里的 <code>r14</code> 告诉编译器「我改过它了」。<code>cpu_init</code> 有三个调用场景：引导 CPU 走 <code>start_kernel</code> → <code>setup_arch</code> → <code>setup_processor</code> → <code>cpu_init</code>；从核上线走 <code>start_kernel</code> → <code>rest_init</code> → <code>kernel_init</code> → <code>kernel_init_freeable</code> → <code>smp_init</code> → <code>cpu_up</code> → <code>_cpu_up</code> → <code>__cpu_up</code>，ARM 下再 <code>__cpu_up</code> → <code>boot_secondary</code> → <code>smp_ops.smp_boot_secondary</code>（SoC 代码）→ <code>secondary_startup</code> → <code>__secondary_switched</code> → <code>secondary_start_kernel</code> → <code>cpu_init</code>；第三是睡眠唤醒，前提是 suspend 会丢 sp/abt/und 的 sp 值。</p>
+<h3 id="2svc-mode-的栈内核栈" tabindex="-1">2、SVC mode 的栈：内核栈 <a class="header-anchor" href="#2svc-mode-的栈内核栈"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>用户态用用户栈存局部变量，陷入内核后换内核栈，就是 SVC mode 的栈。开机时只有一个 kernel thread，PID 0，叫 swapper 或 idle，它的栈是静态定义的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">union</span> <span class="hljs-title">thread_union</span> <span class="hljs-title">init_thread_union</span> __<span class="hljs-title">init_task_data</span> =</span>
+    { INIT_THREAD_INFO(init_task) };
+<span class="hljs-class"><span class="hljs-keyword">union</span> <span class="hljs-title">thread_union</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">thread_info</span> <span class="hljs-title">thread_info</span>;</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-built_in">stack</span>[THREAD_SIZE/<span class="hljs-keyword">sizeof</span>(<span class="hljs-type">long</span>)];
+};
+<span class="hljs-comment">/* 新进程/内核线程都从 dup_task_struct 里 alloc_thread_info_node 拿一份 */</span>
+</code></pre></div></code></pre>
+<p>ARM 上 <code>THREAD_SIZE</code> 是 8192 字节，占两个 page frame（原稿注：一个或两个 page，和配置相关）。一个细节：32 位 ARM 上 <code>thread_info</code> 就放在栈底，<code>sp</code> 一压栈就和它擦肩而过，栈溢出会先把 <code>thread_info</code> 写坏然后才 crash。这是 32 位 ARM 内核栈的老毛病，排查时看到 <code>thread_info</code> 内容莫名其妙，八成是栈炸了。</p>
+<h3 id="3异常向量表" tabindex="-1">3、异常向量表 <a class="header-anchor" href="#3异常向量表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>异常发生时，CPU 暂停当前指令、保存现场、跳到对应向量处执行。8 个向量凑成一张表：</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-meta">.section</span> .vectors, <span class="hljs-string">&quot;ax&quot;</span>, %progbits
+<span class="hljs-symbol">__vectors_start:</span>
+    W(b)    vector_rst
+    W(b)    vector_und
+    W(ldr)  <span class="hljs-built_in">pc</span>, __vectors_start + <span class="hljs-number">0x1000</span>
+    W(b)    vector_pabt
+    W(b)    vector_dabt
+    W(b)    vector_addrexcptn
+    W(b)    vector_irq                 <span class="hljs-comment">/* IRQ Vector — 本文主角 */</span>
+    W(b)    vector_fiq
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>偏移</th>
+<th>向量</th>
+<th>异常</th>
+<th>返回地址修正</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0x00</td>
+<td><code>vector_rst</code></td>
+<td>复位</td>
+<td>—</td>
+</tr>
+<tr>
+<td>0x04</td>
+<td><code>vector_und</code></td>
+<td>未定义指令</td>
+<td>按指令类型</td>
+</tr>
+<tr>
+<td>0x08</td>
+<td>软中断（经 <code>ldr</code> 跳转）</td>
+<td>系统调用</td>
+<td>+4</td>
+</tr>
+<tr>
+<td>0x0C</td>
+<td><code>vector_pabt</code></td>
+<td>预取中止</td>
+<td>+4</td>
+</tr>
+<tr>
+<td>0x10</td>
+<td><code>vector_dabt</code></td>
+<td>数据中止</td>
+<td>+8</td>
+</tr>
+<tr>
+<td>0x14</td>
+<td><code>vector_addrexcptn</code></td>
+<td>地址异常（几乎不用）</td>
+<td>—</td>
+</tr>
+<tr>
+<td>0x18</td>
+<td><code>vector_irq</code></td>
+<td>IRQ</td>
+<td>+4（即 <code>vector_stub</code> 的 <code>correction=4</code>）</td>
+</tr>
+<tr>
+<td>0x1C</td>
+<td><code>vector_fiq</code></td>
+<td>FIQ</td>
+<td>+4</td>
+</tr>
+<tr>
+<td>装表位置有两个：0x0（Normal/Low vectors）和 0xffff0000（High vectors），由 <code>SCTLR</code> 的第 13 位（V bit）决定。开了 MMU 的 ARM Linux 用 high vectors——0~3G 是用户空间，用 low vector 就把向量表放进了用户能碰到的地方。物理地址放哪不重要，映射到 0xffff0000 就行：</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div><pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> __init <span class="hljs-title function_">devicemaps_init</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> machine_desc *mdesc)</span>
+{
+    vectors = early_alloc(PAGE_SIZE * <span class="hljs-number">2</span>);   <span class="hljs-comment">/* 两个 page */</span>
+    early_trap_init(vectors);               <span class="hljs-comment">/* 拷向量表 + stub */</span>
+    <span class="hljs-built_in">map</span>.pfn = __phys_to_pfn(virt_to_phys(vectors));
+    <span class="hljs-built_in">map</span>.virtual = <span class="hljs-number">0xffff0000</span>;
+    <span class="hljs-built_in">map</span>.length = PAGE_SIZE;
+    <span class="hljs-built_in">map</span>.type = MT_HIGH_VECTORS;             <span class="hljs-comment">/* CONFIG_KUSER_HELPERS 时 */</span>
+    create_mapping(&amp;<span class="hljs-built_in">map</span>);                   <span class="hljs-comment">/* 映射 0xffff0000 起始的 page */</span>
+    <span class="hljs-keyword">if</span> (!vectors_high()) {                  <span class="hljs-comment">/* SCTLR.V=0 时低地址也要映射 */</span>
+        <span class="hljs-built_in">map</span>.virtual = <span class="hljs-number">0</span>;
+        <span class="hljs-built_in">map</span>.length = PAGE_SIZE * <span class="hljs-number">2</span>;
+        <span class="hljs-built_in">map</span>.type = MT_LOW_VECTORS;
+        create_mapping(&amp;<span class="hljs-built_in">map</span>);
+    }
+    <span class="hljs-built_in">map</span>.pfn += <span class="hljs-number">1</span>;
+    <span class="hljs-built_in">map</span>.virtual = <span class="hljs-number">0xffff0000</span> + PAGE_SIZE;
+    <span class="hljs-built_in">map</span>.length = PAGE_SIZE;
+    <span class="hljs-built_in">map</span>.type = MT_LOW_VECTORS;
+    create_mapping(&amp;<span class="hljs-built_in">map</span>);                   <span class="hljs-comment">/* high vector 的第二页 */</span>
+}
+<span class="hljs-type">void</span> __init <span class="hljs-title function_">early_trap_init</span><span class="hljs-params">(<span class="hljs-type">void</span> *vectors_base)</span>
+{
+    <span class="hljs-comment">/* 整个 page 先填满未定义指令 0xe7fddef1，堵住向量表和 kuser helper
+     * 之间的缝隙；不填的话 CPU 极端情况下会从缝隙取指执行。 */</span>
+    <span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; PAGE_SIZE / <span class="hljs-keyword">sizeof</span>(u32); i++)
+        ((u32 *)vectors_base)[i] = <span class="hljs-number">0xe7fddef1</span>;
+    <span class="hljs-built_in">memcpy</span>((<span class="hljs-type">void</span> *)vectors, __vectors_start, __vectors_end - __vectors_start);
+    <span class="hljs-built_in">memcpy</span>((<span class="hljs-type">void</span> *)vectors + <span class="hljs-number">0x1000</span>, __stubs_start, __stubs_end - __stubs_start);
+    kuser_init(vectors_base);
+    flush_icache_range(vectors, vectors + PAGE_SIZE * <span class="hljs-number">2</span>);
+    modify_domain(DOMAIN_USER, DOMAIN_CLIENT);
+}
+</code></pre></div></code></pre>
+<p>为什么两个 page？第一个放向量表和 kuser helper（内核提供、用户空间调用的函数），第二个放异常处理的 stub。拷贝一旦发生，就要面对链接地址和运行地址不一致的问题：向量表被拷到 0xffff0000，链接时算的是另一个地址，所以这段代码必须位置无关。<code>b</code> 指令天生位置无关，跳的是相对偏移；但不是所有向量都用 <code>b</code>——软中断那条用的是 <code>W(ldr) pc, __vectors_start + 0x1000</code>，编译成 <code>ldr pc, [pc, #4080]</code>，也是位置无关的，但偏移必须在 4K 内。这就是 stub section 存在的原因：把处理函数放到 4K 能勾到的范围内，再让它跳到远处。中断控制器的初始化原稿只有一句「参考 GIC 代码分析」，本文不展开。</p>
+<h2 id="十一arm-硬件对中断事件的响应" tabindex="-1">十一、ARM 硬件对中断事件的响应 <a class="header-anchor" href="#十一arm-硬件对中断事件的响应"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前提是全局中断已开。外设检测到事件，通过 request line 的电平或边沿通知它连着的控制器，控制器在多核里挑一个，通过 IRQ（FIQ 本文不谈）送给该核。ARM 硬件接着干四件事，软件一行都没参与：改 <code>CPSR.M[4:0]</code> 切到 IRQ mode；把中断那一刻的 CPSR 存进 SPSR_irq、把返回地址存进 lr_irq；置 <code>CPSR.I = 1</code> mask 掉 IRQ；把 PC 设成 IRQ 异常向量地址跳过去。到这里硬件收工，后面全是软件。</p>
+<p>第 2 步值得多说。ARM 的通用寄存器 R0~R15 在 9 种 mode 下看到的并不一样，每种 mode 从一整套 banked register 里挑。IRQ mode 下 R0~R12、PC、CPSR 和 usr/svc 是同一份，独有的是 R13（SP）、R14（LR）和 SPSR。CPSR 共用，中断发生在 usr 还是 svc 靠它区分，硬件把它存进 SPSR_irq。PC 也共用，而且马上要被改成向量地址，所以必须保存——存的不是 PC 值本身，而是返回地址：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>thumb state:  lr_irq = PC
+ARM   state:  lr_irq = PC - 4
+</code></pre></div></code></pre>
+<p>为什么减 4？ARM 是流水线，执行某条指令时取指已经跑到前面，PC = 正在执行的指令地址 + 8：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        -&gt; 发生中断的指令
+           发生中断的指令 + 4
+   PC  -&gt;  发生中断的指令 + 8
+           发生中断的指令 + 12
+</code></pre></div></code></pre>
+<p>中断来了，当前指令执行完，已经取指译码的后续指令作废；当前指令执行完后，原本指向「+8」的 PC 会再加 4，所以硬件接手那一刻，PC 实际比「发生中断的指令」超前 12。减 4 之后，lr_irq 里存的是「发生中断的指令 + 8」，正是返回点。为什么硬件不干脆减 8，让软件省掉那个减法？因为 ARM 的异常硬件逻辑不只服务 IRQ，还要服务各种异常，而不同异常期望的返回地址并不统一，硬件只做一份公共的减 4，剩下的差异交给软件各自调整，IRQ 的 <code>correction=4</code> 就是这么来的。</p>
+<h2 id="十二进入-arm-中断处理的三条路径用户态--内核态--irq-模式" tabindex="-1">十二、进入 ARM 中断处理的三条路径（用户态 / 内核态 / IRQ 模式） <a class="header-anchor" href="#十二进入-arm-中断处理的三条路径用户态--内核态--irq-模式"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1irq-mode-里的过路动作vector_stub" tabindex="-1">1、IRQ mode 里的过路动作：vector_stub <a class="header-anchor" href="#1irq-mode-里的过路动作vector_stub"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-meta">.macro</span>  vector_stub, name, mode, correction<span class="hljs-number">=0</span>
+    <span class="hljs-meta">.align</span>  <span class="hljs-number">5</span>
+<span class="hljs-symbol">vector_</span>\name:
+    <span class="hljs-meta">.if</span> \correction
+    <span class="hljs-keyword">sub</span>     <span class="hljs-built_in">lr</span>, <span class="hljs-built_in">lr</span>, #\correction          <span class="hljs-comment">/* (1) */</span>
+    <span class="hljs-meta">.endif</span>
+    <span class="hljs-keyword">stmia</span>   <span class="hljs-built_in">sp</span>, {<span class="hljs-built_in">r0</span>, <span class="hljs-built_in">lr</span>}                   <span class="hljs-comment">/* (2) 存 r0 和返回地址 */</span>
+    <span class="hljs-keyword">mrs</span>     <span class="hljs-built_in">lr</span>, spsr
+    <span class="hljs-keyword">str</span>     <span class="hljs-built_in">lr</span>, [<span class="hljs-built_in">sp</span>, <span class="hljs-number">#8</span>]                   <span class="hljs-comment">/* 存 spsr */</span>
+    <span class="hljs-keyword">mrs</span>     <span class="hljs-built_in">r0</span>, <span class="hljs-keyword">cpsr</span>                       <span class="hljs-comment">/* (3) 准备切 SVC，IRQ 仍关 */</span>
+    <span class="hljs-keyword">eor</span>     <span class="hljs-built_in">r0</span>, <span class="hljs-built_in">r0</span>, #(\mode ^ SVC_MODE <span class="hljs-title">| PSR_ISETSTATE)
+    msr     spsr_cxsf, r0
+    and     lr, lr, #0x0f                  /* 取 CPSR.M[3:0] */
+    mov     r0, sp                         /* 把 irq mode 的 sp 传给下家 */
+THUMB( adr   r0, 1f            )
+THUMB( ldr   lr, [r0, lr, lsl #2] )
+ARM(   ldr   lr, [pc, lr, lsl #2] )       /* 按 mode 取 __irq_usr / __irq_svc */
+    movs    pc, lr                         /* (4) 跳进 SVC mode */
+ENDPROC(vector_\name)
+    .align  2
+1:                                         @ 跳转表紧跟在这里
+    .endm
+</span></code></pre></div></code></pre>
+<p>(1) 减 4，把 lr 修正成「发生中断的指令 + 4」（对 IRQ 来说 <code>correction=4</code>），保证返回点是中断之后的那条指令。(2) 当前是 IRQ mode，<code>SP_irq</code> 就是那 12 字节，依次压入 r0、PC、CPSR；为什么要存 r0？因为下面马上要用 r0，不存就恢复不了完整现场。(3) 改 SPSR 而不是 CPSR——这一步只是准备，还没真正切换。(4) <code>movs pc, lr</code> 的 <code>s</code> 后缀有个隐含动作：把 SPSR 拷回 CPSR，模式切换在这一刻完成，不是所有异常返回都用栈操作。</p>
+<h3 id="2跳转表16-个入口只有-2-个有效" tabindex="-1">2、跳转表：16 个入口，只有 2 个有效 <a class="header-anchor" href="#2跳转表16-个入口只有-2-个有效"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">vector_stub</span>  irq, IRQ_MODE, <span class="hljs-number">4</span>
+    <span class="hljs-meta">.long</span>   __irq_usr        <span class="hljs-comment">@ 0  (USR_26 / USR_32)   &lt;- base + 0</span>
+    <span class="hljs-meta">.long</span>   __irq_invalid    <span class="hljs-comment">@ 1  (FIQ_26 / FIQ_32)</span>
+    <span class="hljs-meta">.long</span>   __irq_invalid    <span class="hljs-comment">@ 2  (IRQ_26 / IRQ_32)</span>
+    <span class="hljs-meta">.long</span>   __irq_svc        <span class="hljs-comment">@ 3  (SVC_26 / SVC_32)   &lt;- base + 12</span>
+    <span class="hljs-meta">.long</span>   __irq_invalid    <span class="hljs-comment">@ 4                      @ 5~f 同</span>
+</code></pre></div></code></pre>
+<p>按 <code>CPSR.M[3:0]</code> 索引，<code>and lr, lr, #0x0f</code> 取出低 4 位，中断在用户空间则 lr=0，在内核空间则 lr=3。表里 16 项全要给，只有 usr 和 svc 两项有效。剩下 14 项指向 <code>__irq_invalid</code> 不是浪费——在别的模式里来了中断，系统能捕获到这个错误，dump 出来就有线索。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>CPSR.M[3:0]</th>
+<th>模式</th>
+<th>入口</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>usr</td>
+<td><code>__irq_usr</code></td>
+<td>用户态被中断，最常见</td>
+</tr>
+<tr>
+<td>1</td>
+<td>fiq</td>
+<td><code>__irq_invalid</code></td>
+<td>FIQ 模式里来 IRQ，异常</td>
+</tr>
+<tr>
+<td>2</td>
+<td>irq</td>
+<td><code>__irq_invalid</code></td>
+<td>IRQ 模式里再来 IRQ</td>
+</tr>
+<tr>
+<td>3</td>
+<td>svc</td>
+<td><code>__irq_svc</code></td>
+<td>内核态被中断</td>
+</tr>
+<tr>
+<td>4~0xf</td>
+<td>abt/und/sys/mon/hyp 等</td>
+<td><code>__irq_invalid</code></td>
+<td>32 位内核不处理</td>
+</tr>
+</tbody>
+</table></div><h3 id="3路径一中断发生时在用户空间" tabindex="-1">3、路径一：中断发生时在用户空间 <a class="header-anchor" href="#3路径一中断发生时在用户空间"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-meta">.align</span>  <span class="hljs-number">5</span>
+<span class="hljs-symbol">__irq_usr:</span>
+    usr_entry              <span class="hljs-comment">/* 保存用户现场到内核栈 */</span>
+    kuser_cmpxchg_check    <span class="hljs-comment">/* 和本文无关 */</span>
+    irq_handler            <span class="hljs-comment">/* 核心处理，见第 6 小节 */</span>
+    get_thread_info tsk    <span class="hljs-comment">/* tsk = r9 */</span>
+    <span class="hljs-keyword">mov</span>     why, <span class="hljs-number">#0</span>        <span class="hljs-comment">/* why = r8，非系统调用 */</span>
+    <span class="hljs-keyword">b</span>       ret_to_user_from_irq
+</code></pre></div></code></pre>
+<p><code>why</code> 就是 r8，用来传「本次返回用户空间对应哪个系统调用」，中断跟它无关，填 0。保存现场就是把硬件上下文搬上 SVC mode 的栈：</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-meta">.macro</span>  usr_entry
+    <span class="hljs-keyword">sub</span>     <span class="hljs-built_in">sp</span>, <span class="hljs-built_in">sp</span>, <span class="hljs-symbol">#S_FRAME_SIZE</span>      <span class="hljs-comment">/* A */</span>
+    <span class="hljs-keyword">stmib</span>   <span class="hljs-built_in">sp</span>, {<span class="hljs-built_in">r1</span> - <span class="hljs-built_in">r12</span>}             <span class="hljs-comment">/* B */</span>
+    <span class="hljs-keyword">ldmia</span>   <span class="hljs-built_in">r0</span>, {<span class="hljs-built_in">r3</span> - <span class="hljs-built_in">r5</span>}              <span class="hljs-comment">/* C */</span>
+    <span class="hljs-keyword">add</span>     <span class="hljs-built_in">r0</span>, <span class="hljs-built_in">sp</span>, <span class="hljs-symbol">#S_PC</span>              <span class="hljs-comment">/* D */</span>
+    <span class="hljs-keyword">mov</span>     <span class="hljs-built_in">r6</span>, #-<span class="hljs-number">1</span>                    <span class="hljs-comment">/* orig_r0 = -1 */</span>
+    <span class="hljs-keyword">str</span>     <span class="hljs-built_in">r3</span>, [<span class="hljs-built_in">sp</span>]                   <span class="hljs-comment">/* 存中断那刻的 r0 */</span>
+    <span class="hljs-keyword">stmia</span>   <span class="hljs-built_in">r0</span>, {<span class="hljs-built_in">r4</span> - <span class="hljs-built_in">r6</span>}              <span class="hljs-comment">/* E */</span>
+    <span class="hljs-keyword">stmdb</span>   <span class="hljs-built_in">r0</span>, {<span class="hljs-built_in">sp</span>, <span class="hljs-built_in">lr</span>}^              <span class="hljs-comment">/* F */</span>
+    <span class="hljs-meta">.endm</span>
+</code></pre></div></code></pre>
+<p>A：这时候已经在 SVC mode，<code>sp</code> 是 <code>sp_svc</code>，所以压的是被中断进程的内核栈；<code>S_FRAME_SIZE</code> 是 18 个寄存器——r0~r15 加 CPSR 只有 17 个，多出来一个，答案在最后。B：先压 r1~r12，跳过 r0 是因为它从 irq mode 切过来时被用脏了，原始值躺在 IRQ mode 的栈上；<code>stmib</code> 的 <code>ib</code> 是 increment before，压 r1 时先加 4 给 r0 预留位置，<code>sp</code> 后面没有 <code>!</code>，所以压完 sp 不动。C：r0 还指着 IRQ mode 的栈，所以 r3 是中断那刻的 r0，r4 是 PC，r5 是 CPSR。D：让 r0 指向 <code>S_PC</code> 的位置，<code>struct pt_regs</code> 就是内核栈上这份寄存器快照的布局：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>偏移符号</th>
+<th>内容</th>
+<th>来自</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ARM_r0</code></td>
+<td>中断那刻的 r0</td>
+<td>IRQ mode 栈（<code>str r3, [sp]</code>）</td>
+</tr>
+<tr>
+<td><code>ARM_r1</code>~<code>ARM_r10</code></td>
+<td>r1~r10</td>
+<td>直接压栈</td>
+</tr>
+<tr>
+<td><code>ARM_fp</code> / <code>ARM_ip</code></td>
+<td>r11 / r12</td>
+<td>直接压栈</td>
+</tr>
+<tr>
+<td><code>ARM_sp</code> / <code>ARM_lr</code></td>
+<td>中断那刻的 sp / lr</td>
+<td><code>stmdb r0, {sp, lr}^</code></td>
+</tr>
+<tr>
+<td><code>ARM_pc</code></td>
+<td>中断那刻的 PC</td>
+<td>IRQ mode 栈 ← r0 指这儿</td>
+</tr>
+<tr>
+<td><code>ARM_cpsr</code></td>
+<td>中断那刻的 CPSR</td>
+<td>IRQ mode 栈</td>
+</tr>
+<tr>
+<td><code>ARM_ORIG_r0</code></td>
+<td>原始 r0（这里填 -1）</td>
+<td>立即数</td>
+</tr>
+</tbody>
+</table></div><p>为什么给 r0 赋值而不是改 sp？内核要保持 sp 指着栈顶。E：把 r0、PC、CPSR、orig_r0 一次写进内核栈，这几个值来自 IRQ mode 的栈，这一步就是现场搬家。F：还剩 sp 和 lr 没存，<code>db</code> 是 decrement before，往 r0（PC 位置）前面的两个槽写，<code>^</code> 表示访问 user mode 的寄存器——这里存的是用户态的 sp 和 lr。</p>
+<h3 id="4路径二中断发生时在内核空间" tabindex="-1">4、路径二：中断发生时在内核空间 <a class="header-anchor" href="#4路径二中断发生时在内核空间"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-meta">.align</span>  <span class="hljs-number">5</span>
+<span class="hljs-symbol">__irq_svc:</span>
+    svc_entry              <span class="hljs-comment">/* 现场保存到内核栈 */</span>
+    irq_handler            <span class="hljs-comment">/* 具体处理，同 user 路径 */</span>
+<span class="hljs-comment">#ifdef CONFIG_PREEMPT</span>
+    get_thread_info tsk
+    <span class="hljs-keyword">ldr</span>     <span class="hljs-built_in">r8</span>, [tsk, <span class="hljs-symbol">#TI_PREEMPT</span>]     <span class="hljs-comment">@ 取 preempt count</span>
+    <span class="hljs-keyword">ldr</span>     <span class="hljs-built_in">r0</span>, [tsk, <span class="hljs-symbol">#TI_FLAGS</span>]       <span class="hljs-comment">@ 取 flags</span>
+    <span class="hljs-keyword">teq</span>     <span class="hljs-built_in">r8</span>, <span class="hljs-number">#0</span>                     <span class="hljs-comment">@ preempt count != 0 ?</span>
+    <span class="hljs-keyword">movne</span>   <span class="hljs-built_in">r0</span>, <span class="hljs-number">#0</span>                     <span class="hljs-comment">@ 非 0 就强制清 flags</span>
+    <span class="hljs-keyword">tst</span>     <span class="hljs-built_in">r0</span>, <span class="hljs-symbol">#_TIF_NEED_RESCHED</span>
+    <span class="hljs-keyword">blne</span>    svc_preempt
+<span class="hljs-comment">#endif</span>
+    svc_exit <span class="hljs-built_in">r5</span>, irq = <span class="hljs-number">1</span>               <span class="hljs-comment">@ 异常返回</span>
+</code></pre></div></code></pre>
+<p><code>thread_info</code> 里和这段相关的两个成员：<code>flags</code>（low level flags）和 <code>preempt_count</code>（0 表示可抢占，小于 0 是 bug）。<code>preempt_count != 0</code> 说明现在不能抢占（显式 <code>preempt_disable</code>，或者本来就在中断上下文），非 0 直接把 flags 强制清零，跳过重调度；等于 0 才有资格抢占，还要看 <code>_TIF_NEED_RESCHED</code>——时间片用完，或者中断唤醒了更高优先级的进程，这个位就会被置上。</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-meta">.macro</span>  svc_entry, stack_hole<span class="hljs-number">=0</span>
+    <span class="hljs-keyword">sub</span>     <span class="hljs-built_in">sp</span>, <span class="hljs-built_in">sp</span>, #(S_FRAME_SIZE + \stack_hole - <span class="hljs-number">4</span>)   <span class="hljs-comment">/* sp 指向 pt_regs 中 r1 */</span>
+    <span class="hljs-keyword">stmia</span>   <span class="hljs-built_in">sp</span>, {<span class="hljs-built_in">r1</span> - <span class="hljs-built_in">r12</span>}                              <span class="hljs-comment">/* r1~r12 入栈 */</span>
+    <span class="hljs-keyword">ldmia</span>   <span class="hljs-built_in">r0</span>, {<span class="hljs-built_in">r3</span> - <span class="hljs-built_in">r5</span>}
+    <span class="hljs-keyword">add</span>     <span class="hljs-built_in">r7</span>, <span class="hljs-built_in">sp</span>, <span class="hljs-symbol">#S_SP</span> - <span class="hljs-number">4</span>                           <span class="hljs-comment">/* r7 指向 pt_regs 中 r12 */</span>
+    <span class="hljs-keyword">mov</span>     <span class="hljs-built_in">r6</span>, #-<span class="hljs-number">1</span>                                     <span class="hljs-comment">/* orig r0 = -1 */</span>
+    <span class="hljs-keyword">add</span>     <span class="hljs-built_in">r2</span>, <span class="hljs-built_in">sp</span>, #(S_FRAME_SIZE + \stack_hole - <span class="hljs-number">4</span>)   <span class="hljs-comment">/* r2 = 中断那刻的 sp */</span>
+    <span class="hljs-keyword">str</span>     <span class="hljs-built_in">r3</span>, [<span class="hljs-built_in">sp</span>, #-<span class="hljs-number">4</span>]!                              <span class="hljs-comment">/* 存 r0，! 让 sp 前移到栈顶 */</span>
+    <span class="hljs-keyword">mov</span>     <span class="hljs-built_in">r3</span>, <span class="hljs-built_in">lr</span>                                      <span class="hljs-comment">/* 存 svc mode 的 lr */</span>
+    <span class="hljs-keyword">stmia</span>   <span class="hljs-built_in">r7</span>, {<span class="hljs-built_in">r2</span> - <span class="hljs-built_in">r6</span>}                               <span class="hljs-comment">/* 拼出 struct pt_regs */</span>
+    <span class="hljs-meta">.endm</span>
+</code></pre></div></code></pre>
+<p>和 <code>usr_entry</code> 思路一样，差别在于这里没有 <code>^</code> 修饰——存的是 SVC mode 自己的 sp 和 lr，因为中断就发生在内核态。至此内核栈上有了完整的硬件上下文，完整到有点冗余：多了一个 <code>orig_r0</code>。</p>
+<p><code>ARM_r0</code> 和 <code>ARM_ORIG_r0</code> 都该是中断那刻的 r0，为什么存两份？为什么这里往 <code>ARM_ORIG_r0</code> 塞 -1？答案在系统调用，不在中断。系统调用和中断同属异常处理，区别是系统调用要传参数、要返回结果。ARM 上 r0~r7 各 mode 共享，传参方便，返回值也放 r0；返回时把结果写进 r0，原来通过 r0 传进来的参数就被覆盖了，多数场景无所谓，两个场合不行：ptrace、系统调用重启（signal 相关）。所以 r0 存两份：<code>ARM_r0</code> 是参数（返回时变成返回值），<code>ARM_ORIG_r0</code> 留原始值。回到中断：中断处理不用 <code>ARM_ORIG_r0</code>，但为了防止系统调用重启机制误判，赋值 -1——一个不可能是系统调用号的值。</p>
+<h3 id="5路径三irq-mode-只是过路" tabindex="-1">5、路径三：IRQ mode 只是过路 <a class="header-anchor" href="#5路径三irq-mode-只是过路"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>严格说没有第三条路径。IRQ mode 是必经的过路站，三条路的分歧点在跳转表：usr 走 <code>__irq_usr</code>，svc 走 <code>__irq_svc</code>，其余走 <code>__irq_invalid</code>。</p>
+<h3 id="6irq_handler核心处理两种配置" tabindex="-1">6、irq_handler：核心处理，两种配置 <a class="header-anchor" href="#6irq_handler核心处理两种配置"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-meta">.macro</span>  irq_handler
+<span class="hljs-comment">#ifdef CONFIG_MULTI_IRQ_HANDLER</span>
+    <span class="hljs-keyword">ldr</span>     <span class="hljs-built_in">r1</span>, <span class="hljs-symbol">=handle_arch_irq</span>
+    <span class="hljs-keyword">mov</span>     <span class="hljs-built_in">r0</span>, <span class="hljs-built_in">sp</span>                  <span class="hljs-comment">/* 参数：pt_regs */</span>
+    <span class="hljs-keyword">adr</span>     <span class="hljs-built_in">lr</span>, BSYM(<span class="hljs-number">9997</span>f)         <span class="hljs-comment">/* 返回地址 */</span>
+    <span class="hljs-keyword">ldr</span>     <span class="hljs-built_in">pc</span>, [<span class="hljs-built_in">r1</span>]
+<span class="hljs-comment">#else</span>
+    arch_irq_handler_default
+<span class="hljs-comment">#endif</span>
+<span class="hljs-number">9997</span>:
+    <span class="hljs-meta">.endm</span>
+</code></pre></div></code></pre>
+<p>情况一：machine 代码设好 <code>handle_arch_irq</code>，这段汇编只负责传参和设返回地址，然后跳过去，第五章讲的就是这条路的后续。情况二 <code>arch_irq_handler_default</code> 是老 ARM SoC 的路子，代码在减少：</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-meta">.macro</span>  arch_irq_handler_default
+    get_irqnr_preamble <span class="hljs-built_in">r6</span>, <span class="hljs-built_in">lr</span>
+<span class="hljs-number">1</span>:  get_irqnr_and_base <span class="hljs-built_in">r0</span>, <span class="hljs-built_in">r2</span>, <span class="hljs-built_in">r6</span>, <span class="hljs-built_in">lr</span>
+    <span class="hljs-keyword">movne</span>   <span class="hljs-built_in">r1</span>, <span class="hljs-built_in">sp</span>
+    <span class="hljs-comment">@ asm_do_IRQ 需要两个参数：r0 = irq number，r1 = struct pt_regs *</span>
+    <span class="hljs-keyword">adrne</span>   <span class="hljs-built_in">lr</span>, BSYM(<span class="hljs-number">1</span>b)            <span class="hljs-comment">/* 返回地址指回 1，继续解析 */</span>
+    <span class="hljs-keyword">bne</span>     asm_do_IRQ
+    <span class="hljs-meta">.endm</span>
+</code></pre></div></code></pre>
+<p>这段已经和 machine 绑死了。<code>get_irqnr_preamble</code> 做准备工作，不需要的平台直接定义成空；<code>get_irqnr_and_base</code> 四个参数：r0 存解析出的 irq number，r2 是状态寄存器值，r6 是控制器基地址，lr 是 scratch。两个平台的取舍：推荐第一种。逻辑上中断处理就该是「读硬件状态 → 转成 IRQ number → 调对应处理函数」；<code>get_irqnr_and_base</code> 这套宏的前提是「SoC 上就一个控制器，硬件状态和 IRQ number 一一对应」，而现实里的 ARM 平台早就级联了、有 irq domain 了，前提不成立。</p>
+<h2 id="十三中断退出过程" tabindex="-1">十三、中断退出过程 <a class="header-anchor" href="#十三中断退出过程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>不管中断发生在什么态，<code>irq_handler</code> 处理完（softirq、tasklet、workqueue 这些下半部另开文档讲），最后都得回现场。出口分两个。</p>
+<h3 id="1返回用户空间" tabindex="-1">1、返回用户空间 <a class="header-anchor" href="#1返回用户空间"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">ENTRY</span>(ret_to_user_from_irq)
+    <span class="hljs-keyword">ldr</span>     <span class="hljs-built_in">r1</span>, [tsk, <span class="hljs-symbol">#TI_FLAGS</span>]
+    <span class="hljs-keyword">tst</span>     <span class="hljs-built_in">r1</span>, <span class="hljs-symbol">#_TIF_WORK_MASK</span>        <span class="hljs-comment">/* A */</span>
+    <span class="hljs-keyword">bne</span>     work_pending
+<span class="hljs-symbol">no_work_pending:</span>
+    asm_trace_hardirqs_on              <span class="hljs-comment">/* irq flag trace，略 */</span>
+    arch_ret_to_user <span class="hljs-built_in">r1</span>, <span class="hljs-built_in">lr</span>            <span class="hljs-comment">/* 部分平台返回用户空间前的特殊处理 */</span>
+    ct_user_enter save = <span class="hljs-number">0</span>             <span class="hljs-comment">/* trace context，略 */</span>
+    restore_user_regs fast = <span class="hljs-number">0</span>, offset = <span class="hljs-number">0</span>   <span class="hljs-comment">/* B */</span>
+<span class="hljs-symbol">ENDPROC</span>(ret_to_user_from_irq)
+<span class="hljs-symbol">ENDPROC</span>(ret_to_user)
+</code></pre></div></code></pre>
+<p>A：<code>_TIF_WORK_MASK</code> 是三个位的并集，分别对应要调度、有信号待处理、返回用户空间前要调 callback：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> _TIF_WORK_MASK  (_TIF_NEED_RESCHED | _TIF_SIGPENDING | _TIF_NOTIFY_RESUME)</span>
+</code></pre></div></code></pre>
+<p>任意一个置位就进 <code>work_pending</code>，它要三个参数，第三个 <code>why</code> 标识哪个系统调用，这里是 0。B：恢复现场，<code>movs pc, lr</code> 再次承担模式切换，<code>s</code> 后缀让 SPSR 覆盖 CPSR：</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-meta">.macro</span>  restore_user_regs, fast = <span class="hljs-number">0</span>, offset = <span class="hljs-number">0</span>
+    <span class="hljs-keyword">ldr</span>     <span class="hljs-built_in">r1</span>, [<span class="hljs-built_in">sp</span>, #\offset + S_PSR]   <span class="hljs-comment">/* r1 = pt_regs 里的 spsr */</span>
+    <span class="hljs-keyword">ldr</span>     <span class="hljs-built_in">lr</span>, [<span class="hljs-built_in">sp</span>, #\offset + S_PC]!   <span class="hljs-comment">/* lr = PC，sp 前移到 PC 位置 */</span>
+    <span class="hljs-keyword">msr</span>     <span class="hljs-built_in">spsr_cxsf</span>, <span class="hljs-built_in">r1</span>                <span class="hljs-comment">/* 写 spsr，准备返回用户空间 */</span>
+    <span class="hljs-keyword">clrex</span>                                <span class="hljs-comment">/* 清 exclusive monitor */</span>
+    <span class="hljs-meta">.if</span>     \fast
+    <span class="hljs-keyword">ldmdb</span>   <span class="hljs-built_in">sp</span>, {<span class="hljs-built_in">r1</span> - <span class="hljs-built_in">lr</span>}^               <span class="hljs-comment">/* 取 r1~lr */</span>
+    <span class="hljs-meta">.else</span>
+    <span class="hljs-keyword">ldmdb</span>   <span class="hljs-built_in">sp</span>, {<span class="hljs-built_in">r0</span> - <span class="hljs-built_in">lr</span>}^               <span class="hljs-comment">/* 取 r0~r14 */</span>
+    <span class="hljs-meta">.endif</span>
+    <span class="hljs-keyword">mov</span>     <span class="hljs-built_in">r0</span>, <span class="hljs-built_in">r0</span>                       <span class="hljs-comment">/* NOP，ARMv5T 之前需要 */</span>
+    <span class="hljs-keyword">add</span>     <span class="hljs-built_in">sp</span>, <span class="hljs-built_in">sp</span>, <span class="hljs-symbol">#S_FRAME_SIZE</span> - S_PC <span class="hljs-comment">/* sp 挪回原位 */</span>
+    <span class="hljs-keyword">movs</span>    <span class="hljs-built_in">pc</span>, <span class="hljs-built_in">lr</span>                       <span class="hljs-comment">/* 返回用户空间 */</span>
+    <span class="hljs-meta">.endm</span>
+</code></pre></div></code></pre>
+<h3 id="2返回内核空间" tabindex="-1">2、返回内核空间 <a class="header-anchor" href="#2返回内核空间"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-meta">.macro</span>  svc_exit, rpsr, irq = <span class="hljs-number">0</span>
+    <span class="hljs-meta">.if</span>     \irq != <span class="hljs-number">0</span>
+    <span class="hljs-comment">@ IRQs already off</span>
+    <span class="hljs-meta">.else</span>
+    disable_irq_notrace                  <span class="hljs-comment">@ 取栈上数据前再关一次中断</span>
+    <span class="hljs-meta">.endif</span>
+    <span class="hljs-keyword">msr</span>     <span class="hljs-built_in">spsr_cxsf</span>, \rpsr            <span class="hljs-comment">/* 中断现场的 CPSR 写回 spsr */</span>
+    <span class="hljs-keyword">ldmia</span>   <span class="hljs-built_in">sp</span>, {<span class="hljs-built_in">r0</span> - <span class="hljs-built_in">pc</span>}^              <span class="hljs-comment">/* 异常返回：顺带 spsr -&gt; cpsr */</span>
+    <span class="hljs-meta">.endm</span>
+</code></pre></div></code></pre>
+<p><code>ldmia sp, {r0 - pc}^</code> 是异常返回专用指令，<code>^</code> 的隐含动作是把 SPSR 拷进 CPSR。这也解释了 <code>__irq_svc</code> 里那句 <code>svc_exit r5, irq = 1</code> 的 r5 是什么——就是 <code>svc_entry</code> 阶段留在 r5 里的中断现场 CPSR。</p>
+<h3 id="3两个出口的对照" tabindex="-1">3、两个出口的对照 <a class="header-anchor" href="#3两个出口的对照"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>项</th>
+<th>返回用户空间</th>
+<th>返回内核空间</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>入口</td>
+<td><code>ret_to_user_from_irq</code></td>
+<td><code>svc_exit</code></td>
+</tr>
+<tr>
+<td>先查什么</td>
+<td><code>_TIF_WORK_MASK</code> 三个位</td>
+<td>无（抢占检查在 <code>__irq_svc</code> 里做完了）</td>
+</tr>
+<tr>
+<td>额外交互</td>
+<td><code>work_pending</code>（调度/信号/callback）</td>
+<td>—</td>
+</tr>
+<tr>
+<td>恢复指令</td>
+<td><code>ldmdb sp, {r0 - lr}^</code></td>
+<td><code>ldmia sp, {r0 - pc}^</code></td>
+</tr>
+<tr>
+<td>回跳指令</td>
+<td><code>movs pc, lr</code></td>
+<td><code>ldmia</code> 自带 <code>^</code> 语义</td>
+</tr>
+<tr>
+<td>平台钩子</td>
+<td><code>arch_ret_to_user</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div><h2 id="十四从-arm-到-generic-irq两套代码如何衔接" tabindex="-1">十四、从 ARM 到 generic irq：两套代码如何衔接 <a class="header-anchor" href="#十四从-arm-到-generic-irq两套代码如何衔接"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面两条线是分开讲的：第八到九章讲 generic irq 的 C 代码，第十到十三章讲 ARM 汇编。它们的接缝只有一处，一条调用链：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>irq_handler
+  -&gt; handle_arch_irq(regs)              /* 汇编跳到 C，machine 层 */
+      -&gt; gic_handle_irq(regs)           /* 读 IAR，拿 hwirq */
+          -&gt; irq_find_mapping()         /* hwirq -&gt; IRQ number */
+              -&gt; handle_IRQ(irq)        /* ARM 包装层 */
+                  -&gt; generic_handle_irq(irq)
+                      -&gt; desc-&gt;handle_irq(irq, desc)   /* flow handler */
+                          -&gt; handle_irq_event(desc)
+                              -&gt; action-&gt;handler(irq, dev_id)  /* 你的代码 */
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层</th>
+<th>ARM 侧实体</th>
+<th>generic irq 侧实体</th>
+<th>交接物</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>异常入口</td>
+<td><code>vector_irq</code> → <code>__irq_usr</code>/<code>__irq_svc</code></td>
+<td>—</td>
+<td><code>struct pt_regs *</code></td>
+</tr>
+<tr>
+<td>现场</td>
+<td><code>usr_entry</code>/<code>svc_entry</code>，内核栈</td>
+<td>—</td>
+<td><code>pt_regs</code> 落在栈上</td>
+</tr>
+<tr>
+<td>machine</td>
+<td><code>handle_arch_irq</code></td>
+<td>—</td>
+<td><code>regs</code></td>
+</tr>
+<tr>
+<td>控制器</td>
+<td><code>gic_handle_irq</code>，<code>readl_relaxed(IAR)</code></td>
+<td><code>irq_chip</code> 的 callback</td>
+<td>hwirq → IRQ number</td>
+</tr>
+<tr>
+<td>翻译</td>
+<td><code>irq_find_mapping(gic-&gt;domain, irqnr)</code></td>
+<td><code>struct irq_domain</code></td>
+<td><code>unsigned int irq</code></td>
+</tr>
+<tr>
+<td>分发</td>
+<td><code>handle_IRQ</code></td>
+<td><code>generic_handle_irq</code></td>
+<td><code>struct irq_desc *</code></td>
+</tr>
+<tr>
+<td>流控</td>
+<td>—</td>
+<td><code>desc-&gt;handle_irq</code></td>
+<td><code>irq_desc</code> + <code>irq_chip</code></td>
+</tr>
+<tr>
+<td>执行</td>
+<td>—</td>
+<td><code>action-&gt;handler</code></td>
+<td><code>irqaction</code></td>
+</tr>
+<tr>
+<td>收尾</td>
+<td><code>svc_exit</code> / <code>restore_user_regs</code></td>
+<td>—</td>
+<td>回现场</td>
+</tr>
+</tbody>
+</table></div><p>三个容易混的边界。<strong>边界一：ack 在汇编或 C 里。</strong> GIC 的 ack 就是读 IAR，而读 IAR 同时把 hwirq 拿回来了，所以 <code>gic_handle_irq</code> 那一行读既是 ack 又是取 ID，这也解释了 GIC 的 <code>irq_chip</code> 为什么给不出 <code>handle_edge_irq</code> 要的那个 <code>irq_ack</code>——时机已经过去了。<strong>边界二：EOI 在谁手里。</strong> 中断源是 IPI（ID &lt; 16）时，<code>gic_handle_irq</code> 自己写 EOI 再调 <code>handle_IPI</code>，根本不进 generic irq；普通外设中断走 flow handler，EOI 时机由 handler 类型决定——fasteoi 在 handler 之后，level 在 flow handler 内部。<strong>边界三：<code>pt_regs</code> 只往上递一层。</strong> 汇编辛苦搭出来的 <code>pt_regs</code> 到了 <code>generic_handle_irq</code> 就不带了，因为 flow handler 的签名是 <code>(irq, desc)</code>；<code>regs</code> 只给 machine 层用（GIC 那边需要它来识别被打断的是用户态还是内核态，某些场景还要改返回地址），你的 <code>handler(irq, dev_id)</code> 拿不到 <code>pt_regs</code>，想要就得走 <code>get_irq_regs()</code>。</p>
+<p><code>CONFIG_MULTI_IRQ_HANDLER</code> 这条配置把接缝挪到了运行期：编译期不知道跳哪，启动时由 machine 或控制器驱动填 <code>handle_arch_irq</code>；没配就是编译期定死走 <code>arch_irq_handler_default</code> 那套宏。</p>
+<h2 id="十五一次完整中断的时序总表" tabindex="-1">十五、一次完整中断的时序总表 <a class="header-anchor" href="#十五一次完整中断的时序总表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>以 ARM32 + GIC、电平触发外设、<code>handle_fasteoi_irq</code> 为例，从电气信号到回到现场逐拍列出。第 4 列标了代码所在层，方便对着源码找。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>动作</th>
+<th>代码/位置</th>
+<th>层</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>外设事件发生，assert request line</td>
+<td>—</td>
+<td>硬件</td>
+</tr>
+<tr>
+<td>2</td>
+<td>控制器采样、锁存 pending，按 target 选核</td>
+<td>—</td>
+<td>硬件</td>
+</tr>
+<tr>
+<td>3</td>
+<td>控制器拉 nIRQ</td>
+<td>—</td>
+<td>硬件</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>CPSR.M</code> 切 IRQ mode</td>
+<td>—</td>
+<td>硬件</td>
+</tr>
+<tr>
+<td>5</td>
+<td>CPSR → SPSR_irq，返回地址 → lr_irq</td>
+<td>—</td>
+<td>硬件</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>CPSR.I = 1</code>，mask IRQ</td>
+<td>—</td>
+<td>硬件</td>
+</tr>
+<tr>
+<td>7</td>
+<td>PC ← IRQ 向量</td>
+<td>—</td>
+<td>硬件</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>vector_irq</code> 入口</td>
+<td><code>entry-armv.S</code></td>
+<td>ARM 汇编</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>sub lr, lr, #4</code> 修正返回地址</td>
+<td><code>vector_stub</code></td>
+<td>ARM 汇编</td>
+</tr>
+<tr>
+<td>10</td>
+<td>12 字节 IRQ 栈存 r0/lr/spsr</td>
+<td><code>stmia sp, {r0, lr}</code></td>
+<td>ARM 汇编</td>
+</tr>
+<tr>
+<td>11</td>
+<td>改 SPSR 准备切 SVC</td>
+<td><code>msr spsr_cxsf, r0</code></td>
+<td>ARM 汇编</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>and lr, lr, #0x0f</code> 取 CPSR.M</td>
+<td><code>vector_stub</code></td>
+<td>ARM 汇编</td>
+</tr>
+<tr>
+<td>13</td>
+<td>查表取 <code>__irq_usr</code>/<code>__irq_svc</code></td>
+<td>跳转表</td>
+<td>ARM 汇编</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>movs pc, lr</code> 切 SVC mode</td>
+<td><code>vector_stub</code></td>
+<td>ARM 汇编</td>
+</tr>
+<tr>
+<td>15</td>
+<td><code>usr_entry</code>/<code>svc_entry</code> 搭 <code>pt_regs</code></td>
+<td>内核栈</td>
+<td>ARM 汇编</td>
+</tr>
+<tr>
+<td>16</td>
+<td><code>irq_handler</code> 跳 <code>handle_arch_irq</code></td>
+<td><code>irq_handler</code> 宏</td>
+<td>ARM 汇编</td>
+</tr>
+<tr>
+<td>17</td>
+<td><code>gic_handle_irq</code> 读 IAR（= ack + 取 ID）</td>
+<td><code>GIC_CPU_INTACK</code></td>
+<td>machine</td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>irqstat &amp; ~0x1c00</code> 剥出 hwirq</td>
+<td><code>gic_handle_irq</code></td>
+<td>machine</td>
+</tr>
+<tr>
+<td>19</td>
+<td><code>irq_find_mapping</code> 转 IRQ number</td>
+<td>irq domain</td>
+<td>翻译</td>
+</tr>
+<tr>
+<td>20</td>
+<td><code>handle_IRQ</code> → <code>generic_handle_irq</code></td>
+<td><code>irqdesc.c</code></td>
+<td>generic</td>
+</tr>
+<tr>
+<td>21</td>
+<td><code>irq_to_desc</code> 拿描述符</td>
+<td><code>irq_to_desc</code></td>
+<td>generic</td>
+</tr>
+<tr>
+<td>22</td>
+<td><code>desc-&gt;handle_irq</code> 进 flow handler</td>
+<td>函数指针</td>
+<td>generic</td>
+</tr>
+<tr>
+<td>23</td>
+<td><code>raw_spin_lock(&amp;desc-&gt;lock)</code></td>
+<td>flow handler</td>
+<td>generic</td>
+</tr>
+<tr>
+<td>24</td>
+<td>清 <code>IRQS_REPLAY｜IRQS_WAITING</code></td>
+<td><code>desc-&gt;istate</code></td>
+<td>generic</td>
+</tr>
+<tr>
+<td>25</td>
+<td>查 disabled / inprogress / 无 action</td>
+<td>三个判据</td>
+<td>generic</td>
+</tr>
+<tr>
+<td>26</td>
+<td>清 <code>IRQS_PENDING</code>，置 <code>IRQD_IRQ_INPROGRESS</code></td>
+<td><code>handle_irq_event</code></td>
+<td>generic</td>
+</tr>
+<tr>
+<td>27</td>
+<td><code>raw_spin_unlock</code>（handler 期间不持锁）</td>
+<td><code>handle_irq_event</code></td>
+<td>generic</td>
+</tr>
+<tr>
+<td>28</td>
+<td>遍历 action list，调你的 <code>handler</code></td>
+<td><code>handle_irq_event_percpu</code></td>
+<td>驱动</td>
+</tr>
+<tr>
+<td>29</td>
+<td>读设备状态，清中断源，返回 <code>IRQ_HANDLED</code></td>
+<td>你的代码</td>
+<td>驱动</td>
+</tr>
+<tr>
+<td>30</td>
+<td>汇总 <code>retval</code>，<code>note_interrupt</code> 计数</td>
+<td><code>note_interrupt</code></td>
+<td>generic</td>
+</tr>
+<tr>
+<td>31</td>
+<td><code>raw_spin_lock</code> 回来，清 <code>IRQD_IRQ_INPROGRESS</code></td>
+<td><code>handle_irq_event</code></td>
+<td>generic</td>
+</tr>
+<tr>
+<td>32</td>
+<td><code>irq_eoi</code> 写 EOIR</td>
+<td><code>handle_fasteoi_irq</code></td>
+<td>generic</td>
+</tr>
+<tr>
+<td>33</td>
+<td><code>raw_spin_unlock(&amp;desc-&gt;lock)</code></td>
+<td>flow handler</td>
+<td>generic</td>
+</tr>
+<tr>
+<td>34</td>
+<td>下半部唤醒（softirq / irq thread）</td>
+<td><code>irq_exit</code> 一线</td>
+<td>generic</td>
+</tr>
+<tr>
+<td>35</td>
+<td><code>ret_to_user_from_irq</code> 或 <code>svc_exit</code></td>
+<td>出口代码</td>
+<td>ARM 汇编</td>
+</tr>
+<tr>
+<td>36</td>
+<td>查 <code>_TIF_WORK_MASK</code>，必要时 <code>work_pending</code></td>
+<td><code>ret_to_user_from_irq</code></td>
+<td>ARM 汇编</td>
+</tr>
+<tr>
+<td>37</td>
+<td><code>ldmdb</code>/<code>ldmia</code> + <code>movs pc, lr</code> 恢复现场</td>
+<td><code>restore_user_regs</code>/<code>svc_exit</code></td>
+<td>ARM 汇编</td>
+</tr>
+<tr>
+<td>38</td>
+<td>回到被打断的那条指令继续跑</td>
+<td>—</td>
+<td>硬件</td>
+</tr>
+</tbody>
+</table></div><p>两个观察：第 17 到 33 拍全程在一个关中断的上下文里，这就是为什么 handler 里不能睡、不能久留；第 26 到 31 拍之间锁是放的，你的 handler 和另一个 CPU 上的 <code>free_irq</code> 能并行，这是 <code>desc-&gt;action</code> 会变 NULL 的原因，也是你在 handler 里必须自己上锁的原因。</p>
+<h2 id="十六易错点速查" tabindex="-1">十六、易错点速查 <a class="header-anchor" href="#十六易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>按踩坑频率排，每条给出症状和定位方法。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>坑</th>
+<th>症状</th>
+<th>怎么定位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>handler 永远返回 <code>IRQ_HANDLED</code>（哪怕不是自己的中断）</td>
+<td>共享中断上别的设备饿死；nobody cared 不出现但功能坏</td>
+<td>查返回值是否真的判断了设备状态</td>
+</tr>
+<tr>
+<td>2</td>
+<td>共享中断返回 <code>IRQ_NONE</code> 却没检查 dev_id</td>
+<td>别人的中断你也去读寄存器，读坏外设状态</td>
+<td>dev_id 判空必须在最前面</td>
+</tr>
+<tr>
+<td>3</td>
+<td>电平中断配成 edge handler</td>
+<td>中断风暴，或者偶发丢中断</td>
+<td>看 flow handler 类型和控制器实际行为是否匹配</td>
+</tr>
+<tr>
+<td>4</td>
+<td>在 <code>handler</code> 里睡眠</td>
+<td><code>BUG: scheduling while atomic</code></td>
+<td>要睡就拆 <code>thread_fn</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>用了线程化却漏了 <code>IRQF_ONESHOT</code></td>
+<td>中断嵌套，thread 被反复唤醒</td>
+<td>threaded irq 一定带 oneshot（除特殊场景）</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>free_irq</code> 前没关设备侧中断</td>
+<td><code>free_irq</code> 卡住，或 handler 访问已释放内存</td>
+<td><code>free_irq</code> 会等执行中的 handler 退出</td>
+</tr>
+<tr>
+<td>7</td>
+<td>IRQ 号硬编码</td>
+<td>换平台就错位</td>
+<td>用设备树或 <code>platform_get_irq</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>以为 hwirq == IRQ number</td>
+<td>级联平台上取错描述符</td>
+<td>打印 <code>irq_data.hwirq</code> 和 <code>irq</code> 对比</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>disable_irq</code> 在中断上下文调用</td>
+<td>死锁（它要等 handler 退出）</td>
+<td>中断里用 <code>disable_irq_nosync</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td>32 位 ARM 内核栈溢出</td>
+<td><code>thread_info</code> 内容错乱、莫名 crash</td>
+<td>看栈底 <code>thread_info</code> 是否被写坏</td>
+</tr>
+<tr>
+<td>11</td>
+<td>spurious 计数误判成硬件故障</td>
+<td>好中断被 disable，系统功能缺失</td>
+<td>看是否有短时高频 unhandled，查 <code>last_unhandled</code> 时间窗</td>
+</tr>
+<tr>
+<td>12</td>
+<td>改动 flow handler 里 PENDING / INPROGRESS 的顺序</td>
+<td>偶发丢中断，极难复现</td>
+<td>别改，那是内核的时序契约</td>
+</tr>
+<tr>
+<td>13</td>
+<td>中断里调 <code>msleep</code> / <code>mutex_lock</code></td>
+<td>同第 4 条</td>
+<td>换 spinlock 或挪到下半部</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>request_irq</code> 的 <code>dev_id</code> 不唯一</td>
+<td>共享中断 <code>free_irq</code> 释放错对象</td>
+<td><code>dev_id</code> 用设备结构体地址</td>
+</tr>
+<tr>
+<td>15</td>
+<td>高向量表被当成普通内存改写</td>
+<td>中断进去就崩</td>
+<td>向量表 page 只读，别映射成可写</td>
+</tr>
+</tbody>
+</table></div><p>最后一条工程建议：调中断问题，先用 <code>cat /proc/interrupts</code> 看计数走不走、哪个 CPU 在涨；再看 <code>/proc/irq/&lt;n&gt;/</code> 下的 smp_affinity；还不行开 <code>CONFIG_DEBUG_SHIRQ</code> 或抓 spurious 日志。别一上来就翻汇编。</p>
+<h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1章节出处" tabindex="-1">1、章节出处 <a class="header-anchor" href="#1章节出处"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>新稿章节</th>
+<th>主要素材</th>
+<th>原稿位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开篇边界</td>
+<td>三篇合并</td>
+<td>—</td>
+</tr>
+<tr>
+<td>一、为什么必须懂</td>
+<td>之一</td>
+<td>第一章前言</td>
+</tr>
+<tr>
+<td>二、完整路径</td>
+<td>之四 + 之六 综合</td>
+<td>之四第一章、之六第二~五章</td>
+</tr>
+<tr>
+<td>三、中断号</td>
+<td>之一（HW block 逻辑）、之四（<code>irq_find_mapping</code>）</td>
+<td>之一第二章、之四第一章</td>
+</tr>
+<tr>
+<td>四、三层分工</td>
+<td>之一第三章 + 之四第二章</td>
+<td>之一第三章</td>
+</tr>
+<tr>
+<td>五、进入 high level handler</td>
+<td>之四第一章</td>
+<td>之四第一章</td>
+</tr>
+<tr>
+<td>六、三个前置知识</td>
+<td>之四第二章</td>
+<td>之四第二章</td>
+</tr>
+<tr>
+<td>七、控制器硬件模型</td>
+<td>之一第二章 + 之四第三章</td>
+<td>—</td>
+</tr>
+<tr>
+<td>八、典型 handler</td>
+<td>之四第四章</td>
+<td>之四第四章（fasteoi 原为 TODO，本文补）</td>
+</tr>
+<tr>
+<td>九、action 链表</td>
+<td>之四（散见）+ 内核文档</td>
+<td>之四第四章</td>
+</tr>
+<tr>
+<td>十、栈与向量表</td>
+<td>之六第二章</td>
+<td>之六第二章</td>
+</tr>
+<tr>
+<td>十一、硬件响应</td>
+<td>之六第三章</td>
+<td>之六第三章</td>
+</tr>
+<tr>
+<td>十二、三条路径</td>
+<td>之六第四章</td>
+<td>之六第四章</td>
+</tr>
+<tr>
+<td>十三、退出过程</td>
+<td>之六第五章</td>
+<td>之六第五章</td>
+</tr>
+<tr>
+<td>十四、两套代码衔接</td>
+<td>之四 + 之六 综合</td>
+<td>—</td>
+</tr>
+<tr>
+<td>十五、时序总表</td>
+<td>综合，无单一出处</td>
+<td>—</td>
+</tr>
+<tr>
+<td>十六、易错点</td>
+<td>综合</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div><h3 id="2修正的错误" tabindex="-1">2、修正的错误 <a class="header-anchor" href="#2修正的错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>原文</th>
+<th>修正为</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>之四有两个「一、」：<code>## 一、前言</code> 和 <code>## 一、如何进入high level irq event handler</code></td>
+<td>合并为本文第五、六章</td>
+<td>原文章节编号重复，排版错误</td>
+</tr>
+<tr>
+<td>2</td>
+<td>之四 <code>handle_irq_event_percpu</code> 片段里用 <code>note_interrupt(irq, desc, retval)</code> 但 <code>irq</code> 无来源</td>
+<td>补注 <code>irq</code> 取自 <code>desc-&gt;irq_data.irq</code></td>
+<td>原稿片段省略了函数头，变量来源缺失</td>
+</tr>
+<tr>
+<td>3</td>
+<td>之四 <code>probe_irq_on</code> 片段里 <code>mask</code> 未声明就 <code>mask |= 1 &lt;&lt; i</code></td>
+<td>补 <code>unsigned long mask = 0;</code></td>
+<td>原稿片段截断，照抄编译不过</td>
+</tr>
+<tr>
+<td>4</td>
+<td>之四 <code>probe_irq_on</code> 第二个 <code>for_each_irq_desc</code> 循环括号未闭合</td>
+<td>补齐右括号</td>
+<td>原稿片段括号不平衡</td>
+</tr>
+<tr>
+<td>5</td>
+<td>之四称「ARM+GIC 不符合 edge 类型」，理由只写「无法提供 irq_ack」</td>
+<td>保留结论，补出因果：读 IAR 取 hwirq 发生在 flow handler 之前，故 chip 给不出 irq_ack</td>
+<td>之四同段自身描述</td>
+</tr>
+<tr>
+<td>6</td>
+<td>之四第四章第 3 小节「支持 EOI 的 handler」正文只有一个 <code>TODO</code></td>
+<td>按内核文档补出 <code>handle_fasteoi_irq</code> 与 <code>handle_edge_eoi_irq</code> 的流控</td>
+<td>内核文档 <code>Documentation/core-api/genericirq.rst</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>之六称「ARM 处理器支持 9 种 processor mode」，mode 列表在正文中缺失</td>
+<td>补出 9 种 mode 的 M[4:0] 编码与 Linux 用途对照表</td>
+<td>ARM ARM（ARMv7-A）CPSR.M 编码；<code>mon</code>/<code>hyp</code> 的「Linux 内核不用」按 3.14 语境推断，未逐版本核对</td>
+</tr>
+<tr>
+<td>8</td>
+<td>之六称「全部 Banked ARM core register 包括：」后面内容缺失</td>
+<td>补出 IRQ mode 的寄存器视图（R0~R12 共享，独有 R13/R14/SPSR）</td>
+<td>之六同章后文自述</td>
+</tr>
+<tr>
+<td>9</td>
+<td>之六 <code>arch_irq_handler_default</code> 的注释「返回地址设定为符号 1，也就是说要不断的解析…」被换行截断成两段</td>
+<td>合并为单行注释</td>
+<td>原稿换行错位</td>
+</tr>
+<tr>
+<td>10</td>
+<td>之六列出软中断向量 <code>W(ldr) pc, __vectors_start + 0x1000</code> 但未说明它对应哪一项</td>
+<td>补出偏移 0x08 与「软中断/系统调用」的对应</td>
+<td>之六同段上下文</td>
+</tr>
+<tr>
+<td>11</td>
+<td>之一称「ARM+GIC 的 ack 中断 signal 就是总线上的一次访问」，未指出是哪次访问</td>
+<td>补为「读 Interrupt Acknowledge Register（IAR）」</td>
+<td>之四 <code>GIC_CPU_INTACK</code> 代码</td>
+</tr>
+<tr>
+<td>12</td>
+<td>之四说「各种 handler 中都会有 <code>desc-&gt;istate &amp;= ~(IRQS_REPLAY | IRQS_WAITING)</code>」，未说明 level handler 同样清</td>
+<td>本文第八章两个 handler 都列出该行</td>
+<td>之四两段代码</td>
+</tr>
+<tr>
+<td>13</td>
+<td>之一两处配图（HW 逻辑 block diagram、软件框架图）在抓取中丢失</td>
+<td>不补图，改用文字与表格描述结构</td>
+<td>原稿自注「配图在网页抓取过程中丢失」</td>
+</tr>
+<tr>
+<td>14</td>
+<td>之六称 <code>THREAD_SIZE</code> 在 ARM 上为 8192 字节，未提与配置的关系</td>
+<td>保留数值，补注「一个或两个 page，和配置相关」</td>
+<td>之六第二章第 2 节自述</td>
+</tr>
+<tr>
+<td>15</td>
+<td>之六「ARM 处理器感知到了中断事件后，会进行下面一系列的动作：1、修改 CPSR…」mode 列表缺失、编号断裂</td>
+<td>重排为四步列表，mode 表移到第十章</td>
+<td>原稿列表残缺</td>
+</tr>
+<tr>
+<td>16</td>
+<td>之四章节序列不连续：<code>一、前言</code> → <code>一、如何进入</code> → <code>二、知识准备</code> → <code>三、硬件描述</code> → <code>四、典型 handler</code></td>
+<td>按逻辑重排为第五、六、七、八章</td>
+<td>原稿编号错误</td>
+</tr>
+</tbody>
+</table></div><h3 id="3素材本身的局限照实标明" tabindex="-1">3、素材本身的局限（照实标明） <a class="header-anchor" href="#3素材本身的局限照实标明"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>项</th>
+<th>情况</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内核版本</td>
+<td>之六自述代码来自 3.14。之四的代码是两参数签名 <code>handle_xxx_irq(unsigned int irq, struct irq_desc *desc)</code> 时代，早于 3.14 的单参数签名，具体版本未验证</td>
+</tr>
+<tr>
+<td>架构与范围</td>
+<td>全部为 ARM 32 位（ARMv7-A 语境），x86/PowerPC 只在对比处提及且无代码；FIQ 三篇均不讨论，本文同样不讨论</td>
+</tr>
+<tr>
+<td>irq domain / GIC 驱动</td>
+<td><code>irq_find_mapping</code> 只用结论，实现见系列之二；GIC 驱动逐行见系列之七，本文只用到 <code>gic_handle_irq</code> 主循环</td>
+</tr>
+<tr>
+<td>softirq/tasklet/workqueue</td>
+<td>见系列之八、之九，本文第 34 拍只写「下半部唤醒」</td>
+</tr>
+<tr>
+<td><code>handle_simple_irq</code> / <code>handle_percpu_irq</code> / <code>handle_fasteoi_irq</code></td>
+<td>按 <code>genericirq.rst</code> 的流控描述给出文字，未贴完整 C 代码，未逐行核对 3.14 源码，标未验证</td>
+</tr>
+<tr>
+<td><code>note_interrupt</code> 里 <code>misrouted_irq</code> 的返回值 <code>ok</code></td>
+<td>原稿只写 <code>desc-&gt;irqs_unhandled -= ok</code>，<code>ok</code> 的确切含义原文未说明，本文未验证</td>
+</tr>
+<tr>
+<td><code>poll_spurious_irqs</code> 里 <code>if (!i)</code> 跳过 0 号</td>
+<td>原稿注释为「对于 X86，这是 timer 的中断」，本文照抄该注释，未验证 ARM 上是否有例外</td>
+</tr>
+<tr>
+<td>「ARM 为什么用 high vectors」</td>
+<td>原稿给的是解释性论述（用户空间在 0~3G），非文档引用，照实保留</td>
+</tr>
+<tr>
+<td>原稿的自我限定</td>
+<td>之四开篇自述「这份文档充满了猜测和空想」；<code>MULTI_IRQ_HANDLER</code> 的存在理由原稿标为「我的理解（猜想）」。本文在这两处保留「理解/未验证」措辞，不当结论</td>
+</tr>
+</tbody>
+</table></div>
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+                <div class="rail-card rail-backlinks-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                      </svg>
+                      反向链接
+                    </span>
+                    <span class="rail-badge">2</span>
+                  </div>
+                  <ul class="backlinks-list">
+                    
+                    <li><a class="backlink-item" href="/B.内核/05-中断与异常/ARM-中断与异常：从向量表到系统调用/">ARM 中断与异常：从向量表到系统调用</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/05-中断与异常/中断实战：注册、调试与典型故障/">中断实战：注册、调试与典型故障</a></li>
+                    
+                  </ul>
+                </div>
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一为什么驱动工程师必须懂中断子系统" data-toc-target="一为什么驱动工程师必须懂中断子系统">一、为什么驱动工程师必须懂中断子系统</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二一个中断从外设到-handler-的完整路径" data-toc-target="二一个中断从外设到-handler-的完整路径">二、一个中断从外设到 handler 的完整路径</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三中断号hw-interrupt-idirq-number-与它们的关系" data-toc-target="三中断号hw-interrupt-idirq-number-与它们的关系">三、中断号：HW interrupt ID、IRQ number 与它们的关系</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四中断处理的三层分工硬件--流控层--handler" data-toc-target="四中断处理的三层分工硬件--流控层--handler">四、中断处理的三层分工：硬件 → 流控层 → handler</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五进入-high-level-handler-的路径" data-toc-target="五进入-high-level-handler-的路径">五、进入 high level handler 的路径</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1从-arm-异常向量到-machine-层" data-toc-target="1从-arm-异常向量到-machine-层">1、从 ARM 异常向量到 machine 层</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2控制器驱动这一层" data-toc-target="2控制器驱动这一层">2、控制器驱动这一层</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3从-irq-number-到-high-level-handler" data-toc-target="3从-irq-number-到-high-level-handler">3、从 IRQ number 到 high level handler</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六理解-high-level-handler-需要的三个前置知识" data-toc-target="六理解-high-level-handler-需要的三个前置知识">六、理解 high level handler 需要的三个前置知识</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1自动探测-irq" data-toc-target="1自动探测-irq">1、自动探测 IRQ</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2resend-一个中断" data-toc-target="2resend-一个中断">2、resend 一个中断</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3unhandled-interrupt-与-spurious-interrupt" data-toc-target="3unhandled-interrupt-与-spurious-interrupt">3、unhandled interrupt 与 spurious interrupt</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七中断控制器的硬件模型" data-toc-target="七中断控制器的硬件模型">七、中断控制器的硬件模型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1三种角色与四个接口" data-toc-target="1三种角色与四个接口">1、三种角色与四个接口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2多控制器与多-cpu-的拓扑" data-toc-target="2多控制器与多-cpu-的拓扑">2、多控制器与多 CPU 的拓扑</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3中断送给哪个-cpu" data-toc-target="3中断送给哪个-cpu">3、中断送给哪个 CPU</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八几种典型的-high-level-irq-event-handler" data-toc-target="八几种典型的-high-level-irq-event-handler">八、几种典型的 high level irq event handler</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1handle_edge_irq" data-toc-target="1handle_edge_irq">1、handle_edge_irq</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2handle_level_irq" data-toc-target="2handle_level_irq">2、handle_level_irq</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3handle_fasteoi_irq" data-toc-target="3handle_fasteoi_irq">3、handle_fasteoi_irq</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4handle_simple_irq--handle_percpu_irq--handle_bad_irq" data-toc-target="4handle_simple_irq--handle_percpu_irq--handle_bad_irq">4、handle_simple_irq / handle_percpu_irq / handle_bad_irq</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九handle_irq_event-与-action-链表" data-toc-target="九handle_irq_event-与-action-链表">九、handle_irq_event 与 action 链表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十arm-中断处理的准备工作栈与向量表" data-toc-target="十arm-中断处理的准备工作栈与向量表">十、ARM 中断处理的准备工作：栈与向量表</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1irq-mode-的栈只有-12-字节" data-toc-target="1irq-mode-的栈只有-12-字节">1、IRQ mode 的栈：只有 12 字节</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2svc-mode-的栈内核栈" data-toc-target="2svc-mode-的栈内核栈">2、SVC mode 的栈：内核栈</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3异常向量表" data-toc-target="3异常向量表">3、异常向量表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一arm-硬件对中断事件的响应" data-toc-target="十一arm-硬件对中断事件的响应">十一、ARM 硬件对中断事件的响应</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二进入-arm-中断处理的三条路径用户态--内核态--irq-模式" data-toc-target="十二进入-arm-中断处理的三条路径用户态--内核态--irq-模式">十二、进入 ARM 中断处理的三条路径（用户态 / 内核态 / IRQ 模式）</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1irq-mode-里的过路动作vector_stub" data-toc-target="1irq-mode-里的过路动作vector_stub">1、IRQ mode 里的过路动作：vector_stub</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2跳转表16-个入口只有-2-个有效" data-toc-target="2跳转表16-个入口只有-2-个有效">2、跳转表：16 个入口，只有 2 个有效</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3路径一中断发生时在用户空间" data-toc-target="3路径一中断发生时在用户空间">3、路径一：中断发生时在用户空间</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4路径二中断发生时在内核空间" data-toc-target="4路径二中断发生时在内核空间">4、路径二：中断发生时在内核空间</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5路径三irq-mode-只是过路" data-toc-target="5路径三irq-mode-只是过路">5、路径三：IRQ mode 只是过路</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6irq_handler核心处理两种配置" data-toc-target="6irq_handler核心处理两种配置">6、irq_handler：核心处理，两种配置</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三中断退出过程" data-toc-target="十三中断退出过程">十三、中断退出过程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1返回用户空间" data-toc-target="1返回用户空间">1、返回用户空间</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2返回内核空间" data-toc-target="2返回内核空间">2、返回内核空间</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3两个出口的对照" data-toc-target="3两个出口的对照">3、两个出口的对照</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四从-arm-到-generic-irq两套代码如何衔接" data-toc-target="十四从-arm-到-generic-irq两套代码如何衔接">十四、从 ARM 到 generic irq：两套代码如何衔接</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五一次完整中断的时序总表" data-toc-target="十五一次完整中断的时序总表">十五、一次完整中断的时序总表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六易错点速查" data-toc-target="十六易错点速查">十六、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1章节出处" data-toc-target="1章节出处">1、章节出处</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2修正的错误" data-toc-target="2修正的错误">2、修正的错误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3素材本身的局限照实标明" data-toc-target="3素材本身的局限照实标明">3、素材本身的局限（照实标明）</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/05-中断与异常/中断子系统综述：从外设到内核的分发链/","title":"中断子系统综述：从外设到内核的分发链","url":"/B.内核/05-中断与异常/中断子系统综述：从外设到内核的分发链/","type":"current"},{"id":"/B.内核/05-中断与异常/ARM-中断与异常：从向量表到系统调用/","title":"ARM 中断与异常：从向量表到系统调用","url":"/B.内核/05-中断与异常/ARM-中断与异常：从向量表到系统调用/","type":"backlink"},{"id":"/B.内核/05-中断与异常/中断实战：注册、调试与典型故障/","title":"中断实战：注册、调试与典型故障","url":"/B.内核/05-中断与异常/中断实战：注册、调试与典型故障/","type":"backlink"},{"id":"/B.内核/05-中断与异常/GIC-驱动：从硬件寄存器到-irq_chip/","title":"GIC 驱动：从硬件寄存器到 irq_chip","url":"/B.内核/05-中断与异常/GIC-驱动：从硬件寄存器到-irq_chip/","type":"neighbor"},{"id":"/B.内核/05-中断与异常/IRQ-Domain-与中断描述符/","title":"IRQ Domain 与中断描述符","url":"/B.内核/05-中断与异常/IRQ-Domain-与中断描述符/","type":"neighbor"}],"links":[{"source":"/B.内核/05-中断与异常/ARM-中断与异常：从向量表到系统调用/","target":"/B.内核/05-中断与异常/中断子系统综述：从外设到内核的分发链/","type":"direct"},{"source":"/B.内核/05-中断与异常/中断实战：注册、调试与典型故障/","target":"/B.内核/05-中断与异常/中断子系统综述：从外设到内核的分发链/","type":"direct"},{"source":"/B.内核/05-中断与异常/中断子系统综述：从外设到内核的分发链/","target":"/B.内核/05-中断与异常/GIC-驱动：从硬件寄存器到-irq_chip/","type":"neighbor"},{"source":"/B.内核/05-中断与异常/中断子系统综述：从外设到内核的分发链/","target":"/B.内核/05-中断与异常/IRQ-Domain-与中断描述符/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

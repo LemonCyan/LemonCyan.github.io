@@ -1,0 +1,2014 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>读写锁与 seqlock：读多写少的两种解法 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">读写锁与 seqlock：读多写少的两种解法</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/06-内核同步/读写锁与-seqlock：读多写少的两种解法/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">读写锁与 seqlock：读多写少的两种解法</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">读写锁与 seqlock：读多写少的两种解法</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>边界先划清。本篇只讲两把锁：<code>rwlock_t</code>（读写自旋锁）与 <code>seqlock_t</code>（顺序锁）。前者让读者并行、写者互斥，后者让读者彻底不加锁、出错就重读。两者的共同前提是同一个场景——读多写少。</p>
+<p>不讲 <code>spinlock_t</code> 的基础原理、ticket 实现与常见陷阱，那部分在《spinlock：自旋锁的原理、实现与陷阱》里；不讲 <code>qspinlock</code> 的 MCS 队列、pending 状态迁移，也不讲 <code>mutex</code> 的乐观自旋，那部分在《排队自旋锁与 mutex》里。本篇提到 qrwlock 只讲它怎么改掉读写锁的公平性问题，提到 <code>rwsem</code> 只讲它的 handoff 与乐观自旋结论，不展开 <code>down_read</code>/<code>down_write</code> 的完整代码。</p>
+<p>版本与架构照实标：读写锁的通用结构与 ARM 汇编来自 wowotech 那篇基于 ARM32、2.6.x~3.x 时代的分析，本文的汇编已按 linux-3.10 的 <code>arch/arm/include/asm/spinlock.h</code> 逐字核对；seqlock 的分析基于 linux-4.0，接口与屏障位置另按 linux-5.15 的 <code>include/linux/seqlock.h</code> 核对；<code>rwsem</code> 的公平性结论来自 linux-5.15.81。凡是我没有在源码里核到的，正文里标「未验证」。</p>
+</blockquote>
+<h2 id="一为什么自旋锁不够用读多写少的场景" tabindex="-1">一、为什么自旋锁不够用：读多写少的场景 <a class="header-anchor" href="#一为什么自旋锁不够用读多写少的场景"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核里有一张被反复读、极少被改的表。文件系统类型的链表就是标准样本：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">file_system_type</span> *<span class="hljs-title">file_systems</span>;</span>
+<span class="hljs-type">static</span> <span class="hljs-title function_">DEFINE_RWLOCK</span><span class="hljs-params">(file_systems_lock)</span>;
+</code></pre></div></code></pre>
+<p><code>file_systems</code> 指向链表头，每个 <code>struct file_system_type</code> 描述一种文件系统（ext4、yaffs2 等等）。访问分两类：<code>register_filesystem</code>/<code>unregister_filesystem</code> 改链表，<code>fs_name</code>/<code>fs_index</code> 这类函数只遍历链表找节点。</p>
+<p>差别在并发度上。多个遍历者同时进临界区，每个都返回正确结果，互不干扰；只要有人改链表，就必须独占，因为遍历者走到一半看到半个新节点，结果就不可信了。</p>
+<p><code>spinlock_t</code> 把这两种情况一视同仁：管你是读还是写，一次只放一个进去。于是 8 核机器上跑 8 个遍历线程，吞吐不是 8 倍，是 1 倍，另外 7 个核在同一个 cacheline 上打转。ARM 上如果有 WFE 还好，CPU 能进低功耗；用纯轮询实现的自旋锁，这 7 个核就是在烧电。</p>
+<p>我们把需求摊开：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>访问模式</th>
+<th>读者之间</th>
+<th>读者与写者</th>
+<th>需要的语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全读</td>
+<td>可并行</td>
+<td>无写者</td>
+<td>无锁即可，或只读快照</td>
+</tr>
+<tr>
+<td>读多写少</td>
+<td>可并行</td>
+<td>互斥</td>
+<td>共享读、独占写</td>
+</tr>
+<tr>
+<td>读写各半</td>
+<td>可并行收益小</td>
+<td>互斥</td>
+<td>普通互斥锁就够</td>
+</tr>
+<tr>
+<td>写多读少</td>
+<td>不适用</td>
+<td>互斥</td>
+<td>写者优先，读者让路</td>
+</tr>
+</tbody>
+</table></div><p>第二行就是要解决的问题。<code>rwlock_t</code> 的答案是把「进入临界区的许可」从一个布尔量扩成一个带读者计数的状态字；<code>seqlock_t</code> 的答案更激进，干脆不给读者发许可，让读者直接读，读完再验证这段时间里有没有人改过。</p>
+<p>两个方案都在自旋的范畴里，都不睡眠。区别只在读者那一侧要不要写内存。要不要用睡眠版（<code>rwsem</code>），取决于临界区里能不能睡眠，这条边界放到第七节说。</p>
+<h2 id="二读写锁的核心思想读者共享写者独占" tabindex="-1">二、读写锁的核心思想：读者共享、写者独占 <a class="header-anchor" href="#二读写锁的核心思想读者共享写者独占"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把规则写成条目，比画状态图好记。</p>
+<p>加锁侧：</p>
+<ol>
+<li>临界区空着：任何读者或写者都能进，但只能进一个写者，读者可以进多个。</li>
+<li>已有读者在临界区：新读者随便进，写者不行。</li>
+<li>已有写者在临界区：读者、写者都不行。</li>
+<li>已有读者、写者正在等：写者进不去，新读者照样进得去——它拦不住后来者，只能等所有读者退场。</li>
+</ol>
+<p>解锁侧：</p>
+<ol>
+<li>写者退出：写者是排他的，临界区里只有它一个，它一放锁，所有在自旋的读者和写者重新抢。</li>
+<li>读者退出：看情况。临界区还有别的读者，等在门外的写者继续等，而且这期间新读者仍能进；等最后一个读者退出，写者才有机会参与竞争。</li>
+</ol>
+<p>第 4 条和第 2 条的解锁规则合起来，就是读写锁最大的性格缺陷：写者没有优先权。读者源源不断地来，写者就源源不断地等。第五节专门算这笔账。</p>
+<p>用起来没有新东西，就是把 <code>spin_</code> 前缀换成 <code>read_</code>/<code>write_</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">rwlock_t</span> lock;
+
+rwlock_init(&amp;lock);
+
+read_lock(&amp;lock);
+<span class="hljs-comment">/* 只读临界区，多个 CPU 可以同时在这里 */</span>
+read_unlock(&amp;lock);
+
+write_lock_irqsave(&amp;lock, flags);
+<span class="hljs-comment">/* 独占临界区 */</span>
+write_unlock_irqrestore(&amp;lock, flags);
+</code></pre></div></code></pre>
+<p>一句话概括语义：防写不防读。写者永远独行，读者永远成群，两者永不同时在临界区。</p>
+<h2 id="三rwlock_t-的数据结构与状态编码" tabindex="-1">三、rwlock_t 的数据结构与状态编码 <a class="header-anchor" href="#三rwlock_t-的数据结构与状态编码"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>通用结构薄得离谱，就一个架构相关的字段：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-type">arch_rwlock_t</span> raw_lock;
+} <span class="hljs-type">rwlock_t</span>;
+</code></pre></div></code></pre>
+<p>这是 3.x 的样子。到 6.6，调试字段加进来了，骨架没变：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-type">arch_rwlock_t</span> raw_lock;
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_DEBUG_SPINLOCK</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> magic, owner_cpu;
+    <span class="hljs-type">void</span> *owner;
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_DEBUG_LOCK_ALLOC</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">lockdep_map</span> <span class="hljs-title">dep_map</span>;</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+} <span class="hljs-type">rwlock_t</span>;
+</code></pre></div></code></pre>
+<p>初始化有三条路，静态、动态、常量赋值：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>宏/函数</th>
+<th>用途</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEFINE_RWLOCK(x)</code></td>
+<td>定义并静态初始化</td>
+<td>展开为 <code>rwlock_t x = __RW_LOCK_UNLOCKED(x)</code></td>
+</tr>
+<tr>
+<td><code>rwlock_init(&amp;x)</code></td>
+<td>运行动态初始化</td>
+<td>对应 <code>__rwlock_init</code>，带 lockdep 校验</td>
+</tr>
+<tr>
+<td><code>RW_LOCK_UNLOCKED</code></td>
+<td>常量初始化</td>
+<td>赋给已声明的对象</td>
+</tr>
+</tbody>
+</table></div><p>结构体本身不含状态，状态全在 <code>arch_rwlock_t</code> 里。ARM32 的定义简单到一个字：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    u32 lock;
+} <span class="hljs-type">arch_rwlock_t</span>;
+</code></pre></div></code></pre>
+<p>32 位整数，一个字段。看到这个定义就能下一个判断：ARM32 的读写锁不是 ticket-based 的，它没有 next/owner 两个序号。整个状态空间就是这 32 个 bit。</p>
+<p>位怎么分：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位域</th>
+<th>含义</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>bit 31</td>
+<td>写者标志</td>
+<td>置 1 表示写者持锁。写者排他，只有 0/1 两种取值</td>
+</tr>
+<tr>
+<td>bit 0~30</td>
+<td>读者计数</td>
+<td>每个进入读临界区的 CPU 加 1，退出减 1</td>
+</tr>
+<tr>
+<td>全 0</td>
+<td>空锁</td>
+<td>无读者无写者，任何申请者都能进</td>
+</tr>
+</tbody>
+</table></div><p>编码的关键约束是「符号位就是写者位」。读者加 1 之后如果结果变成负数，说明 bit 31 被人占了，也就是写者持锁，读者必须退让。这套设计把「写者是否存在」的判断压缩成一条 <code>adds</code> 指令的条件码，代价是读者计数只有 31 位可用。</p>
+<p>读者上限是多少？计数占 bit 0~30，最大值 <code>0x7FFFFFFF</code>，也就是 2^31-1。再多一个读者，加 1 得到 <code>0x80000000</code>，符号位翻成负，<code>strexpl</code> 不执行，这个读者直接被判失败。所以安全范围是 0 到 0x7FFFFFFF 共 2^31-1 个并发读者。素材原文写的是 2^30-1，少算了一半（见勘误表）。</p>
+<p>文件组织跟自旋锁同构，三件套：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>文件</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>include/linux/rwlock_types.h</code></td>
+<td><code>rwlock_t</code> 定义、<code>DEFINE_RWLOCK</code> 等初始化宏</td>
+</tr>
+<tr>
+<td><code>include/linux/rwlock.h</code></td>
+<td><code>read_lock</code>/<code>write_lock</code>/<code>read_unlock</code>/<code>write_unlock</code> 接口声明</td>
+</tr>
+<tr>
+<td><code>include/linux/rwlock_api_smp.h</code></td>
+<td>SMP 下的接口实现</td>
+</tr>
+</tbody>
+</table></div><p>使用者不用逐个 include，一个 <code>include/linux/spinlock.h</code> 就够了，普通自旋锁和读写自旋锁共用这一道门。</p>
+<p>后端实现后来换了人。6.6 的 <code>include/asm-generic/qrwlock_types.h</code> 里躺着这么一段：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">qrwlock</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">union</span> {</span>
+        <span class="hljs-type">atomic_t</span> cnts;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> __LITTLE_ENDIAN</span>
+            u8 wlocked;   <span class="hljs-comment">/* Locked for write? */</span>
+            u8 __lstate[<span class="hljs-number">3</span>];
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+            u8 __lstate[<span class="hljs-number">3</span>];
+            u8 wlocked;
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        };
+    };
+    <span class="hljs-type">arch_spinlock_t</span> wait_lock;
+} <span class="hljs-type">arch_rwlock_t</span>;
+</code></pre></div></code></pre>
+<p>外层 <code>rwlock_t</code> 一个字没改，里面从「1 个 u32」换成了「1 个 atomic 计数 + 1 把等待队列锁」。这是队列化读写锁（qrwlock）。它的编码换了一套：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>常量</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>_QW_WAITING</code></td>
+<td>0x100</td>
+<td>有写者在等，新读者必须走慢速路径</td>
+</tr>
+<tr>
+<td><code>_QW_LOCKED</code></td>
+<td>0x0ff</td>
+<td>写者持锁时计数区的值</td>
+</tr>
+<tr>
+<td><code>_QW_WMASK</code></td>
+<td>0x1ff</td>
+<td>写者相关位的掩码</td>
+</tr>
+<tr>
+<td><code>_QR_SHIFT</code></td>
+<td>9</td>
+<td>读者计数的起始位</td>
+</tr>
+<tr>
+<td><code>_QR_BIAS</code></td>
+<td>1 &lt;&lt; 9</td>
+<td>读者加一就是加这个偏置</td>
+</tr>
+</tbody>
+</table></div><p>读侧就是一条 <code>atomic_add_return(_QR_BIAS, &amp;lock-&gt;cnts)</code>，返回值里写者位干净就算拿到锁；写侧就是 <code>cmpxchg</code> 把 0 换成 <code>_QW_LOCKED</code>。这套接替 ARM32 老编码的具体版本节点我没有逐版本核，标「未验证」；能确认的是 6.6 里 <code>arch_rwlock_t</code> 已经是 <code>struct qrwlock</code>，<code>queued_rwlock_t</code> 这个类型名在源码里不存在，说的是同一件东西。</p>
+<h2 id="四read_lock-与-write_lock-的实现" tabindex="-1">四、read_lock 与 write_lock 的实现 <a class="header-anchor" href="#四read_lock-与-write_lock-的实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>接口家族跟自旋锁一一对应，改的只有前缀：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>read_lock(l)</code> / <code>read_unlock(l)</code></td>
+<td>拿不到就自旋；读者之间不互斥</td>
+</tr>
+<tr>
+<td><code>write_lock(l)</code> / <code>write_unlock(l)</code></td>
+<td>拿不到就自旋；写者独占</td>
+</tr>
+<tr>
+<td><code>read_trylock(l)</code> / <code>write_trylock(l)</code></td>
+<td>试一次，成了返回 1，不成返回 0，不等待</td>
+</tr>
+<tr>
+<td><code>read_lock_irq(l)</code> / <code>read_unlock_irq(l)</code></td>
+<td>关本地中断再拿读锁</td>
+</tr>
+<tr>
+<td><code>read_lock_irqsave(l, f)</code> / <code>read_unlock_irqrestore(l, f)</code></td>
+<td>存中断标志再关中断</td>
+</tr>
+<tr>
+<td><code>write_lock_irqsave(l, f)</code> / <code>write_unlock_irqrestore(l, f)</code></td>
+<td>写侧同上</td>
+</tr>
+<tr>
+<td><code>read_lock_bh(l)</code> / <code>read_unlock_bh(l)</code></td>
+<td>关软中断</td>
+</tr>
+<tr>
+<td><code>write_lock_bh(l)</code> / <code>write_unlock_bh(l)</code></td>
+<td>写侧同上</td>
+</tr>
+</tbody>
+</table></div><p>调用链跟自旋锁一模一样，只在最底下那层分叉：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>read_lock(lock)
+  -&gt; _raw_read_lock(lock)            每 CPU 数据、lockdep、抢占计数在这一层
+    -&gt; __raw_read_lock(lock)         SMP 版本，处理 CONFIG_ 分支
+      -&gt; arch_read_lock(&amp;lock-&gt;raw_lock)
+
+write_lock(lock)
+  -&gt; _raw_write_lock(lock)
+    -&gt; __raw_write_lock(lock)
+      -&gt; arch_write_lock(&amp;lock-&gt;raw_lock)
+</code></pre></div></code></pre>
+<p>这就是素材里那句「实现流程与 spin_lock 几乎完全一致，唯一不同的是最后调用体系结构相关的函数是 <code>arch_read_lock</code> 而不是 <code>arch_spin_lock</code>」的确切含义。自旋锁那篇讲的 ticket 逻辑到这里全部让位给 <code>arch_*</code>，通用层只剩三件事：关抢占、喂 lockdep、把参数搬到 <code>raw_lock</code> 上。这三件事的代码在 <code>rwlock_api_smp.h</code> 里，素材没有贴，我也不在这里补全函数体。</p>
+<p>真正有区别的是解锁侧，因为读者不止一个：</p>
+<p><strong>写者解锁</strong>：写者持锁时临界区里必然只有它一个，读者计数一定是 0。所以释放就是把状态字整体写 0，不需要读改写，也不需要判条件。</p>
+<p><strong>读者解锁</strong>：读者有 N 个，减 1 之后还剩几个不知道。只有减到 0 的那一个读者才需要唤醒等在门外的写者（它们卡在 WFE 上）。ARM 的实现里就有 <code>if (tmp == 0) dsb_sev()</code> 这一句。</p>
+<p>这一处不对称，是读写锁实现的全部难点：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>动作</th>
+<th>需要读改写吗</th>
+<th>需要条件唤醒吗</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>arch_write_lock</code></td>
+<td>是（独占指令）</td>
+<td>否</td>
+<td>要确认状态字为 0 才能置写者位</td>
+</tr>
+<tr>
+<td><code>arch_write_unlock</code></td>
+<td>否</td>
+<td>是（无条件）</td>
+<td>直接写 0，随后必发事件</td>
+</tr>
+<tr>
+<td><code>arch_read_lock</code></td>
+<td>是（独占指令）</td>
+<td>否</td>
+<td>要确认非负才能加 1</td>
+</tr>
+<tr>
+<td><code>arch_read_unlock</code></td>
+<td>是（独占指令）</td>
+<td>是（有条件）</td>
+<td>只有最后一个读者退出才唤醒写者</td>
+</tr>
+</tbody>
+</table></div><p>注意 <code>arch_read_unlock</code> 也要独占指令：读者之间虽然不互斥，但它们改的是同一个内存字，减 1 这个读改写必须原子，否则两个读者同时退出会丢计数。</p>
+<h2 id="五读写锁的公平性问题读者会不会饿死写者" tabindex="-1">五、读写锁的公平性问题：读者会不会饿死写者 <a class="header-anchor" href="#五读写锁的公平性问题读者会不会饿死写者"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把第二节的规则跑一遍，答案很快出来。假设 CPU0 上的读者 A 在临界区，CPU1 上的写者 B 到了门口：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>时刻</th>
+<th>临界区</th>
+<th>门口</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>t0</td>
+<td>A（读）</td>
+<td>空</td>
+<td>A 进</td>
+</tr>
+<tr>
+<td>t1</td>
+<td>A（读）</td>
+<td>B（写）</td>
+<td>B 自旋</td>
+</tr>
+<tr>
+<td>t2</td>
+<td>A（读）+ C（读）</td>
+<td>B（写）</td>
+<td>C 直接进，B 继续自旋</td>
+</tr>
+<tr>
+<td>t3</td>
+<td>A 退出，C（读）+ D（读）</td>
+<td>B（写）</td>
+<td>B 继续自旋</td>
+</tr>
+<tr>
+<td>t4</td>
+<td>所有读者退出</td>
+<td>B（写）</td>
+<td>B 终于进</td>
+</tr>
+</tbody>
+</table></div><p>t2 和 t3 两行就是问题所在。读者 A 退出时状态字仍是正数，<code>arch_read_unlock</code> 里那句 <code>if (tmp == 0)</code> 不成立，不会发 SEV，B 连被唤醒的机会都没有，它在 WFE 里睡着，直到最后一个读者退出才被踢醒。</p>
+<p>从代码层面看，写者没有任何「声明我要进」的动作。ARM32 的 <code>arch_write_lock</code> 是这么个流程：<code>ldrex</code> 读状态字，<code>teq</code> 判断是否为 0，不为 0 就 <code>WFE</code> 等事件，为 0 才 <code>strexeq</code> 写 <code>0x80000000</code>。它全程只观察，不占据任何位。既然它没有留下「我在等」的痕迹，后来者自然无从知道该让它。</p>
+<p>读者侧的逻辑反过来：<code>adds</code> 加 1，结果非负就 <code>strexpl</code> 落盘。只要状态字还是正的，谁都拦不住新读者。这条路径没有「有人在等写者」的检查点。</p>
+<p>后果是写者的等待时间没有上界。读者到达率 λ、单个读者持锁时长 T，写者的实际等待就随 λT 增长；负载一上来，写者会被无限推后。这在自旋锁的语义里尤其难受：写者不是睡眠，是在核上烧 CPU 轮询。</p>
+<p>后来的队列化实现专门补了这个洞。<code>_QW_WAITING</code>（0x100）就是给写者留的牌子：写者在慢速路径上把这一位置起来，新读者 <code>atomic_add_return</code> 回来发现 <code>_QW_WMASK</code> 非空，就知道有人在排队，乖乖回退并转入 <code>queued_read_lock_slowpath</code>。写者从「只观察」变成「占坑」，读者不能再无脑插队。</p>
+<p>睡眠锁那边的解法是另一个思路，名字叫 handoff。5.15.81 的 <code>rwsem</code> 里有这么一套机制：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>唤醒 top waiter 时锁被偷</td>
+<td>若已等待超过 4ms 且未设 handoff，置 handoff 位，禁止他人再抢</td>
+</tr>
+<tr>
+<td>被唤醒的写者试图持锁失败</td>
+<td>同上，超 4ms 置 handoff 位</td>
+</tr>
+<tr>
+<td>handoff 置位后</td>
+<td>快速路径、读者的乐观偷锁、写者的乐观自旋全部失效，锁直接递交给 top waiter</td>
+</tr>
+<tr>
+<td>持锁成功</td>
+<td>清除 handoff</td>
+</tr>
+</tbody>
+</table></div><p>注意这是 <code>rwsem</code>，是睡眠锁，有等待队列、有 task 结构、能睡。自旋锁玩不了这套：它没有队列，也没有地方挂「我等了 4ms」这个状态。所以读写自旋锁的公平性问题，最终是靠换实现（qrwlock）解决的，不是靠打补丁。</p>
+<h2 id="六读写锁在-arm-上的实现" tabindex="-1">六、读写锁在 ARM 上的实现 <a class="header-anchor" href="#六读写锁在-arm-上的实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>所有读写锁的细节都在 <code>arch_read_lock</code>/<code>arch_write_lock</code> 这一层。ARM32 的两个文件各管一段：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>文件</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>arch/arm/include/asm/spinlock_types.h</code></td>
+<td><code>arch_rwlock_t</code> 定义、<code>__ARCH_RW_LOCK_UNLOCKED</code> 等初始化</td>
+</tr>
+<tr>
+<td><code>arch/arm/include/asm/spinlock.h</code></td>
+<td><code>arch_read_lock</code>/<code>arch_write_lock</code>/<code>__read_lock_failed</code> 等实现</td>
+</tr>
+</tbody>
+</table></div><p><code>arch_rwlock_t</code> 就是一个 <code>u32 lock</code>，前文已列。有意思的是素材里那句评价：从定义就能看出 ARM 的读写自旋锁不是 ticket-based。判断依据很直接：ticket 锁需要两个 16 位序号（next/owner），一个 u32 塞不下「读者计数 + 写者标志 + 两个序号」，所以它只能走位域方案。</p>
+<p>下面按 3.10 源码讲，缩进和指令原样保留。</p>
+<p><strong>写者加锁</strong></p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">static</span> inline void arch_write_lock(arch_rwlock_t *rw)
+{
+    unsigned long tmp<span class="hljs-comment">;</span>
+
+    prefetchw(&amp;rw-&gt;lock)<span class="hljs-comment">;</span>
+
+    __asm__ __volatile__(
+<span class="hljs-string">&quot;1:	ldrex	%0, [%1]\n&quot;</span>
+<span class="hljs-string">&quot;	teq	%0, #0\n&quot;</span>
+    WFE(<span class="hljs-string">&quot;ne&quot;</span>)
+<span class="hljs-string">&quot;	strexeq	%0, %2, [%1]\n&quot;</span>
+<span class="hljs-string">&quot;	teq	%0, #0\n&quot;</span>
+<span class="hljs-string">&quot;	bne	1b&quot;</span>
+    : <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp)
+    : <span class="hljs-string">&quot;r&quot;</span> (&amp;rw-&gt;lock), <span class="hljs-string">&quot;r&quot;</span> (<span class="hljs-number">0x80000000</span>)
+    : <span class="hljs-string">&quot;cc&quot;</span>)<span class="hljs-comment">;</span>
+
+    smp_mb()<span class="hljs-comment">;</span>
+}
+</code></pre></div></code></pre>
+<p>逐条读：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>指令</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prefetchw</code></td>
+<td>告诉硬件「马上要写这块」，先预取到 cache</td>
+</tr>
+<tr>
+<td><code>ldrex %0, [%1]</code></td>
+<td>独占读状态字到 tmp</td>
+</tr>
+<tr>
+<td><code>teq %0, #0</code></td>
+<td>判断是否为空锁</td>
+</tr>
+<tr>
+<td><code>WFE(&quot;ne&quot;)</code></td>
+<td>非 0 就等事件。有读者或有写者，都得让路</td>
+</tr>
+<tr>
+<td><code>strexeq %0, %2, [%1]</code></td>
+<td>为 0 才执行：把 <code>0x80000000</code> 写进去</td>
+</tr>
+<tr>
+<td><code>teq %0, #0</code> + <code>bne 1b</code></td>
+<td>独占写失败说明中间被人插了，回到 1 重来</td>
+</tr>
+<tr>
+<td><code>smp_mb()</code></td>
+<td>拿到锁后插全屏障，防止临界区访存被重排到加锁之前</td>
+</tr>
+</tbody>
+</table></div><p><code>WFE</code> 是个宏，不是指令。3.10 里它展开成 <code>ALT_SMP(&quot;wfe&quot; cond, &quot;nop&quot;)</code>，走 <code>.alt.smp.init</code> 段，UP 内核启动时把 <code>wfe</code> 补成 <code>nop</code>。原因写在注释里：<code>sev</code> 和 <code>wfe</code> 是 ARMv6K 扩展，单核 ARMv6 未必有。Thumb-2 下有额外处理，编译器会因为相邻的条件指令自作主张插一条 16 位 IT 指令，把原本 4 字节的 <code>wfene</code> 挤成别的长度，SMP_ON_UP 的修正代码就对不上了，所以显式写了 <code>it</code>。</p>
+<p><strong>写者解锁</strong></p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">static</span> inline void arch_write_unlock(arch_rwlock_t *rw)
+{
+    smp_mb()<span class="hljs-comment">;</span>
+
+    __asm__ __volatile__(
+    <span class="hljs-string">&quot;str	%1, [%0]\n&quot;</span>
+    :
+    : <span class="hljs-string">&quot;r&quot;</span> (&amp;rw-&gt;lock), <span class="hljs-string">&quot;r&quot;</span> (<span class="hljs-number">0</span>)
+    : <span class="hljs-string">&quot;cc&quot;</span>)<span class="hljs-comment">;</span>
+
+    dsb_sev()<span class="hljs-comment">;</span>
+}
+</code></pre></div></code></pre>
+<p>先 <code>smp_mb()</code> 保证临界区内的写已经落地，再一条 <code>str</code> 把 0 写进去。这里不需要 <code>ldrex</code>/<code>strex</code>，理由前面说过：写者持锁时读者计数必为 0，状态字只会是 <code>0x80000000</code>，直接覆盖成 0 不会丢任何信息。最后 <code>dsb_sev()</code>，数据同步屏障加 <code>sev</code>，把卡在 <code>wfe</code> 上的核叫醒。</p>
+<p><code>dsb_sev()</code> 自身也有版本分支：ARMv7 及以上用 <code>dsb</code> 加 <code>sev</code>；ARMv6 用 <code>mcr p15, 0, %0, c7, c10, 4</code>。两者都套在 <code>ALT_SMP</code> 里，UP 编译时 <code>sev</code> 变成 <code>nop</code>。</p>
+<p><strong>读者加锁</strong></p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">static</span> inline void arch_read_lock(arch_rwlock_t *rw)
+{
+    unsigned long tmp, tmp2<span class="hljs-comment">;</span>
+
+    prefetchw(&amp;rw-&gt;lock)<span class="hljs-comment">;</span>
+
+    __asm__ __volatile__(
+<span class="hljs-string">&quot;1:	ldrex	%0, [%2]\n&quot;</span>
+<span class="hljs-string">&quot;	adds	%0, %0, #1\n&quot;</span>
+<span class="hljs-string">&quot;	strexpl	%1, %0, [%2]\n&quot;</span>
+    WFE(<span class="hljs-string">&quot;mi&quot;</span>)
+<span class="hljs-string">&quot;	rsbpls	%0, %1, #0\n&quot;</span>
+<span class="hljs-string">&quot;	bmi	1b&quot;</span>
+    : <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp2)
+    : <span class="hljs-string">&quot;r&quot;</span> (&amp;rw-&gt;lock)
+    : <span class="hljs-string">&quot;cc&quot;</span>)<span class="hljs-comment">;</span>
+
+    smp_mb()<span class="hljs-comment">;</span>
+}
+</code></pre></div></code></pre>
+<p>这段比写者那段绕，因为它把两个判断塞进了条件码：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>指令</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ldrex %0, [%2]</code></td>
+<td>独占读状态字</td>
+</tr>
+<tr>
+<td><code>adds %0, %0, #1</code></td>
+<td>tmp = tmp + 1，末尾的 s 更新条件码</td>
+</tr>
+<tr>
+<td><code>strexpl %1, %0, [%2]</code></td>
+<td><code>pl</code> 是 positive or zero：结果为非负才落盘</td>
+</tr>
+<tr>
+<td><code>WFE(&quot;mi&quot;)</code></td>
+<td><code>mi</code> 是 negative：结果为负说明有写者，等事件</td>
+</tr>
+<tr>
+<td><code>rsbpls %0, %1, #0</code></td>
+<td>结果为非负时算 <code>0 - tmp2</code>，tmp2 是 <code>strex</code> 的返回值，0 表示成功</td>
+</tr>
+<tr>
+<td><code>bmi 1b</code></td>
+<td>上一步结果为负（即独占写失败）就重来</td>
+</tr>
+</tbody>
+</table></div><p>关键在 <code>adds</code> 和 <code>strexpl</code> 的配合。读者加 1 后若结果仍是正的，说明 bit 31 没被占，写者不在，可以落盘；若结果变负，说明写者正持锁，<code>pl</code> 条件不成立，<code>strex</code> 根本不执行，直接进 <code>WFE</code>。一条 <code>adds</code> 同时完成了「计数加一」和「检测写者」两个任务。</p>
+<p><code>strexpl</code> 不执行时 <code>%1</code> 保留旧值。<code>rsbpls %0, %1, #0</code> 只在非负分支执行，等于 0 才继续；<code>bmi 1b</code> 就是靠这个把「写失败」翻译成「重试」。素材里那句「pl 的意思就是 positive or zero，也就是说，如果结果是正数或者 0，该指令都会执行」就是这个意思，只是它把 <code>0</code> 这个边界说成「没有 thread 在临界区或者临界区内有若干 read thread」——准确说，是「结果非负」，包含了读者计数加到某值的全部正常情形。</p>
+<p><strong>读者解锁</strong></p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">static</span> inline void arch_read_unlock(arch_rwlock_t *rw)
+{
+    unsigned long tmp, tmp2<span class="hljs-comment">;</span>
+
+    smp_mb()<span class="hljs-comment">;</span>
+
+    prefetchw(&amp;rw-&gt;lock)<span class="hljs-comment">;</span>
+
+    __asm__ __volatile__(
+<span class="hljs-string">&quot;1:	ldrex	%0, [%2]\n&quot;</span>
+<span class="hljs-string">&quot;	sub	%0, %0, #1\n&quot;</span>
+<span class="hljs-string">&quot;	strex	%1, %0, [%2]\n&quot;</span>
+<span class="hljs-string">&quot;	teq	%1, #0\n&quot;</span>
+<span class="hljs-string">&quot;	bne	1b&quot;</span>
+    : <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp2)
+    : <span class="hljs-string">&quot;r&quot;</span> (&amp;rw-&gt;lock)
+    : <span class="hljs-string">&quot;cc&quot;</span>)<span class="hljs-comment">;</span>
+
+    <span class="hljs-meta">if</span> (tmp == <span class="hljs-number">0</span>)
+        dsb_sev()<span class="hljs-comment">;</span>
+}
+</code></pre></div></code></pre>
+<p>这是四段里唯一带条件唤醒的。<code>sub</code> 减一，<code>strex</code> 落盘，失败重试；出了汇编之后判 <code>tmp == 0</code>，只有减到 0 的那个读者才 <code>dsb_sev()</code>。其他读者悄悄走人，不惊动任何人。</p>
+<p><code>trylock</code> 和 <code>can_lock</code> 这两组辅助接口也在同一文件里：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>实现要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>arch_write_trylock</code></td>
+<td><code>ldrex</code> + <code>teq 0</code> + <code>strexeq</code>，一次不成就返回 0，不进循环</td>
+</tr>
+<tr>
+<td><code>arch_read_trylock</code></td>
+<td><code>adds</code> + <code>strexpl</code>，失败返回 0；<code>tmp2</code> 初值 1，成功被 <code>strex</code> 置 0</td>
+</tr>
+<tr>
+<td><code>arch_write_can_lock(x)</code></td>
+<td><code>((x)-&gt;lock == 0)</code></td>
+</tr>
+<tr>
+<td><code>arch_read_can_lock(x)</code></td>
+<td><code>(x)-&gt;lock &lt; 0x80000000</code>，即符号位为 0</td>
+</tr>
+</tbody>
+</table></div><p><code>can_lock</code> 不看独占标记，只看状态字的值，所以它是个有竞态的乐观判断，只适合在「马上要 trylock」之前做一次便宜的预判。</p>
+<p>三组 <code>relax</code> 直接复用 <code>cpu_relax()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> arch_spin_relax(lock)   cpu_relax()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> arch_read_relax(lock)   cpu_relax()</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> arch_write_relax(lock)  cpu_relax()</span>
+</code></pre></div></code></pre>
+<p>ARM32 的 <code>cpu_relax()</code> 是 <code>barrier()</code>，行为上等同编译器屏障，不产生指令。所以 ARM32 上的自旋等待靠的是 <code>wfe</code> 而不是 <code>pause</code> 式的退让提示。这点跟 x86 不同，x86 的自旋路径里会出现 <code>rep; nop</code>，也就是 <code>pause</code>。</p>
+<h2 id="七读写锁的局限读者多时写者等待过久" tabindex="-1">七、读写锁的局限：读者多时写者等待过久 <a class="header-anchor" href="#七读写锁的局限读者多时写者等待过久"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把第六节的四段代码放一起看，局限就浮出来了。</p>
+<p>第一，写者没有等待声明。<code>arch_write_lock</code> 全程只 <code>ldrex</code> 观察，不写任何位。后来者看不到它，自然不会让它。</p>
+<p>第二，读者路径没有「有人等写」的检查。<code>adds</code> 加一、非负就落盘，这条快路径没有任何分支去查等待者。</p>
+<p>第三，写者的等待是烧 CPU 的。<code>WFE</code> 让核进低功耗，但这是 ARM 的红利；纯轮询实现（比如某些 x86 变体）上，写者会一直占着流水线。x86 那套实现里，读者失败后进 <code>__read_lock_failed</code>，核心是 <code>pause</code>：</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 概念示意，非逐字源码 */</span>
+<span class="hljs-number">1</span>:  pause
+    cmpl <span class="hljs-number">$1</span>, (%rdi)
+    jne  <span class="hljs-number">1</span>b
+</code></pre></div></code></pre>
+<p>素材对 <code>rep; nop</code> 的解释是对的：<code>rep</code> 是重复串操作前缀，正常跟 <code>movs</code>/<code>stos</code>/<code>lods</code>/<code>ins</code>/<code>outs</code> 搭配，<code>rep; nop</code> 是个特例，被处理器翻译成 <code>pause</code>，提示「我在自旋等待」，让 CPU 避开内存序冲突。至于 <code>__read_lock_failed</code> 里那套「先给 rw 加 1 再比较 1」的循环，它依赖当时 x86 那版读写锁把「写者持锁」编码成 -1 这个约定；我在 3.10/4.9/6.6 的 x86 实现里都没有核到完全一致的函数体（那套编码先后换过几轮），所以这段标「未验证」，只当作理解思路的示意。</p>
+<p>第四，也是最要命的一条：读写锁不解决优先级反转，只放大它。写者要等所有读者退场，读者里只要有一个被调度器踢下 CPU（抢占、中断处理、缺页），写者的等待时间就由这个读者决定，而不是由读者的工作量决定。临界区里放页错误、放内存分配、放任何会睡着的调用，都会把写者的等待拉长到毫秒级甚至更久。</p>
+<p>第五，它是自旋锁，不能睡。临界区里调 <code>copy_to_user</code>、<code>kmalloc(GFP_KERNEL)</code>、<code>mutex_lock</code>，都会在持锁期间睡眠，而睡眠的持锁者不会主动放锁，等它的写者会把 CPU 烧穿。这条规矩跟普通自旋锁一样，但读写锁的读临界区容易被误认为「只是读，不会有问题」，实际读路径里带着 <code>might_sleep()</code> 的操作一样致命。</p>
+<p>同一套编码在 ARM64 上是另一组指令。ARM64 的 <code>arch_rwlock_t</code> 我按 3.10~5.x 的 <code>arch/arm64/include/asm/spinlock_types.h</code> 回忆，结构同样是 <code>u32 lock</code>，位分配也一样，但独占访问指令从 <code>ldrex</code>/<code>strex</code> 换成了 <code>ldaxr</code>/<code>stlxr</code>（带 acquire/release 语义），<code>wfe</code>/<code>sev</code> 还在：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层面</th>
+<th>ARM32</th>
+<th>ARM64</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>独占读</td>
+<td><code>ldrex</code></td>
+<td><code>ldaxr</code>（带 acquire）</td>
+</tr>
+<tr>
+<td>独占写</td>
+<td><code>strex</code></td>
+<td><code>stlxr</code>（带 release）</td>
+</tr>
+<tr>
+<td>等事件</td>
+<td><code>wfe</code></td>
+<td><code>wfe</code></td>
+</tr>
+<tr>
+<td>发事件</td>
+<td><code>sev</code>，配 <code>dsb</code></td>
+<td><code>sev</code>，配 <code>dmb ish</code></td>
+</tr>
+<tr>
+<td>显式全屏障</td>
+<td><code>smp_mb()</code></td>
+<td><code>smp_mb()</code> 或依赖 <code>ldaxr</code>/<code>stlxr</code> 隐含序</td>
+</tr>
+<tr>
+<td>自旋提示</td>
+<td><code>barrier()</code>（空）</td>
+<td><code>yield</code></td>
+</tr>
+</tbody>
+</table></div><p>这张表的 ARM64 一列我标「部分未验证」：<code>ldaxr</code>/<code>stlxr</code> 与 <code>yield</code> 出现在 ARM64 的自旋实现里是确定的，但读写锁那四个函数在 6.6 的 ARM64 上是不是已经全部转给 asm-generic qrwlock，我没有逐个文件核对。写代码时以你手上的内核源码为准，别拿这张表当依据。</p>
+<p>那什么时候该换成睡眠版？看临界区能不能睡：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>判据</th>
+<th>用读写自旋锁</th>
+<th>用 rwsem</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>临界区会睡眠</td>
+<td>不行</td>
+<td>必须</td>
+</tr>
+<tr>
+<td>临界区访问用户内存</td>
+<td>不行</td>
+<td>必须</td>
+</tr>
+<tr>
+<td>临界区在中断上下文</td>
+<td>必须</td>
+<td>不行</td>
+</tr>
+<tr>
+<td>临界区极短（几十条指令）</td>
+<td>合适</td>
+<td>开销过大</td>
+</tr>
+<tr>
+<td>需要写者不被饿死</td>
+<td>换 qrwlock</td>
+<td>用 handoff</td>
+</tr>
+</tbody>
+</table></div><p><code>rwsem</code> 侧的公平性前面讲过 handoff。它还有一层额外保障：等待超过 4ms 就置 handoff 位，之后快速路径、读者的偷锁、写者的乐观自旋全部失效，锁直接递给队首。这条 4ms 的阈值出现在 5.15.81 的 <code>rwsem_mark_wake</code> 与 <code>rwsem_try_write_lock</code> 里，具体宏名是 <code>RWSEM_WAIT_TIMEOUT</code>（素材正文只给了 4ms 这个数值，宏名我按同版本源码补的）。</p>
+<p>至于「rwlock 已经没人用了」这句话，得给个准数：素材原文说的是内核不再鼓励使用读写自旋锁，RCU 是更好的选择。这是 2.6.x~4.x 那个年代的判断，到 5.x 依然成立，<code>Documentation/locking/</code> 里对 <code>rwlock_t</code> 的定位也是「遗留」。要精确到哪个版本开始不推荐，我没核到，标「未验证」；能确认的是 6.6 里它还在，只是后端换成了 qrwlock。</p>
+<h2 id="八seqlock让读者彻底无锁" tabindex="-1">八、seqlock：让读者彻底无锁 <a class="header-anchor" href="#八seqlock让读者彻底无锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>读写锁至少让读者写一次状态字。<code>seqlock_t</code> 把这最后一次写也省了。</p>
+<p>它的出发点是另一个方向的偏好：不给读者优先权，反过来给写者让路。写者想进就进，不管门口排着多少读者；读者自己负责检测「我读的时候有没有人改」，改过就重读。</p>
+<p>规则很干净：</p>
+<ol>
+<li>写者之间仍然互斥，靠内嵌的一把自旋锁保证。</li>
+<li>读者不拿任何锁，直接读。</li>
+<li>读者读完检查序号有没有变，变了就整个重来。</li>
+</ol>
+<p>素材里那句总结值得抄下来：临界区只允许一个写者进入；没有写者时读者可以随意进入，读者不阻挡读者；临界区里有读者时，写者可以立刻执行，不等。</p>
+<p>跟读写锁对比，差异只有一处，但影响巨大：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>rwlock_t</th>
+<th>seqlock_t</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读者进入</td>
+<td>原子读改写状态字</td>
+<td>读一个序号，不写内存</td>
+</tr>
+<tr>
+<td>读者之间</td>
+<td>并行</td>
+<td>并行</td>
+</tr>
+<tr>
+<td>写者等待读者</td>
+<td>必须等所有读者退场</td>
+<td>不等，直接进</td>
+</tr>
+<tr>
+<td>读者读到脏数据</td>
+<td>不会</td>
+<td>会，靠重试修正</td>
+</tr>
+<tr>
+<td>读者侧 cacheline</td>
+<td>争抢（同一状态字）</td>
+<td>只读共享，几乎无争抢</td>
+</tr>
+<tr>
+<td>适合的数据</td>
+<td>任意结构</td>
+<td>定长、可整体重读的数据</td>
+</tr>
+</tbody>
+</table></div><p>最后一行是硬边界。seqlock 的读者拿到的数据是撕裂的，所以它必须满足「重读一次就能拿到完整正确值」这个条件。</p>
+<p><code>jiffies_64</code> 是内核里的标准用例。它 64 位宽，32 位机器上一次读不完，读完高低两半之间会被时钟中断里的写者改掉，于是用 <code>jiffies_lock</code> 保护：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>u64 <span class="hljs-title function_">get_jiffies_64</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    u64 ret;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> seq;
+
+    <span class="hljs-keyword">do</span> {
+        seq = read_seqbegin(&amp;jiffies_lock);
+        ret = jiffies_64;
+    } <span class="hljs-keyword">while</span> (read_seqretry(&amp;jiffies_lock, seq));
+
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<p>写侧：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">tick_do_update_jiffies64</span><span class="hljs-params">(<span class="hljs-type">ktime_t</span> now)</span>
+{
+    write_seqlock(&amp;jiffies_lock);
+
+    <span class="hljs-comment">/* 改 jiffies_64 及相关变量，略 */</span>
+
+    write_sequnlock(&amp;jiffies_lock);
+}
+</code></pre></div></code></pre>
+<p>读侧一个 <code>do-while</code>，没有任何加锁动作。这就是 seqlock 的全部使用成本。</p>
+<h2 id="九seqlock-的序号机制写入时序号加两次" tabindex="-1">九、seqlock 的序号机制：写入时序号加两次 <a class="header-anchor" href="#九seqlock-的序号机制写入时序号加两次"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>数据结构是把自旋锁和一个序号焊在一起：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">seqcount</span> <span class="hljs-title">seqcount</span>;</span>    <span class="hljs-comment">/* 序号 */</span>
+    <span class="hljs-type">spinlock_t</span> lock;             <span class="hljs-comment">/* 写者串行化 */</span>
+} <span class="hljs-type">seqlock_t</span>;
+</code></pre></div></code></pre>
+<p>4.0 的直接写作：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">seqcount</span> <span class="hljs-title">seqcount</span>;</span>
+    <span class="hljs-type">spinlock_t</span> lock;
+} <span class="hljs-type">seqlock_t</span>;
+</code></pre></div></code></pre>
+<p><code>struct seqcount</code> 里就一个 <code>unsigned sequence</code>（3.x/4.x 的写法，对应源码里的 <code>sl-&gt;sequence</code>）。到 5.15，这个成员换成了带关联锁的变体：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-type">seqcount_spinlock_t</span> seqcount;
+    <span class="hljs-type">spinlock_t</span> lock;
+} <span class="hljs-type">seqlock_t</span>;
+</code></pre></div></code></pre>
+<p><code>seqcount_spinlock_t</code> 是「序号 + 指向关联锁的指针」，作用是让 lockdep 能校验写侧临界区确实被那把锁串行化。字段名也从 <code>sequence</code> 变成了 <code>seqcount.seqcount.sequence</code>。这是纯粹的调试与校验增强，读写逻辑没动。</p>
+<p>序号的核心规则一句话：写者进临界区加一，出临界区再加一。4.0 的写法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">write_seqlock</span><span class="hljs-params">(<span class="hljs-type">seqlock_t</span> *sl)</span>
+{
+    spin_lock(&amp;sl-&gt;lock);
+    sl-&gt;sequence++;
+    smp_wmb();
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">write_sequnlock</span><span class="hljs-params">(<span class="hljs-type">seqlock_t</span> *sl)</span>
+{
+    smp_wmb();
+    sl-&gt;sequence++;
+    spin_unlock(&amp;sl-&gt;lock);   <span class="hljs-comment">/* 素材未贴，按同版本源码补 */</span>
+}
+</code></pre></div></code></pre>
+<p>5.15 的写法换成了宏，语义一一对应：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">write_seqlock</span><span class="hljs-params">(<span class="hljs-type">seqlock_t</span> *sl)</span>
+{
+    spin_lock(&amp;sl-&gt;lock);
+    do_write_seqcount_begin(&amp;sl-&gt;seqcount.seqcount);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">write_sequnlock</span><span class="hljs-params">(<span class="hljs-type">seqlock_t</span> *sl)</span>
+{
+    do_write_seqcount_end(&amp;sl-&gt;seqcount.seqcount);
+    spin_unlock(&amp;sl-&gt;lock);
+}
+</code></pre></div></code></pre>
+<p>而 <code>do_write_seqcount_begin</code> 与 <code>do_write_seqcount_end</code> 的肉身，还是那两次自增加屏障：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">do_raw_write_seqcount_begin</span><span class="hljs-params">(<span class="hljs-type">seqcount_t</span> *s)</span>
+{
+    s-&gt;sequence++;
+    smp_wmb();
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">do_raw_write_seqcount_end</span><span class="hljs-params">(<span class="hljs-type">seqcount_t</span> *s)</span>
+{
+    smp_wmb();
+    s-&gt;sequence++;
+}
+</code></pre></div></code></pre>
+<p>于是序号的奇偶成了状态指示器：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>序号状态</th>
+<th>含义</th>
+<th>读者的动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>偶数（含 0）</td>
+<td>没有写者在临界区</td>
+<td>可以读</td>
+</tr>
+<tr>
+<td>奇数</td>
+<td>有写者在临界区</td>
+<td>等它变偶数再读</td>
+</tr>
+<tr>
+<td>读数时偶数、读完变奇数</td>
+<td>我读的时候写者插进来了</td>
+<td>丢弃重读</td>
+</tr>
+<tr>
+<td>读数时偶数、读完成另一个偶数</td>
+<td>写者来过了</td>
+<td>序号不等，重读</td>
+</tr>
+</tbody>
+</table></div><p>为什么是加两次而不是一次？因为读者要区分「写者来过」和「写者正在写」。加一次的话，读者看到一个变了的值就分不清是写完了还是写一半。加两次让「稳定状态」永远是偶数，「进行中」永远是奇数，读者用一个 <code>&amp; 1</code> 就能判断。</p>
+<p>这也解释了素材里那个自问自答：既然 <code>read_seqretry</code> 会比对序号，<code>read_seqbegin</code> 里的奇偶判断是不是多余？不多余。放读者进去再靠 retry 拦下，逻辑上没错，但读者会在写者还在改数据的时候进去读一遍，把写者刚写好的 cacheline 读成共享态，写者后续的写就要多一次 cache 一致性开销。在 <code>read_seqbegin</code> 拦住，代价是一次序号读，收益是写者少受干扰。素材对这点给的理由是 reader 进去读会给 writer 带来额外的开销（cache miss），判断成立。</p>
+<p>还有一点是素材没说透的：序号是 32 位无符号数，溢出回绕。两个 reader 在回绕窗口里恰好看到相同序号的窗口存在，但需要中间隔了 2^32 次写者进入，实践里不会发生。这条只做记录，不展开。</p>
+<p>写者侧的代价也要说清。<code>write_seqlock</code> 拿的是内嵌的自旋锁，所以写者之间互斥；但它不等读者，读者也不改任何写者要争的变量。这带来一个反直觉的结果：seqlock 的写者进入临界区的成本，跟临界区外面有没有一百个读者无关。读者的存在对写者完全透明。</p>
+<p>代价转移到了读者那边。写者密集时读者会反复重试，极端情况下出现活锁：读者刚读完数据，写者进来把序号改成奇数，读者重来，又撞上。5.15 给这类场景留了出口，就是「读锁或乐观读」二选一的那组接口：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">read_seqbegin_or_lock</span><span class="hljs-params">(<span class="hljs-type">seqlock_t</span> *lock, <span class="hljs-type">int</span> *seq)</span>
+{
+    <span class="hljs-keyword">if</span> (!(*seq &amp; <span class="hljs-number">1</span>))    <span class="hljs-comment">/* Even */</span>
+        *seq = read_seqbegin(lock);
+    <span class="hljs-keyword">else</span>                <span class="hljs-comment">/* Odd */</span>
+        read_seqlock_excl(lock);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">need_seqretry</span><span class="hljs-params">(<span class="hljs-type">seqlock_t</span> *lock, <span class="hljs-type">int</span> seq)</span>
+{
+    <span class="hljs-keyword">return</span> !(seq &amp; <span class="hljs-number">1</span>) &amp;&amp; read_seqretry(lock, seq);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">done_seqretry</span><span class="hljs-params">(<span class="hljs-type">seqlock_t</span> *lock, <span class="hljs-type">int</span> seq)</span>
+{
+    <span class="hljs-keyword">if</span> (seq &amp; <span class="hljs-number">1</span>)
+        read_sequnlock_excl(lock);
+}
+</code></pre></div></code></pre>
+<p>用法是：第一次传一个偶数 <code>seq</code> 进去，走无锁路径；如果 <code>need_seqretry</code> 返回需要重试，把 <code>seq</code> 传回去再来一轮，这次因为 <code>seq</code> 是奇数，读者转成「持锁读者」——<code>read_seqlock_excl</code> 直接抢内嵌自旋锁，把写者挡在外面，读一次就成。<code>done_seqretry</code> 负责把锁放掉。</p>
+<p>这套机制的本质是给读者一个逃生通道：重试一次失败就升级成加锁读者，用阻塞换确定性。素材分析的是 4.0，那时还没有这组接口，所以没提；5.15 里它在 <code>seqlock.h</code> 里，是解决读者饥饿的官方答案。</p>
+<h2 id="十read_seqbegin--read_seqretry-的配对" tabindex="-1">十、read_seqbegin / read_seqretry 的配对 <a class="header-anchor" href="#十read_seqbegin--read_seqretry-的配对"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>读者侧两个函数，一进一出。</p>
+<p>4.0 的 <code>read_seqbegin</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">unsigned</span> <span class="hljs-title function_">read_seqbegin</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">seqlock_t</span> *sl)</span>
+{
+    <span class="hljs-type">unsigned</span> ret;
+
+repeat:
+    ret = ACCESS_ONCE(sl-&gt;sequence);
+    <span class="hljs-keyword">if</span> (unlikely(ret &amp; <span class="hljs-number">1</span>)) {
+        cpu_relax();
+        <span class="hljs-keyword">goto</span> repeat;
+    }
+
+    smp_rmb();
+
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<p><code>ACCESS_ONCE</code> 是必须的。它告诉编译器「这个变量会被别人改，不要缓存到寄存器，不要合并读」。少了它，编译器完全可以把 <code>repeat</code> 里的读提到循环外，读者就永远看不到写者动过序号。</p>
+<p><code>smp_rmb()</code> 的位置是关键：在序号快照之后、读数据之前。它保证读数据的访存不会被重排到读序号之前。少了它，CPU 会先把 <code>jiffies_64</code> 读进流水线，再读序号，于是「序号是偶数」这个结论对应的是一个已经过期的数据快照——屏障没配平的后果就是这个。</p>
+<p><code>cpu_relax()</code> 在 ARM64 上是一条 <code>yield</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">cpu_relax</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-keyword">asm</span> <span class="hljs-title function_">volatile</span><span class="hljs-params">(<span class="hljs-string">&quot;yield&quot;</span> ::: <span class="hljs-string">&quot;memory&quot;</span>)</span>;
+}
+</code></pre></div></code></pre>
+<p><code>yield</code> 告诉硬件「本核在等，别的线程要用就让出来」。跟 ARM32 的 <code>barrier()</code>（空实现）不是一回事，这属于架构差异，别混着背。</p>
+<p><code>read_seqretry</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">unsigned</span> <span class="hljs-title function_">read_seqretry</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">seqlock_t</span> *sl, <span class="hljs-type">unsigned</span> start)</span>
+{
+    smp_rmb();
+    <span class="hljs-keyword">return</span> unlikely(sl-&gt;sequence != start);
+}
+</code></pre></div></code></pre>
+<p>进去先 <code>smp_rmb()</code>，保证读数据的访存不会被重排到读序号之后；然后比对序号。相等说明整个读期间没有写者插入，这次读的结果可以交付；不相等就重来。</p>
+<p><code>read_seqretry</code> 的返回类型在 4.0 里写的是 <code>unsigned</code>，实际当布尔用。素材照抄了源码，保留原样。</p>
+<p>到 5.15，两个函数都被拆成了多层宏，但屏障位置没变：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">unsigned</span> <span class="hljs-title function_">read_seqbegin</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">seqlock_t</span> *sl)</span>
+{
+    <span class="hljs-type">unsigned</span> ret = read_seqcount_begin(&amp;sl-&gt;seqcount);
+
+    kcsan_atomic_next(<span class="hljs-number">0</span>);
+    kcsan_flat_atomic_begin();
+    <span class="hljs-keyword">return</span> ret;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">unsigned</span> <span class="hljs-title function_">read_seqretry</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">seqlock_t</span> *sl, <span class="hljs-type">unsigned</span> start)</span>
+{
+    kcsan_flat_atomic_end();
+
+    <span class="hljs-keyword">return</span> read_seqcount_retry(&amp;sl-&gt;seqcount, start);
+}
+</code></pre></div></code></pre>
+<p>往下追一层，<code>read_seqcount_retry</code> 最终落到：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">do_read_seqcount_retry</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">seqcount_t</span> *s, <span class="hljs-type">unsigned</span> start)</span>
+{
+    smp_rmb();
+    <span class="hljs-keyword">return</span> unlikely(READ_ONCE(s-&gt;sequence) != start);
+}
+</code></pre></div></code></pre>
+<p><code>smp_rmb()</code> 还是在比对之前，<code>ACCESS_ONCE</code> 换成了语义相同的 <code>READ_ONCE</code>。多出来的一堆 <code>kcsan_*</code> 是 KCSAN 数据竞争检测用的标注，不参与同步。</p>
+<p>四个屏障的位置汇总成一张表，这是本篇最该记住的东西：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位置</th>
+<th>屏障</th>
+<th>防的是什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>write_seqlock</code>：自增序号之后</td>
+<td><code>smp_wmb()</code></td>
+<td>防止临界区内的写被重排到序号自增之前</td>
+</tr>
+<tr>
+<td><code>write_sequnlock</code>：自增序号之前</td>
+<td><code>smp_wmb()</code></td>
+<td>防止序号自增被重排到临界区写完成之前</td>
+</tr>
+<tr>
+<td><code>read_seqbegin</code>：读序号之后</td>
+<td><code>smp_rmb()</code></td>
+<td>防止读数据被重排到读序号之前</td>
+</tr>
+<tr>
+<td><code>read_seqretry</code>：比对序号之前</td>
+<td><code>smp_rmb()</code></td>
+<td>防止读数据被重排到比对序号之后</td>
+</tr>
+</tbody>
+</table></div><p>四条屏障配成一个完整的传递链：写者的数据写在序号变化之前可见，读者的数据读在序号比对之前完成。</p>
+<h2 id="十一seqlock-的适用条件读者能重试数据可重读" tabindex="-1">十一、seqlock 的适用条件：读者能重试、数据可重读 <a class="header-anchor" href="#十一seqlock-的适用条件读者能重试数据可重读"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>seqlock 不是通用锁，它挑场景。三个条件同时成立才有意义。</p>
+<p><strong>条件一：读远多于写。</strong> 读者重试的代价由写者频率决定。写者每秒改一万次，读者每次读都要撞上写者，重试几次是常态，读者侧的性能就塌了。seqlock 的收益全部来自「绝大多数时候序号不变」。</p>
+<p><strong>条件二：读者能重试。</strong> 读侧代码必须是个循环。如果读操作有副作用（改寄存器、发命令、写日志、申请内存），重试就会重复执行副作用。这类代码不能放进 seqlock 的读侧。</p>
+<p><strong>条件三：数据能整体重读。</strong> 读者拿到的必须是「完整的一份快照」。数据是定长标量、定长结构体、几个相关的标量，都行；数据是链表、树、动态数组指针，就有大麻烦（下一节展开）。</p>
+<p>把条件摊成表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>数据形态</th>
+<th>能上 seqlock 吗</th>
+<th>卡在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>u64</code>、<code>ktime_t</code>、几个关联标量</td>
+<td>能</td>
+<td>无</td>
+</tr>
+<tr>
+<td>定长结构体（如 <code>struct timespec64</code>）</td>
+<td>能</td>
+<td>结构体内不能有指针</td>
+</tr>
+<tr>
+<td>链表 / 树 / 哈希桶</td>
+<td>不能</td>
+<td>写者会释放读者正要访问的节点</td>
+</tr>
+<tr>
+<td>变长数组</td>
+<td>不能</td>
+<td>尺寸本身会变，读者会越界</td>
+</tr>
+<tr>
+<td>带引用计数的对象</td>
+<td>不能</td>
+<td>取引用这一步本身就有竞态</td>
+</tr>
+</tbody>
+</table></div><p>内核文档对这条边界的措辞比我狠：这种机制在受保护数据含指针时不能用，因为写者会让读者正在跟随的指针失效。</p>
+<p>还有一个容易漏的条件：<strong>写者之间必须串行，且写侧不能被打断。</strong> <code>seqcount</code> 本身只做计数，不提供串行化。裸用 <code>seqcount_t</code> 时，写侧临界区必须是串行的、不可抢占的；如果读者会来自硬中断或软中断，写侧还要相应关中断或关下半部。<code>seqlock_t</code> 好一些，它内嵌了 <code>spinlock_t</code>，把写者串行化和关抢占这两件事包了。</p>
+<p>这也是 <code>seqcount_t</code> 和 <code>seqlock_t</code> 的分界：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>写者串行化</th>
+<th>关抢占</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>seqcount_t</code></td>
+<td>调用者自己负责</td>
+<td>调用者自己负责</td>
+<td>已经有别的锁在保护写侧</td>
+</tr>
+<tr>
+<td><code>seqcount_spinlock_t</code></td>
+<td>关联一把自旋锁，由 lockdep 校验</td>
+<td>内建</td>
+<td>写侧用自旋锁保护</td>
+</tr>
+<tr>
+<td><code>seqlock_t</code></td>
+<td>内嵌自旋锁</td>
+<td>内建</td>
+<td>独立使用，最省心</td>
+</tr>
+</tbody>
+</table></div><p>5.15 里 <code>seqcount_LOCKNAME_t</code> 这一族就是给「写侧已经有锁」的场景准备的，<code>SEQCOUNT_LOCKNAME</code> 宏一次性生成 <code>seqcount_raw_spinlock_t</code>、<code>seqcount_spinlock_t</code>、<code>seqcount_rwlock_t</code>、<code>seqcount_mutex_t</code>、<code>seqcount_ww_mutex_t</code> 五种。差别只在 <code>__seqprop_*_preemptible()</code> 的返回值：关联自旋锁的不可抢占，关联 mutex 的可以抢占。</p>
+<h2 id="十二seqlock-不能保护什么指针解引用" tabindex="-1">十二、seqlock 不能保护什么：指针解引用 <a class="header-anchor" href="#十二seqlock-不能保护什么指针解引用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这是 seqlock 最容易踩的坑，素材里那个链表的例子值得原样复述再拆开。</p>
+<p>假设被保护的是链表 <code>header -&gt; A -&gt; B -&gt; C -&gt; null</code>。读者在遍历，把 <code>B</code> 存进临时变量 <code>x</code>，这时候中断来了，读者被抢占——注意读者路径是没有关抢占的，这是 seqlock 的设计前提。其他 CPU 上的写者趁机把 <code>B</code> 摘下来并释放了它的内存。读者恢复执行，通过 <code>x</code> 访问 <code>x-&gt;next</code> 想找 <code>C</code>：踩已经还给分配器的内存。</p>
+<p>要命的地方在于序号检查兜不住这个错。读者醒来后继续读完，最后 <code>read_seqretry</code> 确实会发现序号变了、返回 true、要求重试。但踩内存这个动作已经发生了，重试是事后补救，访问非法地址时程序已经崩了。</p>
+<p>结论得说死：<strong>seqlock 只保证读者最终拿到一致的数据，不保证读者在重试期间访问的内存还没被释放。</strong></p>
+<p>同样的坑还有几种变体：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>后果</th>
+<th>为什么序号检查救不了</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>写者释放链表节点</td>
+<td>读者 use-after-free</td>
+<td>序号检查在读完之后，踩内存在读之中</td>
+</tr>
+<tr>
+<td>写者收缩数组</td>
+<td>读者越界读</td>
+<td>边界在读者读到时已经变了</td>
+</tr>
+<tr>
+<td>写者把指针改成 NULL</td>
+<td>读者空指针解引用</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>读者取引用计数后再用</td>
+<td>引用计数本身有竞态</td>
+<td>取计数与对象销毁之间没有原子性</td>
+</tr>
+</tbody>
+</table></div><p>那这类场景用什么？RCU。RCU 的读者侧也有「不加锁、允许读到旧版本」的特征，区别是它保证被读对象的生命周期：写者不能立刻释放，得等所有读者退出读侧临界区（宽限期）。这一点是 seqlock 给不了的。</p>
+<p>这条对比值得单独列一行，因为很多人把 seqlock 当轻量 RCU 用：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>seqlock</th>
+<th>RCU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读者开销</td>
+<td>读序号 + 读数据 + 再读序号</td>
+<td>关/开抢占（或标记静默态）</td>
+</tr>
+<tr>
+<td>读者需要重试</td>
+<td>需要</td>
+<td>不需要，读到老版本也算对</td>
+</tr>
+<tr>
+<td>数据一致性</td>
+<td>保证单次快照一致</td>
+<td>保证指针可用，不保证多字段一致</td>
+</tr>
+<tr>
+<td>写者能否立即释放</td>
+<td>无此概念</td>
+<td>要等宽限期</td>
+</tr>
+<tr>
+<td>指针结构</td>
+<td>不能用</td>
+<td>正是它的主场</td>
+</tr>
+</tbody>
+</table></div><p>一句话分界：要「一致的一份数据」用 seqlock，要「安全地遍历指针结构」用 RCU。</p>
+<h2 id="十三三种锁的正面对比spinlock--rwlock--seqlock" tabindex="-1">十三、三种锁的正面对比：spinlock / rwlock / seqlock <a class="header-anchor" href="#十三三种锁的正面对比spinlock--rwlock--seqlock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把三把锁放在同一张表里，差异一眼可见。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th><code>spinlock_t</code></th>
+<th><code>rwlock_t</code></th>
+<th><code>seqlock_t</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>临界区并发度</td>
+<td>1</td>
+<td>读者 N，写者 1</td>
+<td>读者 N（无锁），写者 1</td>
+</tr>
+<tr>
+<td>读者是否写共享变量</td>
+<td>是（抢锁）</td>
+<td>是（改计数）</td>
+<td>否</td>
+</tr>
+<tr>
+<td>写者是否等读者</td>
+<td>是</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td>读者是否等写者</td>
+<td>是</td>
+<td>是</td>
+<td>只等序号变偶</td>
+</tr>
+<tr>
+<td>读者会读到脏数据</td>
+<td>不会</td>
+<td>不会</td>
+<td>会，靠重试</td>
+</tr>
+<tr>
+<td>读侧最坏延迟</td>
+<td>有界（一次持锁时长）</td>
+<td>有界（一次持锁时长）</td>
+<td>无界（写者密集时反复重试）</td>
+</tr>
+<tr>
+<td>写侧最坏延迟</td>
+<td>有界</td>
+<td>无界（读者不断）</td>
+<td>有界（一次持锁时长）</td>
+</tr>
+<tr>
+<td>保护指针结构</td>
+<td>能</td>
+<td>能</td>
+<td>不能</td>
+</tr>
+<tr>
+<td>可睡眠临界区</td>
+<td>不能</td>
+<td>不能</td>
+<td>不能</td>
+</tr>
+<tr>
+<td>中断上下文可用</td>
+<td>能</td>
+<td>能</td>
+<td>能</td>
+</tr>
+<tr>
+<td>典型实现</td>
+<td>ticket / qspinlock</td>
+<td>位域 / qrwlock</td>
+<td>seqcount + 自旋锁</td>
+</tr>
+</tbody>
+</table></div><p>注意「读侧最坏延迟」和「写侧最坏延迟」两行是反着来的。选锁时先问自己哪一侧的延迟不能失控，答案就出来了。</p>
+<p>再看一组数字上的直觉。假设 4 核、临界区 100 条指令、读者到达率很高：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>锁</th>
+<th>4 核全读的吞吐</th>
+<th>有写者时的写者等待</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spinlock_t</code></td>
+<td>串行，约 1 核的量</td>
+<td>平均等半个临界区</td>
+</tr>
+<tr>
+<td><code>rwlock_t</code></td>
+<td>接近 4 核</td>
+<td>取决于读者，无上界</td>
+</tr>
+<tr>
+<td><code>seqlock_t</code></td>
+<td>接近 4 核，且无 cacheline 争抢</td>
+<td>0</td>
+</tr>
+</tbody>
+</table></div><p>这张表只给方向，不给数字，具体倍数取决于 cacheline 争抢和 NUMA 拓扑，各家机器不一样。别拿这类数字当基准测试结论。</p>
+<h2 id="十四怎么选一张决策表" tabindex="-1">十四、怎么选：一张决策表 <a class="header-anchor" href="#十四怎么选一张决策表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>从上往下问，命中就停。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>问题</th>
+<th>答案</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1. 临界区会睡眠？</td>
+<td>是</td>
+<td>换 <code>rwsem</code> 或 <code>mutex</code>，别用自旋锁</td>
+</tr>
+<tr>
+<td>2. 读者会不会写共享状态以外的变量？</td>
+<td>是</td>
+<td>别用 seqlock，用 <code>rwlock_t</code></td>
+</tr>
+<tr>
+<td>3. 受保护数据含指针 / 变长结构？</td>
+<td>是</td>
+<td>别用 seqlock，用 <code>rwlock_t</code> 或 RCU</td>
+</tr>
+<tr>
+<td>4. 读侧有副作用、不能重试？</td>
+<td>是</td>
+<td>别用 seqlock，用 <code>rwlock_t</code></td>
+</tr>
+<tr>
+<td>5. 写者延迟必须可控（不能被读者拖住）？</td>
+<td>是</td>
+<td><code>seqlock_t</code></td>
+</tr>
+<tr>
+<td>6. 读者延迟必须可控（不能被写者拖住）？</td>
+<td>是</td>
+<td><code>rwlock_t</code>，或换成 RCU</td>
+</tr>
+<tr>
+<td>7. 读写频率相当、临界区极短？</td>
+<td>是</td>
+<td>普通 <code>spinlock_t</code> 就够，读写锁的额外原子操作不划算</td>
+</tr>
+<tr>
+<td>8. 全是读，写几乎不发生？</td>
+<td>是</td>
+<td>优先 RCU，其次 <code>seqlock_t</code></td>
+</tr>
+</tbody>
+</table></div><p>配套的场景速查：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>选择</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>文件系统类型链表</td>
+<td><code>rwlock_t</code>（历史代码）</td>
+<td>遍历多、注册注销少，但是指针结构，不能用 seqlock</td>
+</tr>
+<tr>
+<td><code>jiffies_64</code> 读取</td>
+<td><code>seqlock_t</code></td>
+<td>定长标量，写者频率低，读侧能重试</td>
+</tr>
+<tr>
+<td>时间戳、<code>timespec</code> 快照</td>
+<td><code>seqlock_t</code></td>
+<td>定长结构，无指针</td>
+</tr>
+<tr>
+<td>网络协议栈的路由表</td>
+<td>RCU</td>
+<td>指针结构，读极多写极少</td>
+</tr>
+<tr>
+<td>设备寄存器的并发访问</td>
+<td><code>spinlock_t</code></td>
+<td>临界区短，读写都少</td>
+</tr>
+<tr>
+<td>需要写者不被饿死的读写场景</td>
+<td>qrwlock / <code>rwsem</code></td>
+<td>老 <code>rwlock_t</code> 无公平性保障</td>
+</tr>
+<tr>
+<td>配置表的整表替换</td>
+<td>RCU 或 <code>seqlock_t</code></td>
+<td>看是否需要读到一致快照</td>
+</tr>
+</tbody>
+</table></div><p>最后补一条实践口径：新代码里，<code>rwlock_t</code> 的出现频率已经很低。要么读写都少用 <code>spinlock_t</code>，要么指针结构用 RCU，要么定长标量用 <code>seqlock_t</code>。真要用 <code>rwlock_t</code>，先想清楚读者和写者哪一侧的延迟不能炸。</p>
+<h2 id="十五易错点速查" tabindex="-1">十五、易错点速查 <a class="header-anchor" href="#十五易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>易错点</th>
+<th>错在哪</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>在读写锁的读临界区里调 <code>kmalloc(GFP_KERNEL)</code></td>
+<td>会睡眠，持锁睡眠拖死写者</td>
+<td>把分配挪到锁外，或改用 <code>rwsem</code></td>
+</tr>
+<tr>
+<td>认为读锁是「只读所以安全」，在里头调 <code>copy_to_user</code></td>
+<td>缺页会睡眠</td>
+<td>同上，读写自旋锁都不能睡</td>
+</tr>
+<tr>
+<td>用 <code>seqlock</code> 保护链表</td>
+<td>写者释放节点后读者踩空</td>
+<td>换 RCU</td>
+</tr>
+<tr>
+<td>读侧忘了 <code>do-while</code>，只调一次 <code>read_seqbegin</code></td>
+<td>读到一半被写者改了也不重试</td>
+<td>必须配 <code>read_seqretry</code> 循环</td>
+</tr>
+<tr>
+<td>读侧把 <code>read_seqretry</code> 写在数据使用之后</td>
+<td>序号变了但数据已经用了</td>
+<td>先验序号再用数据</td>
+</tr>
+<tr>
+<td>用 <code>sl-&gt;sequence</code> 直接读写，绕过 API</td>
+<td>漏掉屏障，漏掉写者串行化</td>
+<td>只用 <code>read_seqbegin</code>/<code>write_seqlock</code> 这一套</td>
+</tr>
+<tr>
+<td>写侧只加一次序号</td>
+<td>读者分不清「写完了」和「写一半」</td>
+<td>进出各加一次</td>
+</tr>
+<tr>
+<td>在 <code>read_seqbegin</code> 里删掉 <code>ACCESS_ONCE</code></td>
+<td>编译器把读提到循环外，序号永远不变</td>
+<td>保留 <code>ACCESS_ONCE</code>/<code>READ_ONCE</code></td>
+</tr>
+<tr>
+<td>在 <code>read_seqretry</code> 里删掉 <code>smp_rmb()</code></td>
+<td>数据读被重排到序号比对之后</td>
+<td>保留屏障</td>
+</tr>
+<tr>
+<td>在写侧漏掉 <code>smp_wmb()</code></td>
+<td>序号先变，数据后到，读者读到「新序号 + 旧数据」</td>
+<td>两处 <code>smp_wmb()</code> 都要</td>
+</tr>
+<tr>
+<td>拿 <code>arch_read_can_lock</code> 当同步手段</td>
+<td>它只是读一眼状态字，有竞态</td>
+<td>只用它做 trylock 前的预判</td>
+</tr>
+<tr>
+<td>在 <code>rwlock_t</code> 上指望写者不被饿死</td>
+<td>老实现里写者不占位</td>
+<td>换 qrwlock 或 <code>rwsem</code></td>
+</tr>
+<tr>
+<td>把 <code>cpu_relax()</code> 当成跨架构一致的退让指令</td>
+<td>ARM32 上是 <code>barrier()</code>，ARM64 上才是 <code>yield</code></td>
+<td>按架构理解，别背结论</td>
+</tr>
+<tr>
+<td>读者计数溢出</td>
+<td>超过 0x7FFFFFFF 个并发读者会把符号位翻负</td>
+<td>实际达不到，但别在理论上假设无限</td>
+</tr>
+<tr>
+<td>在持读锁期间调用会触发递归加锁的回调</td>
+<td>写锁重入直接死锁</td>
+<td>锁外回调，或改设计</td>
+</tr>
+</tbody>
+</table></div><h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="章节出处" tabindex="-1">章节出处 <a class="header-anchor" href="#章节出处"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>本篇章节</th>
+<th>主要素材</th>
+<th>版本/架构</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一、二</td>
+<td>《Linux内核同步机制之五 ReadWrite spin lock》一、二节</td>
+<td>2.6.x~3.x，通用</td>
+</tr>
+<tr>
+<td>三</td>
+<td>同上第三节「数据结构」+ 6.6 源码核对</td>
+<td>3.x / 6.6</td>
+</tr>
+<tr>
+<td>四</td>
+<td>同上第三节「通用代码文件的整理」，调用链按源码补全</td>
+<td>3.x</td>
+</tr>
+<tr>
+<td>五</td>
+<td>同上第二节解锁逻辑 + 6.6 qrwlock 源码 + 5.15.81 rwsem handoff</td>
+<td>3.x / 5.15 / 6.6</td>
+</tr>
+<tr>
+<td>六</td>
+<td>同上第三节「ARM 上的实现」，汇编按 3.10 源码逐字核对</td>
+<td>ARM32，linux-3.10</td>
+</tr>
+<tr>
+<td>七</td>
+<td>同上「后记」+《Linux 网络协议栈之内核锁（七）》的 <code>pause</code> 说明；ARM64 指令对照为本篇补</td>
+<td>x86 / ARM32 / ARM64</td>
+</tr>
+<tr>
+<td>八、九、十</td>
+<td>《Linux内核同步机制之六 Seqlock》二、三、四节，屏障表按 5.15 源码核对</td>
+<td>linux-4.0 / 5.15</td>
+</tr>
+<tr>
+<td>九 末段 读者饥饿与 <code>read_seqbegin_or_lock</code></td>
+<td>5.15 <code>include/linux/seqlock.h</code>，素材（4.0）未涉及</td>
+<td>5.15</td>
+</tr>
+<tr>
+<td>十一、十二</td>
+<td>同上第二节「适用场景」+ 5.15 <code>seqcount_LOCKNAME_t</code> 源码</td>
+<td>4.0 / 5.15</td>
+</tr>
+<tr>
+<td>十三、十四、十五</td>
+<td>本篇综合，含《Linux读写锁逻辑解析》的公平性结论</td>
+<td>5.15.81</td>
+</tr>
+</tbody>
+</table></div><h3 id="修正的错误" tabindex="-1">修正的错误 <a class="header-anchor" href="#修正的错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位置</th>
+<th>原文说法</th>
+<th>实际情况</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>第三节 读者上限</td>
+<td>读者计数占 bit 0~30，「read thread 的数目最大就是 2 的 30 次幂减去 1」</td>
+<td>31 个 bit 全给计数，上限是 2^31-1（0x7FFFFFFF）。原文把位数和指数算错了</td>
+</tr>
+<tr>
+<td>第三、五节 类型名</td>
+<td>任务要求里提到 <code>rwlock_t</code> 被 <code>queued_rwlock_t</code> 取代</td>
+<td>源码里没有 <code>queued_rwlock_t</code> 这个类型。6.6 的 <code>arch_rwlock_t</code> 是 <code>struct qrwlock</code>，外层 <code>rwlock_t</code> 不变。qrwlock 的常量名是 <code>_QW_WAITING</code>/<code>_QW_LOCKED</code>/<code>_QR_BIAS</code>，没有 <code>queued_rwlock_t</code></td>
+</tr>
+<tr>
+<td>第六节 <code>RW_LOCK_UNLOCKED</code></td>
+<td>《网络协议栈》一文说初值是 <code>RW_LOCK_UNLOCKED(0x01000000)</code>，读锁「减 1」、写锁「减 0x01000000」</td>
+<td>这是 x86 老编码（写者记为负数）的说法，与 ARM 的「写者置 bit31、读者加 1」是两套编码。原文把两套混在一段里讲，本篇已按架构拆开</td>
+</tr>
+<tr>
+<td>第四节 <code>read_seqretry</code> 返回类型</td>
+<td>素材照抄 <code>static inline unsigned read_seqretry</code></td>
+<td>返回类型确实是 <code>unsigned</code> 而非 <code>bool</code>，但语义是布尔值，原文没说明这点，容易误导</td>
+</tr>
+<tr>
+<td>第九节 <code>write_sequnlock</code></td>
+<td>素材原文「非常简单，留给大家自己看吧」，未给代码</td>
+<td>本篇按同版本源码补全为 <code>smp_wmb(); sl-&gt;sequence++; spin_unlock(&amp;sl-&gt;lock);</code>，语义与 5.15 的 <code>do_write_seqcount_end</code> 对得上</td>
+</tr>
+<tr>
+<td>第十节 <code>read_seqbegin</code> 快照变量</td>
+<td>素材写作 <code>ACCESS_ONCE(sl-&gt;sequence)</code></td>
+<td>4.0 的 <code>seqlock_t</code> 里成员名是 <code>sequence</code>，源码用 <code>sl-&gt;sequence</code>；5.15 改为 <code>seqcount.seqcount.sequence</code>，本篇两种都标了</td>
+</tr>
+<tr>
+<td>第七节 <code>__read_lock_failed</code></td>
+<td>《网络协议栈》一文给出的「先加 1 再比 1」循环 + <code>pause</code> 说明</td>
+<td><code>rep; nop</code> 转 <code>pause</code> 的说法正确；但那套循环依赖 x86 旧编码，3.10/4.9/6.6 的 x86 实现里没核到完全一致的函数体，本篇标为示意并注明「未验证」</td>
+</tr>
+<tr>
+<td>第六节 <code>WFE</code>/<code>dsb_sev</code></td>
+<td>素材把 <code>WFE(...)</code> 和 <code>dsb_sev()</code> 当指令讲</td>
+<td>两者都是宏，<code>ALT_SMP</code> 会在 UP 内核里把 <code>wfe</code>/<code>sev</code> 补成 <code>nop</code>。Thumb-2 下还有显式 <code>it</code> 指令的处理，原文未提</td>
+</tr>
+<tr>
+<td>第八节 <code>jiffies_64</code> 代码</td>
+<td>素材的 <code>get_jiffies_64</code> 缺 <code>ret</code> 与 <code>seq</code> 的声明</td>
+<td>本篇补上了声明，逻辑不变</td>
+</tr>
+</tbody>
+</table></div><h3 id="未验证项" tabindex="-1">未验证项 <a class="header-anchor" href="#未验证项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>项</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>qrwlock 具体在哪个内核版本成为 <code>arch_rwlock_t</code> 的默认实现</td>
+<td>未验证。能确认 6.6 已切换，切换点未逐个版本核对</td>
+</tr>
+<tr>
+<td><code>queued_rwlock_t</code> 这个类型名</td>
+<td>未验证。6.6 源码里未出现，疑为误传</td>
+</tr>
+<tr>
+<td>「内核从哪个版本开始不推荐 <code>rwlock_t</code>」</td>
+<td>未验证。素材只说「已经不鼓励使用」，未给版本；5.x 文档口径一致，具体起点未核</td>
+</tr>
+<tr>
+<td><code>RWSEM_WAIT_TIMEOUT</code> 是否为 4ms 对应的宏名</td>
+<td>部分验证。4ms 这个数值来自 5.15.81 素材正文，宏名按同版本源码推测，未逐字比对</td>
+</tr>
+<tr>
+<td>x86 <code>__read_lock_failed</code> 在 3.10/4.9/6.6 的准确实现</td>
+<td>未验证。本篇只给思路示意，不作为可引用的源码</td>
+</tr>
+<tr>
+<td>第二节 ARM32 <code>arch_rwlock_t</code> 在 4.x 之后的形态</td>
+<td>未验证。6.6 的 ARM 已走 asm-generic qrwlock，切换版本未核</td>
+</tr>
+<tr>
+<td>ARM64 读写锁四个函数在 6.6 是否已全部转给 asm-generic qrwlock</td>
+<td>未验证。<code>ldaxr</code>/<code>stlxr</code>/<code>yield</code> 的存在确定，读写锁那四个函数的具体归属未逐个文件核对</td>
+</tr>
+<tr>
+<td><code>read_seqbegin_or_lock</code> 家族进入内核的版本</td>
+<td>未验证。5.15 已在 <code>seqlock.h</code> 中，起点未核</td>
+</tr>
+<tr>
+<td><code>read_seqbegin</code> 序号回绕的边界分析</td>
+<td>未展开。需要 2^32 次写者插入才会撞号，未做形式化论证</td>
+</tr>
+</tbody>
+</table></div><h3 id="参考文献" tabindex="-1">参考文献 <a class="header-anchor" href="#参考文献"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ol>
+<li>《Linux内核同步机制之五 ReadWrite spin lock》，wowotech，<a href="http://www.wowotech.net/kernel_synchronization/rw-spinlock.html" target="_blank" rel="noopener noreferrer">http://www.wowotech.net/kernel_synchronization/rw-spinlock.html</a></li>
+<li>《Linux内核同步机制之六 Seqlock》，wowotech</li>
+<li>《Linux 网络协议栈之内核锁（七）—— 读写自旋锁》</li>
+<li>《Linux读写锁逻辑解析》，郭健 Cojack，内核工匠，基于 linux-5.15.81</li>
+<li>linux-3.10 <code>arch/arm/include/asm/spinlock.h</code>（ARM32 读写锁汇编，本篇逐字核对）</li>
+<li>linux-6.6 <code>include/linux/rwlock_types.h</code>、<code>include/asm-generic/qrwlock.h</code>、<code>include/asm-generic/qrwlock_types.h</code></li>
+<li>linux-5.15 <code>include/linux/seqlock.h</code></li>
+<li>Linux Kernel Development, 3rd Edition</li>
+<li>perfbook, <a href="https://www.kernel.org/pub/linux/kernel/people/paulmck/perfbook/perfbook.html" target="_blank" rel="noopener noreferrer">https://www.kernel.org/pub/linux/kernel/people/paulmck/perfbook/perfbook.html</a></li>
+</ol>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一为什么自旋锁不够用读多写少的场景" data-toc-target="一为什么自旋锁不够用读多写少的场景">一、为什么自旋锁不够用：读多写少的场景</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二读写锁的核心思想读者共享写者独占" data-toc-target="二读写锁的核心思想读者共享写者独占">二、读写锁的核心思想：读者共享、写者独占</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三rwlock_t-的数据结构与状态编码" data-toc-target="三rwlock_t-的数据结构与状态编码">三、rwlock_t 的数据结构与状态编码</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四read_lock-与-write_lock-的实现" data-toc-target="四read_lock-与-write_lock-的实现">四、read_lock 与 write_lock 的实现</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五读写锁的公平性问题读者会不会饿死写者" data-toc-target="五读写锁的公平性问题读者会不会饿死写者">五、读写锁的公平性问题：读者会不会饿死写者</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六读写锁在-arm-上的实现" data-toc-target="六读写锁在-arm-上的实现">六、读写锁在 ARM 上的实现</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七读写锁的局限读者多时写者等待过久" data-toc-target="七读写锁的局限读者多时写者等待过久">七、读写锁的局限：读者多时写者等待过久</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八seqlock让读者彻底无锁" data-toc-target="八seqlock让读者彻底无锁">八、seqlock：让读者彻底无锁</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九seqlock-的序号机制写入时序号加两次" data-toc-target="九seqlock-的序号机制写入时序号加两次">九、seqlock 的序号机制：写入时序号加两次</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十read_seqbegin--read_seqretry-的配对" data-toc-target="十read_seqbegin--read_seqretry-的配对">十、read_seqbegin / read_seqretry 的配对</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一seqlock-的适用条件读者能重试数据可重读" data-toc-target="十一seqlock-的适用条件读者能重试数据可重读">十一、seqlock 的适用条件：读者能重试、数据可重读</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二seqlock-不能保护什么指针解引用" data-toc-target="十二seqlock-不能保护什么指针解引用">十二、seqlock 不能保护什么：指针解引用</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三三种锁的正面对比spinlock--rwlock--seqlock" data-toc-target="十三三种锁的正面对比spinlock--rwlock--seqlock">十三、三种锁的正面对比：spinlock / rwlock / seqlock</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四怎么选一张决策表" data-toc-target="十四怎么选一张决策表">十四、怎么选：一张决策表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五易错点速查" data-toc-target="十五易错点速查">十五、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#章节出处" data-toc-target="章节出处">章节出处</a>
+                    
+                    <a class="toc-item toc-lv3" href="#修正的错误" data-toc-target="修正的错误">修正的错误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#未验证项" data-toc-target="未验证项">未验证项</a>
+                    
+                    <a class="toc-item toc-lv3" href="#参考文献" data-toc-target="参考文献">参考文献</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/06-内核同步/读写锁与-seqlock：读多写少的两种解法/","title":"读写锁与 seqlock：读多写少的两种解法","url":"/B.内核/06-内核同步/读写锁与-seqlock：读多写少的两种解法/","type":"current"},{"id":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","title":"RCU：从 classic 到 sleepable 的实现演进","url":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","type":"neighbor"},{"id":"/B.内核/06-内核同步/RCU：原理、API-与使用/","title":"RCU：原理、API 与使用","url":"/B.内核/06-内核同步/RCU：原理、API-与使用/","type":"neighbor"},{"id":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","title":"spinlock：自旋锁的原理、实现与陷阱","url":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","type":"neighbor"},{"id":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","title":"信号量、completion 与 Per-CPU","url":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","type":"neighbor"}],"links":[{"source":"/B.内核/06-内核同步/读写锁与-seqlock：读多写少的两种解法/","target":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","type":"neighbor"},{"source":"/B.内核/06-内核同步/读写锁与-seqlock：读多写少的两种解法/","target":"/B.内核/06-内核同步/RCU：原理、API-与使用/","type":"neighbor"},{"source":"/B.内核/06-内核同步/读写锁与-seqlock：读多写少的两种解法/","target":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","type":"neighbor"},{"source":"/B.内核/06-内核同步/读写锁与-seqlock：读多写少的两种解法/","target":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

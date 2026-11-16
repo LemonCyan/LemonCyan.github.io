@@ -79,7 +79,10 @@
   // 只要还有窗口处于 expanded 就保持让位，全部还原后才恢复。
   function syncMaxState() {
     const anyMax = windows().some(
-      (w) => w.dataset.expanded === 'true' && !w.classList.contains('app-window--hidden')
+      (w) =>
+        w.dataset.expanded === 'true' &&
+        !w.classList.contains('app-window--hidden') &&
+        w.dataset.minimized !== 'true'
     );
     document.body.dataset.winMax = anyMax ? 'true' : 'false';
   }
@@ -346,23 +349,13 @@
   const restoreBtn = document.getElementById('btn-restore');
   if (restoreBtn) restoreBtn.addEventListener('click', restore);
 
-  // 桌面图标点击：<a data-open="id"> 不跳转，直接打开对应窗口；
-  // 其它桌面图标是普通链接（app 之间的跳转）。
-  document.addEventListener('click', (ev) => {
-    const trigger = ev.target.closest('[data-open]');
-    if (!trigger) return;
-    const win = openApp(trigger.dataset.open);
-    if (win) ev.preventDefault();
-  });
-
   // 打开搜索窗口
   const searchBtn = document.getElementById('btn-search');
   if (searchBtn) {
     searchBtn.addEventListener('click', () => {
-      const w = openApp('search');
+      openApp('search');
       const input = document.getElementById('search-input');
       if (input) input.focus();
-      if (w) w.classList.remove('app-window--hidden');
     });
   }
 
@@ -395,6 +388,4 @@
       if (top && top.dataset.app === 'search') closeApp(top);
     }
   });
-
-  window.__WM__ = { openApp, closeApp, focus };
 })();

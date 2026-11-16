@@ -1,0 +1,1633 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>物理内存管理：页、zone 与内存模型 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">物理内存管理：页、zone 与内存模型</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">物理内存管理：页、zone 与内存模型</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">物理内存管理：页、zone 与内存模型</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>这篇只讲物理内存这一层：内核怎么看见内存、怎么把内存切成能管理的块、三种 memory model 怎么摆 <code>struct page</code> 数组、伙伴系统怎么分页、碎片怎么长出来又怎么防。讲到的位置停在「从伙伴系统拿到一串物理页」为止。</p>
+<p>往上怎么切小对象、怎么回收、怎么建页表，都在别的篇里：</p>
+<ul>
+<li>页表建立、memblock、KASLR → <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/ARM64-%E5%86%85%E5%AD%98%E5%88%9D%E5%A7%8B%E5%8C%96%EF%BC%9A%E9%A1%B5%E8%A1%A8%E3%80%81memblock-%E4%B8%8E-KASLR/" class="wikilink">ARM64 内存初始化：页表、memblock 与 KASLR</a></li>
+<li>slab/slub 的缓存组织、per-cpu freelist、对象回收 → <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/slab-%E4%B8%8E-slub-%E5%88%86%E9%85%8D%E5%99%A8/" class="wikilink">slab 与 slub 分配器</a></li>
+<li>LRU、page cache 回收、反向映射与匿名页 → <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/%E9%A1%B5%E9%9D%A2%E5%9B%9E%E6%94%B6%E4%B8%8E%E9%80%86%E5%90%91%E6%98%A0%E5%B0%84/" class="wikilink">页面回收与逆向映射</a></li>
+<li>虚拟地址空间布局、MMU 翻译、TLB 行为 → <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/%E5%9C%B0%E5%9D%80%E7%A9%BA%E9%97%B4%E4%B8%8E%E5%9C%B0%E5%9D%80%E7%BF%BB%E8%AF%91/" class="wikilink">地址空间与地址翻译</a></li>
+</ul>
+<p>代码取自 4.4.6 及同代内核，体系结构相关部分看 ARM64。你手里的树要是 5.x 以后，字段名、migrate type 数量、<code>fallbacks</code> 表形状都对不上，先看版本再看结构。</p>
+</blockquote>
+<h2 id="一内核眼里的内存从-cpu-到-device-的三条数据流" tabindex="-1">一、内核眼里的内存：从 CPU 到 Device 的三条数据流 <a class="header-anchor" href="#一内核眼里的内存从-cpu-到-device-的三条数据流"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内存管理复杂，不在于「分配」这个动作，而在于有太多人想以不同方式碰同一片内存。先把需求摊开。</p>
+<p>CPU 有访问内存的需求：取指、取数据、写数据。设备也有访问内存的需求，它没 CPU 聪明，碰内存只有三条路：CPU 中转（本质还是 CPU 访问内存）、找个有脑子的第三方（DMA 控制器）中转、设备自己上场（中间可挂 IOMMU）。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>CPU    &lt;-----------&gt; MMU(可选) &lt;-----------&gt; Memory
+Device &lt;-----------&gt; CPU &lt;-----------&gt; Memory
+Device &lt;-----------&gt; DMA Controller &lt;-----------&gt; Memory
+Device &lt;-----------&gt; IOMMU(可选) &lt;-----------&gt; Memory
+</code></pre></div></code></pre>
+<p>三条流搅在一起，加上内存本身的稀缺，才是 MM 子系统又大又难拆的原因。往下内核是一步步接住这些需求的：先看见内存，再管起来，再对外服务，最后处理高级需求。这条脉络就是下面几章的骨架。</p>
+<p>看见内存这一步，在 MMU 使能之前没难度，物理地址直接跑。MMU 一开、内存管理机制还没 ready 的那段窗口最难受：内核眼里只有虚拟地址，它必须搞出一套简单能用的映射，把一部分物理内存拉进虚拟地址空间，够启动代码和早期分配器活着就行。identity mapping、early fixmap、memblock 都在这个窗口干活，过程见 <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/ARM64-%E5%86%85%E5%AD%98%E5%88%9D%E5%A7%8B%E5%8C%96%EF%BC%9A%E9%A1%B5%E8%A1%A8%E3%80%81memblock-%E4%B8%8E-KASLR/" class="wikilink">ARM64 内存初始化：页表、memblock 与 KASLR</a>，本篇从「已经看见内存」之后接着讲。管起来这一步，取决于内存长什么样：物理地址连不连续、有没有 NUMA、支不支持热插拔，形态不同模型不同，这是第六到第九章。对外服务这一步最显眼：给每个进程一套独立 VA、做保护和隔离、提供 mmap、提供公平高效的物理页分配、提供进程间共享虚拟内存。高级需求这一步是欲望膨胀的结果：内存热插拔、物理内存比虚拟地址能寻址的范围还大、hugetlbpage、swap、NUMA 下的 page migration、内存泄漏检查、碎片整理、OOM kill——本篇十三到十六章专攻碎片。</p>
+<p>设备视角的需求单独拎出来，因为它和 CPU 视角不兼容。软件通过 CPU 视角拿到的内存，设备不一定能直接访问；就算能，也要按设备期望的形式组织。于是有了 DMA mapping：<code>dma_alloc_*</code> 拿一块设备能直接访问的内存（返回 dma_addr），<code>dma_map_*</code> 在 CPU 视角的虚拟地址和 dma_addr 之间来回转。多设备要共享同一份数据时又不能各拷一份，于是有了 DMA buffer sharing：老办法用 CPU 虚拟地址中转（scatterlist 那套），新办法是 <code>drivers/dma-buf/dma-buf.c</code> 里的 dma-buf framework。</p>
+<p>落到代码上，三块分工很清：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>模块</th>
+<th>干什么</th>
+<th>代码位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VM</td>
+<td>狭义内存管理：页框、zone、分配器、地址空间</td>
+<td><code>mm/</code>（平台无关）+ <code>arch/xxx/mm/</code>（平台相关）</td>
+</tr>
+<tr>
+<td>DMA mapping</td>
+<td>让设备能直接访问内存，做地址转换</td>
+<td><code>drivers/base/</code>（通用）+ <code>arch/xxx/mm/</code>（平台相关）</td>
+</tr>
+<tr>
+<td>DMA buffer sharing</td>
+<td>设备之间共享同一块 buffer</td>
+<td><code>drivers/dma-buf/dma-buf.c</code>、scatterlist</td>
+</tr>
+</tbody>
+</table></div><p>本篇只走 VM 这条线，起点是物理页。</p>
+<h2 id="二页框pfn-与-struct-page" tabindex="-1">二、页框、PFN 与 struct page <a class="header-anchor" href="#二页框pfn-与-struct-page"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>物理内存不按字节管，按页管。页大小由硬件和内核配置共同决定，4K 是最经典的设定。把物理内存按 page size 切成一格一格，每一格叫一个 page frame（页框）。</p>
+<p>内核给每个 page frame 配一个 <code>struct page</code>，记这一页在干什么：内核正文段？进程页表？file cache？还是躺在 free 链表里没人要。4.x 的 <code>struct page</code> 精简下来长这样：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">page</span> {</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;        <span class="hljs-comment">/* 一组 PAGE_FLAG_*，原子位操作 */</span>
+
+    <span class="hljs-class"><span class="hljs-keyword">union</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>                <span class="hljs-comment">/* 在 page cache 或 anon 里时用这套 */</span>
+            <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">lru</span>;</span>
+            <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">address_space</span> *<span class="hljs-title">mapping</span>;</span>
+            <span class="hljs-type">pgoff_t</span> index;
+            <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> private;
+        };
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>                <span class="hljs-comment">/* 作为 slab 页时用这套 */</span>
+            <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">kmem_cache</span> *<span class="hljs-title">slab_cache</span>;</span>
+            <span class="hljs-type">void</span> *freelist;
+            <span class="hljs-class"><span class="hljs-keyword">union</span> {</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">page</span> *<span class="hljs-title">next</span>;</span> <span class="hljs-type">int</span> pages; };
+        };
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>                <span class="hljs-comment">/* 复合页的尾页用这套 */</span>
+            <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> compound_head;
+        };
+    };
+
+    <span class="hljs-class"><span class="hljs-keyword">union</span> {</span>
+        <span class="hljs-type">atomic_t</span> _mapcount;     <span class="hljs-comment">/* 被几个页表项映射 */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> active;
+    };
+    <span class="hljs-type">atomic_t</span> _count;            <span class="hljs-comment">/* 引用计数，0 表示可以回收 */</span>
+};
+</code></pre></div></code></pre>
+<p>4.4 里引用计数是 <code>atomic_t _count</code>，4.18 之后换成 <code>atomic_t _refcount</code>，别照抄到新树。</p>
+<p>页框要编号才管得动，这个号是 PFN（page frame number）。算法很直接：物理内存从 0 地址开始时，PFN 0 就是物理地址 0 那一页；物理内存从 x 地址开始时，第一个页框号是 <code>x &gt;&gt; PAGE_SHIFT</code>。顺带把物理地址空间和物理内存的区别钉死：物理地址空间从 0 开始到体系结构支持的最大值为止（ARM 32 位是 4G，ARM64 支持 48 bit 就是 256T），这么大的空间不是都给内存，I/O 也占一部分，内存只占其中一段有限区间。所以物理地址空间有空洞，物理内存没有。</p>
+<p><code>struct page</code> 和 PFN 之间靠 <code>page_to_pfn</code> / <code>pfn_to_page</code> 两个宏换算。这俩宏的实现就是内存模型的全部秘密——三种 memory model 的区别，说到底就是这两个宏怎么写，具体实现放第六到第八章。</p>
+<p>先拆一个源材料里的混讲：<code>struct page</code>、<code>mem_map[]</code>、<code>get_free_page</code> 是物理页这一层；<code>brk</code>、<code>malloc</code> 是用户进程虚拟地址空间这一层。两者不在一个层面。<code>malloc</code> 在用户态堆上切字节，堆不够了调 <code>brk</code> 扩大，<code>brk</code> 按页大小的倍数调整进程堆边界。内核这边 <code>__get_free_pages</code> 直接要物理页，粒度是页不是字节。把 <code>malloc</code> 和 <code>get_free_page</code> 摆一张表里比「谁更灵活」是错的，它们解决两个层的问题，中间还隔着页表、VMA 和缺页异常。物理页怎么落到进程 VA 上，看 <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/%E5%9C%B0%E5%9D%80%E7%A9%BA%E9%97%B4%E4%B8%8E%E5%9C%B0%E5%9D%80%E7%BF%BB%E8%AF%91/" class="wikilink">地址空间与地址翻译</a>。</p>
+<h2 id="三三个层级node--zone--page" tabindex="-1">三、三个层级：node / zone / page <a class="header-anchor" href="#三三个层级node--zone--page"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>物理内存组织成三级，从大到小：node、zone、page。</p>
+<p>最上面是 node，用 <code>struct pglist_data</code>（别名 <code>pg_data_t</code>）描述。UMA 机器一个，NUMA 机器每个 node 一套。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">pglist_data</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">zone</span> <span class="hljs-title">node_zones</span>[<span class="hljs-title">MAX_NR_ZONES</span>];</span>           <span class="hljs-comment">/* 本 node 的所有 zone */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">zonelist</span> <span class="hljs-title">node_zonelists</span>[<span class="hljs-title">MAX_ZONELISTS</span>];</span>  <span class="hljs-comment">/* 分配时的 fallback 顺序 */</span>
+    <span class="hljs-type">int</span> nr_zones;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> node_start_pfn;                   <span class="hljs-comment">/* 本 node 起始页框号 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> node_present_pages;               <span class="hljs-comment">/* 实际存在的物理页数 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> node_spanned_pages;               <span class="hljs-comment">/* 覆盖的页框范围，含空洞 */</span>
+    <span class="hljs-type">int</span> node_id;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">page</span> *<span class="hljs-title">node_mem_map</span>;</span>                      <span class="hljs-comment">/* 本 node 的 struct page 数组 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">bootmem_data</span> *<span class="hljs-title">bdata</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">zoneref</span> _<span class="hljs-title">zonerefs</span>[<span class="hljs-title">MAX_ZONELISTS</span>];</span>
+} <span class="hljs-type">pg_data_t</span>;
+</code></pre></div></code></pre>
+<p>中间是 zone，一个 node 里的内存按能力和用途切成几块：哪些地址设备 DMA 够得着、哪些只能靠内核页表临时映射、哪些留给可移动页。最下面是 page，就是第二章那个 <code>struct page</code>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层级</th>
+<th>描述结构</th>
+<th>管什么</th>
+<th>数量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>node</td>
+<td><code>struct pglist_data</code></td>
+<td>本地内存 + 访问延迟亲和性，NUMA 的分配单位</td>
+<td>UMA 1 个，NUMA 每 node 1 个</td>
+</tr>
+<tr>
+<td>zone</td>
+<td><code>struct zone</code></td>
+<td>内存的能力与用途边界：能不能 DMA、能不能直接映射</td>
+<td>每 node 若干</td>
+</tr>
+<tr>
+<td>page</td>
+<td><code>struct page</code></td>
+<td>单个页框的状态与引用计数</td>
+<td>每个页框一个</td>
+</tr>
+</tbody>
+</table></div><p>为什么要有 zone 这一级？因为物理内存不均质。老式 ISA 设备的 DMA 只能碰低 16MB；32 位系统内核直接映射区装不下全部物理内存，超出的部分要临时映射才能访问。这些硬件差异必须体现在分配器里，否则给设备分了一块它够不着的内存，驱动就废了。zone 就是把这些差异编码进数据结构的结果。</p>
+<p>zone 的核心字段（4.x）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">zone</span> {</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> watermark[NR_WMARK];  <span class="hljs-comment">/* MIN/LOW/HIGH 三条水位线 */</span>
+    <span class="hljs-type">long</span> lowmem_reserve[MAX_NR_ZONES];  <span class="hljs-comment">/* 给更低 zone 预留，防越界抢光 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">per_cpu_pageset</span> __<span class="hljs-title">percpu</span> *<span class="hljs-title">pageset</span>;</span> <span class="hljs-comment">/* per-cpu 页缓存 */</span>
+    <span class="hljs-type">spinlock_t</span> lock;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">free_area</span> <span class="hljs-title">free_area</span>[<span class="hljs-title">MAX_ORDER</span>];</span>    <span class="hljs-comment">/* 伙伴系统空闲链表，见第十一章 */</span>
+    <span class="hljs-type">spinlock_t</span> lru_lock;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">lruvec</span> <span class="hljs-title">lruvec</span>;</span>               <span class="hljs-comment">/* LRU 链表，回收用 */</span>
+    <span class="hljs-type">atomic_long_t</span> vm_stat[NR_VM_ZONE_STAT_ITEMS];
+    <span class="hljs-type">int</span> node;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> zone_start_pfn;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> spanned_pages;        <span class="hljs-comment">/* 覆盖范围，含空洞 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> present_pages;        <span class="hljs-comment">/* 实际存在 */</span>
+    <span class="hljs-type">atomic_long_t</span> managed_pages;        <span class="hljs-comment">/* 分配器真能管的，present 减预留 */</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *name;
+};
+</code></pre></div></code></pre>
+<p><code>managed_pages</code> 和 <code>present_pages</code> 的差值就是被 early reservation 吃掉、永远进不了伙伴系统的页。三条水位线决定分配器什么时候醒 kswapd、什么时候自己动手回收，这条线在 <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/%E9%A1%B5%E9%9D%A2%E5%9B%9E%E6%94%B6%E4%B8%8E%E9%80%86%E5%90%91%E6%98%A0%E5%B0%84/" class="wikilink">页面回收与逆向映射</a> 里接着讲。</p>
+<h2 id="四zone-的划分与-zone_dma--normal--highmem--movable" tabindex="-1">四、zone 的划分与 ZONE_DMA / NORMAL / HIGHMEM / MOVABLE <a class="header-anchor" href="#四zone-的划分与-zone_dma--normal--highmem--movable"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>zone 类型定义在 <code>include/linux/mmzone.h</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">zone_type</span> {</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_ZONE_DMA</span>
+    ZONE_DMA,       <span class="hljs-comment">/* 老设备 DMA 够得着的低地址，x86 上限定 16MB */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_ZONE_DMA32</span>
+    ZONE_DMA32,     <span class="hljs-comment">/* 只能寻址 32 位物理地址的设备，上限 4GB */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+    ZONE_NORMAL,    <span class="hljs-comment">/* 内核能直接映射、正常使用的内存，主力 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_HIGHMEM</span>
+    ZONE_HIGHMEM,   <span class="hljs-comment">/* 32 位才有，超出直接映射范围，要 kmap */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+    ZONE_MOVABLE,   <span class="hljs-comment">/* 不绑定物理地址，只放可迁移页，见第十六章 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_ZONE_DEVICE</span>
+    ZONE_DEVICE,    <span class="hljs-comment">/* 设备内存挂进 MM，4.3 之后才有 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+    __MAX_NR_ZONES
+};
+</code></pre></div></code></pre>
+<p>枚举顺序有意义：越靠前地址越低，分配时的 fallback 也按这个顺序由低到高找。<code>ZONE_MOVABLE</code> 和 <code>ZONE_DEVICE</code> 排最后，因为它们不是「更低的地址」，是两种特殊切分。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>zone</th>
+<th>存在条件</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ZONE_DMA</code></td>
+<td><code>CONFIG_ZONE_DMA</code></td>
+<td>给 DMA 够不着高地址的老设备，ISA 时代遗产，ARM64 上少见</td>
+</tr>
+<tr>
+<td><code>ZONE_DMA32</code></td>
+<td><code>CONFIG_ZONE_DMA32</code></td>
+<td>给只能寻址 32 位物理地址的设备，64 位系统兜底</td>
+</tr>
+<tr>
+<td><code>ZONE_NORMAL</code></td>
+<td>总有</td>
+<td>内核能直接映射、正常使用的内存，绝大多数分配落这里</td>
+</tr>
+<tr>
+<td><code>ZONE_HIGHMEM</code></td>
+<td><code>CONFIG_HIGHMEM</code>，只在 32 位</td>
+<td>超出直接映射范围，要 kmap 才能碰</td>
+</tr>
+<tr>
+<td><code>ZONE_MOVABLE</code></td>
+<td>有 <code>kernelcore</code>/<code>movablecore</code></td>
+<td>只放可迁移页，为热拔插和减碎片服务</td>
+</tr>
+<tr>
+<td><code>ZONE_DEVICE</code></td>
+<td><code>CONFIG_ZONE_DEVICE</code></td>
+<td>设备内存（GPU 显存、持久内存）挂进 MM</td>
+</tr>
+</tbody>
+</table></div><p><code>ZONE_HIGHMEM</code> 要单独解释，它最容易被误讲。它存在的唯一理由是 32 位系统的虚拟地址空间不够：内核把 4G 虚拟空间切走 1G 给自己（3G/1G 划分），这 1G 装不下机器上全部物理内存时，装不下的那部分就叫高端内存，内核不能给它建永久映射，只能临时 kmap/kunmap。到了 64 位，虚拟地址空间大到用不完，直接映射区能盖住全部物理内存，<code>ZONE_HIGHMEM</code> 就没有存在必要。ARM64 上 <code>CONFIG_HIGHMEM</code> 是关的，你在 <code>/proc/zoneinfo</code> 里看不到 HighMem。</p>
+<p>zone 之间还有一层防越界机制：<code>lowmem_reserve[]</code>。低地址 zone 的页很少，普通分配要是把 <code>ZONE_DMA</code> 抢干净了，真正需要 DMA 的设备就没页可用。所以每个 zone 给比自己更低、且 fallback 顺序在前的 zone 预留一份页数，普通分配不能跨越这份预留。</p>
+<h2 id="五numa-与非-numa-的差别" tabindex="-1">五、NUMA 与非 NUMA 的差别 <a class="header-anchor" href="#五numa-与非-numa-的差别"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>设计多处理器系统的内存架构有两条路。UMA（Uniform Memory Access）：所有 processor 共享一片统一的物理内存，从哪个 processor 发起访问延迟都一样。NUMA（Non-uniform Memory Access）：访问延迟跟 memory 与 processor 的相对位置有关，某个 node 上的 processor 访问 local memory 比访问 remote memory 快。</p>
+<p>这两个概念和内存模型是两回事，但历史上一直被搅在一起，先把关系掰开：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>系统</th>
+<th>node 数</th>
+<th>内存物理连续性</th>
+<th>可选内存模型</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UMA + 连续</td>
+<td>1</td>
+<td>连续无空洞</td>
+<td>FLAT，或 SPARSEMEM</td>
+</tr>
+<tr>
+<td>UMA + 有空洞</td>
+<td>1</td>
+<td>有空洞</td>
+<td>Discontiguous，或 SPARSEMEM</td>
+</tr>
+<tr>
+<td>NUMA + 每 node 连续</td>
+<td>多</td>
+<td>node 内连续，node 间不连续</td>
+<td>Discontiguous，或 SPARSEMEM</td>
+</tr>
+<tr>
+<td>NUMA + node 内有空洞（热插拔）</td>
+<td>多</td>
+<td>都不保证</td>
+<td>SPARSEMEM</td>
+</tr>
+</tbody>
+</table></div><p>关键在最后一行。NUMA 从来没规定内存必须连续，Discontiguous 也不等于 NUMA——两者的共同点只是「多 node」。sparse memory 出现之后，连续性和 NUMA 才真正解耦：NUMA 系统可以是 FLAT 也可以是 SPARSE，SPARSE 系统可以是 NUMA 也可以是 UMA。</p>
+<p>NUMA 对分配器的影响在于，分配时不只看「哪个 zone 有空页」，还要看「哪个 node 离当前 CPU 近」。<code>node_zonelists[]</code> 就是按距离排好序的候选列表，本地 node 的 zone 排前面，remote node 的排后面。<code>__alloc_pages_nodemask</code> 从列表头往后找，本地找得到就不去远端。只有本地紧张时才退到远端 node，这时候延迟就上去了。NUMA 平衡（把页搬到访问它的 CPU 所在 node）是 page migration 的活，属于高级需求那一档。</p>
+<p>ARM64 上的 NUMA 靠 ACPI 的 SRAT 表或设备树描述，<code>node_distance[][]</code> 给出 node 间距离矩阵。这套信息在 <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/ARM64-%E5%86%85%E5%AD%98%E5%88%9D%E5%A7%8B%E5%8C%96%EF%BC%9A%E9%A1%B5%E8%A1%A8%E3%80%81memblock-%E4%B8%8E-KASLR/" class="wikilink">ARM64 内存初始化：页表、memblock 与 KASLR</a> 里建立。</p>
+<h2 id="六三种内存模型flat" tabindex="-1">六、三种内存模型：FLAT <a class="header-anchor" href="#六三种内存模型flat"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>memory model 这个词，说的是「从 CPU 角度看物理内存的分布形态，内核用什么方式组织 <code>struct page</code> 来管理它」。内核支持三种：FLAT、Discontiguous、Sparse。前提是所有 CPU 共享同一片物理地址空间。</p>
+<p>FLAT 最简单：从任意一个 processor 看过去，物理地址空间连续、没有空洞。每个页框配一个 <code>struct page</code>，全系统一个数组，叫 <code>mem_map</code>。PFN 和 <code>mem_map</code> 下标的换算是一条直线，只差一个固定偏移 <code>ARCH_PFN_OFFSET</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> __pfn_to_page(pfn)    (mem_map + ((pfn) - ARCH_PFN_OFFSET))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __page_to_pfn(page)    ((unsigned long)((page) - mem_map) + ARCH_PFN_OFFSET)</span>
+</code></pre></div></code></pre>
+<p><code>ARCH_PFN_OFFSET</code> 与体系结构相关，也和内存占据的物理地址区间有关。物理内存从 0 开始时它是 0，PFN 就等于数组下标。</p>
+<p>FLAT 下还有个容易忽略的细节：node 结构仍然存在，只是一个。<code>struct pglist_data</code> 照样分配，<code>NODE_DATA(0)</code> 照样能用。这么做不是为了好看，是为了让上层代码在 FLAT 和 Discontiguous 之间切换时不用改——上层永远走 <code>NODE_DATA()</code> 这一条路。</p>
+<p>另一个细节：<code>mem_map</code> 这块数组本身占的内存，位于直接映射（directly mapped）区间。内核虚拟地址和物理地址只差一个固定偏移，页表在初始化时就建好了，不需要为 <code>struct page</code> 数组再建页表。这个性质在第八章会变成一个重要差异点——<code>SPARSEMEM_VMEMMAP</code> 恰恰放弃了它。</p>
+<p>FLAT 的局限很明确：物理内存有空洞就管不了。空洞来自 I/O 空间占位，或者内存热插拔留下的缺口。一旦有洞，<code>mem_map</code> 数组就得为洞里的 PFN 也留位置，白烧内存；洞多的时候烧得离谱。这就是 Discontiguous 和 Sparse 要解决的问题。</p>
+<h2 id="七三种内存模型discontiguous" tabindex="-1">七、三种内存模型：Discontiguous <a class="header-anchor" href="#七三种内存模型discontiguous"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>物理地址空间有空洞时 FLAT 顶不住。Discontiguous 的思路是：把物理内存按 node 切开，每个 node 内部是连续的一大块，node 之间允许有洞。node 内部仍按 FLAT 那套管，所以它本质上是 FLAT 的多 node 版本。</p>
+<p>这种模型下 <code>struct pglist_data</code> 有多个，每个 node 自己维护一个 <code>struct page</code> 数组，挂在 <code>node_mem_map</code> 成员上——地位等同于 FLAT 里的 <code>mem_map</code>。PFN 换算不再是减法，得先找 node：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> __pfn_to_page(pfn)                      \
+({  unsigned long __pfn = (pfn);                \
+    unsigned long __nid = arch_pfn_to_nid(__pfn);  \
+    NODE_DATA(__nid)-&gt;node_mem_map + arch_local_page_offset(__pfn, __nid);\
+})</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __page_to_pfn(pg)                       \
+({  const struct page *__pg = (pg);             \
+    struct pglist_data *__pgdat = NODE_DATA(page_to_nid(__pg)); \
+    (unsigned long)(__pg - __pgdat-&gt;node_mem_map) +         \
+     __pgdat-&gt;node_start_pfn;                   \
+})</span>
+</code></pre></div></code></pre>
+<p><code>__pfn_to_page</code> 三步：<code>arch_pfn_to_nid</code> 把 PFN 换成 node id；<code>NODE_DATA</code> 拿到该 node 的 <code>pglist_data</code>；<code>arch_local_page_offset</code> 算出这一页在自己 node 里的偏移，加上 <code>node_mem_map</code> 基址。<code>node_start_pfn</code> 记本 node 第一个页框号，<code>arch_local_page_offset</code> 就是 <code>pfn - node_start_pfn</code> 那类算法。</p>
+<p><code>__page_to_pfn</code> 反着走：从 page 指针减去 <code>node_mem_map</code> 得到 node 内偏移，加上 <code>node_start_pfn</code> 得到全局 PFN。这里 <code>page_to_nid(__pg)</code> 依赖 <code>struct page</code> 里已经存了 node id——Discontiguous 下 node id 存在 <code>page-&gt;flags</code> 的节点位段里，这就是为什么 node 数受 <code>NODES_SHIFT</code> 限制。</p>
+<p>多一层 node，代价是每次换算都要先查 node；好处是 <code>struct page</code> 数组不用为空洞留位置，一个 node 一块，洞白留着不花钱。</p>
+<p>关键限制：node 之间不能交错。每个 node 的物理内存必须是单独一段连续区间，<code>node_start_pfn</code> 加长度就能覆盖完。一个 node 的内存要是有两段，这套模型就散架了，得上 Sparse。</p>
+<h2 id="八三种内存模型sparse" tabindex="-1">八、三种内存模型：Sparse <a class="header-anchor" href="#八三种内存模型sparse"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>memory model 是一路演进过来的。最早 FLAT，一个 <code>mem_map[]</code> 管全部；NUMA 出现后连续空间切成若干 node，一个数组变成若干个；热插拔出现后，连 node 内部的连续性都保不住了。</p>
+<p>Sparse memory 把物理地址空间按 SECTION 切开，每个 section 独立可热插拔。section 大小由体系结构定，x86_64 上常见 128MB，ARM64 上常见 1GB（<code>SECTION_SIZE_BITS</code>），具体看 <code>arch/*/include/asm/sparsemem.h</code>。section 内部连续，符合 FLAT 的特点。</p>
+<p>因为切分单位换成了 section，<code>struct page</code> 数组不再依附 node，而是依附 section：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">mem_section</span> {</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> section_mem_map;  <span class="hljs-comment">/* 低位存 flag，其余位存 page 数组指针 */</span>
+    DECLARE_BITMAP(pageblock_flags, MAX_NR_PAGEBLOCK);  <span class="hljs-comment">/* 用 pageblock 时才有 */</span>
+};
+</code></pre></div></code></pre>
+<p><code>section_mem_map</code> 是个打包字段，低位当标记用（section 是否 online、是否 early），高位右移几位后才是 <code>struct page</code> 数组地址。这种「指针塞进 unsigned long」的做法在 sparse 里到处都是。</p>
+<p>换算从两跳变成三跳：<code>PFN &lt;-&gt; Section &lt;-&gt; page</code>。</p>
+<p>PFN 到 page：内核维护一个 <code>mem_section</code> 指针数组。PFN 右移 <code>PFN_SECTION_SHIFT</code> 得到 section number，拿它当数组下标找到 section 结构，顺着 <code>section_mem_map</code> 找到该 section 的 page 数组，再用 section 内偏移定位具体 page。</p>
+<p>数组形态分两种，由 <code>CONFIG_SPARSEMEM_EXTREME</code> 决定。非 EXTREME 时是一维 <code>memory_section</code> 数组；一维数组对特别稀疏的系统浪费内存，空洞越多空指针占的空间越大。EXTREME 时改成指针数组，每个元素指向一个装着若干 <code>struct mem_section</code> 的页。指针的好处还在于热插拔：指针等于 NULL 就表示这个 section 压根不存在，不用额外标记位。</p>
+<p>page 到 PFN 麻烦一点。PFN 拆两部分：section index 和 page 在 section 内的偏移。得先从 page 反推 section index，找到 <code>memory_section</code>，算出 page 在该 section 数组里的偏移，最后合成 PFN。</p>
+<p>从 page 反推 section 有两种方案。第一种，经典方案，把 section id 塞进 <code>page-&gt;flags</code>（配 <code>SECTION_IN_PAGE_FLAGS</code>）。问题很硬：<code>page-&gt;flags</code> 里的 bit 已经承载了各种 page flag、node id、zone id，再塞一个 section id，位数未必够；不同体系结构的 flag 布局不同，凑不出一致的算法。</p>
+<p>第二种，<code>CONFIG_SPARSEMEM_VMEMMAP</code>，绕开 flag 位数的死结。做法是在虚拟地址空间预留一整段连续的 <code>vmemmap</code> 区域，每个 PFN 都对应其中固定位置的一个 <code>struct page</code>。这样换算退化成纯指针减法，跟 FLAT 一样干净：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> __pfn_to_page(pfn)    (vmemmap + (pfn))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __page_to_pfn(page)   (unsigned long)((page) - vmemmap)</span>
+</code></pre></div></code></pre>
+<p>ARM64 的 <code>vmemmap</code> 定义：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> vmemmap            ((struct page *)VMEMMAP_START - \
+                 SECTION_ALIGN_DOWN(memstart_addr &gt;&gt; PAGE_SHIFT))</span>
+</code></pre></div></code></pre>
+<p><code>VMEMMAP_START</code> 是虚拟地址空间里划给 <code>struct page</code> 数组的那段起点，那个 <code>SECTION_ALIGN_DOWN(memstart_addr &gt;&gt; PAGE_SHIFT)</code> 是偏移修正，处理物理内存不从 0 开始的情况。</p>
+<p>代价要明说：经典 sparse 的 page 数组内存来自直接映射区，页表在初始化时就建好，分配 page frame 等于分配了虚拟地址；<code>SPARSEMEM_VMEMMAP</code> 反过来——虚拟地址一开始就全部分好，每个 page 都有它的 virtual address，但没有物理页。等某个 section 被 hotplug 上来，才去分配物理页框、建页表。所以 VMEMMAP 多一个建映射的开销，换来换算宏的极简和 flag 位的解放。</p>
+<p>三种模型摆一起：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>FLAT</th>
+<th>Discontiguous</th>
+<th>Sparse</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>物理内存要求</td>
+<td>全系统连续无空洞</td>
+<td>node 内连续，node 间有洞</td>
+<td>section 内连续，随便洞</td>
+</tr>
+<tr>
+<td><code>struct page</code> 数组归属</td>
+<td>全局一个 <code>mem_map</code></td>
+<td>每 node 一个 <code>node_mem_map</code></td>
+<td>每 section 一个，<code>section_mem_map</code> 指过去</td>
+</tr>
+<tr>
+<td>换算跳数</td>
+<td><code>PFN &lt;-&gt; page</code> 一跳</td>
+<td><code>PFN &lt;-&gt; node &lt;-&gt; page</code></td>
+<td><code>PFN &lt;-&gt; section &lt;-&gt; page</code></td>
+</tr>
+<tr>
+<td>换算实现</td>
+<td>指针加减固定偏移</td>
+<td>查 node 再算偏移</td>
+<td>VMEMMAP 下退化为指针加减</td>
+</tr>
+<tr>
+<td>node 数</td>
+<td>1（结构保留）</td>
+<td>多</td>
+<td>多</td>
+</tr>
+<tr>
+<td>热插拔支持</td>
+<td>不支持</td>
+<td>不支持</td>
+<td>支持，section 是单位</td>
+</tr>
+<tr>
+<td>空洞是否浪费内存</td>
+<td>浪费</td>
+<td>node 间不浪费</td>
+<td>不浪费</td>
+</tr>
+<tr>
+<td>典型平台</td>
+<td>小 ARM、早期 x86</td>
+<td>NUMA 服务器</td>
+<td>现代 x86_64 / ARM64</td>
+</tr>
+</tbody>
+</table></div><h2 id="九内存模型的选择配置项与代码路径" tabindex="-1">九、内存模型的选择：配置项与代码路径 <a class="header-anchor" href="#九内存模型的选择配置项与代码路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>三种模型不是运行时可切，是编译期选的。配置项：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>配置项</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CONFIG_FLATMEM</code></td>
+<td>选 FLAT，要求全系统物理内存连续</td>
+</tr>
+<tr>
+<td><code>CONFIG_DISCONTIGMEM</code></td>
+<td>选 Discontiguous，要求 node 内连续</td>
+</tr>
+<tr>
+<td><code>CONFIG_SPARSEMEM</code></td>
+<td>选 Sparse，section 基础结构</td>
+</tr>
+<tr>
+<td><code>CONFIG_SPARSEMEM_EXTREME</code></td>
+<td>section 用两级指针数组，省内存，支持更稀疏</td>
+</tr>
+<tr>
+<td><code>CONFIG_SPARSEMEM_VMEMMAP</code></td>
+<td>用预留虚拟地址段直接算 page，避开 page flags 位置限制</td>
+</tr>
+<tr>
+<td><code>CONFIG_HAVE_MEMORY_PRESENT</code></td>
+<td>体系结构是否支持 present 位</td>
+</tr>
+<tr>
+<td><code>CONFIG_NODES_SPAN_OTHER_NODES</code></td>
+<td>允许 node 交叉（稀疏场景）</td>
+</tr>
+<tr>
+<td><code>CONFIG_MEMORY_HOTPLUG</code></td>
+<td>需要 <code>CONFIG_SPARSEMEM</code> 或 <code>CONFIG_SPARSEMEM_VMEMMAP</code> 配合</td>
+</tr>
+</tbody>
+</table></div><p>上层代码看到的接口统一，都走 <code>include/asm-generic/memory_model.h</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">if</span> defined(CONFIG_FLATMEM)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __pfn_to_page(pfn)    (mem_map + ((pfn) - ARCH_PFN_OFFSET))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __page_to_pfn(page)   ((unsigned long)((page) - mem_map) + ARCH_PFN_OFFSET)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">elif</span> defined(CONFIG_DISCONTIGMEM)</span>
+<span class="hljs-comment">/* 走 node_mem_map，见第七章 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">elif</span> defined(CONFIG_SPARSEMEM_VMEMMAP)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __pfn_to_page(pfn)    (vmemmap + (pfn))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __page_to_pfn(page)   (unsigned long)((page) - vmemmap)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">elif</span> defined(CONFIG_SPARSEMEM)</span>
+<span class="hljs-comment">/* 走 section，从 section_mem_map 里取 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+</code></pre></div></code></pre>
+<p>往上一层再包一次，屏蔽差异：<code>page_to_pfn</code> 就是 <code>__page_to_pfn</code>，<code>pfn_to_page</code> 就是 <code>__pfn_to_page</code>。</p>
+<p><code>pfn_valid()</code> 值得单独说。它判断一个 PFN 是否对应真实存在的内存，三种模型下实现完全不同：FLAT 下是范围判断（<code>pfn &gt;= min_low_pfn &amp;&amp; pfn &lt; max_low_pfn</code>）；Discontiguous 下要逐 node 查；Sparse 下要先看 section 在不在、再看 section 是否 online。分配器、<code>virt_to_page</code>、热插拔、内存错误处理都要调它，是选内存模型时最该先确认的接口。</p>
+<p>ARM64 只支持 <code>CONFIG_SPARSEMEM</code> 加 <code>CONFIG_SPARSEMEM_VMEMMAP</code>，<code>CONFIG_FLATMEM</code> 和 <code>CONFIG_DISCONTIGMEM</code> 都不提供。原因直白：ARM64 的物理内存布局由固件给，段与段之间常有洞，还支持热插拔，前两种的要求都满足不了。x86_64 同样走 <code>CONFIG_SPARSEMEM_VMEMMAP</code>。32 位 ARM 和早期 x86 才会用 <code>CONFIG_FLATMEM</code>。</p>
+<p><code>CONFIG_DISCONTIGMEM</code> 在 5.1 内核周期被移除（具体 commit hash 未验证），剩余用户全部转向 <code>SPARSEMEM</code>。你读 4.x 的代码会看到它，读 5.1 以后看不到，别以为是漏了。</p>
+<h2 id="十伙伴系统为什么必须是-2-的幂" tabindex="-1">十、伙伴系统：为什么必须是 2 的幂 <a class="header-anchor" href="#十伙伴系统为什么必须是-2-的幂"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>物理页从 <code>memblock</code> 交给伙伴系统之后，分配的最小单位就是一页。但内核从来不按页一页页分，它按 2 的幂分：1、2、4、8……直到 1024 页。</p>
+<p>为什么非要 2 的幂？因为回收时要能合并。分配器把相邻的两个同样大小的空闲块合成一个大块，这个过程反复递归，才能把零散页重新拼成大块。要求「两个块能从地址上判断出是兄弟」——第 n 块和第 n+1 块是 buddy——唯一干净的判据是块大小对齐到 2 的幂次。任何非 2 的幂尺寸，兄弟关系都要靠额外元数据，合并逻辑立刻变复杂。</p>
+<p>第二个理由是硬件层面的：物理连续的大块对 TLB 和 cache 友好。内核倾向分配连续内存，因为连续意味着页表项可以复用、TLB 刷新次数少。TLB 刷得越频繁，访存越慢。伙伴系统的对齐分块天然给出「大小连续且对齐」的块，正好满足这个偏好。</p>
+<p><code>MAX_ORDER</code> 默认 11，也就是 order 0 到 10，最大单块 1024 页（4K 页下 4MB）。这个值不好往上调，因为 <code>MAX_ORDER</code> 影响 <code>free_area</code> 数组大小、<code>pageblock_order</code> 取值、<code>struct page</code> 里 order 位段的宽度。</p>
+<p>order 与块大小（4K 页）：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>order</th>
+<th>页数</th>
+<th>大小</th>
+<th>常见落点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>1</td>
+<td>4 KB</td>
+<td>单页分配、slab 的 slab 页、页表页</td>
+</tr>
+<tr>
+<td>1</td>
+<td>2</td>
+<td>8 KB</td>
+<td>小 slab 缓存、<code>kmalloc-8k</code> 的 backing</td>
+</tr>
+<tr>
+<td>2</td>
+<td>4</td>
+<td>16 KB</td>
+<td><code>kmalloc-16k</code>、小 vmalloc 的一块</td>
+</tr>
+<tr>
+<td>3</td>
+<td>8</td>
+<td>32 KB</td>
+<td>大块 kmalloc</td>
+</tr>
+<tr>
+<td>4</td>
+<td>16</td>
+<td>64 KB</td>
+<td>页表批量分配、驱动 buffer</td>
+</tr>
+<tr>
+<td>5</td>
+<td>32</td>
+<td>128 KB</td>
+<td>网络驱动的收包环</td>
+</tr>
+<tr>
+<td>6</td>
+<td>64</td>
+<td>256 KB</td>
+<td>中等驱动 buffer</td>
+</tr>
+<tr>
+<td>7</td>
+<td>128</td>
+<td>512 KB</td>
+<td>—</td>
+</tr>
+<tr>
+<td>8</td>
+<td>256</td>
+<td>1 MB</td>
+<td>hugepage 备选块</td>
+</tr>
+<tr>
+<td>9</td>
+<td>512</td>
+<td>2 MB</td>
+<td>THP、hugetlb（2MB 页）</td>
+</tr>
+<tr>
+<td>10</td>
+<td>1024</td>
+<td>4 MB</td>
+<td>hugetlb 大页、DMA 大块</td>
+</tr>
+</tbody>
+</table></div><p>表里「常见落点」不是硬映射，是常见用法；具体落在哪个 order 取决于调用方传的 order。</p>
+<h2 id="十一free_area-与-order" tabindex="-1">十一、free_area 与 order <a class="header-anchor" href="#十一free_area-与-order"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>每个 zone 里有一个 <code>free_area</code> 数组，下标就是 order：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">free_area</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">free_list</span>[<span class="hljs-title">MIGRATE_TYPES</span>];</span>  <span class="hljs-comment">/* 按可移动性再分类 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> nr_free;                      <span class="hljs-comment">/* 本 order 的空闲块数 */</span>
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">zone</span> {</span>
+    ...
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">free_area</span> <span class="hljs-title">free_area</span>[<span class="hljs-title">MAX_ORDER</span>];</span>
+    ...
+};
+</code></pre></div></code></pre>
+<p>初看会以为 <code>free_area[order]</code> 是一条链表，实际是 <code>MIGRATE_TYPES</code> 条链表。为什么要按可移动性再切一刀，第十五章讲；这里只看 <code>free_list[0]</code> 那一维，也就是「全部空闲块」。</p>
+<p><img src="/img/2024/1735111535000p6b8e7.png" alt="物理页框结构：struct page 与 free_area 的关系"></p>
+<p><code>nr_free</code> 记的是本 order 下空闲块的<strong>个数</strong>，不是页数。要看页数得乘 <code>1 &lt;&lt; order</code>。这个区别在算总量时最容易错：<code>pages += free_area[i].nr_free &lt;&lt; i</code>，忘了移位就把块数当页数了。</p>
+<p>空闲块靠 <code>struct page</code> 自己的 <code>lru</code> 成员串联，不额外分配节点。一页进了 <code>free_list</code>，它的 <code>lru.next</code> / <code>lru.prev</code> 就是链表指针，<code>private</code> 记 order。块的第一页代表整块，后续页的 <code>private</code> 不参与，因为查 order 只看头页。</p>
+<p>这套「用 page 自身存链表指针」的省法有约束：page 一旦在空闲链表里，<code>lru</code> 就不能挪作他用。所以 <code>struct page</code> 那个 union 才要精心设计——<code>lru</code>、<code>slab_cache</code>/<code>freelist</code>、<code>compound_head</code> 三套互斥使用，靠状态位区分。</p>
+<p>order 的读写是一对 inline：<code>page_order(page)</code> 直接返回 <code>page-&gt;private</code>，<code>set_page_order(page, order)</code> 则 <code>set_page_private</code> 之后 <code>__SetPageBuddy</code>。<code>PG_buddy</code> 标志标记「这页在伙伴系统里待着」，分配出去时必须清掉，否则释放路径会以为它还在空闲链表上，重复挂链。</p>
+<p>zone 里还有一个 <code>pageset</code>，per-CPU 的页缓存。order 0 的分配释放大部分走 pageset，不进 <code>free_area</code>，这是后文的性能关键。</p>
+<h2 id="十二分配与释放的路径" tabindex="-1">十二、分配与释放的路径 <a class="header-anchor" href="#十二分配与释放的路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>最外层入口是 <code>alloc_pages</code>，往下到 <code>__alloc_pages_nodemask</code>。这条路分快慢两半。</p>
+<p>快路径 <code>get_page_from_freelist</code>：从 <code>node_zonelists</code> 里按顺序取 zone，检查水位线（<code>zone_watermark_ok</code>），够就调 <code>rmqueue</code> 从 <code>free_area</code> 摘块。</p>
+<p><code>rmqueue</code> 先试 per-CPU 的 <code>pageset</code>（order 0 专线），再试 <code>__rmqueue_smallest</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">page</span> *__<span class="hljs-title">rmqueue_smallest</span>(<span class="hljs-keyword">struct</span> <span class="hljs-title">zone</span> *<span class="hljs-title">zone</span>, <span class="hljs-title">unsigned</span> <span class="hljs-title">int</span> <span class="hljs-title">order</span>,
+                        <span class="hljs-title">int</span> <span class="hljs-title">migratetype</span>)
+{</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> current_order;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">free_area</span> *<span class="hljs-title">area</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">page</span> *<span class="hljs-title">page</span>;</span>
+
+    <span class="hljs-comment">/* 从请求的 order 往上找，找到第一个非空的 */</span>
+    <span class="hljs-keyword">for</span> (current_order = order; current_order &lt; MAX_ORDER; ++current_order) {
+        area = &amp;(zone-&gt;free_area[current_order]);
+        page = list_first_entry_or_null(&amp;area-&gt;free_list[migratetype],
+                            <span class="hljs-keyword">struct</span> page, lru);
+        <span class="hljs-keyword">if</span> (!page)
+            <span class="hljs-keyword">continue</span>;
+        list_del(&amp;page-&gt;lru);
+        rmv_page_order(page);
+        area-&gt;nr_free--;
+        expand(zone, page, order, current_order, area, migratetype);
+        <span class="hljs-keyword">return</span> page;
+    }
+
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p>逻辑一句：从 order 开始往上找，找到第一个有货的 order，把那块摘下来，多出来的部分拆开还回去。拆的过程叫 <code>expand</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">expand</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> zone *zone, <span class="hljs-keyword">struct</span> page *page,
+    <span class="hljs-type">int</span> low, <span class="hljs-type">int</span> high, <span class="hljs-keyword">struct</span> free_area *area, <span class="hljs-type">int</span> migratetype)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> size = <span class="hljs-number">1</span> &lt;&lt; high;
+
+    <span class="hljs-keyword">while</span> (high &gt; low) {
+        area--;
+        high--;
+        size &gt;&gt;= <span class="hljs-number">1</span>;
+        list_add(&amp;page[size].lru, &amp;area-&gt;free_list[migratetype]);
+        area-&gt;nr_free++;
+        set_page_order(&amp;page[size], high);
+    }
+}
+</code></pre></div></code></pre>
+<p>拿 order 10 的块分 1 页，就一路拆：1024 拆两半，后半挂 order 9；前 512 页再拆，后半挂 order 8……直到剩 1 页。这是同一个大块被拆散的全过程，也是碎片产生的现场。</p>
+<p>快路径失败进慢路径 <code>__alloc_pages_slowpath</code>，顺序是：唤醒 kswapd → 直接回收（<code>__alloc_pages_direct_reclaim</code>）→ 直接 compact（<code>__alloc_pages_direct_compact</code>）→ 重试 → 还不行就 OOM。reclaim 和 compact 分工不同：一个回收不一定要占着的缓冲内存，一个把可挪页搬拢换来连续块（第十四章）。先回收再压缩有讲究——回收能腾出整页，压缩只是挪位置，先回收能少挪几下。</p>
+<p>释放路径是 <code>__free_pages</code> 到 <code>free_pages_prepare</code> 再到 <code>__free_one_page</code>。核心是合并：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> __free_one_page(<span class="hljs-keyword">struct</span> page *page,
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> pfn, <span class="hljs-keyword">struct</span> zone *zone, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> order,
+        <span class="hljs-type">int</span> migratetype)
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> buddy_pfn;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">page</span> *<span class="hljs-title">buddy</span>;</span>
+
+    <span class="hljs-keyword">while</span> (order &lt; MAX_ORDER - <span class="hljs-number">1</span>) {
+        buddy_pfn = __find_buddy_pfn(pfn, order);
+        buddy = page + (buddy_pfn - pfn);
+
+        <span class="hljs-keyword">if</span> (!pfn_valid_within(buddy_pfn))
+            <span class="hljs-keyword">goto</span> done_merging;
+        <span class="hljs-keyword">if</span> (!page_is_buddy(page, buddy, order))
+            <span class="hljs-keyword">goto</span> done_merging;
+        <span class="hljs-comment">/* 和 buddy 合并，order 加一，继续往上试 */</span>
+        list_del(&amp;buddy-&gt;lru);
+        zone-&gt;free_area[order].nr_free--;
+        rmv_page_order(buddy);
+        pfn &amp;= ~(<span class="hljs-number">1</span> &lt;&lt; order);
+        order++;
+    }
+done_merging:
+    set_page_order(page, order);
+    list_add(&amp;page-&gt;lru, &amp;zone-&gt;free_area[order].free_list[migratetype]);
+    zone-&gt;free_area[order].nr_free++;
+}
+</code></pre></div></code></pre>
+<p><code>__find_buddy_pfn</code> 是全部魔法的浓缩：<code>buddy_pfn = pfn ^ (1 &lt;&lt; order)</code>。异或把第 order 位翻转，正好指向兄弟块。这一行能成立，唯一前提就是块大小是 2 的幂且自然对齐——回到第十章的问题。</p>
+<p>合并只在同一 zone 内进行，不跨 zone。zone 的边界是硬边界，两个相邻页框分属不同 zone 时，即使地址连续也不会合并成跨 zone 的块。</p>
+<h2 id="十三碎片是怎么产生的" tabindex="-1">十三、碎片是怎么产生的 <a class="header-anchor" href="#十三碎片是怎么产生的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>碎片有两类，成因完全不同。</p>
+<p>内部碎片：分配器给的块比你要的大，多出来的部分你用不上。伙伴系统分 8 页给你，你只要 5 页，3 页浪费。slab 缓解的就是这一类——把一页切成一堆小对象，按实际大小发。</p>
+<p>外部碎片：总空闲内存足够，但没有足够大的连续块。系统有 100 页空闲，分布在 100 个不连续位置，你要 order 8（256 页），照样失败。伙伴系统缓解但消不干净这一类。</p>
+<p>外部碎片怎么长出来的，跟第十二章那个 <code>expand</code> 直接相关。每次从大块拆小块，都会在某个 order 上留下一条孤立的链表项。反复拆、反复还，同一个 order 上就堆满大小相同但地址不相邻的碎片。</p>
+<p>举个具体的：order 10 的一个块（1024 页），先分走 1 页，留下 order 9、8、7……各一个块，外加最后 1 页被占。此时再分 4 页（order 2），又从某个 order 3 的块里拆。来回几次，order 10 的空闲块数变成 0，order 0 到 9 都攒着零散块。这时要 order 10 就是失败，尽管总空闲页数还有 500。</p>
+<p>更麻烦的一层是页面类型混住。内核分配的页（页表、slab、驱动 buffer）位置固定不能挪，用户页（匿名页、file cache）可以挪。两者交叉分布之后，即使可挪的部分很多，也被不可挪的页钉在原地，拼不出大块。第六章那句「物理内存不是均质的」，到碎片这里变成第二重不均质：不只是地址能力不均质，可移动性也不均质。</p>
+<p>内核的反应分三个层次，对应后面三章：<code>ZONE_MOVABLE</code> 做粗粒度分区（2.6.24 前后），把可挪的和不可挪的物理隔开；migrate type 做 zone 内的细粒度分桶，让同类页聚集；compaction 在分配失败时做运行时搬迁，把可挪页搬到一起腾出连续块（2.6.35 前后）。三者不是替代关系，是叠加的。</p>
+<h2 id="十四碎片防治之一低内存时整合碎片compaction" tabindex="-1">十四、碎片防治之一：低内存时整合碎片（compaction） <a class="header-anchor" href="#十四碎片防治之一低内存时整合碎片compaction"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>从 buddy 要内存要不到时，内核做两步调整：compact 和 reclaim。前者整合碎片，把零散的可挪页搬到一起腾出连续块；后者回收那些不一定要占着的缓冲内存。这章只看 compact。</p>
+<p>调用链：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>__alloc_pages_nodemask
+-&gt; __alloc_pages_slowpath
+-&gt; __alloc_pages_direct_compact
+-&gt; try_to_compact_pages
+                -&gt; compact_zone_order
+                    -&gt; compact_zone
+                        -&gt; isolate_migratepages
+                        -&gt; migrate_pages
+                        -&gt; release_freepages
+</code></pre></div></code></pre>
+<p>不是所有分配失败都触发 compact，得同时满足几个条件：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>条件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>order &gt; 0</code></td>
+<td>只要单页的分配，碎片不影响成败，没必要搬</td>
+</tr>
+<tr>
+<td><code>gfp_mask</code> 带 <code>__GFP_FS</code> 和 <code>__GFP_IO</code></td>
+<td>搬迁要写回脏页、要读文件，缺这两个标志没法搬</td>
+</tr>
+<tr>
+<td><code>gfp_mask</code> 不带 <code>__GFP_NOCOMPACT</code></td>
+<td>调用方显式拒绝压缩</td>
+</tr>
+<tr>
+<td>碎片指数大于阈值</td>
+<td>见下</td>
+</tr>
+</tbody>
+</table></div><p>碎片指数（fragmentation index）衡量「这次失败是内存不够还是碎片闹的」，取值 0 到 1000。默认阈值 500，碎片指数超过 500 才值得压缩；低于这个值说明是纯粹缺内存，压了也白压。阈值在 <code>/proc/sys/vm/extfrag_threshold</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/*
+ * Index is between 0 and 1000
+ *
+ * 0 =&gt; allocation would fail due to lack of memory
+ * 1000 =&gt; allocation would fail due to fragmentation
+ */</span>
+<span class="hljs-keyword">return</span> <span class="hljs-number">1000</span> - div_u64( (<span class="hljs-number">1000</span>+(div_u64(info-&gt;free_pages * <span class="hljs-number">1000ULL</span>, requested))), info-&gt;free_blocks_total)
+</code></pre></div></code></pre>
+<p><code>free_pages</code> 是 zone 总空闲页，<code>requested</code> 是这次要的页数，<code>free_blocks_total</code> 是各 order 上空闲块的总数。<code>free_pages / requested</code> 表示「按页数算够不够」，<code>free_blocks_total</code> 越大说明块越碎，两项一除，碎得越厉害指数越接近 1000。</p>
+<p>搬迁只在一个 zone 内部进行，不跨 zone。方向有讲究：把 zone 低地址的页尽量往 zone 末端挪，让空闲块在低地址端聚成大块。申请新位置由 <code>compaction_alloc</code> 负责，它从 zone 末尾往前找空闲页。</p>
+<p>搬迁分同步和异步。内存申请失败后第一次 compact 走异步，后面 reclaim 之后再试的那次走同步。同步只搬当前没被使用的页，遇到正在用的就跳过；异步会遍历并等所有 <code>MOVABLE</code> 页用完之后再搬。异步搬得干净，但会卡住分配路径；同步快，但搬不动的页就跳过了。</p>
+<p>搬一页不是拷内存就完了，页表项得跟着改。这套映射信息从哪来？从 <code>page-&gt;mapping</code> 出发，靠 rmap 找到所有映射了这页的页表项，逐个改写。匿名页挂在 <code>anon_vma</code> 上，文件页挂在 <code>address_space</code> 的 <code>i_mmap</code> 上。这套机制是 <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/%E9%A1%B5%E9%9D%A2%E5%9B%9E%E6%94%B6%E4%B8%8E%E9%80%86%E5%90%91%E6%98%A0%E5%B0%84/" class="wikilink">页面回收与逆向映射</a> 的主体，compaction 只是它的一个使用者。反向映射要是坏了，compaction 会把页搬到新地址，页表还指着老地址，进程下次访问就崩。</p>
+<h2 id="十五碎片防治之二按可移动性组织页migrate-type" tabindex="-1">十五、碎片防治之二：按可移动性组织页（migrate type） <a class="header-anchor" href="#十五碎片防治之二按可移动性组织页migrate-type"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>按可移动性，物理页分三类：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>migrate type</th>
+<th>含义</th>
+<th>典型页</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MIGRATE_UNMOVABLE</code></td>
+<td>位置固定，不能随便挪</td>
+<td>内核分配的内存：slab、页表、驱动 buffer、内核栈</td>
+</tr>
+<tr>
+<td><code>MIGRATE_RECLAIMABLE</code></td>
+<td>不能挪，但能删掉回收</td>
+<td>文件映射页、可回收的 dentry/inode 缓存</td>
+</tr>
+<tr>
+<td><code>MIGRATE_MOVABLE</code></td>
+<td>可以随便挪</td>
+<td>用户空间内存：匿名页、page cache</td>
+</tr>
+</tbody>
+</table></div><p>4.x 之后还多两个：<code>MIGRATE_CMA</code>（<code>CONFIG_CMA</code>，CMA 预留区专用）、<code>MIGRATE_ISOLATE</code>（<code>CONFIG_MEMORY_ISOLATION</code>，热拔插时临时隔离），再加 <code>MIGRATE_RESERVE</code>（预留区）。新版本还加了 <code>MIGRATE_HIGHATOMIC</code>（给原子分配留的高阶块，4.13 之后），<code>MIGRATE_TYPES</code> 总数随版本变，别写死。</p>
+<p>思路直白：申请时按可移动性先在对应类型的空闲页里找，尽量让同类页聚集。聚集之后，可挪的那一片就真能挪，compaction 有活干。数据结构的体现就是 <code>free_list</code> 从一条变成 <code>MIGRATE_TYPES</code> 条（结构见第十一章）。</p>
+<p>指定类型里找不到货怎么办？从备用类型挪用。挪用之后这块页归到新类型链表里，内核管这个动作叫「盗用」。备用类型的优先级是张静态表：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> fallbacks[MIGRATE_TYPES][<span class="hljs-number">4</span>] = {
+    [MIGRATE_UNMOVABLE]   = { MIGRATE_RECLAIMABLE, MIGRATE_MOVABLE,     MIGRATE_RESERVE },
+    [MIGRATE_RECLAIMABLE] = { MIGRATE_UNMOVABLE,   MIGRATE_MOVABLE,     MIGRATE_RESERVE },
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_CMA</span>
+    [MIGRATE_MOVABLE]     = { MIGRATE_CMA,         MIGRATE_RECLAIMABLE, MIGRATE_UNMOVABLE, MIGRATE_RESERVE },
+    [MIGRATE_CMA]         = { MIGRATE_RESERVE }, <span class="hljs-comment">/* Never used */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+    [MIGRATE_MOVABLE]     = { MIGRATE_RECLAIMABLE, MIGRATE_UNMOVABLE,   MIGRATE_RESERVE },
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+    [MIGRATE_RESERVE]     = { MIGRATE_RESERVE }, <span class="hljs-comment">/* Never used */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_MEMORY_ISOLATION</span>
+    [MIGRATE_ISOLATE]     = { MIGRATE_RESERVE }, <span class="hljs-comment">/* Never used */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+};
+</code></pre></div></code></pre>
+<p><code>MIGRATE_MOVABLE</code> 优先盗 <code>MIGRATE_CMA</code>，不是反过来。CMA 预留区本来就是给可移动页准备的，用户页借它用最合适；CMA 自己的分配直接用 <code>MIGRATE_RESERVE</code>，因为它不做 fallback 循环。表里第二维是 4，因为 <code>MIGRATE_TYPES</code> 是 5 的时候，除了自己还剩 4 个候选。</p>
+<p>不是所有场景都适合按可移动性组织页。机器内存小到每种类型都分不到几个 pageblock 时，分组反而浪费——每类都留一块，块内又填不满。有个全局变量表示分组是否启用，内存初始化时定：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> __ref <span class="hljs-title function_">build_all_zonelists</span><span class="hljs-params">(<span class="hljs-type">pg_data_t</span> *pgdat, <span class="hljs-keyword">struct</span> zone *zone)</span>
+{
+......
+    <span class="hljs-keyword">if</span> (vm_total_pages &lt; (pageblock_nr_pages * MIGRATE_TYPES))
+        page_group_by_mobility_disabled = <span class="hljs-number">1</span>;
+    <span class="hljs-keyword">else</span>
+        page_group_by_mobility_disabled = <span class="hljs-number">0</span>;
+......
+}
+</code></pre></div></code></pre>
+<p>总页数不够每类分一个 pageblock，就关掉分组。关掉之后 <code>free_list</code> 的索引全部退化为 0，所有页按 <code>MIGRATE_UNMOVABLE</code> 对待，migratetype 这套失效。</p>
+<p>pageblock 是分组的最小单位，也就是「至少连续多少页才值得归一类」：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">else</span> <span class="hljs-comment">/* CONFIG_HUGETLB_PAGE */</span></span>
+
+<span class="hljs-comment">/* If huge pages are not used, group by MAX_ORDER_NR_PAGES */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> pageblock_order        (MAX_ORDER-1)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span> <span class="hljs-comment">/* CONFIG_HUGETLB_PAGE */</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> pageblock_nr_pages    (1UL &lt;&lt; pageblock_order)</span>
+</code></pre></div></code></pre>
+<p>开了 hugetlb 时 <code>pageblock_order</code> 取大页的 order，常见取值是 9（2MB）；不开时取 <code>MAX_ORDER-1</code>，即 order 10、1024 页。分组粒度跟大页对齐，是为了「聚成一整块 pageblock 之后能直接当大页用」。</p>
+<p>系统初始化时所有 pageblock 先全部标成 <code>MIGRATE_MOVABLE</code>。这段逻辑在 <code>memmap_init_zone</code> 里，判定条件写在一个 <code>if</code> 里：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> ((z-&gt;zone_start_pfn &lt;= pfn) &amp;&amp; (pfn &lt; zone_end_pfn(z))
+    &amp;&amp; !(pfn &amp; (pageblock_nr_pages - <span class="hljs-number">1</span>)))
+        set_pageblock_migratetype(page, MIGRATE_MOVABLE);
+</code></pre></div></code></pre>
+<p><code>!(pfn &amp; (pageblock_nr_pages - 1))</code> 是「是 pageblock 首页」的判定。初始化时整片都可挪，其它类型是后来「盗」出来的。</p>
+<p><code>!(pfn &amp; (pageblock_nr_pages - 1))</code> 是「是 pageblock 首页」的判定。初始化时整片都可挪，其它类型是后来「盗」出来的。</p>
+<p>盗的时候有个策略：优先从 fallback 列表里更高优先级、且更大块连续的地方偷，别去碎片堆里抠。偷整块 pageblock 比偷一页划算，一次就把整类边界移动了，不会留小碎片：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* Remove an element from the buddy allocator from the fallback list */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">page</span> *
+__<span class="hljs-title">rmqueue_fallback</span>(<span class="hljs-keyword">struct</span> <span class="hljs-title">zone</span> *<span class="hljs-title">zone</span>, <span class="hljs-title">int</span> <span class="hljs-title">order</span>, <span class="hljs-title">int</span> <span class="hljs-title">start_migratetype</span>)
+{</span>
+    ......
+    <span class="hljs-comment">/* Find the largest possible block of pages in the other list */</span>
+    <span class="hljs-keyword">for</span> (current_order = MAX_ORDER<span class="hljs-number">-1</span>; current_order &gt;= order; --current_order) {
+        <span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>;; i++) {
+            migratetype = fallbacks[start_migratetype][i];
+            ......
+        }
+    }
+}
+</code></pre></div></code></pre>
+<p>外层从 <code>MAX_ORDER-1</code> 往下扫，先试最大的块；内层沿 fallback 优先级扫。合起来的效果是「宁可偷大块，也不要碎块」。</p>
+<p>想看实际分布读 <code>/proc/pagetypeinfo</code>。每个 zone、每个 order、每种 migratetype 各有多少空闲块，一目了然；同一个 zone 里各类型块数的比例就是分组的实际效果。判断碎片严重程度时，看 <code>MIGRATE_UNMOVABLE</code> 在高 order 上的剩余量，比看总空闲页数靠谱得多。</p>
+<h2 id="十六碎片防治之三虚拟可移动内存域zone_movable" tabindex="-1">十六、碎片防治之三：虚拟可移动内存域（ZONE_MOVABLE） <a class="header-anchor" href="#十六碎片防治之三虚拟可移动内存域zone_movable"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>在 migrate type 之前，内核先用了个更粗的办法：<code>ZONE_MOVABLE</code>。思路简单——把内存劈成两半，可移动的一半和不可移动的一半，物理上就隔开。</p>
+<p>它是 zone 枚举里的一个成员（见第四章）。启用靠内核命令行参数：<code>kernelcore=</code> 指定不可移动内存的数量，<code>movablecore=</code> 指定可移动内存的大小。两个都给时，取不可移动内存数量较大的那一个——保守起见，先保证内核有地方站。都不给，<code>ZONE_MOVABLE</code> 不启用。</p>
+<p>它和别的 zone 有个本质区别：<code>ZONE_MOVABLE</code> 不关联任何一段自己的物理地址范围。它的内存从高端内存域或者普通内存域划出来，不是独立的一段地址。所以 <code>/proc/zoneinfo</code> 里 <code>ZONE_MOVABLE</code> 的 pfn 范围和相邻 zone 重叠不奇怪——它借的是别人的地址，只是在分配器里另开了一本账。</p>
+<p>划多少、从哪划，由 <code>find_zone_movable_pfns_for_nodes</code> 算每个 node 里 <code>ZONE_MOVABLE</code> 的页框范围和数量，<code>find_usable_zone_for_movable</code> 挑出该 node 里可以用来划的那个 zone。可用 zone 取每个 node 的最高内存域，理由是：高地址的页本来就不适合固定映射（32 位系统下 HighMem 尤其如此），拿去做可移动页最不浪费。</p>
+<p><code>kernelcore</code> 在多 node 间平均分：<code>kernelcore_node = required_kernelcore / usable_nodes;</code>。<code>usable_nodes</code> 是能划出 <code>ZONE_MOVABLE</code> 的 node 数，不是全部 node。内存特别小的 node 划不出来，会被跳过。</p>
+<p>分配时怎么进这个域？看 gfp 标志：<code>gfp_flag</code> 同时带 <code>__GFP_HIGHMEM</code> 和 <code>__GFP_MOVABLE</code>，就从 <code>ZONE_MOVABLE</code> 申请。用户态的匿名页和 file cache 走的就是这条路——<code>GFP_HIGHUSER_MOVABLE</code> 里两个标志都在。</p>
+<p><code>ZONE_MOVABLE</code> 的直接用途是内存热拔插和热移除：整个 zone 里全是可挪页，拔之前把它们搬走就行，没有搬不动的钉子户。它顺带也降低碎片风险，但不解决「同一个 zone 内混住」的问题，那是 migrate type 的活。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>手段</th>
+<th>粒度</th>
+<th>何时生效</th>
+<th>解决什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ZONE_MOVABLE</code></td>
+<td>zone 级，物理隔离</td>
+<td>启动时按参数划定</td>
+<td>热拔插；粗粒度隔离可挪与不可挪</td>
+</tr>
+<tr>
+<td>migrate type</td>
+<td>pageblock 级，逻辑分桶</td>
+<td>每次分配</td>
+<td>zone 内同类聚集，减少混住</td>
+</tr>
+<tr>
+<td>compaction</td>
+<td>页级，运行时搬迁</td>
+<td>分配失败且碎片指数达标</td>
+<td>事后补救，凑出连续块</td>
+</tr>
+</tbody>
+</table></div><h2 id="十七从伙伴系统往上slab--kmalloc--vmalloc-各自的位置" tabindex="-1">十七、从伙伴系统往上：slab / kmalloc / vmalloc 各自的位置 <a class="header-anchor" href="#十七从伙伴系统往上slab--kmalloc--vmalloc-各自的位置"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>伙伴系统分到的是页，最小 4KB。内核实际要的东西大多比页小得多：一个 file 结构体、一个进程描述符、一个 VMA 描述符，几十到几百字节。要是每次都按页要，4KB 里用 64 字节，剩下 4032 字节全废——这是内部碎片。</p>
+<p>层次先分清，不然容易乱：最上面是用户进程和它的虚拟地址空间（页表、VMA 管）；中间隔着缺页异常和系统调用这条线；跨过这条线，内核才开始碰物理页，用的是 <code>vmalloc</code>、<code>kmalloc</code>、<code>__get_free_pages</code> 三套接口；其中 <code>kmalloc</code> 底下垫着 slab 分配器，slab 和 <code>__get_free_pages</code> 再往下都落到伙伴系统，最终是物理页框 <code>struct page</code>。</p>
+<p>用户态的 <code>malloc</code> 在内核里对应的是「扩大堆」——<code>brk</code> 调整进程堆边界，按页大小的倍数改。但 <code>brk</code> 只改了 VMA 范围，物理页要等真正访问、触发缺页异常时才分配。<code>malloc</code> 返回的地址背后一页物理内存都还没有。这条线和 <code>__get_free_pages</code> 完全不是一回事：后者直接要物理页，要到就有。</p>
+<p>slab 坐在伙伴系统上面，干的事是「把一页切成很多小对象」。核心是个存储池：对象用完不还给伙伴系统，放回池子等下次复用。收益有两个——减少 buddy 调用次数（buddy 一调就是整页，容易加剧外部碎片），让对象在 cache line 上排布更规整。slab 不独立于伙伴系统存在，它的「页」还是从 buddy 拿的。对象级接口是 <code>kmem_cache_alloc</code> / <code>kmem_cache_free</code>。三种实现（slab / slub / slob）的取舍、per-cpu freelist、<code>ctor</code>、debug 选项，全在 <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/slab-%E4%B8%8E-slub-%E5%88%86%E9%85%8D%E5%99%A8/" class="wikilink">slab 与 slub 分配器</a>。</p>
+<p><code>kmalloc</code> 是 slab 的一个门面：小内存走 slab 缓存，超过一定大小直接找 buddy 要页。粒度从几字节到 128KB（<code>KMALLOC_MAX_CACHE_SIZE</code>）。它和 <code>__get_free_pages</code> 互补不是替代：前者按字节要不保证页对齐、走 slab；后者按 order 要、页对齐、直接给物理连续页。要 DMA、要页表、要自己管页的场合用后者。<code>/proc/slabinfo</code> 里能看到各类 slab 的统计，除专用结构体的缓存，还有一堆 <code>kmalloc-*</code>。</p>
+<p>外部碎片的终局方案是「别要求物理连续」：在虚拟地址空间要一段连续区间，背后映射到散落的物理页。用户态的虚拟内存就这么干，内核借了同一招。<code>vmalloc</code> 给的虚拟地址连续、物理页不连续，能分配比 <code>kmalloc</code> 大得多（128K 以上）的空间，代价是必须动内核页表：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> *<span class="hljs-title function_">vmalloc</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> size)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">vfree</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">void</span> *addr)</span>;
+</code></pre></div></code></pre>
+<p><code>size</code> 向上取整到页大小的倍数。每块 vmalloc 区间配一个 <code>vm_struct</code> 描述符，记起始地址和长度。别和 <code>vm_area_struct</code> 搞混——后者是用户进程的 VMA，前者是内核的 vmalloc 区间，页表也不同：<code>vm_struct</code> 靠内核页表（<code>init_mm</code>，根是 <code>swapper_pg_dir</code>），<code>vm_area_struct</code> 靠进程页表。<code>vmalloc</code> 区间之间留 4KB 空洞防越界。因为物理页散落，返回的地址和物理地址之间没有固定偏移，<code>virt_to_phys()</code> 对它无效，要拿物理地址得走页表。</p>
+<p><img src="/img/2024/173511162000098dwhh.png" alt="vmalloc 区与 kmalloc 区分处不同地址区间，区间之间留 4KB 空洞"></p>
+<p>三个摆一起：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>buddy</th>
+<th>slab</th>
+<th>vmalloc</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>分配单位</td>
+<td>页（2^order）</td>
+<td>对象（字节级）</td>
+<td>页（虚拟连续）</td>
+</tr>
+<tr>
+<td>物理连续</td>
+<td>是</td>
+<td>是（页内对象同页）</td>
+<td>否</td>
+</tr>
+<tr>
+<td>虚拟连续</td>
+<td>是（直接映射区）</td>
+<td>是</td>
+<td>是</td>
+</tr>
+<tr>
+<td>动不动页表</td>
+<td>不用</td>
+<td>不用</td>
+<td>要，每次分配都建映射</td>
+</tr>
+<tr>
+<td>典型接口</td>
+<td><code>alloc_pages</code> / <code>__get_free_pages</code></td>
+<td><code>kmem_cache_alloc</code> / <code>kmalloc</code></td>
+<td><code>vmalloc</code></td>
+</tr>
+<tr>
+<td>上限</td>
+<td>受 <code>MAX_ORDER</code> 限制</td>
+<td>受缓存配置限制</td>
+<td>受 vmalloc 区大小限制</td>
+</tr>
+<tr>
+<td>治什么</td>
+<td>提供物理页</td>
+<td>内部碎片 + 分配频率</td>
+<td>外部碎片</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>低</td>
+<td>中</td>
+<td>高（建页表 + TLB）</td>
+</tr>
+</tbody>
+</table></div><h2 id="十八内核虚拟地址空间的划分" tabindex="-1">十八、内核虚拟地址空间的划分 <a class="header-anchor" href="#十八内核虚拟地址空间的划分"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>几套分配器能并存不打架，前提是内核虚拟地址空间做过分区，各自待在各自区间里，互不重叠。32 位 x86 是经典布局，讲它最好懂：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>区间</th>
+<th>范围</th>
+<th>放什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用户空间</td>
+<td>0 到 3GB</td>
+<td>进程自己的代码、数据、堆、栈、mmap</td>
+</tr>
+<tr>
+<td>直接映射区</td>
+<td>3GB 到 <code>vmalloc_start</code></td>
+<td>内核镜像、<code>mem_map</code>、所有物理页的直接映射</td>
+</tr>
+<tr>
+<td>vmalloc 区</td>
+<td><code>vmalloc_start</code> 到 <code>vmalloc_end</code></td>
+<td><code>vmalloc</code>、<code>ioremap</code>、模块加载</td>
+</tr>
+<tr>
+<td>保留区</td>
+<td>4GB 附近</td>
+<td>固定映射、高端内存临时映射</td>
+</tr>
+</tbody>
+</table></div><p>3GB 这个边界就是 <code>PAGE_OFFSET</code>，x86 32 位上是 <code>0xC0000000</code>。直接映射区从这开始，长度等于实际物理内存：机器有 64MB 内存（<code>free</code> 能看到），这段就映射 3GB 到 3GB+64MB。</p>
+<p><code>vmalloc_start</code> 在 3GB+64MB 附近，中间留约 8MB 空隙。这 8MB 是防护带：直接映射区按物理内存大小伸缩，物理内存多一点它就长一点，不隔开就会跟 vmalloc 区撞上。<code>vmalloc_end</code> 靠近 4GB，但要留尾巴：末尾保留 128KB 专用映射区（fixmap 那一片），再往下是高端内存的临时映射窗口。</p>
+<p><img src="/img/2024/1735111656000d14xi5.png" alt="32 位 x86 的内存分布示意：用户空间、直接映射区、vmalloc 区"></p>
+<p>直接映射区最讨人喜欢的性质：虚拟地址和物理地址只差一个固定偏移 <code>PAGE_OFFSET</code>。<code>virt_to_phys()</code> 就是干这个的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> __pa(x)     ((unsigned long)(x) - PAGE_OFFSET)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __va(x)     ((void *)((unsigned long)(x) + PAGE_OFFSET))</span>
+</code></pre></div></code></pre>
+<p>这个性质只在直接映射区成立。<code>get_free_page</code> 和 <code>kmalloc</code> 拿到的内存都在直接映射区，页表在初始化时就建好了，分配时不用动页表。<code>vmalloc</code> 拿到的在 vmalloc 区，地址和物理地址没有简单关系，<code>__pa()</code> 用上去就是错的，每次分配都要新建页表项——这是它慢的根源。</p>
+<p>64 位平台这套布局就不适用了，虚拟地址空间太大，内核不用挤在 1GB 里：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>平台</th>
+<th>直接映射</th>
+<th>vmalloc 区</th>
+<th>vmemmap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>x86_64</td>
+<td><code>page_offset_base</code> 起，覆盖全部物理内存</td>
+<td><code>VMALLOC_START</code> 到 <code>VMALLOC_END</code></td>
+<td><code>VMEMMAP_START</code> 一段</td>
+</tr>
+<tr>
+<td>ARM64</td>
+<td><code>PAGE_OFFSET</code> 起，<code>VA_BITS</code> 决定大小</td>
+<td><code>VMALLOC_START</code> 独立区间</td>
+<td><code>VMEMMAP_START</code> 独立区间</td>
+</tr>
+</tbody>
+</table></div><p>64 位下没有 <code>ZONE_HIGHMEM</code>，因为直接映射区装得下全部物理内存。ARM64 的具体布局、<code>VA_BITS</code> 的取舍、线性映射的建立过程，在 <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/ARM64-%E5%86%85%E5%AD%98%E5%88%9D%E5%A7%8B%E5%8C%96%EF%BC%9A%E9%A1%B5%E8%A1%A8%E3%80%81memblock-%E4%B8%8E-KASLR/" class="wikilink">ARM64 内存初始化：页表、memblock 与 KASLR</a> 和 <a href="/B.%E5%86%85%E6%A0%B8/03-%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/%E5%9C%B0%E5%9D%80%E7%A9%BA%E9%97%B4%E4%B8%8E%E5%9C%B0%E5%9D%80%E7%BF%BB%E8%AF%91/" class="wikilink">地址空间与地址翻译</a>。</p>
+<p>用一段模块代码把三个分配器落到的区间看一遍：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/module.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/slab.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/vmalloc.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/gfp.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> pagemem;
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> *kmallocmem, *vmallocmem;
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> __init <span class="hljs-title function_">memdemo_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    pagemem = __get_free_page(GFP_KERNEL);
+    <span class="hljs-keyword">if</span> (!pagemem)
+        <span class="hljs-keyword">return</span> -ENOMEM;
+    pr_info(<span class="hljs-string">&quot;page    va=%px\n&quot;</span>, (<span class="hljs-type">void</span> *)pagemem);
+
+    kmallocmem = kmalloc(<span class="hljs-number">100</span>, GFP_KERNEL);
+    <span class="hljs-keyword">if</span> (!kmallocmem)
+        <span class="hljs-keyword">goto</span> err_page;
+    pr_info(<span class="hljs-string">&quot;kmalloc va=%px\n&quot;</span>, kmallocmem);
+
+    vmallocmem = vmalloc(<span class="hljs-number">1000000</span>);
+    <span class="hljs-keyword">if</span> (!vmallocmem)
+        <span class="hljs-keyword">goto</span> err_kmalloc;
+    pr_info(<span class="hljs-string">&quot;vmalloc va=%px\n&quot;</span>, vmallocmem);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+err_kmalloc:
+    kfree(kmallocmem);
+err_page:
+    free_page(pagemem);
+    <span class="hljs-keyword">return</span> -ENOMEM;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> __exit <span class="hljs-title function_">memdemo_exit</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    vfree(vmallocmem);
+    kfree(kmallocmem);
+    free_page(pagemem);
+}
+
+module_init(memdemo_init);
+module_exit(memdemo_exit);
+MODULE_LICENSE(<span class="hljs-string">&quot;GPL&quot;</span>);
+</code></pre></div></code></pre>
+<p>三段输出对比着看：<code>page</code> 和 <code>kmalloc</code> 的地址挨着，都在直接映射区，数值上减 <code>PAGE_OFFSET</code> 就是物理地址；<code>vmalloc</code> 的地址在另一片，跟物理地址没有任何简单关系。</p>
+<h3 id="实例把-vmalloc-出来的内核虚拟地址映射给用户进程" tabindex="-1">实例：把 vmalloc 出来的内核虚拟地址映射给用户进程 <a class="header-anchor" href="#实例把-vmalloc-出来的内核虚拟地址映射给用户进程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这是个老例子，但把几层的关系串得很清楚：内核里 <code>vmalloc</code> 一段空间写点数据，再让用户进程通过 mmap 读到同样的内容。难点在于——<code>vmalloc</code> 的物理页是散的，映射给用户时没法用「物理地址 + 偏移」一把梭。</p>
+<p>三方各是什么：用户侧 <code>vm_area_struct</code>，进程的 VMA；内核侧 <code>vm_struct</code>，vmalloc 区间描述符，不是 VMA；底下是物理页框，<code>vmalloc</code> 从 buddy 一页页要来，彼此不相邻。</p>
+<p><img src="/img/2024/1735111810000ihrfa8.png" alt="vmalloc 区、用户 VMA 与物理页框的对应关系"></p>
+<p>做法是写个虚拟字符驱动，文件操作表里实现 <code>mmap</code>。<code>mmap</code> 被用户调 <code>mmap()</code> 时触发，那时内核已为用户建好 VMA，剩下的事是把 VMA 和物理页连起来。</p>
+<p>不能一次把页表全建好，因为 vmalloc 的物理页在分配前不确定，只能挂一个 <code>nopage</code>（新内核里是 <code>fault</code>），等缺页时动态建。所以驱动里的 <code>mmap</code> 只干一件事：给 VMA 绑上 <code>vm_operations_struct</code>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">mapdrv_mmap</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *file, <span class="hljs-keyword">struct</span> vm_area_struct *vma)</span>
+{
+    vma-&gt;vm_ops = &amp;mapdrv_vm_ops;
+    vma-&gt;vm_flags |= VM_DONTEXPAND | VM_DONTDUMP;
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>nopage</code> 里的活是「找到 vk 地址对应的内核逻辑地址」，三步：定位 vmalloc 虚拟地址所在的内核页表项（<code>init_mm</code> 的页表，走 <code>pgd → pud → pmd → pte</code>）；从页表项取出 <code>struct page *</code>；从 page 得到能直接访问的地址。这三步 <code>vmalloc_to_page()</code> 已经封装好，自己写 <code>vaddr_to_kaddr()</code> 没必要——老例子手写页表遍历，是因为当年没这个 helper。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">struct</span> page *<span class="hljs-title function_">mapdrv_nopage</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> vm_area_struct *vma,
+                                  <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> vaddr, <span class="hljs-type">int</span> *type)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> vk = vma-&gt;vm_private_data + (vaddr - vma-&gt;vm_start);
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">page</span> *<span class="hljs-title">page</span> =</span> vmalloc_to_page((<span class="hljs-type">void</span> *)vk);
+
+    <span class="hljs-keyword">if</span> (!page)
+        <span class="hljs-keyword">return</span> NOPAGE_SIGBUS;      <span class="hljs-comment">/* 新内核返回 VM_FAULT_SIGBUS */</span>
+    get_page(page);
+    <span class="hljs-keyword">if</span> (type)
+        *type = VM_FAULT_MINOR;
+    <span class="hljs-keyword">return</span> page;
+}
+</code></pre></div></code></pre>
+<p><img src="/img/2024/1735111875000z0o0w3.png" alt="mmap 实例的执行路径：用户 mmap、驱动 mmap、缺页、nopage、物理页"></p>
+<p>跑起来的步骤：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>make -C /lib/modules/$(<span class="hljs-built_in">uname</span> -r)/build M=<span class="hljs-variable">$PWD</span> modules   <span class="hljs-comment"># 编译</span>
+insmod map_driver.ko                                    <span class="hljs-comment"># 加载</span>
+grep mapdrv /proc/devices                               <span class="hljs-comment"># 查设备号</span>
+<span class="hljs-built_in">mknod</span> /dev/mapfile c 254 0                              <span class="hljs-comment"># 建设备文件</span>
+./maptest /dev/mapfile                                  <span class="hljs-comment"># 验证映射</span>
+</code></pre></div></code></pre>
+<p><code>maptest</code> 读到的内容应该就是驱动在 vmalloc 空间里写的那串字符。读到就说明用户页表成功指向了那段散落的物理页。</p>
+<p>老例子的坑得指出来：<code>get_free_page(0)</code> 早没了（见附）；<code>remap_page_range</code> 在 2.6.11 之后被 <code>remap_pfn_range</code> 取代；<code>nopage</code> 在 4.6 之后统一成 <code>fault</code>（传 <code>vm_fault</code> 结构）；设备号别写死 254，按 <code>grep mapdrv /proc/devices</code> 的输出填；<code>vmalloc</code> 区的地址过 <code>virt_to_phys()</code> 是错的，得走 <code>vmalloc_to_page()</code> 再 <code>page_to_phys()</code>。</p>
+<h2 id="十九易错点速查" tabindex="-1">十九、易错点速查 <a class="header-anchor" href="#十九易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>按踩坑频率排，都是从上面内容里直接推出来的。</p>
+<p><strong>PFN 不是物理地址右移。</strong> 只有物理内存从 0 开始时 PFN 才等于 <code>pa &gt;&gt; PAGE_SHIFT</code>。内存从 <code>PHYS_OFFSET</code> 开始的话，第一个页框号是 <code>PHYS_OFFSET &gt;&gt; PAGE_SHIFT</code>，FLAT 下靠 <code>ARCH_PFN_OFFSET</code> 补差。ARM64 的 <code>memstart_addr</code> 起决定作用。</p>
+<p><strong><code>nr_free</code> 是块数不是页数。</strong> 算总页数要 <code>nr_free &lt;&lt; order</code>。漏了移位，算出来的空闲内存会小好几个数量级。</p>
+<p><strong><code>struct page</code> 数组不一定在直接映射区。</strong> FLAT 和经典 SPARSE 下它在直接映射区，页表初始化时就建好；<code>SPARSEMEM_VMEMMAP</code> 下它在一段预留虚拟地址里，物理页按 section 到位才分配。这直接影响「分配 page frame 是否等于分配虚拟地址」这个判断。</p>
+<p><strong><code>ZONE_HIGHMEM</code> 在 64 位上不存在。</strong> 它的存在条件是虚拟地址空间装不下物理内存，这个前提在 64 位下不成立。ARM64 的 <code>/proc/zoneinfo</code> 里没有 HighMem 是正常的。</p>
+<p><strong><code>ZONE_MOVABLE</code> 不是一段物理地址。</strong> 它不关联自己的地址范围，pfn 和相邻 zone 重叠也正常。别拿 <code>/proc/zoneinfo</code> 里的 pfn 范围去推算它的物理位置。</p>
+<p><strong><code>SECTION_SIZE</code> 不是固定 1GB。</strong> 由各体系结构的 <code>SECTION_SIZE_BITS</code> 决定，x86_64 常见 128MB，ARM64 常见 1GB。判断 section 边界一律用 <code>SECTION_SIZE</code> / <code>PFN_SECTION_SHIFT</code> 宏，别写常量。</p>
+<p><strong>order 0 的分配不走 <code>free_area</code>。</strong> 单页分配优先走 per-CPU 的 <code>pageset</code>。看到 <code>free_area[0].nr_free</code> 为 0 不代表不能分配单页。</p>
+<p><strong><code>page-&gt;private</code> 是复用的。</strong> 页在 buddy 里时它存 order，在 buffer_head 里时存别的，在 slab 页里另有用途。读它之前先确认页的状态，别当通用字段用。</p>
+<p><strong>migrate type 不是 zone。</strong> migratetype 是 pageblock 级的逻辑标签，区分可移动性；zone 是物理能力边界，区分 DMA 能力和可映射性。两者正交，一个 zone 里可以有各种 migratetype 的页。</p>
+<p><strong>compaction 不跨 zone。</strong> 它只在一个 zone 内搬页。两个 zone 各自有 100MB 空闲但都不连续时，压缩不出跨 zone 的 200MB 块。</p>
+<p><strong>关闭分组的机器上 migratetype 全是摆设。</strong> <code>page_group_by_mobility_disabled = 1</code> 时所有页按不可移动对待，<code>fallsback</code> 表和分桶都失效。小内存机器上看到 <code>MIGRATE_MOVABLE</code> 为 0 不奇怪。</p>
+<p><strong><code>__pa()</code> 只能用在直接映射区。</strong> vmalloc 区、<code>ioremap</code> 区的地址过 <code>__pa()</code> 得到的是垃圾，这些区要转物理地址得走页表。</p>
+<p><strong><code>malloc</code> 和 <code>__get_free_pages</code> 不在一个层面。</strong> 前者是用户态堆管理器切字节，背后是 <code>brk</code>/<code>mmap</code> 加缺页异常；后者直接向 buddy 要物理页。拿两者比「粒度粗细」是把层次搞混了。</p>
+<p><strong>老接口名要认。</strong> <code>get_free_page</code> → <code>__get_free_page</code>，<code>get_free_pages</code> → <code>__get_free_pages</code>，<code>remap_page_range</code> → <code>remap_pfn_range</code>，<code>nopage</code> → <code>fault</code>，<code>page-&gt;_count</code> → <code>page-&gt;_refcount</code>。看到老名字先确认内核版本。</p>
+<h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="章节出处" tabindex="-1">章节出处 <a class="header-anchor" href="#章节出处"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>本篇章节</th>
+<th>主要素材</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开篇、一</td>
+<td>《Linux kernel内存管理的基本概念》：CPU/设备数据流、看到→管理→服务→高级需求四段脉络、VM/DMA mapping/dma-buf 三块分工</td>
+</tr>
+<tr>
+<td>二、三</td>
+<td>《Linux内存模型》第二章 page frame / PFN / NUMA；《Linux 内核内存管理》的 <code>struct page</code>、<code>mem_map[]</code>、<code>free_area</code>；<code>struct pglist_data</code>、<code>struct zone</code> 字段按 4.x 补齐</td>
+</tr>
+<tr>
+<td>四、五</td>
+<td>zone 枚举取自《linux kernel内存碎片防治技术》第三章；NUMA/UMA 取自《Linux内存模型》第二章，补 node 与内存模型的解耦</td>
+</tr>
+<tr>
+<td>六、七、八</td>
+<td>《Linux内存模型》第三章三种模型 + 第四章代码分析，全部保留；补 <code>mem_section</code> 与 <code>SPARSEMEM_EXTREME</code> 两级数组</td>
+</tr>
+<tr>
+<td>九</td>
+<td>《Linux内存模型》第四章的 <code>asm-generic/memory_model.h</code> 路径与 ARM64 结论，扩为配置项表</td>
+</tr>
+<tr>
+<td>十、十一、十二</td>
+<td>《Linux 内核内存管理》物理页管理章（伙伴算法、2 的幂、<code>free_area[MAX_ORDER]</code>）；<code>expand</code>、<code>__rmqueue_smallest</code>、<code>__free_one_page</code> 按 4.x 源码补</td>
+</tr>
+<tr>
+<td>十三</td>
+<td>由《linux kernel内存碎片防治技术》第一章的内外碎片讨论展开</td>
+</tr>
+<tr>
+<td>十四、十五、十六</td>
+<td>同文三章全保留：compaction 调用链与 <code>fragmentation_index</code>；三类 migrate type、<code>fallbacks</code> 表、<code>pageblock_nr_pages</code>、<code>memmap_init_zone</code>；<code>ZONE_MOVABLE</code> 的 kernelcore/movablecore 与两个计算函数</td>
+</tr>
+<tr>
+<td>十七、十八</td>
+<td>《Linux 内核内存管理》Slab / Kmalo / Vmalloc、虚拟地址分布、vmalloc 区、<code>PAGE_OFFSET</code> 与 <code>virt_to_phys</code>；第十八章的实例来自其「内存管理实例」</td>
+</tr>
+<tr>
+<td>十九</td>
+<td>本篇整理，条目都能回溯到前面各章</td>
+</tr>
+</tbody>
+</table></div><p>图片全部保留自《Linux 内核内存管理》，路径沿用 <code>2.img/2024/</code>：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>图</th>
+<th>原位置</th>
+<th>本篇位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>1735111535000p6b8e7.png</code> 物理页框结构</td>
+<td>物理页管理章末</td>
+<td>第十一章 <code>free_area</code> 之后</td>
+</tr>
+<tr>
+<td><code>173511162000098dwhh.png</code> vmalloc 区间</td>
+<td>vmalloc 节末</td>
+<td>第十七章 vmalloc 小节</td>
+</tr>
+<tr>
+<td><code>1735111656000d14xi5.png</code> 内存分布示意</td>
+<td>vmalloc 区节末</td>
+<td>第十八章布局图后</td>
+</tr>
+<tr>
+<td><code>1735111810000ihrfa8.png</code> 实例蓝图</td>
+<td>内存管理实例</td>
+<td>第十八章实例小节</td>
+</tr>
+<tr>
+<td><code>1735111875000z0o0w3.png</code> 执行路径</td>
+<td>内存管理实例末</td>
+<td>第十八章实例小节</td>
+</tr>
+</tbody>
+</table></div><h3 id="修正的错误" tabindex="-1">修正的错误 <a class="header-anchor" href="#修正的错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ol>
+<li>
+<p><strong>《Linux 内核内存管理》的 H1。</strong> 原文有一处 <code># 内存管理实例</code>，是全篇唯一 H1。本篇章节树固定为十九个二级章，这个实例没独立成章，降为第十八章下的三级小节。合并稿全篇没有 H1。</p>
+</li>
+<li>
+<p><strong><code>struct page</code> 与 <code>brk</code>/<code>malloc</code> 混讲。</strong> 原文把 <code>struct page</code>、<code>mem_map[]</code>、<code>get_free_page</code>、<code>brk</code>、<code>malloc</code> 挤在同一段比较，读起来像同一层的东西。实际分属两层：物理页管理（buddy + <code>struct page</code>）和用户虚拟地址空间（VMA + 页表 + 缺页异常）。本篇第二章拆开讲，第十七章用分层图重新定位，第十九章列为易错点。</p>
+</li>
+<li>
+<p><strong><code>get_free_page(0)</code>。</strong> 原文示例写 <code>pagemem = get_free_page(0);</code>。这个接口在 2.2 之后改名为 <code>__get_free_page(gfp_mask)</code>，参数是 gfp 标志不是 0。<code>0</code> 作为 gfp 标志意味着「无任何回收与等待能力」，在多数上下文里会直接失败。本篇示例改为 <code>__get_free_page(GFP_KERNEL)</code> 并补错误处理，<code>free_page</code> 的参数类型也从 <code>unsigned char *</code> 改成 <code>unsigned long</code>。</p>
+</li>
+<li>
+<p><strong><code>printk</code> 用 <code>%s</code> 打指针的写法。</strong> 原文写 <code>printk(&quot;&lt;1&gt; %s&quot;, ptr)</code>，拿 <code>%s</code> 打印未初始化的分配指针，会解引用指针当字符串，直接 oops。本篇改为 <code>%px</code>。原文的 <code>Kmalo</code> 是 <code>Kmalloc</code> 的拼写错误，一并改正。</p>
+</li>
+<li>
+<p><strong><code>/proc/pageteypeinfo</code>。</strong> 《linux kernel内存碎片防治技术》原文写的是 <code>/proc/pageteypeinfo</code>，多了个 <code>e</code>。正确路径是 <code>/proc/pagetypeinfo</code>。</p>
+</li>
+<li>
+<p><strong>「同步过程只移动当面未被使用的页」。</strong> 原文「当面」是「当前」的错字，本篇改为「当前没被使用的页」。</p>
+</li>
+<li>
+<p><strong><code>__rmqueue_fallback</code> 代码块缺右花括号。</strong> 原文节选末尾只有两个 <code>}</code>（内层 for 与函数体各一），按结构应有三层。本篇按 4.x 源码重排，只保留能说明「从大 order 往下扫」的核心循环头。</p>
+</li>
+<li>
+<p><strong><code>page_group_by_mobility_disabled</code> 的后果。</strong> 原文只说「如果 <code>page_group_by_mobility_disabled</code>，则所有内存都是不可移动的」。这句要精确化：该变量为 1 时是「分组关闭」，所有页按 <code>MIGRATE_UNMOVABLE</code> 对待，分桶机制整体失效，不是「页变成不可移动」这种物理属性变化。</p>
+</li>
+<li>
+<p><strong>三种内存模型示意图缺失。</strong> 《Linux内存模型》原文的三张示意图（FLAT、Discontiguous、Sparse 管理 page frame、<code>SPARSEMEM_VMEMMAP</code> 换算）在网页抓取时丢失，原文是「此处配有一幅示意图」的占位。本篇没有伪造图片，第六到第八章改用文字和对照表描述，<code>SPARSEMEM_VMEMMAP</code> 那处换成实际宏定义。原文注释自认「vmemmap 只有在 <code>PHYS_OFFSET</code> 等于 0 时才指向第一个 <code>struct page</code> 数组，一般应该有个 offset」——ARM64 定义里那个 <code>SECTION_ALIGN_DOWN(memstart_addr &gt;&gt; PAGE_SHIFT)</code> 就是补这个 offset 的，本篇第八章写明了。</p>
+</li>
+<li>
+<p><strong><code>ARCH_PFN_OFFSET</code> 的出处。</strong> 《Linux内存模型》原文写「对于 ARM64，定义在 <code>arch/arm/include/asm/memory.h</code> 文件中」。<code>arch/arm</code> 是 32 位 ARM 的目录，ARM64 是 <code>arch/arm64</code>，原文这句自相矛盾。本篇只保留「与体系结构和 <code>PHYS_OFFSET</code> 有关」的结论，没沿用那个路径。</p>
+</li>
+<li>
+<p><strong><code>MAX_ORDER</code> 与 hugetlb 的关系。</strong> 原文给的 <code>pageblock_nr_pages</code> 定义节选只有 <code>#else</code> 分支，容易让人以为它恒等于 <code>1 &lt;&lt; (MAX_ORDER-1)</code>。实际开了 <code>CONFIG_HUGETLB_PAGE</code> 时 <code>pageblock_order</code> 取大页的 order。本篇保留原代码块并补了这个前提。</p>
+</li>
+<li>
+<p><strong><code>vm_struct</code> 与 <code>vm_area_struct</code>。</strong> 原文两处提醒不要混淆，但有一处写「<code>vmalloc</code> 分配的内核空间的结构是 <code>vm_area</code>」，<code>vm_area</code> 这个类型名不存在，正确是 <code>vm_struct</code>。本篇统一为 <code>vm_struct</code>。</p>
+</li>
+<li>
+<p><strong><code>vmalloc</code> 分配的字数。</strong> 原文写「<code>vmalloc</code> 能够分配更大，超过 128K 的内存空间，但必须是页面大小的倍数」。前半句是经验值不是约束，后半句是约束——<code>vmalloc</code> 会把 <code>size</code> 向上取整到页，不是「必须由调用方传页的倍数」。本篇按后者表述。</p>
+</li>
+<li>
+<p><strong>实例里 <code>remap_page_range</code> 的可用性。</strong> 原文说「无法一次性使用 <code>remap_page_range</code> 函数分配页表项」。这个函数早在 2.6.11 就被 <code>remap_pfn_range</code> 取代了，限制不在函数本身，而在 <code>vmalloc</code> 的物理页在分配前不确定。本篇把因果改对了。</p>
+</li>
+</ol>
+<h3 id="未验证项" tabindex="-1">未验证项 <a class="header-anchor" href="#未验证项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li><code>CONFIG_DISCONTIGMEM</code> 被移除的具体内核版本与 commit hash。本篇只写「5.1 周期」，没给 hash 和准确的上游提交。</li>
+<li><code>MIGRATE_HIGHATOMIC</code> 的确切引入版本。本篇写「4.13 之后」，按 4.x 主线推断，未逐一核对 tag。</li>
+<li><code>MAX_ORDER</code> 默认 11（order 0~10，最大 4MB）。4.x 的 <code>include/linux/mmzone.h</code> 是这么定的，但各体系结构和发行版配置会覆盖，未在具体 ARM64 发行版上实测。</li>
+<li><code>pageblock_order</code> 开 hugetlb 时的典型值 9（2MB）。这取决于 <code>HPAGE_SHIFT</code> 与 base page size 的组合，ARM64 上 64K 页配 512MB 大页时完全不同，未逐一列举。</li>
+<li>ARM64 的 <code>SECTION_SIZE_BITS</code> 取 30（1GB）这个常见值。具体树的 <code>arch/arm64/include/asm/sparsemem.h</code> 不同，未核对多个版本。</li>
+<li>第十八章实例中的设备号 254。那是原文作者机器的实际情况，本篇示例保留但明确说明按 <code>/proc/devices</code> 实际输出填。</li>
+<li><code>vmalloc_to_page()</code> 能替代老例子里手写 <code>vaddr_to_kaddr()</code> 这个说法。结论来自接口语义，未在 2.6 与 4.x 上分别编译验证。</li>
+<li>三种 compaction 手段的引入版本（2.6.24 / 2.6.35）按公开资料的时间线推断，未对照具体的合入 commit。</li>
+</ul>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+                <div class="rail-card rail-backlinks-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                      </svg>
+                      反向链接
+                    </span>
+                    <span class="rail-badge">7</span>
+                  </div>
+                  <ul class="backlinks-list">
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/">ARM64 内存初始化：页表、memblock 与 KASLR</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/Linux的mmap内存映射机制解析/">Linux的mmap内存映射机制解析</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/slab-与-slub-分配器/">slab 与 slub 分配器</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/内存观测与调优/">内存观测与调优</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/内核连续内存与用户态拷贝/">内核连续内存与用户态拷贝</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/地址空间与地址翻译/">地址空间与地址翻译</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/03-内存管理/页面回收与逆向映射/">页面回收与逆向映射</a></li>
+                    
+                  </ul>
+                </div>
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一内核眼里的内存从-cpu-到-device-的三条数据流" data-toc-target="一内核眼里的内存从-cpu-到-device-的三条数据流">一、内核眼里的内存：从 CPU 到 Device 的三条数据流</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二页框pfn-与-struct-page" data-toc-target="二页框pfn-与-struct-page">二、页框、PFN 与 struct page</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三三个层级node--zone--page" data-toc-target="三三个层级node--zone--page">三、三个层级：node / zone / page</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四zone-的划分与-zone_dma--normal--highmem--movable" data-toc-target="四zone-的划分与-zone_dma--normal--highmem--movable">四、zone 的划分与 ZONE_DMA / NORMAL / HIGHMEM / MOVABLE</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五numa-与非-numa-的差别" data-toc-target="五numa-与非-numa-的差别">五、NUMA 与非 NUMA 的差别</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六三种内存模型flat" data-toc-target="六三种内存模型flat">六、三种内存模型：FLAT</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七三种内存模型discontiguous" data-toc-target="七三种内存模型discontiguous">七、三种内存模型：Discontiguous</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八三种内存模型sparse" data-toc-target="八三种内存模型sparse">八、三种内存模型：Sparse</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九内存模型的选择配置项与代码路径" data-toc-target="九内存模型的选择配置项与代码路径">九、内存模型的选择：配置项与代码路径</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十伙伴系统为什么必须是-2-的幂" data-toc-target="十伙伴系统为什么必须是-2-的幂">十、伙伴系统：为什么必须是 2 的幂</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一free_area-与-order" data-toc-target="十一free_area-与-order">十一、free_area 与 order</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二分配与释放的路径" data-toc-target="十二分配与释放的路径">十二、分配与释放的路径</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三碎片是怎么产生的" data-toc-target="十三碎片是怎么产生的">十三、碎片是怎么产生的</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四碎片防治之一低内存时整合碎片compaction" data-toc-target="十四碎片防治之一低内存时整合碎片compaction">十四、碎片防治之一：低内存时整合碎片（compaction）</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五碎片防治之二按可移动性组织页migrate-type" data-toc-target="十五碎片防治之二按可移动性组织页migrate-type">十五、碎片防治之二：按可移动性组织页（migrate type）</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六碎片防治之三虚拟可移动内存域zone_movable" data-toc-target="十六碎片防治之三虚拟可移动内存域zone_movable">十六、碎片防治之三：虚拟可移动内存域（ZONE_MOVABLE）</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十七从伙伴系统往上slab--kmalloc--vmalloc-各自的位置" data-toc-target="十七从伙伴系统往上slab--kmalloc--vmalloc-各自的位置">十七、从伙伴系统往上：slab / kmalloc / vmalloc 各自的位置</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十八内核虚拟地址空间的划分" data-toc-target="十八内核虚拟地址空间的划分">十八、内核虚拟地址空间的划分</a>
+                    
+                    <a class="toc-item toc-lv3" href="#实例把-vmalloc-出来的内核虚拟地址映射给用户进程" data-toc-target="实例把-vmalloc-出来的内核虚拟地址映射给用户进程">实例：把 vmalloc 出来的内核虚拟地址映射给用户进程</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十九易错点速查" data-toc-target="十九易错点速查">十九、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#章节出处" data-toc-target="章节出处">章节出处</a>
+                    
+                    <a class="toc-item toc-lv3" href="#修正的错误" data-toc-target="修正的错误">修正的错误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#未验证项" data-toc-target="未验证项">未验证项</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","title":"物理内存管理：页、zone 与内存模型","url":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","type":"current"},{"id":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","title":"ARM64 内存初始化：页表、memblock 与 KASLR","url":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","type":"outgoing"},{"id":"/B.内核/03-内存管理/slab-与-slub-分配器/","title":"slab 与 slub 分配器","url":"/B.内核/03-内存管理/slab-与-slub-分配器/","type":"outgoing"},{"id":"/B.内核/03-内存管理/页面回收与逆向映射/","title":"页面回收与逆向映射","url":"/B.内核/03-内存管理/页面回收与逆向映射/","type":"outgoing"},{"id":"/B.内核/03-内存管理/地址空间与地址翻译/","title":"地址空间与地址翻译","url":"/B.内核/03-内存管理/地址空间与地址翻译/","type":"outgoing"},{"id":"/B.内核/03-内存管理/Linux的mmap内存映射机制解析/","title":"Linux的mmap内存映射机制解析","url":"/B.内核/03-内存管理/Linux的mmap内存映射机制解析/","type":"backlink"},{"id":"/B.内核/03-内存管理/内存观测与调优/","title":"内存观测与调优","url":"/B.内核/03-内存管理/内存观测与调优/","type":"backlink"},{"id":"/B.内核/03-内存管理/内核连续内存与用户态拷贝/","title":"内核连续内存与用户态拷贝","url":"/B.内核/03-内存管理/内核连续内存与用户态拷贝/","type":"backlink"}],"links":[{"source":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","target":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","type":"direct"},{"source":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","target":"/B.内核/03-内存管理/slab-与-slub-分配器/","type":"direct"},{"source":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","target":"/B.内核/03-内存管理/页面回收与逆向映射/","type":"direct"},{"source":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","target":"/B.内核/03-内存管理/地址空间与地址翻译/","type":"direct"},{"source":"/B.内核/03-内存管理/ARM64-内存初始化：页表、memblock-与-KASLR/","target":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","type":"direct"},{"source":"/B.内核/03-内存管理/Linux的mmap内存映射机制解析/","target":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","type":"direct"},{"source":"/B.内核/03-内存管理/slab-与-slub-分配器/","target":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","type":"direct"},{"source":"/B.内核/03-内存管理/内存观测与调优/","target":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","type":"direct"},{"source":"/B.内核/03-内存管理/内核连续内存与用户态拷贝/","target":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","type":"direct"},{"source":"/B.内核/03-内存管理/地址空间与地址翻译/","target":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","type":"direct"},{"source":"/B.内核/03-内存管理/页面回收与逆向映射/","target":"/B.内核/03-内存管理/物理内存管理：页、zone-与内存模型/","type":"direct"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

@@ -31,18 +31,22 @@
     return norm('/' + rel);
   }
 
+  // 文件夹排序：中文开头的目录置顶，其余保持 tree.json 里的既有顺序。
+  // 规则与 src/load.js 的 sortFolders 一致；这里再排一次是兜底，
+  // 免得浏览器缓存了旧版 tree.json 时侧栏顺序回退。
+  var CJK_START = /^[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/;
+  function sortFolders(kids) {
+    var zh = [], rest = [];
+    kids.forEach(function (k) { (CJK_START.test(k.n) ? zh : rest).push(k); });
+    return zh.concat(rest);
+  }
+
   function renderNode(node) {
     var html = '';
-    var kids = node.c || [];
+    var kids = sortFolders(node.c || []);
     var docs = node.d || [];
 
-    // 先列本目录下的文章，再展开子目录。
-    // 注意：子目录的文章由 renderNode(kid) 自己输出，这里不能再渲染一遍，
-    // 否则每篇会被重复列出两次（侧栏条目数会翻倍）。
-    docs.forEach(function (d) {
-      html += docLink(d);
-    });
-
+    // 优先展示子目录（文件夹），再展示本目录下的文章。
     kids.forEach(function (k) {
       var p = pathOf(k.p);
       var open = current.indexOf(p) === 0 ? ' open' : '';
@@ -50,6 +54,13 @@
         '<summary><span class="tree-label">' + esc(k.n) + '</span>' +
         '<span class="tree-count">' + (k.t || 0) + '</span></summary>' +
         '<div class="tree-children">' + renderNode(k) + '</div></details>';
+    });
+
+    // 展示本目录下的文章文件。
+    // 注意：子目录的文章由 renderNode(kid) 自己输出，这里不能再渲染一遍，
+    // 否则每篇会被重复列出两次（侧栏条目数会翻倍）。
+    docs.forEach(function (d) {
+      html += docLink(d);
     });
 
     return html;
@@ -84,7 +95,9 @@
   function load() {
     if (loaded) return;
     loaded = true;
-    fetch('/tree.json', { cache: 'force-cache' })
+    // 每次构建都会重写 tree.json；这里不能用 force-cache，
+    // 否则浏览器会一直复用缓存里的旧目录树，源文件怎么移动侧栏都不变。
+    fetch('/tree.json', { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(render)
       .catch(function () { host.innerHTML = '<p class="search-hint">目录加载失败</p>'; });

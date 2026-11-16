@@ -1,0 +1,2186 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>多核负载均衡：调度域、任务放置与 load_balance · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">多核负载均衡：调度域、任务放置与 load_balance</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">多核负载均衡：调度域、任务放置与 load_balance</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">多核负载均衡：调度域、任务放置与 load_balance</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>边界先划清：本篇只讲「手上已经有 load、util、capacity 这些数之后，CPU 之间怎么搬任务」。负载和利用率怎么算、PELT 怎么衰减，在 ⑤ <a href="/B.%E5%86%85%E6%A0%B8/02-%E8%BF%9B%E7%A8%8B%E4%B8%8E%E8%B0%83%E5%BA%A6/PELT%EF%BC%9Aper-entity-%E8%B4%9F%E8%BD%BD%E8%B7%9F%E8%B8%AA/" class="wikilink">PELT：per-entity 负载跟踪</a>；调度类怎么挂、组调度和带宽控制怎么实现，看 <a href="/B.%E5%86%85%E6%A0%B8/02-%E8%BF%9B%E7%A8%8B%E4%B8%8E%E8%B0%83%E5%BA%A6/CFS-%E8%B0%83%E5%BA%A6%E7%B1%BB%EF%BC%9A%E6%BA%90%E7%A0%81%E3%80%81%E7%BB%84%E8%B0%83%E5%BA%A6%E4%B8%8E%E5%B8%A6%E5%AE%BD%E6%8E%A7%E5%88%B6/" class="wikilink">CFS 调度类：源码、组调度与带宽控制</a>；想补 O(n) 到 CFS 的历史，看 <a href="/B.%E5%86%85%E6%A0%B8/02-%E8%BF%9B%E7%A8%8B%E4%B8%8E%E8%B0%83%E5%BA%A6/Linux-%E8%B0%83%E5%BA%A6%E5%99%A8%EF%BC%9A%E4%BB%8E-O(n)-%E5%88%B0-CFS-%E4%B8%8E%E5%AE%9E%E6%97%B6%E8%B0%83%E5%BA%A6/" class="wikilink">Linux 调度器：从 O(n) 到 CFS 与实时调度</a>。</p>
+</blockquote>
+<p>代码基线 <strong>Linux 5.10.61</strong>。引用时对源码做了删减，NUMA 相关的代码整块拿掉了——手机平台上我们暂时不关注这个特性，所以本篇不覆盖 NUMA balancing。task placement 和 EAS 那几节素材基于 linux-5.4.24，两版在这几个函数上行为一致，有差别我会点出来。</p>
+<h2 id="一什么是-cpu-负载什么是均衡" tabindex="-1">一、什么是 CPU 负载，什么是均衡 <a class="header-anchor" href="#一什么是-cpu-负载什么是均衡"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1load-和-usageutility-不是一回事" tabindex="-1">1、load 和 usage、utility 不是一回事 <a class="header-anchor" href="#1load-和-usageutility-不是一回事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>CPU usage 是忙闲比例：1000ms 窗口里 500ms 跑任务、500ms 空转，usage 就是 50%。它直观，但没法跨 CPU 比。同一个任务在小核 300MHz 上跑 1000ms，usage 100%；搬到大核 3GHz 上跑 50ms，usage 只有 5%——任务负载一样，usage 差一个量级。</p>
+<p>utility（利用率）也看 running time，区别是做了归一化：把 running time 折算到系统最大算力（超大核最高频），再归一化到 1024，这样能直接和 capacity 做运算。load 也归一化，但和 utility 是两个量：utility 只跟 busy time 走，CPU 没跑满时两者差不多同步；一旦跑满，utility 就废了——大家都是 100%，可 runqueue 上挂 10 个任务的 CPU 和挂 5 个的，承压显然不一样。所以早期直接用 runqueue 深度描述负载。
+深度太粗。CPU A、B 各挂 1 个任务，A 上是重载任务，B 上是个一会儿就 sleep 的轻载任务，深度一样，压力差远了。现代调度器改用 runqueue 上所有 task load 之和表示 CPU load，CPU 负载的跟踪就变成任务负载的跟踪。Linux 3.8 引入 PELT，把负载跟踪从 per-CPU 推进到 per-entity：好处不只是「知道 CPU 多忙」，而是「知道负载来自哪个调度实体」，均衡才做得准。</p>
+<h3 id="2capacity算力是会变的值" tabindex="-1">2、capacity：算力是会变的值 <a class="header-anchor" href="#2capacity算力是会变的值"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>均衡的目标不是把负载平均摊给每个 CPU，而是让每个 CPU 拿到和算力匹配的负载。6 小核 + 2 大核，总负载 800，每个 CPU 摊 100 不叫均衡，大核能扛的比小核多。算力（capacity）指 CPU 能提供的计算能力：同频下 A77 强于 A57；微架构相同，最高频 2.2GHz 强于 1.1GHz。微架构和最高频一确定，算力基本就定了。<code>struct rq</code> 里有两个相关成员：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>成员</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>unsigned long cpu_capacity;</code></td>
+<td>可以用于 CFS 任务的算力</td>
+</tr>
+<tr>
+<td><code>unsigned long cpu_capacity_orig;</code></td>
+<td>该 CPU 的原始算力，和微架构及其最高频率相关</td>
+</tr>
+</tbody>
+</table></div><p>cpufreq 会按当前 util 调频，温控也会压最高频，但这些都改不了 <code>cpu_capacity_orig</code>。CFS 均衡看 <code>cpu_capacity</code>：扣掉 RT、DL、IRQ 占掉的算力和温控损失，剩下的才给 CFS。所以这个值一直在动，得经常重算（<code>update_cpu_capacity()</code>）。为了和 utility 直接比，算力同样归一化：最强的 CPU 跑满最高频是 1024，其余按微架构和最高频折算。到这里好像齐了：任务有 load，CPU 有 capacity，不均衡就搬任务。但搬任务的代价跟拓扑强相关——小核 cluster 内搬一次，和小核搬大核，差一个量级。所以才要调度域和调度组。</p>
+<h3 id="3均衡不是把负载平分" tabindex="-1">3、均衡不是把负载平分 <a class="header-anchor" href="#3均衡不是把负载平分"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>均衡要保吞吐，别让「一核有难、七核围观」。但均衡本身要花算力：找最忙的 group、比负载、抢 rq lock、搬任务。于是有两条约束——间隔：不同 level 的 domain 有自己的均衡间隔，不许每个 tick 都撸一遍；门限：group 差距没到 <code>imbalance_pct</code> 就忍着，level 越高门限越高，因为跨 cluster 搬代价更大。
+异构系统还多一层：任务轻或对延迟不敏感，放小核；任务重或跟用户体验相关，就希望它上大核。内核用 misfit task 表达——任务一旦被标成 misfit，均衡得尽快把它往上搬（upmigration），让重载任务早点跑完，或者让前台任务响应快一点。均衡还省电：4 个 CPU、8 个等负载任务，全塞一个 CPU 时那个忙的得跑高频，摊开之后每个 CPU 跑低频，整机功耗更低。</p>
+<h2 id="二为什么只-pull-不-pushlinux-均衡的单向语义" tabindex="-1">二、为什么只 pull 不 push：Linux 均衡的单向语义 <a class="header-anchor" href="#二为什么只-pull-不-pushlinux-均衡的单向语义"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>看 <code>load_balance()</code> 的骨架只有一个方向：从 <code>src_rq</code> 把任务摘下来（<code>detach_tasks</code>），挂到 <code>dst_rq</code> 上（<code>attach_tasks</code>）。发起均衡的 CPU 是 dest，它主动去别人队列里拉。CFS 这一层没有「把本 CPU 的任务推给别人」这条路径。单向有三个后果，都是设计取舍：</p>
+<ol>
+<li><strong>谁空谁去拉</strong>。本 CPU 有活干、别人空着，它不会主动分出去——连别人空不空都懒得看。空闲的 CPU 得自己发起，这就是 new idle balance 存在的理由。</li>
+<li><strong>idle 的 CPU 不会自己醒</strong>。进了 idle、tick 也停了（NO_HZ），就彻底没机会发起均衡。必须有人踢一脚，于是有 nohz idle balance 的 IPI。</li>
+<li><strong>running 的任务搬不动</strong>。均衡搬的是 runqueue 上的任务，正在跑的不在队列里。想搬它只能走 stop machine，即 active balance。</li>
+</ol>
+<p>push 语义内核里确实有，但不在 CFS 的常规均衡路径上：一个是 active balance 用 <code>stop_one_cpu_nowait()</code> 让目标 CPU 停下来再挪 running task；另一个是 CPU hotplug 时的 <code>migration_call</code>。把这两条和 pull 混为一谈，读代码时会一直觉得「哪里少了一段」。</p>
+<h2 id="三调度域-sched_domain-与调度组-sched_group" tabindex="-1">三、调度域 sched_domain 与调度组 sched_group <a class="header-anchor" href="#三调度域-sched_domain-与调度组-sched_group"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1为什么要造这两个概念" tabindex="-1">1、为什么要造这两个概念 <a class="header-anchor" href="#1为什么要造这两个概念"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>复杂度全在拓扑上。CPU 很忙，把任务挪走：跨 cluster 挪，cache 冷掉；SMT 的两个硬件线程共享 cache，互相挪基本无感；NUMA node 之间挪，代价又是另一个量级，除非不均衡严重到没法看。算法必须能表达这些差异，解法就是 <code>struct sched_domain</code>：按拓扑分层，每层一个 domain，均衡在各自内部判定。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>成员</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>parent</code> / <code>child</code></td>
+<td>sched domain 形成层级结构，parent 和 child 建立父子关系。base domain 的 child 为 NULL，top domain 的 parent 为 NULL</td>
+</tr>
+<tr>
+<td><code>groups</code></td>
+<td>一个调度域里有若干调度组，形成环形链表，<code>groups</code> 是链表头</td>
+</tr>
+<tr>
+<td><code>min_interval</code> / <code>max_interval</code></td>
+<td>做均衡有开销，无法时刻盯着。这两个值定义检查该 domain 均衡状态的时间间隔范围</td>
+</tr>
+<tr>
+<td><code>busy_factor</code></td>
+<td>正常情况下 <code>balance_interval</code> 就是间隔；CPU 繁忙时间隔拉长为 <code>busy_factor × balance_interval</code></td>
+</tr>
+<tr>
+<td><code>imbalance_pct</code></td>
+<td>域内不均衡到什么程度才动手，这个成员是判定门限</td>
+</tr>
+<tr>
+<td><code>cache_nice_tries</code></td>
+<td>和 <code>nr_balance_failed</code> 配合控制迁移力度。失败次数超过它，均衡更激进，连 cache hot 的任务也搬</td>
+</tr>
+<tr>
+<td><code>nohz_idle</code></td>
+<td>每个 CPU 都有对应的 LLC sched domain，LLC SD 记录该 CPU 的 idle 状态（tick 是否已停），进而统计 domain 中 busy CPU 的个数，落在 <code>sd-&gt;shared-&gt;nr_busy_cpus</code></td>
+</tr>
+<tr>
+<td><code>flags</code></td>
+<td>调度域标志，见下一章的表</td>
+</tr>
+<tr>
+<td><code>level</code></td>
+<td>该 domain 在层级中的位置。base domain 的 level 为 0，向上依次加一</td>
+</tr>
+<tr>
+<td><code>last_balance</code></td>
+<td>上次做均衡的时间点。由基础间隔（<code>get_sd_balance_interval()</code>）和当前 sd 状态算出最终间隔，<code>last_balance + interval</code> 就是下次均衡时间</td>
+</tr>
+<tr>
+<td><code>balance_interval</code></td>
+<td>该 domain 均衡的基础时间间隔</td>
+</tr>
+<tr>
+<td><code>nr_balance_failed</code></td>
+<td>该 domain 上均衡失败的次数。超过 <code>cache_nice_tries</code> 就开始搬 cache hot 的任务</td>
+</tr>
+<tr>
+<td><code>max_newidle_lb_cost</code></td>
+<td>该 domain 上 newidle balance 的最大耗时，最小值被 <code>sysctl_sched_migration_cost</code> 兜住</td>
+</tr>
+<tr>
+<td><code>next_decay_max_lb_cost</code></td>
+<td><code>max_newidle_lb_cost</code> 会衰减，这个成员控制衰减节奏，每秒一次</td>
+</tr>
+<tr>
+<td><code>avg_scan_cost</code></td>
+<td>平均扫描成本</td>
+</tr>
+<tr>
+<td><code>struct sched_domain_shared *shared</code></td>
+<td>为降低锁竞争，sched domain 是 per-CPU 的，但有些信息必须在 per-CPU domain 之间共享：1、该 domain 中 busy CPU 的个数；2、该 domain 中是否有 idle 的 CPU</td>
+</tr>
+<tr>
+<td><code>span_weight</code> / <code>span</code></td>
+<td>该 domain 的跨度。手机场景下 span 就是该 domain 中所有 CPU core 形成的 cpu mask，<code>span_weight</code> 是其中的 CPU 个数</td>
+</tr>
+</tbody>
+</table></div><p>一句话记住 <code>shared</code>：per-CPU 的东西放 per-CPU domain，跨 CPU 要看的汇总数扔进 <code>shared</code>，省得每个 CPU 都算一遍还要抢锁。</p>
+<h3 id="2调度组" tabindex="-1">2、调度组 <a class="header-anchor" href="#2调度组"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>均衡不在 CPU 之间直接做，而是在 group 之间做。domain 是「比什么范围」，group 是「范围内的参赛选手」。base domain 每个 group 只有一个 CPU；往上走 group 里会有多个 CPU core。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>成员</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>next</code></td>
+<td>domain 中所有 sched group 形成环形链表，<code>next</code> 指向下一个节点</td>
+</tr>
+<tr>
+<td><code>ref</code></td>
+<td>该 sched group 的引用计数</td>
+</tr>
+<tr>
+<td><code>group_weight</code></td>
+<td>该调度组中有多少个 CPU</td>
+</tr>
+<tr>
+<td><code>sgc</code></td>
+<td>该调度组的算力信息（<code>struct sched_group_capacity</code>）</td>
+</tr>
+<tr>
+<td><code>cpumask</code></td>
+<td>该调度组包括哪些 CPU</td>
+</tr>
+</tbody>
+</table></div><p>group 是<strong>环形</strong>链表，每个 CPU 的 domain 里链表头的 group 就是自己。这样「local group」的定位变成一次比较，遍历也天然不抢锁。</p>
+<h2 id="四调度域的层级与-sd-flag" tabindex="-1">四、调度域的层级与 sd flag <a class="header-anchor" href="#四调度域的层级与-sd-flag"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>domain 按 CPU 拓扑搭成树，均衡不是一把梭，而是从某个 level 起逐级往上。从哪起、走几层，由均衡类型和各级 flag 决定。在某个指定 domain 里均衡时，<strong>不看</strong>系统其他 domain 的 CPU 负载，只看本 domain 内各 group 是否均衡——这就是分层的意义：把 N 个 CPU 的全局问题拆成若干个局部问题。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>调度域标记</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SD_BALANCE_NEWIDLE</code></td>
+<td>该 domain 是否支持 newidle balance</td>
+</tr>
+<tr>
+<td><code>SD_BALANCE_EXEC</code> / <code>SD_BALANCE_FORK</code> / <code>SD_BALANCE_WAKE</code></td>
+<td>exec、fork、wake 时该 domain 是否参与对应类型的均衡。这三个 flag 主要用来圈定 exec、fork、wakeup 场景下选核的范围</td>
+</tr>
+<tr>
+<td><code>SD_WAKE_AFFINE</code></td>
+<td>该 domain 上是否考虑 wake affine，即满足条件时让 waker 和 wakee 靠近</td>
+</tr>
+<tr>
+<td><code>SD_ASYM_CPUCAPACITY</code></td>
+<td>该 domain 上的 CPU 是否具有不一样 capacity。MC domain 上各 CPU 算力相同，DIE domain 会设这个 flag</td>
+</tr>
+<tr>
+<td><code>SD_SHARE_CPUCAPACITY</code></td>
+<td>该 domain 上的 CPU 是否共享计算单元。SMT 下两个硬件线程被看作两个 CPU core，但会争抢硬件计算单元。手机上未使用该 flag</td>
+</tr>
+<tr>
+<td><code>SD_SHARE_PKG_RESOURCES</code></td>
+<td>domain 中的 CPU 是否共享 SoC 资源（例如 cache）。手机平台上 MC domain 会设这个 flag</td>
+</tr>
+</tbody>
+</table></div><p><code>SD_SHARE_PKG_RESOURCES</code> 后面反复出现，它是一条分界线：设了它的（MC）用 <code>nr_running</code>/idle CPU 数指导均衡，没设的（DIE）才允许用 util。原因在二十二章。</p>
+<h2 id="五一个-cpu-拓扑示例big.little-与-smt" tabindex="-1">五、一个 CPU 拓扑示例（big.LITTLE 与 SMT） <a class="header-anchor" href="#五一个-cpu-拓扑示例big.little-与-smt"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>4 小核 + 4 大核：cpu0-3 组成 little cluster，cpu4-7 组成 big cluster，同 cluster 内微架构相同、共用一套调频策略、频率一致。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>domain</th>
+<th>group 数量</th>
+<th>每个 group 里的 CPU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>小核 MC</td>
+<td>4</td>
+<td>cpu0 / cpu1 / cpu2 / cpu3，各一个</td>
+</tr>
+<tr>
+<td>大核 MC</td>
+<td>4</td>
+<td>cpu4 / cpu5 / cpu6 / cpu7，各一个</td>
+</tr>
+<tr>
+<td>DIE</td>
+<td>2</td>
+<td>(0,1,2,3) 和 (4,5,6,7)</td>
+</tr>
+</tbody>
+</table></div><p>base domain 叫 <strong>MC domain</strong>（multi core domain），顶层叫 <strong>DIE domain</strong>，覆盖全部 8 个 CPU。group 链表是环形的，入口因 CPU 而异：cpu0 的 MC domain 顺序是 0-1-2-3，cpu1 的是 1-2-3-0；DIE 同理，cpu0 是 (0,1,2,3)→(4,5,6,7)，cpu6 是 (4,5,6,7)→(0,1,2,3)。每个 CPU 都有自己的 MC 和 DIE domain，靠 <code>parent</code>/<code>child</code> 串成层级，锁的粒度是 per-CPU 的。非 base domain 的 group 覆盖其 child domain 的全部 CPU：DIE 有两个 child，所以 group 链表只有两个元素。</p>
+<p>SMT 是另一回事。两个硬件线程在 topology 眼里是两个 CPU core，能各自跑任务，但共享执行单元，一个线程的负载会拖慢另一个。内核用 <code>SD_SHARE_CPUCAPACITY</code> 表达这层关系。手机 SoC 上没有 SMT，这个 flag 在手机场景不会出现。</p>
+<h2 id="六负载均衡的软件架构三个入口" tabindex="-1">六、负载均衡的软件架构：三个入口 <a class="header-anchor" href="#六负载均衡的软件架构三个入口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>均衡模块分两层：核心均衡模块（core.c 里的框架、softirq、domain 遍历）和 class-specific 均衡模块（fair.c 里的具体策略）。RT、DL 和 CFS 各走各的，这里只讲 CFS。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>入口</th>
+<th>触发时机</th>
+<th>主要函数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>唤醒/创建/exec</td>
+<td>任务要选一个 CPU</td>
+<td><code>select_task_rq()</code> → <code>select_task_rq_fair()</code></td>
+</tr>
+<tr>
+<td>tick</td>
+<td>时间片流逝，周期性检查</td>
+<td><code>scheduler_tick()</code> → <code>trigger_load_balance()</code> → <code>SCHED_SOFTIRQ</code></td>
+</tr>
+<tr>
+<td>进 idle 前</td>
+<td>本 CPU 马上没活干</td>
+<td><code>newidle_balance()</code> → <code>load_balance()</code></td>
+</tr>
+</tbody>
+</table></div><p>三个入口对应三种语义：<strong>放置</strong>是把还没上 CPU 的任务放到合适的核上，<strong>周期均衡</strong>是在忙 CPU 之间重新分配，<strong>idle 均衡</strong>是把任务往空 CPU 上摊。基础设施只有三样，缺一不可：任务负载跟踪（判断任务是否适合当前算力、要搬多少才平）、domain 层级（把全局均衡拆成局部）、算力跟踪（RT/DL/IRQ 的占用和温控损失都得从 <code>cpu_capacity</code> 扣掉，否则均衡会朝一个不存在的目标搬）。手机场景基本两级：MC domain 追每个 CPU 的负载和算力，DIE domain 追每个 cluster 的总负载和总算力、做 inter-cluster 迁移。</p>
+<h2 id="七三类均衡器总览periodic--nohz--new-idle" tabindex="-1">七、三类均衡器总览（periodic / nohz / new idle） <a class="header-anchor" href="#七三类均衡器总览periodic--nohz--new-idle"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>为忙 CPU 准备的是 periodic balancer，为 idle CPU 准备的是 idle balancer，后者又分 nohz idle 和 new idle。别被三个名字骗了，它们最后都落到同一个函数——留到第十七章。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>periodic（tick）</th>
+<th>nohz idle</th>
+<th>new idle</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>发起者</td>
+<td>任意忙 CPU</td>
+<td>忙 CPU 经 IPI 指定的代表 CPU</td>
+<td>即将进 idle 的本 CPU</td>
+</tr>
+<tr>
+<td>触发点</td>
+<td><code>scheduler_tick()</code> → <code>trigger_load_balance()</code></td>
+<td>同一个 <code>trigger_load_balance()</code> 里的 <code>nohz_balancer_kick()</code></td>
+<td><code>pick_next_task()</code> 挑不到 CFS 任务时</td>
+</tr>
+<tr>
+<td>处理函数</td>
+<td><code>run_rebalance_domains()</code></td>
+<td>同一个 handler，先走 <code>nohz_idle_balance()</code></td>
+<td>直接调 <code>newidle_balance()</code></td>
+</tr>
+<tr>
+<td>覆盖范围</td>
+<td>本 CPU 的各级 domain</td>
+<td>系统里所有 idle CPU 的各级 domain</td>
+<td>本 CPU 的各级 domain</td>
+</tr>
+<tr>
+<td>均衡方向</td>
+<td>从 busiest group 拉到本 CPU</td>
+<td>从忙 CPU 拉到各个 idle CPU</td>
+<td>从忙 CPU 拉到本 CPU</td>
+</tr>
+<tr>
+<td>依赖特性</td>
+<td>无</td>
+<td>必须有 NO_HZ（tickless），否则 tick 会把 idle CPU 叫醒</td>
+<td>无</td>
+</tr>
+<tr>
+<td>频次控制</td>
+<td><code>rq-&gt;next_balance</code> + domain 间隔</td>
+<td><code>nohz.next_balance</code> + <code>nohz.nr_cpus</code></td>
+<td><code>avg_idle</code> + <code>max_idle_balance_cost</code></td>
+</tr>
+</tbody>
+</table></div><p>共同点：都只搬 runnable 任务，都自底向上逐级走，都想少干活——每级 domain 都有自己的间隔和门限。</p>
+<h2 id="八任务放置-task-placement什么是放置" tabindex="-1">八、任务放置 task placement：什么是放置 <a class="header-anchor" href="#八任务放置-task-placement什么是放置"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>每个 CPU 一个 runqueue。任务挂在队列上等着是就绪态，负载不匹配靠 load balance 调整；任务正在跑是运行态，超出 CPU 承受能力时被标成 misfit，交给 active upmigration。这两种场景的前提都是「任务已经落在某个 CPU 上，而且负载数据可信」。那还没落位的呢？刚 fork 的、刚 exec 的、刚从阻塞被唤醒的——没有 runqueue，也没有负载历史。给它们挑一个 CPU，就是 task placement。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>入口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>fork 创建子进程</td>
+<td><code>wake_up_new_task()</code> → <code>select_task_rq()</code></td>
+</tr>
+<tr>
+<td>exec 开始执行</td>
+<td><code>sched_exec()</code> → <code>select_task_rq()</code></td>
+</tr>
+<tr>
+<td>阻塞进程被唤醒</td>
+<td><code>try_to_wake_up()</code> → <code>select_task_rq()</code></td>
+</tr>
+</tbody>
+</table></div><p>三条路都进 <code>core.c</code> 的 <code>select_task_rq()</code>，再按调度类分发，CFS 这一支跳 <code>select_task_rq_fair()</code>。放置为什么值得单独讲：任务刚被唤醒时，负载信息要么是历史值（唤醒），要么根本没有（fork/exec），决策必须在信息不足时做，而且要快——唤醒路径在等这把决策，慢了就是调度延迟。所以这里的算法全是启发式，全是猜。</p>
+<h2 id="九select_task_rq_fair-的决策路径" tabindex="-1">九、select_task_rq_fair 的决策路径 <a class="header-anchor" href="#九select_task_rq_fair-的决策路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">select_task_rq_fair</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> task_struct *p, <span class="hljs-type">int</span> prev_cpu,
+                               <span class="hljs-type">int</span> sd_flag, <span class="hljs-type">int</span> wake_flags)</span>
+</code></pre></div></code></pre>
+<p><code>sd_flag</code> 是 sched domain 标志位，一共三种——<code>SD_BALANCE_WAKE</code>、<code>SD_BALANCE_FORK</code>、<code>SD_BALANCE_EXEC</code>，对应三个放置场景，调度器只在设了相应 flag 的 domain 里选核。<code>wake_flags</code> 专给 <code>SD_BALANCE_WAKE</code> 用：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>标志</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>WF_FORK</code></td>
+<td>该任务是 fork 出来的，不是从阻塞里被唤醒的</td>
+</tr>
+<tr>
+<td><code>WF_SYNC</code></td>
+<td>waker 唤醒 wakee 之后自己就要睡，即同步唤醒</td>
+</tr>
+<tr>
+<td><code>WF_TTWU</code></td>
+<td>唤醒路径进入，给唤醒侧的痕迹采集用</td>
+</tr>
+</tbody>
+</table></div><p>函数内部只处理 <code>WF_SYNC</code>。传了这个标志说明 waker 唤醒 wakee 之后马上要进阻塞态，那把 wakee 放到 waker 的 CPU 上不会挤到谁——waker 立刻让位。这场景用得极多，比如用户态两个进程做非异步 binder 通信，Server 端唤醒一个 binder 线程处理事务。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>路径</th>
+<th>函数</th>
+<th>进入条件</th>
+<th>选核思路</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>EAS 路径</td>
+<td><code>find_energy_efficient_cpu()</code></td>
+<td><code>sd_flag == SD_BALANCE_WAKE</code>，且 <code>sched_energy_present</code> 为真</td>
+<td>在能跑得动的前提下，挑让整机能耗最低的 CPU</td>
+</tr>
+<tr>
+<td>快速路径</td>
+<td><code>select_idle_sibling()</code></td>
+<td><code>sd_flag == SD_BALANCE_WAKE</code>，EAS 用不上，任务是 wake affine 类型</td>
+<td>优先 <code>prev_cpu</code>，其次 <code>wake_cpu</code>，再看它们的 LLC 里有没有 idle CPU</td>
+</tr>
+<tr>
+<td>慢速路径</td>
+<td><code>find_idlest_cpu()</code></td>
+<td><code>sd_flag == SD_BALANCE_WAKE</code> 但 EAS 没使能或返回 -1，且不是 wake affine 任务；或 <code>sd_flag</code> 为 <code>SD_BALANCE_FORK</code>/<code>SD_BALANCE_EXEC</code></td>
+<td>在 target domain 里找最闲的 group，再找最闲的 CPU</td>
+</tr>
+</tbody>
+</table></div><p>优先级是硬的：EAS 有条件先试，失败看任务类型，wake affine 走快速路径，其余走慢速路径。
+慢速路径多说一句。fork 和 exec 进来的任务负载不可信——新任务的 util 从父进程继承再打折，exec 之后更是换了个人。拿这种数算能耗没意义，所以 EAS 直接不接，只能退到「找最闲的 CPU」。target domain 怎么定：从 waker 的 base domain 往上找最底层配了相应 <code>sd_flag</code> 的 domain，然后在里面找负载最小的 group，再找 group 里负载最小的 CPU。这套「新任务往最闲处塞」对刚创建的任务算稳妥；开发者也提过别的思路（放到特定类型的 CPU 上，或者根据父进程负载推断新任务走向），这些启发式在某些场景会引出别的问题，所以一直没成为默认。</p>
+<h2 id="十wake_affine-与唤醒时的就近选择" tabindex="-1">十、wake_affine 与唤醒时的就近选择 <a class="header-anchor" href="#十wake_affine-与唤醒时的就近选择"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>waker 唤醒 wakee 时把 wakee 放附近有收益：cache 命中率高，还不用叫起别的 idle CPU。但得有条件，无脑打包会把 CPU 挤爆。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>函数</th>
+<th>看什么</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wake_wide()</code></td>
+<td>wakee 的<strong>数量</strong></td>
+<td>waker 唤醒的 wakee 太多就不再做 affine，否则一群 wakee 挤一个 CPU</td>
+</tr>
+<tr>
+<td><code>wake_cap()</code></td>
+<td>目标 CPU 的<strong>算力</strong></td>
+<td>目标 CPU 算力撑不住 wakee 的 util 就不做 affine，得往大核找</td>
+</tr>
+</tbody>
+</table></div><p><code>wake_wide()</code> 记录 waker 最近唤醒过几个不同的 wakee。一个主任务唤醒多个子任务时全贴在 waker 身边，调度延迟立刻起飞——想省的那点 cache 和功耗，换来整队任务响应变慢，不划算。<code>wake_cap()</code> 更直接：算力不够别硬塞，小核的 <code>cpu_capacity</code> 装不下 wakee 的 util，affine 到小核等于让它慢慢跑。
+两道门都过了才走快速路径 <code>select_idle_sibling()</code>：先看 <code>prev_cpu</code>（任务上次跑的 CPU，hot cache，wake affine 任务最想要它）；再看 <code>wake_cpu</code>（waker 所在 CPU）；都不合适就扫它们的 LLC domain 找 idle CPU。<code>WF_SYNC</code> 在这里会放宽判定：waker 是 <code>wake_cpu</code> 上唯一的任务时，<code>wake_cpu</code> 也算 idle。理由是同步唤醒下 waker 马上要睡，等于给 wakee 腾了位置。</p>
+<h2 id="十一active-upmigration把任务从冷核搬走" tabindex="-1">十一、Active upmigration：把任务从冷核搬走 <a class="header-anchor" href="#十一active-upmigration把任务从冷核搬走"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>常规均衡有个盲区：只搬 runqueue 上的任务。正在跑的那个不在队列里，<code>detach_tasks()</code> 扫不到。小核上跑着一个明显超算力的任务，它一直在 running，均衡器反复扫也搬不走。</p>
+<p>active upmigration 就是解这个：把 running 的 misfit task 往上搬。实现靠 stop machine——<code>load_balance()</code> 发现 runnable 任务搬不动、同时 <code>need_active_balance()</code> 判定该动手，就在 busiest rq 上打标记，然后 <code>stop_one_cpu_nowait()</code> 让 busiest CPU 停下来，在 stop 上下文里把当前任务迁走，走 fair.c 的 <code>active_load_balance_cpu_stop()</code>。</p>
+<p>三点注意：<strong>开销大</strong>，要让目标 CPU 停一下，stop 上下文延迟是微秒级的，所以它只做兜底；<strong>触发条件是搬不动</strong>，常规轮次一个任务都没搬成（<code>ld_moved == 0</code>），<code>nr_balance_failed</code> 累加到超过 <code>cache_nice_tries</code> 才允许动 running 任务；<strong>上游原生内核没有独立的 upmigration 框架</strong>，手机厂商的 kernel 里 misfit 判定和主动迁移往往有自己的补丁，标准内核只给了 misfit 标记（<code>rq-&gt;misfit_task_load</code>）和 active balance 机制。</p>
+<h2 id="十二energy-aware-schedulingenergy-model-与-eas" tabindex="-1">十二、Energy Aware Scheduling：Energy Model 与 EAS <a class="header-anchor" href="#十二energy-aware-schedulingenergy-model-与-eas"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1energy-model-是什么" tabindex="-1">1、Energy Model 是什么 <a class="header-anchor" href="#1energy-model-是什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>EAS 在选核时多算一个维度：能耗。输入是 Energy Model（EM），理解 EM 的入口是<strong>性能域</strong>（performance domain）。perf domain 用 <code>struct perf_domain</code> 描述，同一微架构的 CPU 归到同一个 perf domain，因为它们共享一套调频策略、频率必须一致。4 大核 + 4 小核的拓扑下，小核 4 个 CPU 组成一个 perf domain，大核 4 个组成另一个。同 domain 内所有 CPU 同频。频点是分级的，每级频点和 capacity、power 一一映射：小核 4 个 CPU 最大 capacity 都是 512，对应最高频 1GHz，那 500MHz 对应的 capacity 就是 256。为把这些信息组织起来，EM 加了两个结构体：<code>struct em_perf_domain</code> 和 <code>struct em_cap_state</code>，都能从 perf domain 拿到。</p>
+<h3 id="2energy-怎么估" tabindex="-1">2、energy 怎么估 <a class="header-anchor" href="#2energy-怎么估"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>energy 是资源，单位焦耳；power 是每秒的能量损耗，单位瓦特。某个 perf domain 的 energy 由 <code>em_pd_energy()</code> 给出，<code>max_util</code> 是该 domain 各 CPU 中的最高负载，<code>sum_util</code> 是总负载：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-title function_">em_pd_energy</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> em_perf_domain *pd,
+                                <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> max_util, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> sum_util)</span>
+</code></pre></div></code></pre>
+<p>同 domain 同频，所以选哪个频点取决于<strong>最忙</strong>的 CPU。EM 先拿到当前 domain 的最高频点和最大算力，把 <code>max_util</code> 映射到对应频点，找到能覆盖它的最低频点及该频点下的算力 <code>cs_capacity</code>——得保证任务跑得动。频点定了，<code>cs_power</code> 就是现成的，domain 下所有 CPU 共用。还差一个跟运行时间相关的量：CPU 不是满载的（EAS 在超载时不使能），idle 的时间要剔掉，用 util 与 capacity 的比值来估——util 本身就体现窗口内的执行时间，窗口全在跑任务时 util 会顶到 capacity。数据齐了，把 domain 内所有 CPU 的 energy 加起来就是估计能量。</p>
+<h3 id="3eas-什么时候不工作" tabindex="-1">3、EAS 什么时候不工作 <a class="header-anchor" href="#3eas-什么时候不工作"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>两种情况直接退出：系统不是异构的（所有 CPU 算力一样，没得挑）；系统里有超载（over-utilized）的 CPU——判定很严格，只要 root domain 里有 CPU 负载达到该 CPU 算力的 80% 以上就算。第二条值得说清。假设小核 cluster 的 cpu3 超载了，那不管你把任务放哪个 CPU，小核 cluster 都得维持最高频点。此时「domain 里空余算力最大的 CPU」这个标准就没意义了——预估的 energy 不公平，EAS 的设计前提（靠放置任务把 cluster 频点压下来省电）直接失效。</p>
+<h2 id="十三eas-的-task-placement-流程" tabindex="-1">十三、EAS 的 task placement 流程 <a class="header-anchor" href="#十三eas-的-task-placement-流程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>find_energy_efficient_cpu()</code> 四步：一是用 <code>em_pd_energy()</code> 算出各个 perf domain 在<strong>不放任务</strong>时的基础能量；二是遍历各个 perf domain，找出该 domain 下空余算力最大的 CPU，加上 <code>prev_cpu</code> 一起作为备选；三是用 <code>em_pd_energy()</code> 算出把任务放到各备选 CPU 后，对应 perf domain 的能量变化；四是挑能量变化最小的那个，但如果相对放到 <code>prev_cpu</code> 的收益不到 6%，还是回 <code>prev_cpu</code>。
+<strong>为什么挑空余算力最大的 CPU 当备选</strong>：这样不会把某个 CPU 顶到高频，进而把整个 cluster 的频点抬上去。cluster 同频，一个 CPU 冒头，全 cluster 陪跑。<strong>为什么舍不得 <code>prev_cpu</code></strong>：hot cache 对执行效率有实打实的好处，所以给它留了 6% 的优惠——节能收益要超过这条线，才允许放弃 cache 亲和性。</p>
+<h2 id="十四周期性负载均衡tick-触发路径" tabindex="-1">十四、周期性负载均衡：tick 触发路径 <a class="header-anchor" href="#十四周期性负载均衡tick-触发路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1触发" tabindex="-1">1、触发 <a class="header-anchor" href="#1触发"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>tick 到来时 <code>scheduler_tick()</code> 调 <code>trigger_load_balance()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">trigger_load_balance</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> rq *rq)</span>
+{
+    <span class="hljs-comment">/* Trigger the SCHED_SOFTIRQ if it is time to do periodic load balancing. */</span>
+    <span class="hljs-keyword">if</span> (time_after_eq(jiffies, rq-&gt;next_balance))
+        raise_softirq(SCHED_SOFTIRQ);   <span class="hljs-comment">/* 触发 periodic balance */</span>
+    nohz_balancer_kick(rq);             <span class="hljs-comment">/* 触发 nohz idle balance */</span>
+}
+</code></pre></div></code></pre>
+<p>逻辑就一句：到点发软中断。<code>nohz_balancer_kick()</code> 管 nohz idle balance，下一章拆。函数上方那行注释看着不对——它说触发周期性均衡，可这函数顺手也把 nohz idle 触发了。注释没错：nohz idle balance 本质是另一种周期性均衡，只是 idle CPU 产生不了 tick，只好让能产生 tick 的忙 CPU 代劳。两者最后都走 <code>SCHED_SOFTIRQ</code>，都由 <code>run_rebalance_domains()</code> 处理。均衡不是每个 tick 都做：各级 domain 的下次均衡时间点记在 <code>last_balance</code> 里，<code>rq-&gt;next_balance</code> 取其中最近的，<code>jiffies</code> 没过线就不发软中断。</p>
+<h3 id="2软中断处理先-nohz后-periodic" tabindex="-1">2、软中断处理：先 nohz，后 periodic <a class="header-anchor" href="#2软中断处理先-nohz后-periodic"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> __latent_entropy <span class="hljs-type">void</span> <span class="hljs-title function_">run_rebalance_domains</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> softirq_action *h)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rq</span> *<span class="hljs-title">this_rq</span> =</span> this_rq();
+    <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">cpu_idle_type</span> <span class="hljs-title">idle</span> =</span> this_rq-&gt;idle_balance ?
+                              CPU_IDLE : CPU_NOT_IDLE;
+    <span class="hljs-keyword">if</span> (nohz_idle_balance(this_rq, idle))   <span class="hljs-comment">/* nohz idle balance */</span>
+        <span class="hljs-keyword">return</span>;
+    update_blocked_averages(this_rq-&gt;cpu);
+    rebalance_domains(this_rq, idle);       <span class="hljs-comment">/* 周期性均衡 */</span>
+}
+</code></pre></div></code></pre>
+<p>顺序有讲究。nohz idle balance 是全局的事——被选中的 CPU 代表所有 idle CPU 做均衡；periodic 只管自己那套 domain。先做后者会怎样？<code>rebalance_domains()</code> 一旦把任务拉到 this CPU 上，this CPU 就不 idle 了，接着 <code>nohz_idle_balance()</code> 一看代表不 idle 直接退出，其他 idle CPU 白等。所以先 nohz；nohz 干成了本 CPU 这轮就不用再做（返回 true，直接 return）。</p>
+<h3 id="3rebalance_domains-主循环" tabindex="-1">3、rebalance_domains 主循环 <a class="header-anchor" href="#3rebalance_domains-主循环"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>for_each_domain(cpu, sd) {
+    <span class="hljs-keyword">if</span> (time_after(jiffies, sd-&gt;next_decay_max_lb_cost)) {          <span class="hljs-comment">/* A */</span>
+        sd-&gt;max_newidle_lb_cost = (sd-&gt;max_newidle_lb_cost * <span class="hljs-number">253</span>) / <span class="hljs-number">256</span>;
+        sd-&gt;next_decay_max_lb_cost = jiffies + HZ;
+        need_decay = <span class="hljs-number">1</span>;
+    }
+    max_cost += sd-&gt;max_newidle_lb_cost;
+    <span class="hljs-keyword">if</span> (!continue_balancing) {                                      <span class="hljs-comment">/* B */</span>
+        <span class="hljs-keyword">if</span> (need_decay)
+            <span class="hljs-keyword">continue</span>;
+        <span class="hljs-keyword">break</span>;
+    }
+    interval = get_sd_balance_interval(sd, busy);
+    <span class="hljs-keyword">if</span> (time_after_eq(jiffies, sd-&gt;last_balance + interval)) {       <span class="hljs-comment">/* C */</span>
+        <span class="hljs-keyword">if</span> (load_balance(cpu, rq, sd, idle, &amp;continue_balancing)) {
+            idle = idle_cpu(cpu) ? CPU_IDLE : CPU_NOT_IDLE;
+            busy = idle != CPU_IDLE &amp;&amp; !sched_idle_cpu(cpu);
+        }
+        sd-&gt;last_balance = jiffies;
+        interval = get_sd_balance_interval(sd, busy);
+    }
+    <span class="hljs-keyword">if</span> (time_after(next_balance, sd-&gt;last_balance + interval)) {     <span class="hljs-comment">/* D */</span>
+        next_balance = sd-&gt;last_balance + interval;
+        update_next_balance = <span class="hljs-number">1</span>;
+    }
+}
+</code></pre></div></code></pre>
+<p><strong>A</strong>：<code>max_newidle_lb_cost</code> 是该 domain 上 newidle balance 的最大开销，随时间衰减，每秒乘一次 253/256；这里顺手把各级值累加成 <code>max_cost</code>，最后写进 <code>rq-&gt;max_idle_balance_cost</code>，用来控制 new idle balance 的深度。<strong>B</strong>：循环从 base domain 往上一路走，但上层 domain 覆盖的 CPU 多，如果每个 CPU 的周期均衡都去撸顶层，顶层被撸的遍数太多，<code>continue_balancing</code> 是刹车；例外是需要更新 <code>max_idle_balance_cost</code>（<code>need_decay</code> 为真）时，即使不做均衡也要把各级 domain 走完，否则累加不全。<strong>C</strong>：到间隔就调 <code>load_balance()</code>，搬成功后要重判本 CPU 忙闲——因为 <code>load_balance()</code> 会改掉 dest CPU，或者说这轮压根不是往本 CPU 拉任务，<code>busy</code> 跟着变，间隔得重算。<strong>D</strong>：每级 domain 各自算下次均衡点，<code>next_balance</code> 留最近的（偏性能，尽快均衡），后面赋给 <code>rq-&gt;next_balance</code>，下一次 tick 靠它判断要不要发软中断。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (need_decay) {                                        <span class="hljs-comment">/* A */</span>
+    rq-&gt;max_idle_balance_cost =
+        max((u64)sysctl_sched_migration_cost, max_cost);
+}
+<span class="hljs-keyword">if</span> (likely(update_next_balance)) {                       <span class="hljs-comment">/* B */</span>
+    rq-&gt;next_balance = next_balance;
+    <span class="hljs-keyword">if</span> ((idle == CPU_IDLE) &amp;&amp; time_after(nohz.next_balance, rq-&gt;next_balance))
+        nohz.next_balance = rq-&gt;next_balance;            <span class="hljs-comment">/* C */</span>
+}
+</code></pre></div></code></pre>
+<p><strong>A</strong>：任何一级 domain 衰减过 cost，就把汇总值刷进 <code>rq-&gt;max_idle_balance_cost</code>，并保证不低于 <code>sysctl_sched_migration_cost</code>。<strong>B</strong>：<code>rq-&gt;next_balance</code> 取各级 domain 里最近的均衡点。<strong>C</strong>：本 CPU 处于 idle 时顺带更新 <code>nohz.next_balance</code>——它是触发 nohz idle balance 的时间锚点，取更近的那个。</p>
+<h3 id="4均衡间隔怎么定" tabindex="-1">4、均衡间隔怎么定 <a class="header-anchor" href="#4均衡间隔怎么定"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>均衡频次是在延迟和开销之间找平衡。MC domain 在 cluster 内搬，影响小；DIE domain 跨 cluster 搬，cache 命中率、把深度睡眠的大核叫醒，代价都大，所以间隔必须跟层级挂钩。负载重时还得再拉长——大家都忙，让子弹先飞一会。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>成员</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>last_balance</code></td>
+<td>最近在该 domain 上做均衡的时间点。判定是否该均衡，比的是 <code>jiffies</code> 和 <code>last_balance + interval</code>，interval 由 <code>get_sd_balance_interval()</code> 实时算</td>
+</tr>
+<tr>
+<td><code>min_interval</code> / <code>max_interval</code></td>
+<td>检查该 domain 均衡状态的时间间隔范围。<code>min_interval</code> 默认取 sd weight，即 domain 内 CPU 个数；<code>max_interval</code> 是它的 2 倍</td>
+</tr>
+<tr>
+<td><code>balance_interval</code></td>
+<td>该 domain 均衡的基础间隔。跟层级有关，层级越高、覆盖 CPU 越多，值越大。<code>load_balance()</code> 执行时按实际结果把它加倍或保持原值</td>
+</tr>
+<tr>
+<td><code>busy_factor</code></td>
+<td>CPU 繁忙时的间隔放大系数，间隔变成 <code>busy_factor × balance_interval</code>，默认 32</td>
+</tr>
+</tbody>
+</table></div><pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>
+<span class="hljs-title function_">get_sd_balance_interval</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sched_domain *sd, <span class="hljs-type">int</span> cpu_busy)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> interval = sd-&gt;balance_interval;   <span class="hljs-comment">/* A */</span>
+    <span class="hljs-keyword">if</span> (cpu_busy)                                    <span class="hljs-comment">/* B */</span>
+        interval *= sd-&gt;busy_factor;
+    interval = msecs_to_jiffies(interval);
+    <span class="hljs-keyword">if</span> (cpu_busy)                                    <span class="hljs-comment">/* C */</span>
+        interval -= <span class="hljs-number">1</span>;
+    <span class="hljs-keyword">return</span> clamp(interval, <span class="hljs-number">1UL</span>, max_load_balance_interval);
+}
+</code></pre></div></code></pre>
+<p><strong>A</strong>：<code>balance_interval</code> 跟着不均衡程度走。初值从 <code>min_interval</code> 起，还不均衡就停在 <code>min_interval</code>；随着不均衡缓解、没任务可搬、需要靠 active balance 收尾，它逐次变大直到 <code>max_interval</code>。4+4 平台上 MC domain 是 4ms/8ms，DIE domain 有 8 个 CPU，是 8ms/16ms。<strong>B</strong>：各 CPU 的 tick 大致同步，自底向上的均衡几乎同时触发，覆盖 CPU 多的 domain 收集信息慢一点，于是「低阶 domain 刚搬完的任务被高阶立刻又搬走」；<code>busy_factor</code> 放大间隔，缓解这种同步踩踏。<strong>C</strong>：减 1 让高阶和低阶的间隔不成整数倍关系，把同步再打散一层，上限由 <code>max_load_balance_interval</code> 卡住，100ms。
+这套间隔控制对 periodic 和 nohz idle 都生效，因为两者共用 <code>rebalance_domains()</code>。</p>
+<h2 id="十五nohz-idle-balance为什么需要-ipi-踢醒" tabindex="-1">十五、NOHZ idle balance：为什么需要 IPI 踢醒 <a class="header-anchor" href="#十五nohz-idle-balance为什么需要-ipi-踢醒"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1为什么要有它" tabindex="-1">1、为什么要有它 <a class="header-anchor" href="#1为什么要有它"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>CPU 进了 idle、tick 也停了（NO_HZ），就再没机会发起均衡。别的 CPU 任务堆成山，这边空着——纯 pull 语义下没人能救它。所以忙 CPU 得主动踢一脚：选一个 idle CPU 当代表，发 IPI 把它唤醒，让它代表系统里所有 idle CPU 做一遍均衡。名字里的 NOHZ 就是这个意思：只有配了 tickless 才用得上。没有 dynamic tick 的话 tick 会周期性叫醒 idle CPU，periodic balance 已经覆盖，不需要额外 IPI。被踢醒的 CPU 不是「只把任务拉到我自己队列上」就完事，它是全体 idle CPU 的代表。</p>
+<h3 id="2触发条件" tabindex="-1">2、触发条件 <a class="header-anchor" href="#2触发条件"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (unlikely(rq-&gt;idle_balance))                    <span class="hljs-comment">/* A */</span>
+    <span class="hljs-keyword">return</span>;
+nohz_balance_exit_idle(rq);                        <span class="hljs-comment">/* B */</span>
+<span class="hljs-keyword">if</span> (likely(!atomic_read(&amp;nohz.nr_cpus)))           <span class="hljs-comment">/* C */</span>
+    <span class="hljs-keyword">return</span>;
+<span class="hljs-keyword">if</span> (READ_ONCE(nohz.has_blocked) &amp;&amp;
+    time_after(now, READ_ONCE(nohz.next_blocked)))
+    flags = NOHZ_STATS_KICK;                       <span class="hljs-comment">/* D */</span>
+<span class="hljs-keyword">if</span> (time_before(now, nohz.next_balance))           <span class="hljs-comment">/* E */</span>
+    <span class="hljs-keyword">goto</span> out;
+</code></pre></div></code></pre>
+<p><strong>A</strong>：nohz idle balance 是「本 CPU 忙、求别人帮忙」，本 CPU 自己 idle 就没必要发起。<strong>B</strong>：CPU 从 idle 醒来，第一个 tick 要把全局 <code>nohz</code> 状态和 domain 的 CPU busy 状态刷一遍；nohz idle 本质是 tick balance，但要发 IPI、要叫醒睡着的 CPU，代价不低，频次必须控住，控制手段是全局 <code>nohz</code> 变量（<code>nohz_balance_exit_idle()</code> 负责维护其中的 <code>nr_cpus</code> 和 <code>idle_cpus_mask</code>）：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>成员</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>idle_cpus_mask</code></td>
+<td>系统中哪些 CPU 进入了 idle 状态</td>
+</tr>
+<tr>
+<td><code>nr_cpus</code></td>
+<td>多少个 CPU 进入了 idle 状态</td>
+</tr>
+<tr>
+<td><code>has_blocked</code></td>
+<td>这些 idle CPU 是否需要更新 blocked load</td>
+</tr>
+<tr>
+<td><code>next_balance</code></td>
+<td>下一次触发 nohz idle balance 的时间</td>
+</tr>
+<tr>
+<td><code>next_blocked</code></td>
+<td>下一次更新 blocked load 的时间点</td>
+</tr>
+</tbody>
+</table></div><p><strong>C</strong>：系统里一个 idle CPU 都没有，踢谁去？直接返回。<strong>D</strong>：nohz idle balance 干两件事——更新 idle CPU 的 blocked load，以及负载均衡；可以只更新 blocked load，但做均衡时必须连 blocked load 一起更，有需要衰减的负载就打个标记（blocked load 属于 PELT 的话题，这里不展开）。<strong>E</strong>：<code>next_balance</code> 控制触发时间点，跟所有 idle CPU 的 <code>rq-&gt;next_balance</code> 有关，idle CPU 都没到均衡时间点就没必要触发；执行时遍历 idle CPU，把最小的 <code>rq-&gt;next_balance</code> 赋给它。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (rq-&gt;nr_running &gt;= <span class="hljs-number">2</span>) {                                    <span class="hljs-comment">/* A */</span>
+    flags = NOHZ_KICK_MASK;
+    <span class="hljs-keyword">goto</span> out;
+}
+sd = rcu_dereference(rq-&gt;sd);                                 <span class="hljs-comment">/* B */</span>
+<span class="hljs-keyword">if</span> (sd) {
+    <span class="hljs-keyword">if</span> (rq-&gt;cfs.h_nr_running &gt;= <span class="hljs-number">1</span> &amp;&amp; check_cpu_capacity(rq, sd)) {
+        flags = NOHZ_KICK_MASK;
+        <span class="hljs-keyword">goto</span> unlock;
+    }
+}
+sd = rcu_dereference(per_cpu(sd_asym_cpucapacity, cpu));      <span class="hljs-comment">/* C */</span>
+<span class="hljs-keyword">if</span> (sd) {
+    <span class="hljs-keyword">if</span> (check_misfit_status(rq, sd)) {
+        flags = NOHZ_KICK_MASK;
+        <span class="hljs-keyword">goto</span> unlock;
+    }
+    <span class="hljs-keyword">goto</span> unlock;                                             <span class="hljs-comment">/* D */</span>
+}
+sds = rcu_dereference(per_cpu(sd_llc_shared, cpu));
+<span class="hljs-keyword">if</span> (sds) {
+    nr_busy = atomic_read(&amp;sds-&gt;nr_busy_cpus);                <span class="hljs-comment">/* E */</span>
+    <span class="hljs-keyword">if</span> (nr_busy &gt; <span class="hljs-number">1</span>) {
+        flags = NOHZ_KICK_MASK;
+        <span class="hljs-keyword">goto</span> unlock;
+    }
+}
+</code></pre></div></code></pre>
+<p><strong>A</strong>：踢人之前得确认自己有货可被拉，runqueue 上挂 2 个以上任务基本可以确定值得踢。<strong>B</strong>：只有一个 CFS 任务，但 CPU 能给 CFS 用的算力已经被压下去了（RT 任务或 IRQ 占掉），也要发起。<strong>C</strong>：异构系统还得看 misfit，本 CPU 上有 misfit task，哪怕只有一个任务也要发起——它是搬去更大核的候选。<strong>D</strong>：异构系统到此为止，不查 LLC，功耗考量——小核 cluster 里有 busy 的 CPU 不代表需要均衡，只要小核算力还够扛住当前任务，就没必要把大核叫起来。<strong>E</strong>：同构系统反过来，期望负载在 LLC domain 之间也均一（cache 利用率更高），LLC 内部也要摊开；但本 CPU 看不到别的 LLC，只能退一步：只要有 2 个及以上 CPU 在忙就发起。</p>
+<h3 id="3选哪个-cpu-当代表" tabindex="-1">3、选哪个 CPU 当代表 <a class="header-anchor" href="#3选哪个-cpu-当代表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (flags &amp; NOHZ_BALANCE_KICK)
+    nohz.next_balance = jiffies + <span class="hljs-number">1</span>;                        <span class="hljs-comment">/* A */</span>
+ilb_cpu = find_new_ilb();                                   <span class="hljs-comment">/* B */</span>
+<span class="hljs-keyword">if</span> (ilb_cpu &gt;= nr_cpu_ids)
+    <span class="hljs-keyword">return</span>;
+flags = atomic_fetch_or(flags, nohz_flags(ilb_cpu));        <span class="hljs-comment">/* C */</span>
+<span class="hljs-keyword">if</span> (flags &amp; NOHZ_KICK_MASK)
+    <span class="hljs-keyword">return</span>;
+smp_call_function_single_async(ilb_cpu, &amp;cpu_rq(ilb_cpu)-&gt;nohz_csd);  <span class="hljs-comment">/* D */</span>
+</code></pre></div></code></pre>
+<p><strong>A</strong>：要做均衡（不只是更负载）就把 <code>nohz.next_balance</code> 推到下一个 jiffy，这样同一 jiffy 里其他 CPU 的 tick 不会再触发一遍检查；顺利完成的话它会正常更新，被打断的话（下一节 B 段）这个值保证下个 tick 能接着干。<strong>B</strong>：不在乎功耗的话从所有 idle CPU 里随便挑一个就行，异构系统（手机）得想更多——大核小核都 idle 叫谁？叫大核算力足但费电，叫小核省电但算力够不够？发起请求的 CPU 在哪个 cluster？idle 深度如何？标准内核选的是最省事的算法：取 <code>nohz.idle_cpus_mask</code> 里的第一个。<strong>C</strong>：确保选中的 CPU 没有正在做 nohz idle balance，已经有 pending 请求就不重复发 IPI。<strong>D</strong>：发起方叫 kicker，执行方叫 kickee，交互三步——kicker 先设 kickee rq 的 <code>nohz_flags</code>（你被选中了），然后发 IPI 叫醒它，kickee 在中断里跑 <code>scheduler_ipi()</code> 看到标记，走和 periodic balance 一样的路，触发一次 <code>SCHED_SOFTIRQ</code>。</p>
+<h3 id="4均衡处理" tabindex="-1">4、均衡处理 <a class="header-anchor" href="#4均衡处理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>软中断 handler 还是 <code>run_rebalance_domains()</code>，这里进的是 <code>nohz_idle_balance()</code>：遍历系统里所有 idle CPU，对每个 CPU 调 <code>rebalance_domains()</code>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>WRITE_ONCE(nohz.has_blocked, <span class="hljs-number">0</span>);                            <span class="hljs-comment">/* # */</span>
+for_each_cpu(balance_cpu, nohz.idle_cpus_mask) {
+    <span class="hljs-keyword">if</span> (balance_cpu == this_cpu || !idle_cpu(balance_cpu))
+        <span class="hljs-keyword">continue</span>;                                           <span class="hljs-comment">/* A */</span>
+    <span class="hljs-keyword">if</span> (need_resched()) {                                   <span class="hljs-comment">/* B */</span>
+        has_blocked_load = <span class="hljs-literal">true</span>;
+        <span class="hljs-keyword">goto</span> <span class="hljs-built_in">abort</span>;
+    }
+    rq = cpu_rq(balance_cpu);
+    has_blocked_load |= update_nohz_stats(rq, <span class="hljs-literal">true</span>);         <span class="hljs-comment">/* C */</span>
+    <span class="hljs-keyword">if</span> (time_after_eq(jiffies, rq-&gt;next_balance)) {          <span class="hljs-comment">/* D */</span>
+        <span class="hljs-keyword">if</span> (flags &amp; NOHZ_BALANCE_KICK)
+            rebalance_domains(rq, CPU_IDLE);
+    }
+    <span class="hljs-keyword">if</span> (time_after(next_balance, rq-&gt;next_balance)) {        <span class="hljs-comment">/* E */</span>
+        next_balance = rq-&gt;next_balance;
+        update_next_balance = <span class="hljs-number">1</span>;
+    }
+}
+</code></pre></div></code></pre>
+<p><strong>A</strong>：先跳过本 CPU，遍历完其他 idle CPU 之后再处理自己，已经不 idle 的也跳过。<strong>B</strong>：本 CPU 有活了就赶紧放弃这轮——后面还有好几个 idle CPU、好几级 domain 要扫，全是耗时活，硬撑下去自己队列上的任务就要等，调度延迟立刻爆；放弃的代价是有些 idle CPU 的 blocked load 没更新，所以进来时先假定全更完（<code>#</code> 处清 <code>has_blocked</code>），半路退出只能标回 1。<strong>C</strong>：给这个 idle CPU 更新 blocked load。<strong>D</strong>：到了均衡间隔就调 <code>rebalance_domains()</code> 干活。<strong>E</strong>：跟踪各 idle CPU 里最近的 <code>next_balance</code>，最后写回 <code>nohz.next_balance</code> 管住触发频次。
+遍历完其他 CPU 之后，<code>_nohz_idle_balance()</code> 第二段处理本 CPU（被选中的代表）自己的均衡，逻辑一样。</p>
+<h2 id="十六new-idle-balance进-idle-前的最后一次检查" tabindex="-1">十六、New idle balance：进 idle 前的最后一次检查 <a class="header-anchor" href="#十六new-idle-balance进-idle-前的最后一次检查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1触发-1" tabindex="-1">1、触发 <a class="header-anchor" href="#1触发-1"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>入口是 <code>newidle_balance()</code>，<code>pick_next_task_fair()</code> 挑不到 CFS 任务、CPU 要进 idle 时调它。第一段先过滤掉不该做的场景：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (this_rq-&gt;avg_idle &lt; sysctl_sched_migration_cost ||        <span class="hljs-comment">/* A */</span>
+    !READ_ONCE(this_rq-&gt;rd-&gt;overload)) {                      <span class="hljs-comment">/* B */</span>
+    sd = rcu_dereference_check_sched_domain(this_rq-&gt;sd);
+    <span class="hljs-keyword">if</span> (sd)
+        update_next_balance(sd, &amp;next_balance);               <span class="hljs-comment">/* C */</span>
+    nohz_newidle_balance(this_rq);                            <span class="hljs-comment">/* D */</span>
+    <span class="hljs-keyword">goto</span> out;
+}
+</code></pre></div></code></pre>
+<p><strong>A</strong>：要不要做，先看两件事——本 CPU 的 cache 冷热，和整机负载。平均 idle 时间极短说明它很快回来干活，cache 还热；这时候从别的 CPU 拉任务过来，新任务会把老任务的 cache 挤掉，等老任务回来执行，性能掉、功耗涨，两头亏。<strong>B</strong>：整机 overload 状态记在 root domain 的 <code>overload</code> 成员里，单个 CPU overload 的条件是下面两条之一；系统里只要有一个 CPU overload，就认为整机 overload，整机都不 overload 说明没任务可拉，做均衡纯属浪费。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>条件</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>runnable 任务大于 1</td>
+<td>该 CPU 上有排队等执行的任务</td>
+</tr>
+<tr>
+<td>只有一个 running 任务，但它是 misfit task</td>
+<td>任务跑得动，但当前 CPU 算力不够</td>
+</tr>
+</tbody>
+</table></div><p><strong>C</strong>：不适合做均衡，只更新 blocked load；本 CPU 马上进 idle，忙闲状态变了，base domain 的均衡间隔要跟着调。<strong>D</strong>：new idle balance 也要管 blocked load 更新，条件不满足、本 CPU 不均衡时，还得看看系统里哪些 idle CPU 的 blocked load 该更了，顺手替它们更掉。逻辑是：与其在 nohz idle balance 里遍历挑一个 idle CPU 来更负载，不如让这个马上进 idle 的 CPU 直接干。注意 5.10 的代码这里仍然用 <code>kick_ilb()</code> 选一个 CPU 去发仅负载更新的均衡请求，这个 issue 在后来的版本里修掉了。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>update_blocked_averages(this_cpu);                            <span class="hljs-comment">/* A */</span>
+for_each_domain(this_cpu, sd) {
+    <span class="hljs-keyword">if</span> (this_rq-&gt;avg_idle &lt; curr_cost + sd-&gt;max_newidle_lb_cost) {
+        update_next_balance(sd, &amp;next_balance);
+        <span class="hljs-keyword">break</span>;                                                <span class="hljs-comment">/* B */</span>
+    }
+    <span class="hljs-keyword">if</span> (sd-&gt;flags &amp; SD_BALANCE_NEWIDLE) {
+        t0 = sched_clock_cpu(this_cpu);
+        pulled_task = load_balance(this_cpu, this_rq,
+                                   sd, CPU_NEWLY_IDLE,
+                                   &amp;continue_balancing);       <span class="hljs-comment">/* C */</span>
+        domain_cost = sched_clock_cpu(this_cpu) - t0;
+        <span class="hljs-keyword">if</span> (domain_cost &gt; sd-&gt;max_newidle_lb_cost)
+            sd-&gt;max_newidle_lb_cost = domain_cost;             <span class="hljs-comment">/* D */</span>
+        curr_cost += domain_cost;                              <span class="hljs-comment">/* E */</span>
+    }
+    update_next_balance(sd, &amp;next_balance);
+    <span class="hljs-keyword">if</span> (pulled_task || this_rq-&gt;nr_running &gt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">break</span>;                                                 <span class="hljs-comment">/* F */</span>
+}
+</code></pre></div></code></pre>
+<p><strong>A</strong>：遍历本 CPU 各级 domain 做均衡，做之前先更负载。<strong>B</strong>：上一段是从 CPU 视角（cache 冷热）降低 new idle balance 次数，这里再从 domain 视角卡一层。做均衡有开销，辛辛苦苦找到忙 CPU、把任务拉过来，结果自己其实没那么闲，马上又有任务落上来，那些 CPU 时间全白费。所以要两个数——平均 idle 时间和历史最大开销 <code>max_newidle_lb_cost</code>，平均 idle 时间不够覆盖「已花的开销 + 这一级的最大开销」就别启动。<strong>C</strong>：该 domain 支持 newidle balance 才调 <code>load_balance()</code>。<strong>D</strong>：记录该 domain 上 newidle balance 的最大耗时。<strong>E</strong>：累计各级 domain 的花销，控制 new idle balance 的深度。<strong>F</strong>：任何一级 domain 拉到了任务，立刻收手，不再往更高层级走，同样是控开销。E 和 F 是两个不同的标注点：<code>curr_cost += domain_cost</code> 是 E，<code>break</code> 是 F，别看串。</p>
+<h3 id="2开销是怎么记的" tabindex="-1">2、开销是怎么记的 <a class="header-anchor" href="#2开销是怎么记的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>其他均衡方式都由 tick 驱动，次数天然可控。new idle balance 不一样——每次 CPU 进 idle 都会触发，所以必须谨慎。内核用两个参数控频次：CPU 的平均 idle 时间，和 new idle balance 的最大开销。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>成员</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>u64 max_newidle_lb_cost</code>（<code>sched_domain</code>）</td>
+<td>该 domain 上 newidle balance 的最大耗时。每次做都记时长，取最大值存这里。这个值随时间衰减，防止一次极值造成永久影响</td>
+</tr>
+<tr>
+<td><code>unsigned long next_decay_max_lb_cost</code>（<code>sched_domain</code>）</td>
+<td>控制衰减节奏。<code>max_newidle_lb_cost</code> 每秒乘一次 253/256，约每秒衰减 1.2%</td>
+</tr>
+<tr>
+<td><code>idle_stamp</code>（<code>rq</code>）</td>
+<td>记录 CPU 进 idle 的时间点，用来算 <code>avg_idle</code>。CPU 执行任务期间该值为 0</td>
+</tr>
+<tr>
+<td><code>avg_idle</code>（<code>rq</code>）</td>
+<td>CPU 的平均 idle 时间</td>
+</tr>
+<tr>
+<td><code>max_idle_balance_cost</code>（<code>rq</code>）</td>
+<td>该 CPU 做 new idle balance 的最大开销。它是各级 domain <code>max_newidle_lb_cost</code> 之和，下限被 <code>sysctl_sched_migration_cost</code> 兜住</td>
+</tr>
+</tbody>
+</table></div><p><code>avg_idle</code> 的算法：<code>newidle_balance()</code> 时记下 <code>idle_stamp</code>，第一次调 <code>ttwu_do_wakeup()</code> 时算两者之差，得到本次 idle 时长，然后滑动平均：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>avg_idle = avg_idle + (本次 idle 时长 - avg_idle) / 8
+</code></pre></div></code></pre>
+<p>CPU 一次 idle 太久会把平均值带偏，所以 <code>avg_idle</code> 的上限被压在 2 倍的 <code>max_idle_balance_cost</code>。</p>
+<h2 id="十七三条路径如何万法归宗到-load_balance" tabindex="-1">十七、三条路径如何万法归宗到 load_balance <a class="header-anchor" href="#十七三条路径如何万法归宗到-load_balance"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>路径</th>
+<th>到 load_balance 的路</th>
+<th><code>idle</code> 参数取值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>periodic</td>
+<td><code>trigger_load_balance()</code> → <code>SCHED_SOFTIRQ</code> → <code>run_rebalance_domains()</code> → <code>rebalance_domains()</code> → <code>load_balance()</code></td>
+<td><code>CPU_NOT_IDLE</code>（本 CPU 有活）</td>
+</tr>
+<tr>
+<td>nohz idle</td>
+<td><code>nohz_balancer_kick()</code> → IPI → <code>scheduler_ipi()</code> → <code>SCHED_SOFTIRQ</code> → <code>run_rebalance_domains()</code> → <code>nohz_idle_balance()</code> → <code>rebalance_domains()</code> → <code>load_balance()</code>（在代表 CPU 上、对每个 idle CPU 各来一遍）</td>
+<td><code>CPU_IDLE</code></td>
+</tr>
+<tr>
+<td>new idle</td>
+<td><code>pick_next_task_fair()</code> → <code>newidle_balance()</code> → 遍历 domain → <code>load_balance()</code></td>
+<td><code>CPU_NEWLY_IDLE</code></td>
+</tr>
+</tbody>
+</table></div><p>共性三条：<strong>入口都是 domain 遍历</strong>，都从 base domain 往上走，逐级判间隔、逐级调 <code>load_balance()</code>；<strong>只有 <code>load_balance()</code> 真的搬任务</strong>，触发层只负责「该不该在这个时间点检查」；<strong><code>idle</code> 参数是行为开关</strong>，它一路传到 <code>struct lb_env.idle</code>，决定要不要搬 src 上最后一个任务、要不要等备选 dest、要不要一看 local 更忙就收手。读完三层触发只是拿到了「何时」，「怎么搬」全在下面十章。</p>
+<h2 id="十八load_balance-的输入struct-lb_env" tabindex="-1">十八、load_balance 的输入：struct lb_env <a class="header-anchor" href="#十八load_balance-的输入struct-lb_env"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1struct-lb_env" tabindex="-1">1、struct lb_env <a class="header-anchor" href="#1struct-lb_env"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">lb_env</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_domain</span> *<span class="hljs-title">sd</span>;</span>
+
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rq</span>           *<span class="hljs-title">src_rq</span>;</span>
+    <span class="hljs-type">int</span>                  src_cpu;
+
+    <span class="hljs-type">int</span>                  dst_cpu;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rq</span>           *<span class="hljs-title">dst_rq</span>;</span>
+
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">cpumask</span>      *<span class="hljs-title">dst_grpmask</span>;</span>
+    <span class="hljs-type">int</span>                  new_dst_cpu;
+    <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">cpu_idle_type</span>   <span class="hljs-title">idle</span>;</span>
+    <span class="hljs-type">long</span>                 imbalance;
+
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">cpumask</span>      *<span class="hljs-title">cpus</span>;</span>
+
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>         flags;
+
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>         loop;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>         loop_break;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>         loop_max;
+
+    <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">fbq_type</span>        <span class="hljs-title">fbq_type</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">migration_type</span>  <span class="hljs-title">migration_type</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span>     <span class="hljs-title">tasks</span>;</span>
+};
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>成员</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>struct sched_domain *sd</code></td>
+<td>本次要做均衡的 sched domain</td>
+</tr>
+<tr>
+<td><code>struct rq *dst_rq</code> / <code>int dst_cpu</code></td>
+<td>本次均衡的目标 CPU。操作方向是从该 domain 的 busiest CPU 的 runqueue 拉任务到 dest CPU。第一轮默认就是发起均衡的 CPU 及其 runqueue，后面需要时可以换成 local group 里的别的 CPU</td>
+</tr>
+<tr>
+<td><code>struct cpumask *dst_grpmask</code></td>
+<td>dest CPU 所在 sched group 的 cpu mask，即本次 dest 的可选范围</td>
+</tr>
+<tr>
+<td><code>struct rq *src_rq</code> / <code>int src_cpu</code></td>
+<td>该 domain 里最繁忙的那个 CPU 及其 runqueue，任务从这里被拉走</td>
+</tr>
+<tr>
+<td><code>int new_dst_cpu</code></td>
+<td>备选 dest。因为 affinity，src 上有任务搬不到 dst，均衡做不完整，就在 local group 里另选一个 CPU 发起第二轮</td>
+</tr>
+<tr>
+<td><code>enum cpu_idle_type idle</code></td>
+<td>做均衡时 dst_cpu 的 idle 状态，直接影响均衡走向</td>
+</tr>
+<tr>
+<td><code>long imbalance</code></td>
+<td>要迁移的量。含义跟着 <code>migration_type</code> 变：<code>migrate_load</code> 时要搬的负载量，<code>migrate_util</code> 时要搬的 utility，<code>migrate_task</code> 时要搬的任务个数，<code>migrate_misfit</code> 时固定为 1</td>
+</tr>
+<tr>
+<td><code>struct cpumask *cpus</code></td>
+<td>本次均衡涉及哪些 CPU。多轮均衡里不同轮次涉及的 CPU 不同</td>
+</tr>
+<tr>
+<td><code>unsigned int flags</code></td>
+<td>均衡标志。<code>LBF_NOHZ_STATS</code> / <code>LBF_NOHZ_AGAIN</code> 用于均衡过程中更新 nohz 状态；busiest CPU 上的任务全被 affinity 锁死时置 <code>LBF_ALL_PINNED</code>，均衡会另找次忙 CPU；<code>LBF_NEED_BREAK</code> 用来缩短关中断时间；另见后面的具体分析</td>
+</tr>
+<tr>
+<td><code>unsigned int loop</code></td>
+<td>确定要迁移任务后，<code>load_balance()</code> 会循环遍历 src rq 的 cfs task 链表来定量。<code>loop</code> 记循环次数，不能超过 <code>loop_max</code></td>
+</tr>
+<tr>
+<td><code>unsigned int loop_break</code></td>
+<td>一次搬的任务多时，每搬 <code>sched_nr_migrate_break</code> 个就歇一下，把关中断的临界区切小</td>
+</tr>
+<tr>
+<td><code>unsigned int loop_max</code></td>
+<td>扫描 dest cpu 运行队列的最大次数</td>
+</tr>
+<tr>
+<td><code>enum migration_type migration_type</code></td>
+<td>本次迁移的类型，四种：<code>migrate_load</code> 搬一定量负载；<code>migrate_util</code> 搬一定量 utility；<code>migrate_task</code> 搬一定数量任务；<code>migrate_misfit</code> 搬 misfit 任务</td>
+</tr>
+<tr>
+<td><code>enum fbq_type fbq_type</code></td>
+<td>候选 busiest CPU 的过滤类型，取值 <code>regular</code> / <code>remote</code> / <code>all</code>，第一轮固定 <code>all</code></td>
+</tr>
+<tr>
+<td><code>struct list_head tasks</code></td>
+<td>待迁移任务挂成的链表</td>
+</tr>
+</tbody>
+</table></div><pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">migration_type</span> {</span>
+    migrate_load = <span class="hljs-number">0</span>,
+    migrate_util,
+    migrate_task,
+    migrate_misfit
+};
+</code></pre></div></code></pre>
+<h3 id="2struct-sd_lb_stats-与-struct-sg_lb_stats" tabindex="-1">2、struct sd_lb_stats 与 struct sg_lb_stats <a class="header-anchor" href="#2struct-sd_lb_stats-与-struct-sg_lb_stats"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>成员（<code>sd_lb_stats</code>）</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>struct sched_group *busiest</code></td>
+<td>该 domain 中最繁忙的 sched group（非 local group）</td>
+</tr>
+<tr>
+<td><code>struct sched_group *local</code></td>
+<td>dest cpu 所在的 group</td>
+</tr>
+<tr>
+<td><code>unsigned long total_load</code></td>
+<td>该 domain 中所有 group 的负载之和。后文说负载都指 CFS 任务负载</td>
+</tr>
+<tr>
+<td><code>unsigned long total_capacity</code></td>
+<td>该 domain 中所有 group 的 CPU 算力之和（可用于 CFS 任务的部分）</td>
+</tr>
+<tr>
+<td><code>unsigned long avg_load</code></td>
+<td>该 domain 中各 group 的平均负载</td>
+</tr>
+<tr>
+<td><code>struct sg_lb_stats busiest_stat</code></td>
+<td>最忙那个 group 的统计</td>
+</tr>
+<tr>
+<td><code>struct sg_lb_stats local_stat</code></td>
+<td>local group 的统计</td>
+</tr>
+<tr>
+<td><code>bool prefer_sibling</code></td>
+<td>是否倾向把任务摊匀到各 sibling group，来自 <code>sched_domain_topology_level</code> 的配置</td>
+</tr>
+</tbody>
+</table></div><div class="table-wrap"><table><thead>
+<tr>
+<th>成员（<code>sg_lb_stats</code>）</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>avg_load</code></td>
+<td>该 group 上每个 CPU 的平均负载。只在 group 处于 overloaded 状态才计算，用来算迁移量</td>
+</tr>
+<tr>
+<td><code>group_load</code></td>
+<td>该 group 所有 CPU 的负载之和</td>
+</tr>
+<tr>
+<td><code>group_capacity</code></td>
+<td>该 group 所有 CPU 算力之和，算力指可用于 CFS 任务的部分</td>
+</tr>
+<tr>
+<td><code>group_util</code></td>
+<td>该 group 所有 CPU 的利用率之和</td>
+</tr>
+<tr>
+<td><code>group_runnable</code></td>
+<td>该 group 所有 CPU 的运行负载（runnable load）之和</td>
+</tr>
+<tr>
+<td><code>sum_nr_running</code></td>
+<td>该 group 所有任务的数量，含 RT、DL</td>
+</tr>
+<tr>
+<td><code>sum_h_nr_running</code></td>
+<td>该 group 所有 CFS 任务的数量</td>
+</tr>
+<tr>
+<td><code>idle_cpus</code></td>
+<td>该 group 中 idle CPU 的数量</td>
+</tr>
+<tr>
+<td><code>group_weight</code></td>
+<td>该 group 中的 CPU 数量</td>
+</tr>
+<tr>
+<td><code>group_type</code></td>
+<td>该 group 在均衡时的状态，见二十一章</td>
+</tr>
+<tr>
+<td><code>group_misfit_task_load</code></td>
+<td>组内至少有一个 CPU 上有 misfit task 时，记录该组所有 CPU 中最大的 misfit task load</td>
+</tr>
+</tbody>
+</table></div><h3 id="3struct-sched_group_capacity" tabindex="-1">3、struct sched_group_capacity <a class="header-anchor" href="#3struct-sched_group_capacity"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>成员</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>atomic_t ref</code></td>
+<td>多个 sched group 会共享 <code>sched_group_capacity</code>，需要引用计数</td>
+</tr>
+<tr>
+<td><code>unsigned long capacity</code></td>
+<td>该 group 可用于 CFS 任务的总算力（各 CPU 算力之和）</td>
+</tr>
+<tr>
+<td><code>unsigned long min_capacity</code></td>
+<td>该 group 中最小的可用于 CFS 任务的 capacity（按单个 CPU 算）</td>
+</tr>
+<tr>
+<td><code>unsigned long max_capacity</code></td>
+<td>该 group 中最大的可用于 CFS 任务的 capacity（按单个 CPU 算）</td>
+</tr>
+<tr>
+<td><code>unsigned long next_update</code></td>
+<td>下一次更算力的时间点</td>
+</tr>
+<tr>
+<td><code>int imbalance</code></td>
+<td>该 group 中是否因 affinity 产生了不均衡</td>
+</tr>
+<tr>
+<td><code>unsigned long cpumask[]</code></td>
+<td>balance mask</td>
+</tr>
+</tbody>
+</table></div><h2 id="十九整体逻辑两轮扫描" tabindex="-1">十九、整体逻辑：两轮扫描 <a class="header-anchor" href="#十九整体逻辑两轮扫描"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1第一段参数与上下文" tabindex="-1">1、第一段：参数与上下文 <a class="header-anchor" href="#1第一段参数与上下文"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">load_balance</span><span class="hljs-params">(<span class="hljs-type">int</span> this_cpu, <span class="hljs-keyword">struct</span> rq *this_rq,
+                        <span class="hljs-keyword">struct</span> sched_domain *sd, <span class="hljs-keyword">enum</span> cpu_idle_type idle,
+                        <span class="hljs-type">int</span> *continue_balancing)</span>              <span class="hljs-comment">/* A */</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">lb_env</span> <span class="hljs-title">env</span> =</span> {                                     <span class="hljs-comment">/* B */</span>
+        .sd            = sd,
+        .dst_cpu       = this_cpu,
+        .dst_rq        = this_rq,
+        .dst_grpmask   = sched_group_span(sd-&gt;groups),
+        .idle          = idle,
+        .loop_break    = sched_nr_migrate_break,
+        .cpus          = cpus,
+        .fbq_type      = all,
+        .tasks         = LIST_HEAD_INIT(env.tasks),
+    };
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数/返回值</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>this_cpu</code></td>
+<td>本次做均衡的 CPU。new idle balance 和 tick balance 下 <code>this_cpu</code> 就是 current cpu；nohz idle balance 下未必</td>
+</tr>
+<tr>
+<td><code>this_rq</code></td>
+<td>该 CPU 对应的 runqueue</td>
+</tr>
+<tr>
+<td><code>sd</code></td>
+<td>本次均衡的范围，即要保证该 domain 内各 group 负载平衡</td>
+</tr>
+<tr>
+<td><code>idle</code></td>
+<td><code>this_cpu</code> 发起均衡时的状态，用来区分 new idle balance 和 tick balance</td>
+</tr>
+<tr>
+<td><code>continue_balancing</code></td>
+<td>均衡从 base domain 往上走到顶层 domain，这个指针控制是否继续往上层走</td>
+</tr>
+<tr>
+<td>返回值</td>
+<td>本次均衡迁移的任务总数</td>
+</tr>
+</tbody>
+</table></div><p><code>env</code> 的初始化就是填第一轮均衡的上下文，字段含义见上一章。</p>
+<h3 id="2第二段找-source" tabindex="-1">2、第二段：找 source <a class="header-anchor" href="#2第二段找-source"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    cpumask_and(cpus, sched_domain_span(sd), cpu_active_mask);  <span class="hljs-comment">/* A */</span>
+redo:
+    <span class="hljs-keyword">if</span> (!should_we_balance(&amp;env)) {
+        *continue_balancing = <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">goto</span> out_balanced;                                   <span class="hljs-comment">/* B */</span>
+    }
+    group = find_busiest_group(&amp;env);
+    <span class="hljs-keyword">if</span> (!group)
+        <span class="hljs-keyword">goto</span> out_balanced;                                   <span class="hljs-comment">/* C */</span>
+    busiest = find_busiest_queue(&amp;env, group);
+    <span class="hljs-keyword">if</span> (!busiest)
+        <span class="hljs-keyword">goto</span> out_balanced;                                   <span class="hljs-comment">/* D */</span>
+</code></pre></div></code></pre>
+<p><strong>A</strong>：圈定本轮涉及的 CPU，第一轮里 domain 的所有 CPU 都参与（<code>cpu_active_mask</code> 剔掉不能参与的）；后面如果发现异常（比如 affinity 卡住了迁移），会清掉选定的 busiest CPU 再跳回 <code>redo</code> 重来。<strong>B</strong>：<code>should_we_balance()</code> 判断 <code>env-&gt;dst_cpu</code> 有没有资格做这个 domain 的均衡，没资格就顺手把 <code>continue_balancing</code> 清 0——上层 level 也别做了。base domain 每个 group 只有一个 CPU，所有 CPU 都有资格；非 base domain 每个 group 有多个 CPU，全有资格就太密了，限制为「group 里第一个 idle 的 CPU」有资格，一个 idle 的都没有则 group 里第一个 CPU 有资格，new idle balance 不受限制。<strong>C</strong>：在该 domain 里找最忙的 group，找不到就退出本 level。<strong>D</strong>：在最忙的 group 里找最忙的 CPU，找不到就退出本 level。source 和 dest 都定了（dest 是 this cpu），开始第一轮迁移。</p>
+<h3 id="3第三段detach--attach-循环" tabindex="-1">3、第三段：detach / attach 循环 <a class="header-anchor" href="#3第三段detach--attach-循环"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">if</span> (busiest-&gt;nr_running &gt; <span class="hljs-number">1</span>) {                            <span class="hljs-comment">/* A */</span>
+        env.flags |= LBF_ALL_PINNED;
+        env.loop_max = min(sysctl_sched_nr_migrate, busiest-&gt;nr_running);  <span class="hljs-comment">/* B */</span>
+more_balance:                                                 <span class="hljs-comment">/* C */</span>
+        rq_lock_irqsave(busiest, &amp;rf);
+        update_rq_clock(busiest);
+        cur_ld_moved = detach_tasks(&amp;env);                    <span class="hljs-comment">/* D */</span>
+        rq_unlock(busiest, &amp;rf);
+        <span class="hljs-keyword">if</span> (cur_ld_moved) {
+            attach_tasks(&amp;env);                               <span class="hljs-comment">/* E */</span>
+            ld_moved += cur_ld_moved;
+        }
+        local_irq_restore(rf.flags);
+        <span class="hljs-keyword">if</span> (env.flags &amp; LBF_NEED_BREAK) {
+            env.flags &amp;= ~LBF_NEED_BREAK;
+            <span class="hljs-keyword">goto</span> more_balance;                                <span class="hljs-comment">/* F */</span>
+        }
+    }
+</code></pre></div></code></pre>
+<p><strong>A</strong>：要从 busiest CPU 拉任务，至少得有一个可拉的（<code>nr_running &gt; 1</code>，得留一个继续跑）；拉之前先把 <code>LBF_ALL_PINNED</code> 立起来，后面发现不是全 pinned 再清掉。<strong>B</strong>：<code>loop_max</code> 是扫描 src rq 上 runnable 任务的次数，默认取 busiest runqueue 的任务数，保证每个任务都被扫到；但要压关中断时长，单次迁移不超过 <code>sysctl_sched_nr_migrate</code>（32 个）。<strong>C</strong>：跳 <code>more_balance</code> 和跳 <code>redo</code> 不同——新一轮只是接着扫 busiest rq 的任务链表，不重新找 busiest CPU，目的是压关中断时长。<strong>D</strong>：<code>detach_tasks()</code> 从 busiest rq 上摘出适合迁移的任务，同样受关中断时长限制。<strong>E</strong>：把摘下来的任务挂到 dest rq；<code>detach_tasks()</code> / <code>attach_tasks()</code> 会跑多轮，<code>ld_moved</code> 累计总数，<code>cur_ld_moved</code> 是本轮数量。<strong>F</strong>：迁移期间 src CPU 关中断，任务量大时要 break 一下放点时间出去。</p>
+<h3 id="4第四段第二轮与-all-pinned" tabindex="-1">4、第四段：第二轮与 all pinned <a class="header-anchor" href="#4第四段第二轮与-all-pinned"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">if</span> ((env.flags &amp; LBF_DST_PINNED) &amp;&amp; env.imbalance &gt; <span class="hljs-number">0</span>) {
+        __cpumask_clear_cpu(env.dst_cpu, env.cpus);
+        env.dst_rq  = cpu_rq(env.new_dst_cpu);
+        env.dst_cpu = env.new_dst_cpu;
+        env.flags &amp;= ~LBF_DST_PINNED;
+        env.loop  = <span class="hljs-number">0</span>;
+        env.loop_break = sched_nr_migrate_break;
+        <span class="hljs-keyword">goto</span> more_balance;                                    <span class="hljs-comment">/* A */</span>
+    }
+    <span class="hljs-keyword">if</span> (sd_parent) {                                          <span class="hljs-comment">/* B */</span>
+        <span class="hljs-type">int</span> *group_imbalance = &amp;sd_parent-&gt;groups-&gt;sgc-&gt;imbalance;
+        <span class="hljs-keyword">if</span> ((env.flags &amp; LBF_SOME_PINNED) &amp;&amp; env.imbalance &gt; <span class="hljs-number">0</span>)
+            *group_imbalance = <span class="hljs-number">1</span>;
+    }
+    <span class="hljs-keyword">if</span> (unlikely(env.flags &amp; LBF_ALL_PINNED)) {
+        __cpumask_clear_cpu(cpu_of(busiest), cpus);
+        <span class="hljs-keyword">if</span> (!cpumask_subset(cpus, env-&gt;dst_grpmask)) {
+            env.loop = <span class="hljs-number">0</span>;
+            env.loop_break = sched_nr_migrate_break;
+            <span class="hljs-keyword">goto</span> redo;                                        <span class="hljs-comment">/* C */</span>
+        }
+        <span class="hljs-keyword">goto</span> out_all_pinned;
+    }
+</code></pre></div></code></pre>
+<p><strong>A</strong>：domain 还没均衡，而且刚才有任务因 affinity 搬不到 dest，就换个备选 dest，继续在 src rq 上找任务搬过去，<code>loop</code> 清零重扫。<strong>B</strong>：本层 domain 因 affinity 达不成均衡，这个状态要标到上层 domain 的 group 上（<code>sgc-&gt;imbalance</code>）；上层均衡时该 group 会被判成 <code>group_imbalanced</code>，更容易被选成 busiest，把问题往上提一层解决。<strong>C</strong>：选中的 busiest CPU 上任务全被 affinity 锁死了，把它从候选里清掉，重新找 source；注意判断条件——清完之后剩下的集合还是 <code>dst_grpmask</code> 的子集，说明 dest 这个 group 内没别的选择，那就 <code>out_all_pinned</code>。</p>
+<h2 id="二十寻找最繁忙的-groupfind_busiest_group" tabindex="-1">二十、寻找最繁忙的 group：find_busiest_group <a class="header-anchor" href="#二十寻找最繁忙的-groupfind_busiest_group"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1先更新统计再问-eas" tabindex="-1">1、先更新统计，再问 EAS <a class="header-anchor" href="#1先更新统计再问-eas"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    update_sd_lb_stats(env, &amp;sds);                            <span class="hljs-comment">/* A */</span>
+    <span class="hljs-keyword">if</span> (sched_energy_enabled()) {
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">root_domain</span> *<span class="hljs-title">rd</span> =</span> env-&gt;dst_rq-&gt;rd;
+        <span class="hljs-keyword">if</span> (rcu_dereference(rd-&gt;pd) &amp;&amp; !READ_ONCE(rd-&gt;overutilized))
+            <span class="hljs-keyword">goto</span> out_balanced;                                <span class="hljs-comment">/* B */</span>
+    }
+</code></pre></div></code></pre>
+<p><strong>A</strong>：负载一直在变，找最忙 group 之前先刷统计，<code>update_sd_lb_stats()</code> 更新该 domain 各 group 的负载和算力，产出 local group 和非 local 中最忙的 group。<strong>B</strong>：系统没进 overutilized 之前，EAS 说了算——EAS 的放置结果可以是不均衡的（它在算功耗），这时候均衡器不该插手。这条 <code>goto out_balanced</code> 意味着：能效模式下 <code>load_balance()</code> 直接认输。</p>
+<h3 id="2几个能一眼判定的场景" tabindex="-1">2、几个能一眼判定的场景 <a class="header-anchor" href="#2几个能一眼判定的场景"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">if</span> (!sds.busiest)                                          <span class="hljs-comment">/* A */</span>
+        <span class="hljs-keyword">goto</span> out_balanced;
+    <span class="hljs-keyword">if</span> (busiest-&gt;group_type == group_misfit_task)
+        <span class="hljs-keyword">goto</span> force_balance;                                    <span class="hljs-comment">/* B */</span>
+    <span class="hljs-keyword">if</span> (busiest-&gt;group_type == group_imbalanced)
+        <span class="hljs-keyword">goto</span> force_balance;                                    <span class="hljs-comment">/* C */</span>
+    <span class="hljs-keyword">if</span> (local-&gt;group_type &gt; busiest-&gt;group_type)
+        <span class="hljs-keyword">goto</span> out_balanced;                                     <span class="hljs-comment">/* D */</span>
+</code></pre></div></code></pre>
+<p><strong>A</strong>：没找到最忙的 group，说明非 local 的 group 里没有任务能拉到 local group，这个 domain 不用管。<strong>B</strong>：busiest group 里有 misfit task，必须均衡，把它拉到算力更高的 local group。<strong>C</strong>：busiest group 是因 affinity 造成的不均衡，底层 domain 处理不了，得在本层解决。<strong>D</strong>：local group 比 busiest group 还忙，不均衡——均衡只能从别的 group 往 local 拉任务，拉过来只会更糟。</p>
+<h3 id="3两边都-overloaded-与-busiest-没-overloaded" tabindex="-1">3、两边都 overloaded 与 busiest 没 overloaded <a class="header-anchor" href="#3两边都-overloaded-与-busiest-没-overloaded"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">if</span> (local-&gt;group_type == group_overloaded) {               <span class="hljs-comment">/* A */</span>
+        <span class="hljs-keyword">if</span> (local-&gt;avg_load &gt;= busiest-&gt;avg_load)
+            <span class="hljs-keyword">goto</span> out_balanced;                                 <span class="hljs-comment">/* B */</span>
+        <span class="hljs-keyword">if</span> (local-&gt;avg_load &gt;= sds.avg_load)
+            <span class="hljs-keyword">goto</span> out_balanced;                                 <span class="hljs-comment">/* C */</span>
+        <span class="hljs-keyword">if</span> (<span class="hljs-number">100</span> * busiest-&gt;avg_load &lt;= env-&gt;sd-&gt;imbalance_pct * local-&gt;avg_load)
+            <span class="hljs-keyword">goto</span> out_balanced;                                 <span class="hljs-comment">/* D */</span>
+    }
+    <span class="hljs-keyword">if</span> (busiest-&gt;group_type != group_overloaded) {             <span class="hljs-comment">/* E */</span>
+        <span class="hljs-keyword">if</span> (env-&gt;idle == CPU_NOT_IDLE)
+            <span class="hljs-keyword">goto</span> out_balanced;                                 <span class="hljs-comment">/* F */</span>
+        <span class="hljs-keyword">if</span> (busiest-&gt;group_weight &gt; <span class="hljs-number">1</span> &amp;&amp;
+            local-&gt;idle_cpus &lt;= (busiest-&gt;idle_cpus + <span class="hljs-number">1</span>))
+            <span class="hljs-keyword">goto</span> out_balanced;                                 <span class="hljs-comment">/* G */</span>
+        <span class="hljs-keyword">if</span> (busiest-&gt;sum_h_nr_running == <span class="hljs-number">1</span>)
+            <span class="hljs-keyword">goto</span> out_balanced;                                 <span class="hljs-comment">/* H */</span>
+    }
+force_balance:
+    calculate_imbalance(env, &amp;sds);                            <span class="hljs-comment">/* I */</span>
+    <span class="hljs-keyword">return</span> env-&gt;imbalance ? sds.busiest : <span class="hljs-literal">NULL</span>;
+</code></pre></div></code></pre>
+<p><strong>A</strong>：local 和 busiest 都 overloaded 时，用 <code>avg_load</code> 比拼。<strong>B</strong>：local 的平均负载比 busiest 还高，不动。<strong>C</strong>：local 的平均负载高过 domain 平均水平，不动。<strong>D</strong>：busiest 确实比 local 高，但高得不够多，还是不动——均衡要花开销，差距得到 <code>imbalance_pct</code> 才算事。<strong>E</strong>：busiest 没 overloaded，说明这个 domain 里各 group 的算力都能 cover 各自的任务，要不要均衡看 idle CPU 分布。<strong>F</strong>：busiest 都扛得住，而本 CPU 又是 active 的，就没必要均衡——这类均衡的目标是把 idle CPU 用起来，本 CPU 不 idle，凑什么热闹。<strong>G</strong>：busiest group 里的 idle CPU 不比 local 少（<code>+1</code> 是容忍度），搬过去没意义。<strong>H</strong>：busiest group 里只有一个 CFS 任务，不动。<strong>I</strong>：其余情况都要均衡，<code>calculate_imbalance()</code> 算不均衡度，返回 0 表示算完发现不值得搬。</p>
+<h3 id="4决策矩阵" tabindex="-1">4、决策矩阵 <a class="header-anchor" href="#4决策矩阵"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>行是 busiest group 的状态，列是 local group 的状态：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>busiest \ local</th>
+<th>has_spare</th>
+<th>fully_busy</th>
+<th>misfit</th>
+<th>imbalanced</th>
+<th>overloaded</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>has_spare</strong></td>
+<td>nr_idle</td>
+<td>balanced</td>
+<td>N/A</td>
+<td>balanced</td>
+<td>balanced</td>
+</tr>
+<tr>
+<td><strong>fully_busy</strong></td>
+<td>nr_idle</td>
+<td>nr_idle</td>
+<td>N/A</td>
+<td>balanced</td>
+<td>balanced</td>
+</tr>
+<tr>
+<td><strong>misfit</strong></td>
+<td>force</td>
+<td>N/A</td>
+<td>N/A</td>
+<td>force</td>
+<td>force</td>
+</tr>
+<tr>
+<td><strong>imbalanced</strong></td>
+<td>force</td>
+<td>force</td>
+<td>N/A</td>
+<td>force</td>
+<td>force</td>
+</tr>
+<tr>
+<td><strong>overloaded</strong></td>
+<td>force</td>
+<td>force</td>
+<td>N/A</td>
+<td>force</td>
+<td>avg_load</td>
+</tr>
+</tbody>
+</table></div><div class="table-wrap"><table><thead>
+<tr>
+<th>结论</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>balanced</code></td>
+<td>该 domain 处于均衡状态，不用动</td>
+</tr>
+<tr>
+<td><code>force</code></td>
+<td>不均衡，<code>calculate_imbalance()</code> 算不均衡指数，然后尝试搬任务</td>
+</tr>
+<tr>
+<td><code>avg_load</code></td>
+<td>用 group 平均负载判断。尽量不动，除非差得很多（门限是 <code>imbalance_pct</code>）</td>
+</tr>
+<tr>
+<td><code>nr_idle</code></td>
+<td>dest CPU 得是 idle 的，而且 local group 的 idle CPU 数多于 busiest group 的 idle CPU 数，才做均衡</td>
+</tr>
+</tbody>
+</table></div><p><code>N/A</code> 那几格是拓扑上不会出现的组合，比如 local group 自己不会被判成 misfit 或 imbalanced。</p>
+<h2 id="二十一更新-sched_domain-与-sched_group-的负载统计" tabindex="-1">二十一、更新 sched_domain 与 sched_group 的负载统计 <a class="header-anchor" href="#二十一更新-sched_domain-与-sched_group-的负载统计"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1update_sd_lb_stats遍历-group" tabindex="-1">1、update_sd_lb_stats：遍历 group <a class="header-anchor" href="#1update_sd_lb_stats遍历-group"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">do</span> {
+        local_group = cpumask_test_cpu(env-&gt;dst_cpu, sched_group_span(sg));
+        <span class="hljs-keyword">if</span> (local_group) {                                    <span class="hljs-comment">/* A */</span>
+            sds-&gt;local = sg;
+            sgs = local;
+            <span class="hljs-keyword">if</span> (env-&gt;idle != CPU_NEWLY_IDLE ||
+                time_after_eq(jiffies, sg-&gt;sgc-&gt;next_update))
+                update_group_capacity(env-&gt;sd, env-&gt;dst_cpu);
+        }
+        update_sg_lb_stats(env, sg, sgs, &amp;sg_status);          <span class="hljs-comment">/* B */</span>
+        <span class="hljs-keyword">if</span> (local_group)
+            <span class="hljs-keyword">goto</span> next_group;                                   <span class="hljs-comment">/* C */</span>
+        <span class="hljs-keyword">if</span> (update_sd_pick_busiest(env, sds, sg, sgs)) {       <span class="hljs-comment">/* D */</span>
+            sds-&gt;busiest = sg;
+            sds-&gt;busiest_stat = *sgs;
+        }
+next_group:
+        sds-&gt;total_load += sgs-&gt;group_load;                    <span class="hljs-comment">/* E */</span>
+        sds-&gt;total_capacity += sgs-&gt;group_capacity;
+        sg = sg-&gt;next;
+    } <span class="hljs-keyword">while</span> (sg != env-&gt;sd-&gt;groups);
+    <span class="hljs-keyword">if</span> (!env-&gt;sd-&gt;parent) {                                    <span class="hljs-comment">/* F */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">root_domain</span> *<span class="hljs-title">rd</span> =</span> env-&gt;dst_rq-&gt;rd;
+        WRITE_ONCE(rd-&gt;overload, sg_status &amp; SG_OVERLOAD);
+        WRITE_ONCE(rd-&gt;overutilized, sg_status &amp; SG_OVERUTILIZED);
+    } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (sg_status &amp; SG_OVERUTILIZED) {
+        <span class="hljs-keyword">struct</span> root_domain *rd = env-&gt;dst_rq-&gt;rd;
+        WRITE_ONCE(rd-&gt;overutilized, SG_OVERUTILIZED);
+    }
+</code></pre></div></code></pre>
+<p>这段遍历 domain 的所有 group，刷完统计后选出两个 group：local group 和最忙的非 local group。<strong>A</strong>：更算力。base domain（手机上是 MC）只更新发起均衡那个 CPU 的算力，这里说的算力是能用于 CFS 的，要扣掉 thermal pressure 的损失、RT/DL/IRQ 的占用，见 <code>update_cpu_capacity()</code>；非 base domain（DIE）更本地 group 的算力，做法简单——把 child domain（MC）所有 group 的算力加起来，结果存在 group 的 <code>sgc</code> 里。算力不能更太勤，这里卡了两道：只有 local group 才更；new idle 时还要看时间间隔。<strong>B</strong>：更新该 group 的负载统计，下一节拆。<strong>C</strong>：local group 不参与「谁最忙」的比拼，直接跳过。<strong>D</strong>：在非 local group 里挑最忙的。<strong>E</strong>：累加 domain 的总负载和总算力。<strong>F</strong>：刷 root domain 的 overload / overutilized 状态——顶层 domain 要把各 group 的状态汇总进 root domain，非顶层 domain 只在出现 overutilized 时往上写。</p>
+<h3 id="2update_sg_lb_stats-第一段逐-cpu-累加" tabindex="-1">2、update_sg_lb_stats 第一段：逐 CPU 累加 <a class="header-anchor" href="#2update_sg_lb_stats-第一段逐-cpu-累加"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    for_each_cpu_and(i, sched_group_span(group), env-&gt;cpus) {
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rq</span> *<span class="hljs-title">rq</span> =</span> cpu_rq(i);
+        sgs-&gt;group_load    += cpu_load(rq);
+        sgs-&gt;group_util    += cpu_util(i);
+        sgs-&gt;group_runnable += cpu_runnable(rq);
+        sgs-&gt;sum_h_nr_running += rq-&gt;cfs.h_nr_running;
+        nr_running = rq-&gt;nr_running;
+        sgs-&gt;sum_nr_running += nr_running;                     <span class="hljs-comment">/* A */</span>
+        <span class="hljs-keyword">if</span> (nr_running &gt; <span class="hljs-number">1</span>)
+            *sg_status |= SG_OVERLOAD;                         <span class="hljs-comment">/* B */</span>
+        <span class="hljs-keyword">if</span> (cpu_overutilized(i))
+            *sg_status |= SG_OVERUTILIZED;                     <span class="hljs-comment">/* C */</span>
+        <span class="hljs-keyword">if</span> (!nr_running &amp;&amp; idle_cpu(i)) {                      <span class="hljs-comment">/* D */</span>
+            sgs-&gt;idle_cpus++;
+            <span class="hljs-keyword">continue</span>;
+        }
+        <span class="hljs-keyword">if</span> (local_group)                                       <span class="hljs-comment">/* E */</span>
+            <span class="hljs-keyword">continue</span>;
+        <span class="hljs-keyword">if</span> (env-&gt;sd-&gt;flags &amp; SD_ASYM_CPUCAPACITY &amp;&amp;
+            sgs-&gt;group_misfit_task_load &lt; rq-&gt;misfit_task_load) {
+            sgs-&gt;group_misfit_task_load = rq-&gt;misfit_task_load;
+            *sg_status |= SG_OVERLOAD;                         <span class="hljs-comment">/* F */</span>
+        }
+    }
+</code></pre></div></code></pre>
+<p><strong>A</strong>：group 负载有三个——load、runnable load、util，把 group 内所有 CPU 的三个值各自累加；除了 PELT 跟踪的 load avg，还统计了 group 里 CFS 任务数和总任务数。<strong>B</strong>：group 里有任何一个 CPU 挂着 1 个以上任务，整个 group 标 overload。<strong>C</strong>：group 里有任何一个 CPU overutilized（util 顶到算力的 80%），整个 group 标 overutilized。<strong>D</strong>：统计 idle CPU 个数，注意这个 <code>continue</code>——idle CPU 不参与后面的 misfit 检测。<strong>E</strong>：local group 不检测 misfit，同 group 内算力相同，不会把 misfit 任务从 local group 拉到 local group。<strong>F</strong>：domain 覆盖了不同算力的 CPU（比如 DIE）时，即便某个 CPU 上只有一个任务，只要它是 misfit task，group 也标 overload，并记录 group 内最大的 misfit task load。</p>
+<h3 id="3update_sg_lb_stats-第二段定-group_type" tabindex="-1">3、update_sg_lb_stats 第二段：定 group_type <a class="header-anchor" href="#3update_sg_lb_stats-第二段定-group_type"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    sgs-&gt;group_capacity = group-&gt;sgc-&gt;capacity;                <span class="hljs-comment">/* A */</span>
+    sgs-&gt;group_weight   = group-&gt;group_weight;
+    sgs-&gt;group_type = group_classify(env-&gt;sd-&gt;imbalance_pct, group, sgs);  <span class="hljs-comment">/* B */</span>
+    <span class="hljs-keyword">if</span> (sgs-&gt;group_type == group_overloaded)                   <span class="hljs-comment">/* C */</span>
+        sgs-&gt;avg_load = (sgs-&gt;group_load * SCHED_CAPACITY_SCALE) /
+                        sgs-&gt;group_capacity;
+</code></pre></div></code></pre>
+<p><strong>A</strong>：更 group 总算力和 CPU 个数，capacity 是可用于 CFS 任务的算力。<strong>B</strong>：判定 group 当前的负载状态。<strong>C</strong>：平均负载只在 overloaded 状态才算，靠它识别谁更忙。group 状态按负载从重到轻排，括号里是 <code>group_type</code> 的数值，越大越忙：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>group_type</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>group_overloaded</code>（5）</td>
+<td>group 已过载，给不出算力。要同时满足两条：1、group 上总任务数（不只 CFS）大于 group 内 CPU 数，即至少有一个任务在 runnable；2、group 总 util 或总 runnable load 大于 group 总算力。判过载得留 margin，不能等 util 顶到 capacity 才动手，margin 和 <code>imbalance_pct</code> 相关。注意任务跑起来之后 runnable load 总大于 util：runnable load 记 running + runnable，util 只算 running time，所以 util 对 capacity 用一套 margin，runnable load 对 runnable load 用另一套</td>
+</tr>
+<tr>
+<td><code>group_imbalanced</code>（4）</td>
+<td>因 task affinity 导致该 group 不均衡</td>
+</tr>
+<tr>
+<td><code>group_misfit_task</code>（2）</td>
+<td>group 里有 misfit task，要迁到算力更强的 CPU</td>
+</tr>
+<tr>
+<td><code>group_fully_busy</code>（1）</td>
+<td>group 没有空闲算力</td>
+</tr>
+<tr>
+<td><code>group_has_spare</code>（0）</td>
+<td>group 还有空闲算力，能接别的 group 的任务。满足任一条即此状态：1、group 总任务量小于 CPU 个数，即至少有一个 CPU idle；2、group 总算力能承载当前任务量。这里的「任务量」要同时考虑 group util 和 group runnable load</td>
+</tr>
+</tbody>
+</table></div><p>判 group 忙闲的函数是 <code>group_classify()</code>，对着代码看这张表最省事。先比 <code>group_type</code> 数值，大的更忙；相等时另有一套规则：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>group_type</th>
+<th>等值时的判断</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>group_overloaded</code></td>
+<td>平均负载高的更忙</td>
+</tr>
+<tr>
+<td><code>group_imbalanced</code></td>
+<td>第一个找到的最忙</td>
+</tr>
+<tr>
+<td><code>group_misfit_task</code></td>
+<td>比 misfit task load，大的更忙</td>
+</tr>
+<tr>
+<td><code>group_fully_busy</code></td>
+<td>第一个找到的最忙</td>
+</tr>
+<tr>
+<td><code>group_has_spare</code></td>
+<td>idle CPU 少的更忙；idle CPU 数相等时比 group 任务数</td>
+</tr>
+</tbody>
+</table></div><p><code>group_imbalanced</code> 和 <code>group_fully_busy</code> 用「第一个找到的」是有意的：这两种状态本身已经代表有问题，谁先谁后不影响结论，省掉比较。</p>
+<h2 id="二十二不均衡程度怎么算" tabindex="-1">二十二、不均衡程度怎么算 <a class="header-anchor" href="#二十二不均衡程度怎么算"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>calculate_imbalance()</code> 决定两件事：用哪种迁移方式（<code>migration_type</code>），以及搬多少（<code>imbalance</code>）。</p>
+<h3 id="1两个特殊状态直接给答案" tabindex="-1">1、两个特殊状态直接给答案 <a class="header-anchor" href="#1两个特殊状态直接给答案"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">if</span> (busiest-&gt;group_type == group_misfit_task) {
+        env-&gt;migration_type = migrate_misfit;
+        env-&gt;imbalance = <span class="hljs-number">1</span>;
+        <span class="hljs-keyword">return</span>;                                                <span class="hljs-comment">/* A */</span>
+    }
+    <span class="hljs-keyword">if</span> (busiest-&gt;group_type == group_imbalanced) {
+        env-&gt;migration_type = migrate_task;
+        env-&gt;imbalance = <span class="hljs-number">1</span>;
+        <span class="hljs-keyword">return</span>;                                                <span class="hljs-comment">/* B */</span>
+    }
+</code></pre></div></code></pre>
+<p><strong>A</strong>：busiest group 上有 misfit task，优先做 misfit 迁移，一次一个。<strong>B</strong>：busiest group 是 affinity 造成的不均衡，靠迁移任务解决，一次一个。</p>
+<h3 id="2local-group-有空闲算力用-util-指导" tabindex="-1">2、local group 有空闲算力：用 util 指导 <a class="header-anchor" href="#2local-group-有空闲算力用-util-指导"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">if</span> (local-&gt;group_type == group_has_spare) {                <span class="hljs-comment">/* A */</span>
+        <span class="hljs-keyword">if</span> ((busiest-&gt;group_type &gt; group_fully_busy) &amp;&amp;
+            !(env-&gt;sd-&gt;flags &amp; SD_SHARE_PKG_RESOURCES)) {      <span class="hljs-comment">/* B */</span>
+            env-&gt;migration_type = migrate_util;
+            env-&gt;imbalance = max(local-&gt;group_capacity, local-&gt;group_util) -
+                             local-&gt;group_util;                <span class="hljs-comment">/* C */</span>
+            <span class="hljs-keyword">if</span> (env-&gt;idle != CPU_NOT_IDLE &amp;&amp; env-&gt;imbalance == <span class="hljs-number">0</span>) {
+                env-&gt;migration_type = migrate_task;
+                env-&gt;imbalance = <span class="hljs-number">1</span>;                            <span class="hljs-comment">/* D */</span>
+            }
+            <span class="hljs-keyword">return</span>;
+        }
+    }
+</code></pre></div></code></pre>
+<p><strong>A</strong>：local group 有空闲算力就尽量用起来，前提是搬过来的量既不把 local 压成 overload，也不让 busiest 没活干。<strong>B</strong>：<code>SD_SHARE_PKG_RESOURCES</code> 是分水岭——设了这个 flag 的 domain（MC）在 placement 阶段尽量挑 idle CPU，均衡路径得跟 placement 对齐，用 <code>nr_running</code> 而不是空闲算力；没设的（DIE）才走 <code>migrate_util</code>。<strong>C</strong>：local 有空闲、busiest 又忙（比 fully_busy 更重），用 util 指导均衡，迁的量等于 local group 当前空出来的算力。<strong>D</strong>：有些场景 local group 的 util 已经超过自己的 capacity，按 C 算出来的 <code>imbalance</code> 是 0，等于不搬；可如果 local CPU 是 idle 的，还是得从 busiest 搬一个 runnable 任务过来，不然性能白丢。</p>
+<h3 id="3local-group-有空闲算力用-idle-cpu-数指导" tabindex="-1">3、local group 有空闲算力：用 idle CPU 数指导 <a class="header-anchor" href="#3local-group-有空闲算力用-idle-cpu-数指导"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">if</span> (local-&gt;group_type == group_has_spare) {
+        <span class="hljs-keyword">if</span> (busiest-&gt;group_weight == <span class="hljs-number">1</span> || sds-&gt;prefer_sibling) {  <span class="hljs-comment">/* A */</span>
+            <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> nr_diff = busiest-&gt;sum_nr_running;
+            env-&gt;migration_type = migrate_task;
+            lsub_positive(&amp;nr_diff, local-&gt;sum_nr_running);
+            env-&gt;imbalance = nr_diff &gt;&gt; <span class="hljs-number">1</span>;
+        } <span class="hljs-keyword">else</span> {                                                  <span class="hljs-comment">/* B */</span>
+            env-&gt;migration_type = migrate_task;
+            env-&gt;imbalance = <span class="hljs-type">max_t</span>(<span class="hljs-type">long</span>, <span class="hljs-number">0</span>, (local-&gt;idle_cpus -
+                                            busiest-&gt;idle_cpus) &gt;&gt; <span class="hljs-number">1</span>);
+        }
+        <span class="hljs-keyword">return</span>;
+    }
+</code></pre></div></code></pre>
+<p>代码走到这里，说明 busiest group 也有空闲算力，这时主要考虑搬任务，让 domain 里的 idle CPU 尽量均匀。另一种情况是 busiest 明明很忙（比 fully_busy 重），但均衡发生在 MC domain 内，处理方式一样看 idle CPU。<strong>A</strong>：base domain（group 只有一个 CPU）的目标是让任务散在各个 group（CPU）上，所以搬完之后 local 和 busiest 的任务数要相等，<code>nr_diff &gt;&gt; 1</code> 就是差一半；<code>prefer_sibling</code> 为真时走同一条分支——拓扑希望 sibling group 之间摊匀。<strong>B</strong>：group 里有多个 CPU，目标是 local 和 busiest 的 idle CPU 数相等。</p>
+<h3 id="4local-group-没有空闲算力" tabindex="-1">4、local group 没有空闲算力 <a class="header-anchor" href="#4local-group-没有空闲算力"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">if</span> (local-&gt;group_type &lt; group_overloaded) {                <span class="hljs-comment">/* A */</span>
+        local-&gt;avg_load = (local-&gt;group_load * SCHED_CAPACITY_SCALE) /
+                          local-&gt;group_capacity;
+        sds-&gt;avg_load = (sds-&gt;total_load * SCHED_CAPACITY_SCALE) /
+                        sds-&gt;total_capacity;
+        <span class="hljs-keyword">if</span> (local-&gt;avg_load &gt;= busiest-&gt;avg_load) {
+            env-&gt;imbalance = <span class="hljs-number">0</span>;
+            <span class="hljs-keyword">return</span>;
+        }
+    }
+</code></pre></div></code></pre>
+<p>local 没空闲算力，但也没 overloaded，能从 busiest 搬点负载过来，代价是 local 有进入 overloaded 的风险，所以用 <code>avg_load</code> 再确认一次：local 的平均负载高过 busiest 就不搬。如果两边都 overloaded 且已经走进 <code>calculate_imbalance()</code>，说明前面比过了，busiest 的平均负载必然高于 local。两边都（或即将）overloaded，就按负载迁：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    env-&gt;migration_type = migrate_load;
+    env-&gt;imbalance = min(
+        (busiest-&gt;avg_load - sds-&gt;avg_load) * busiest-&gt;group_capacity,
+        (sds-&gt;avg_load - local-&gt;avg_load) * local-&gt;group_capacity
+    ) / SCHED_CAPACITY_SCALE;
+</code></pre></div></code></pre>
+<p>取两者中的小值，保证搬完之后 local 和 busiest 都朝 domain 平均负载靠，不会矫枉过正。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>migration_type</th>
+<th>什么时候出现</th>
+<th><code>imbalance</code> 的含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>migrate_misfit</code></td>
+<td>busiest 是 <code>group_misfit_task</code></td>
+<td>固定 1，一次搬一个 misfit task</td>
+</tr>
+<tr>
+<td><code>migrate_task</code></td>
+<td>busiest 是 <code>group_imbalanced</code>；或 local 有空闲算力但 domain 设了 <code>SD_SHARE_PKG_RESOURCES</code>；或 local idle 且 util 算出来是 0</td>
+<td>要搬的任务个数</td>
+</tr>
+<tr>
+<td><code>migrate_util</code></td>
+<td>local 有空闲算力、busiest 更忙、domain 没设 <code>SD_SHARE_PKG_RESOURCES</code>（DIE）</td>
+<td>要搬的 utility 总量</td>
+</tr>
+<tr>
+<td><code>migrate_load</code></td>
+<td>local 和 busiest 都接近或已经 overloaded</td>
+<td>要搬的负载量</td>
+</tr>
+</tbody>
+</table></div><h2 id="二十三寻找-busiest-group-里最忙的-cpu" tabindex="-1">二十三、寻找 busiest group 里最忙的 CPU <a class="header-anchor" href="#二十三寻找-busiest-group-里最忙的-cpu"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>find_busiest_queue()</code> 挑最忙的 CPU，挑法跟着 <code>migration_type</code> 走：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>migration_type</th>
+<th>找最忙 CPU 的方法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>migrate_load</code></td>
+<td><code>cpu load / cpu capacity</code> 最大的那个</td>
+</tr>
+<tr>
+<td><code>migrate_util</code></td>
+<td>utility 最大的那个</td>
+</tr>
+<tr>
+<td><code>migrate_task</code></td>
+<td>任务最多的那个</td>
+</tr>
+<tr>
+<td><code>migrate_misfit</code></td>
+<td>misfit task load 最重的那个</td>
+</tr>
+</tbody>
+</table></div><p>再往下有一层过滤：同一个 group 里的 CPU 会因为 affinity 完全没法接受任务，<code>fbq_type</code> 控制要不要跳过这类 CPU（<code>regular</code> 只看本地、<code>remote</code> 只看远端、<code>all</code> 都看，第一轮是 <code>all</code>）。最忙 CPU 一定，source 和 dest 都齐了，剩下就是搬：<code>detach_tasks()</code> 摘，<code>attach_tasks()</code> 挂。</p>
+<h2 id="二十四detach_tasks-与-attach_tasks" tabindex="-1">二十四、detach_tasks 与 attach_tasks <a class="header-anchor" href="#二十四detach_tasks-与-attach_tasks"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1第一段从队尾摘" tabindex="-1">1、第一段：从队尾摘 <a class="header-anchor" href="#1第一段从队尾摘"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">while</span> (!list_empty(tasks)) {                              <span class="hljs-comment">/* A */</span>
+        <span class="hljs-keyword">if</span> (env-&gt;idle != CPU_NOT_IDLE &amp;&amp; env-&gt;src_rq-&gt;nr_running &lt;= <span class="hljs-number">1</span>)
+            <span class="hljs-keyword">break</span>;                                            <span class="hljs-comment">/* B */</span>
+        p = list_last_entry(tasks, <span class="hljs-keyword">struct</span> task_struct, se.group_node);  <span class="hljs-comment">/* C */</span>
+        env-&gt;loop++;
+        <span class="hljs-keyword">if</span> (env-&gt;loop &gt; env-&gt;loop_max)
+            <span class="hljs-keyword">break</span>;                                            <span class="hljs-comment">/* D */</span>
+        <span class="hljs-keyword">if</span> (env-&gt;loop &gt; env-&gt;loop_break) {
+            env-&gt;loop_break += sched_nr_migrate_break;
+            env-&gt;flags |= LBF_NEED_BREAK;
+            <span class="hljs-keyword">break</span>;                                            <span class="hljs-comment">/* E */</span>
+        }
+        <span class="hljs-keyword">if</span> (!can_migrate_task(p, env))
+            <span class="hljs-keyword">goto</span> next;                                        <span class="hljs-comment">/* F */</span>
+next:
+        list_move(&amp;p-&gt;se.group_node, tasks);
+    }
+</code></pre></div></code></pre>
+<p><strong>A</strong>：<code>tasks</code> 是传进来的 <code>busiest-&gt;cfs_tasks</code>，就是这个 rq 上全部 CFS 任务，主循环遍历它，把适合迁到目标 CPU 的任务挂进 <code>env-&gt;tasks</code>。<strong>B</strong>：idle balance 下没必要把 src 上唯一那个任务也拉走，拉走之后任务会一直在两边来回拉扯。<strong>C</strong>：从 <code>cfs_tasks</code> 队尾摘任务，链表头是最近入队的，从尾部摘能保证拿到的是 cache cold 的。<strong>D</strong>：扫完一遍或者到了循环上限（<code>sysctl_sched_nr_migrate</code>）就退出。<strong>E</strong>：任务多、要搬的量大的时候关中断区间太长，得分段——每 <code>sched_nr_migrate_break</code> 个任务标一次 <code>LBF_NEED_BREAK</code> 退出去，回来接着扫，把一个大临界区切成几个小的，延迟才控得住。<strong>F</strong>：不适合迁移的任务走 <code>next</code>，<code>list_move()</code> 把它挪到 <code>cfs_tasks</code> 头部——从队尾摘、挪到头部，等于把它排到后面再考察，不会卡住循环。</p>
+<h3 id="2第二段按-migration_type-定量" tabindex="-1">2、第二段：按 migration_type 定量 <a class="header-anchor" href="#2第二段按-migration_type-定量"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">switch</span> (env-&gt;migration_type) {
+    <span class="hljs-keyword">case</span> migrate_load:
+        load = <span class="hljs-type">max_t</span>(<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>, task_h_load(p), <span class="hljs-number">1</span>);        <span class="hljs-comment">/* A */</span>
+        <span class="hljs-keyword">if</span> (sched_feat(LB_MIN) &amp;&amp;
+            load &lt; <span class="hljs-number">16</span> &amp;&amp; !env-&gt;sd-&gt;nr_balance_failed)
+            <span class="hljs-keyword">goto</span> next;                                        <span class="hljs-comment">/* B */</span>
+        <span class="hljs-keyword">if</span> (shr_bound(load, env-&gt;sd-&gt;nr_balance_failed) &gt; env-&gt;imbalance)
+            <span class="hljs-keyword">goto</span> next;
+        env-&gt;imbalance -= load;                               <span class="hljs-comment">/* C */</span>
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">case</span> migrate_util:
+        util = task_util_est(p);
+        <span class="hljs-keyword">if</span> (util &gt; env-&gt;imbalance)
+            <span class="hljs-keyword">goto</span> next;
+        env-&gt;imbalance -= util;                               <span class="hljs-comment">/* D */</span>
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">case</span> migrate_task:
+        env-&gt;imbalance--;                                     <span class="hljs-comment">/* E */</span>
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">case</span> migrate_misfit:
+        <span class="hljs-keyword">if</span> (task_fits_capacity(p, capacity_of(env-&gt;src_cpu)))
+            <span class="hljs-keyword">goto</span> next;
+        env-&gt;imbalance = <span class="hljs-number">0</span>;                                   <span class="hljs-comment">/* F */</span>
+        <span class="hljs-keyword">break</span>;
+    }
+</code></pre></div></code></pre>
+<p><strong>A</strong>：算任务负载，最小值兜到 1。<strong>B</strong>：<code>LB_MIN</code> 特性用来拦住小任务——<code>LB_MIN</code> 为真时 task load 小于 16 的任务不参与均衡，默认是 false。<strong>C</strong>：不要把超过 <code>imbalance</code> 的负载搬走，这里用 <code>shr_bound()</code> 按 <code>nr_balance_failed</code> 做了放宽：失败次数越多，限制越松。<strong>D</strong>：<code>migrate_util</code> 用任务的 util 和 <code>imbalance</code> 比，用的是估算后的 util（<code>task_util_est()</code>），不是原始值。<strong>E</strong>：<code>migrate_task</code> 不看 load 也不看 util，只数任务个数。<strong>F</strong>：misfit 迁移找到就跑——<code>task_fits_capacity()</code> 为真说明这任务在 src CPU 上跑得动，不是 misfit，跳过；是 misfit，搬走它就够，<code>imbalance</code> 清零。</p>
+<h3 id="3摘下来之后" tabindex="-1">3、摘下来之后 <a class="header-anchor" href="#3摘下来之后"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        detach_task(p, env);                                  <span class="hljs-comment">/* A */</span>
+        list_add(&amp;p-&gt;se.group_node, &amp;env-&gt;tasks);
+        detached++;
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_PREEMPTION</span>
+        <span class="hljs-keyword">if</span> (env-&gt;idle == CPU_NEWLY_IDLE)                      <span class="hljs-comment">/* B */</span>
+            <span class="hljs-keyword">break</span>;
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        <span class="hljs-keyword">if</span> (env-&gt;imbalance &lt;= <span class="hljs-number">0</span>)                              <span class="hljs-comment">/* C */</span>
+            <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">continue</span>;
+</code></pre></div></code></pre>
+<p><strong>A</strong>：走到这里说明 p 该搬（不该搬的都跳 <code>next</code> 了），从 src rq 上摘下来，挂进 <code>env-&gt;tasks</code>。<strong>B</strong>：new idle balance 是调度延迟的主要来源，所以这种均衡一次只迁一个任务。<strong>C</strong>：<code>imbalance</code> 搬完就退出遍历。<code>attach_tasks()</code> 反过来做：遍历 <code>env-&gt;tasks</code>，把任务一个个摘下来挂到目标 CPU 的队列上。</p>
+<h2 id="二十五can_migrate_task什么样的任务不能搬" tabindex="-1">二十五、can_migrate_task：什么样的任务不能搬 <a class="header-anchor" href="#二十五can_migrate_task什么样的任务不能搬"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>第一段处理硬约束：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">if</span> (throttled_lb_pair(task_group(p), env-&gt;src_cpu, env-&gt;dst_cpu))
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;                                             <span class="hljs-comment">/* A */</span>
+    <span class="hljs-keyword">if</span> ((p-&gt;flags &amp; PF_KTHREAD) &amp;&amp; kthread_is_per_cpu(p))
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;                                             <span class="hljs-comment">/* B */</span>
+    <span class="hljs-keyword">if</span> (!cpumask_test_cpu(env-&gt;dst_cpu, p-&gt;cpus_ptr)) {        <span class="hljs-comment">/* C */</span>
+        <span class="hljs-type">int</span> cpu;
+        env-&gt;flags |= LBF_SOME_PINNED;
+        <span class="hljs-keyword">if</span> (env-&gt;idle == CPU_NEWLY_IDLE || (env-&gt;flags &amp; LBF_DST_PINNED))
+            <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;                                         <span class="hljs-comment">/* D */</span>
+        for_each_cpu_and(cpu, env-&gt;dst_grpmask, env-&gt;cpus) {   <span class="hljs-comment">/* E */</span>
+            <span class="hljs-keyword">if</span> (cpumask_test_cpu(cpu, p-&gt;cpus_ptr)) {
+                env-&gt;flags |= LBF_DST_PINNED;
+                env-&gt;new_dst_cpu = cpu;
+                <span class="hljs-keyword">break</span>;
+            }
+        }
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+    }
+</code></pre></div></code></pre>
+<p><strong>A</strong>：任务 p 所在的 task group 在 src 或 dest CPU 上被限流（bandwidth throttled），不能迁，否则限流逻辑会算错。<strong>B</strong>：per-CPU 内核线程不能迁。<strong>C</strong>：任务的 affinity 不允许它在 dest CPU 上跑，置 <code>LBF_SOME_PINNED</code>——至少有一个任务因 affinity 搬不了。<strong>D</strong>：已经选好备选 dest（<code>LBF_DST_PINNED</code>），或者是 new idle balance，直接返回；new idle 不设备选 CPU，它的目标就是往本 idle CPU 搬一个任务，搬不了就算了。<strong>E</strong>：在 <code>dst_grpmask</code> 和 <code>env-&gt;cpus</code> 的交集里给任务找个能跑的 CPU 当备选，供第二轮使用。</p>
+<p>第二段处理软约束：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    env-&gt;flags &amp;= ~LBF_ALL_PINNED;                            <span class="hljs-comment">/* A */</span>
+    <span class="hljs-keyword">if</span> (task_running(env-&gt;src_rq, p))
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;                                             <span class="hljs-comment">/* B */</span>
+    tsk_cache_hot = task_hot(p, env);                          <span class="hljs-comment">/* C */</span>
+    <span class="hljs-keyword">if</span> (tsk_cache_hot &lt;= <span class="hljs-number">0</span> ||
+        env-&gt;sd-&gt;nr_balance_failed &gt; env-&gt;sd-&gt;cache_nice_tries) {
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;                                             <span class="hljs-comment">/* D */</span>
+    }
+</code></pre></div></code></pre>
+<p><strong>A</strong>：至少有一个任务在 affinity 层面可以跑在 dest 上，<code>LBF_ALL_PINNED</code> 摘掉。<strong>B</strong>：正在 running 的任务不参与迁移，搬 running task 是 active balance 的活。<strong>C</strong>：判 cache hot，主要看任务上次在 src CPU 上开始执行的时间点：离现在够久（门限是 <code>sysctl_sched_migration_cost</code>，0.5ms），它留在 cache 里的东西早被刷掉了，算 cache cold；另外，如果 p 是 src CPU 的 next buddy 或 last buddy，直接算 cache hot。<strong>D</strong>：常规情况下只搬 cache cold 的任务，但 <code>nr_balance_failed</code> 超过 <code>cache_nice_tries</code> 之后，cache hot 的也搬——均衡做不下去的时候，cache 亲和性得给吞吐让路。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>判据</th>
+<th>结论</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>task group 在 src/dest 上被限流</td>
+<td>不搬</td>
+<td><code>throttled_lb_pair()</code></td>
+</tr>
+<tr>
+<td>per-CPU 内核线程</td>
+<td>不搬</td>
+<td><code>kthread_is_per_cpu()</code></td>
+</tr>
+<tr>
+<td>affinity 不含 dest CPU</td>
+<td>不搬，并找备选 dest</td>
+<td><code>p-&gt;cpus_ptr</code></td>
+</tr>
+<tr>
+<td>任务正在 running</td>
+<td>不搬</td>
+<td><code>task_running()</code>，交给 active balance</td>
+</tr>
+<tr>
+<td>cache hot 且失败次数未超限</td>
+<td>本轮不搬</td>
+<td><code>task_hot()</code> + <code>cache_nice_tries</code></td>
+</tr>
+<tr>
+<td>以上都不成立</td>
+<td>可搬</td>
+<td>——</td>
+</tr>
+</tbody>
+</table></div><h2 id="二十六均衡失败与-active-balance-的兜底" tabindex="-1">二十六、均衡失败与 active balance 的兜底 <a class="header-anchor" href="#二十六均衡失败与-active-balance-的兜底"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>runnable 任务扫完，一个都没搬成，还有最后一手：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    <span class="hljs-keyword">if</span> (!ld_moved) {
+        <span class="hljs-keyword">if</span> (idle != CPU_NEWLY_IDLE)
+            sd-&gt;nr_balance_failed++;                          <span class="hljs-comment">/* A */</span>
+        <span class="hljs-keyword">if</span> (need_active_balance(&amp;env)) {                       <span class="hljs-comment">/* B */</span>
+            <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+            raw_spin_lock_irqsave(&amp;busiest-&gt;lock, flags);
+            <span class="hljs-keyword">if</span> (!cpumask_test_cpu(this_cpu, busiest-&gt;curr-&gt;cpus_ptr)) {
+                raw_spin_unlock_irqrestore(&amp;busiest-&gt;lock, flags);
+                env.flags |= LBF_ALL_PINNED;
+                <span class="hljs-keyword">goto</span> out_one_pinned;                          <span class="hljs-comment">/* C */</span>
+            }
+            <span class="hljs-keyword">if</span> (!busiest-&gt;active_balance) {                    <span class="hljs-comment">/* D */</span>
+                busiest-&gt;active_balance = <span class="hljs-number">1</span>;
+                busiest-&gt;push_cpu = this_cpu;
+                active_balance = <span class="hljs-number">1</span>;
+            }
+            raw_spin_unlock_irqrestore(&amp;busiest-&gt;lock, flags);
+            <span class="hljs-keyword">if</span> (active_balance) {                             <span class="hljs-comment">/* E */</span>
+                stop_one_cpu_nowait(cpu_of(busiest),
+                                    active_load_balance_cpu_stop, busiest,
+                                    &amp;busiest-&gt;active_balance_work);
+            }
+            sd-&gt;nr_balance_failed = sd-&gt;cache_nice_tries + <span class="hljs-number">1</span>;
+        }
+    } <span class="hljs-keyword">else</span>
+        sd-&gt;nr_balance_failed = <span class="hljs-number">0</span>;                            <span class="hljs-comment">/* F */</span>
+</code></pre></div></code></pre>
+<p><strong>A</strong>：没搬成，累加失败次数；这里把 new idle balance 的失败排除掉了——系统里 new idle 次数太多，累加它的失败次数会让 <code>nr_balance_failed</code> 虚高，容易误触发激进均衡。<strong>B</strong>：<code>need_active_balance()</code> 判断值不值得动 running 任务——runnable 的都搬不动了，只能看这个。<strong>C</strong>：动手之前先确认 busiest CPU 上正在跑的那个任务能不能跑在 dest 上，不能就收手，跳 <code>out_one_pinned</code>。<strong>D</strong>：在 busiest rq 上打 active balance 标记，记下 <code>push_cpu</code>。<strong>E</strong>：<code>stop_one_cpu_nowait()</code> 让 busiest CPU 停下来，在 stop 上下文里把任务挪到 <code>push_cpu</code>。<strong>F</strong>：至少搬成了一个，失败计数清零。
+<code>need_active_balance()</code> 的门槛有三层：<code>idle != CPU_NOT_IDLE</code>（只有 idle 类均衡才允许）、<code>nr_balance_failed &gt; cache_nice_tries</code>（失败次数够多）、src rq 上只剩一个任务（没有别的可搬）。三层都过，才动 running 任务。最后一段是收尾，主要清环境、设 <code>balance_interval</code>：搬成功了就调小（说明还有不均衡，尽快再来一次），没搬成就调大（别再白跑）。</p>
+<h2 id="二十七易错点速查" tabindex="-1">二十七、易错点速查 <a class="header-anchor" href="#二十七易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<ul>
+<li><strong><code>percent</code> 和 <code>pct</code> 混着用</strong>。<code>imbalance_pct</code> 基准是 100，但一处写成 <code>100 * busiest-&gt;avg_load &lt;= imbalance_pct * local-&gt;avg_load</code>，另一处在 <code>group_classify()</code> 内部用 margin。别看串，两处比较对象不一样。</li>
+<li><strong><code>group_weight</code> 是 CPU 个数，<code>sum_nr_running</code> 是任务数</strong>。<code>busiest-&gt;group_weight == 1</code> 判的是「group 只有一个 CPU」（base domain），不是「只有一个任务」，后者看 <code>sum_h_nr_running</code>。</li>
+<li><strong><code>sum_nr_running</code> 含 RT/DL，<code>sum_h_nr_running</code> 只算 CFS</strong>。判 overload 用前者（体现 CPU 被占满），判「还有没有 CFS 任务可拉」用后者。</li>
+<li><strong><code>idle</code> 参数的三种取值决定行为</strong>。<code>CPU_NOT_IDLE</code> 下不会搬 src 上最后一个任务，<code>CPU_NEWLY_IDLE</code> 一次只搬一个，<code>CPU_IDLE</code> 介于两者之间。同一个 <code>load_balance()</code>，三种行为。</li>
+<li><strong>EAS 生效期间 <code>load_balance()</code> 直接认输</strong>。<code>rd-&gt;overutilized</code> 没置位时，<code>find_busiest_group()</code> 第一段就 <code>goto out_balanced</code>。调功耗策略时发现均衡器不动，先查这个。</li>
+<li><strong><code>rq-&gt;next_balance</code> 和 <code>nohz.next_balance</code> 不是一回事</strong>。前者管本 CPU 的 periodic 触发，后者管 nohz idle 的 IPI 触发。<code>rebalance_domains()</code> 里两者会同台更新，看住条件。</li>
+<li><strong><code>max_newidle_lb_cost</code> 会衰减</strong>。系数 253/256，每秒一次。看到这个值很小别惊讶，那是衰减下来的。</li>
+<li><strong><code>LBF_ALL_PINNED</code> 的清除位置</strong>。它在 <code>can_migrate_task()</code> 第二段开头被清，而判定全 pinned 是在 <code>detach_tasks()</code> 之后。顺序搞反会以为 affinity 判定有 bug。</li>
+<li><strong>NUMA 代码不在本篇范围内</strong>。<code>fbq_type</code> 的 <code>remote</code> 取值和 NR 相关字段都是 NUMA 场景的东西，本篇只保留 <code>all</code> 这条路径。</li>
+<li><strong>task placement 那几节基于 5.4.24</strong>。<code>select_task_rq_fair()</code> 在 5.10 里被拆得更细（wake affine 和 EAS 的边界调整过），对着 5.10 源码读放置逻辑会有出入，别以为是笔误。</li>
+</ul>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+                <div class="rail-card rail-backlinks-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                      </svg>
+                      反向链接
+                    </span>
+                    <span class="rail-badge">4</span>
+                  </div>
+                  <ul class="backlinks-list">
+                    
+                    <li><a class="backlink-item" href="/B.内核/01-源码结构与构建/Linux内核架构与源码地图/">Linux内核架构与源码地图</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/02-进程与调度/CFS-调度类：源码、组调度与带宽控制/">CFS 调度类：源码、组调度与带宽控制</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/02-进程与调度/PELT：per-entity-负载跟踪/">PELT：per-entity 负载跟踪</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/02-进程与调度/进程切换：上下文、TLB-与切换开销/">进程切换：上下文、TLB 与切换开销</a></li>
+                    
+                  </ul>
+                </div>
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一什么是-cpu-负载什么是均衡" data-toc-target="一什么是-cpu-负载什么是均衡">一、什么是 CPU 负载，什么是均衡</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1load-和-usageutility-不是一回事" data-toc-target="1load-和-usageutility-不是一回事">1、load 和 usage、utility 不是一回事</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2capacity算力是会变的值" data-toc-target="2capacity算力是会变的值">2、capacity：算力是会变的值</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3均衡不是把负载平分" data-toc-target="3均衡不是把负载平分">3、均衡不是把负载平分</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二为什么只-pull-不-pushlinux-均衡的单向语义" data-toc-target="二为什么只-pull-不-pushlinux-均衡的单向语义">二、为什么只 pull 不 push：Linux 均衡的单向语义</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三调度域-sched_domain-与调度组-sched_group" data-toc-target="三调度域-sched_domain-与调度组-sched_group">三、调度域 sched_domain 与调度组 sched_group</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1为什么要造这两个概念" data-toc-target="1为什么要造这两个概念">1、为什么要造这两个概念</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2调度组" data-toc-target="2调度组">2、调度组</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四调度域的层级与-sd-flag" data-toc-target="四调度域的层级与-sd-flag">四、调度域的层级与 sd flag</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五一个-cpu-拓扑示例big.little-与-smt" data-toc-target="五一个-cpu-拓扑示例big.little-与-smt">五、一个 CPU 拓扑示例（big.LITTLE 与 SMT）</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六负载均衡的软件架构三个入口" data-toc-target="六负载均衡的软件架构三个入口">六、负载均衡的软件架构：三个入口</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七三类均衡器总览periodic--nohz--new-idle" data-toc-target="七三类均衡器总览periodic--nohz--new-idle">七、三类均衡器总览（periodic / nohz / new idle）</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八任务放置-task-placement什么是放置" data-toc-target="八任务放置-task-placement什么是放置">八、任务放置 task placement：什么是放置</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九select_task_rq_fair-的决策路径" data-toc-target="九select_task_rq_fair-的决策路径">九、select_task_rq_fair 的决策路径</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十wake_affine-与唤醒时的就近选择" data-toc-target="十wake_affine-与唤醒时的就近选择">十、wake_affine 与唤醒时的就近选择</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一active-upmigration把任务从冷核搬走" data-toc-target="十一active-upmigration把任务从冷核搬走">十一、Active upmigration：把任务从冷核搬走</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二energy-aware-schedulingenergy-model-与-eas" data-toc-target="十二energy-aware-schedulingenergy-model-与-eas">十二、Energy Aware Scheduling：Energy Model 与 EAS</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1energy-model-是什么" data-toc-target="1energy-model-是什么">1、Energy Model 是什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2energy-怎么估" data-toc-target="2energy-怎么估">2、energy 怎么估</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3eas-什么时候不工作" data-toc-target="3eas-什么时候不工作">3、EAS 什么时候不工作</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三eas-的-task-placement-流程" data-toc-target="十三eas-的-task-placement-流程">十三、EAS 的 task placement 流程</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四周期性负载均衡tick-触发路径" data-toc-target="十四周期性负载均衡tick-触发路径">十四、周期性负载均衡：tick 触发路径</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1触发" data-toc-target="1触发">1、触发</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2软中断处理先-nohz后-periodic" data-toc-target="2软中断处理先-nohz后-periodic">2、软中断处理：先 nohz，后 periodic</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3rebalance_domains-主循环" data-toc-target="3rebalance_domains-主循环">3、rebalance_domains 主循环</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4均衡间隔怎么定" data-toc-target="4均衡间隔怎么定">4、均衡间隔怎么定</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五nohz-idle-balance为什么需要-ipi-踢醒" data-toc-target="十五nohz-idle-balance为什么需要-ipi-踢醒">十五、NOHZ idle balance：为什么需要 IPI 踢醒</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1为什么要有它" data-toc-target="1为什么要有它">1、为什么要有它</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2触发条件" data-toc-target="2触发条件">2、触发条件</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3选哪个-cpu-当代表" data-toc-target="3选哪个-cpu-当代表">3、选哪个 CPU 当代表</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4均衡处理" data-toc-target="4均衡处理">4、均衡处理</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六new-idle-balance进-idle-前的最后一次检查" data-toc-target="十六new-idle-balance进-idle-前的最后一次检查">十六、New idle balance：进 idle 前的最后一次检查</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1触发-1" data-toc-target="1触发-1">1、触发</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2开销是怎么记的" data-toc-target="2开销是怎么记的">2、开销是怎么记的</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十七三条路径如何万法归宗到-load_balance" data-toc-target="十七三条路径如何万法归宗到-load_balance">十七、三条路径如何万法归宗到 load_balance</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十八load_balance-的输入struct-lb_env" data-toc-target="十八load_balance-的输入struct-lb_env">十八、load_balance 的输入：struct lb_env</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1struct-lb_env" data-toc-target="1struct-lb_env">1、struct lb_env</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2struct-sd_lb_stats-与-struct-sg_lb_stats" data-toc-target="2struct-sd_lb_stats-与-struct-sg_lb_stats">2、struct sd_lb_stats 与 struct sg_lb_stats</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3struct-sched_group_capacity" data-toc-target="3struct-sched_group_capacity">3、struct sched_group_capacity</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十九整体逻辑两轮扫描" data-toc-target="十九整体逻辑两轮扫描">十九、整体逻辑：两轮扫描</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1第一段参数与上下文" data-toc-target="1第一段参数与上下文">1、第一段：参数与上下文</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2第二段找-source" data-toc-target="2第二段找-source">2、第二段：找 source</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3第三段detach--attach-循环" data-toc-target="3第三段detach--attach-循环">3、第三段：detach / attach 循环</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4第四段第二轮与-all-pinned" data-toc-target="4第四段第二轮与-all-pinned">4、第四段：第二轮与 all pinned</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十寻找最繁忙的-groupfind_busiest_group" data-toc-target="二十寻找最繁忙的-groupfind_busiest_group">二十、寻找最繁忙的 group：find_busiest_group</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1先更新统计再问-eas" data-toc-target="1先更新统计再问-eas">1、先更新统计，再问 EAS</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2几个能一眼判定的场景" data-toc-target="2几个能一眼判定的场景">2、几个能一眼判定的场景</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3两边都-overloaded-与-busiest-没-overloaded" data-toc-target="3两边都-overloaded-与-busiest-没-overloaded">3、两边都 overloaded 与 busiest 没 overloaded</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4决策矩阵" data-toc-target="4决策矩阵">4、决策矩阵</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十一更新-sched_domain-与-sched_group-的负载统计" data-toc-target="二十一更新-sched_domain-与-sched_group-的负载统计">二十一、更新 sched_domain 与 sched_group 的负载统计</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1update_sd_lb_stats遍历-group" data-toc-target="1update_sd_lb_stats遍历-group">1、update_sd_lb_stats：遍历 group</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2update_sg_lb_stats-第一段逐-cpu-累加" data-toc-target="2update_sg_lb_stats-第一段逐-cpu-累加">2、update_sg_lb_stats 第一段：逐 CPU 累加</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3update_sg_lb_stats-第二段定-group_type" data-toc-target="3update_sg_lb_stats-第二段定-group_type">3、update_sg_lb_stats 第二段：定 group_type</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十二不均衡程度怎么算" data-toc-target="二十二不均衡程度怎么算">二十二、不均衡程度怎么算</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1两个特殊状态直接给答案" data-toc-target="1两个特殊状态直接给答案">1、两个特殊状态直接给答案</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2local-group-有空闲算力用-util-指导" data-toc-target="2local-group-有空闲算力用-util-指导">2、local group 有空闲算力：用 util 指导</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3local-group-有空闲算力用-idle-cpu-数指导" data-toc-target="3local-group-有空闲算力用-idle-cpu-数指导">3、local group 有空闲算力：用 idle CPU 数指导</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4local-group-没有空闲算力" data-toc-target="4local-group-没有空闲算力">4、local group 没有空闲算力</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十三寻找-busiest-group-里最忙的-cpu" data-toc-target="二十三寻找-busiest-group-里最忙的-cpu">二十三、寻找 busiest group 里最忙的 CPU</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十四detach_tasks-与-attach_tasks" data-toc-target="二十四detach_tasks-与-attach_tasks">二十四、detach_tasks 与 attach_tasks</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1第一段从队尾摘" data-toc-target="1第一段从队尾摘">1、第一段：从队尾摘</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2第二段按-migration_type-定量" data-toc-target="2第二段按-migration_type-定量">2、第二段：按 migration_type 定量</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3摘下来之后" data-toc-target="3摘下来之后">3、摘下来之后</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十五can_migrate_task什么样的任务不能搬" data-toc-target="二十五can_migrate_task什么样的任务不能搬">二十五、can_migrate_task：什么样的任务不能搬</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十六均衡失败与-active-balance-的兜底" data-toc-target="二十六均衡失败与-active-balance-的兜底">二十六、均衡失败与 active balance 的兜底</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二十七易错点速查" data-toc-target="二十七易错点速查">二十七、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/","title":"多核负载均衡：调度域、任务放置与 load_balance","url":"/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/","type":"current"},{"id":"/B.内核/02-进程与调度/PELT：per-entity-负载跟踪/","title":"PELT：per-entity 负载跟踪","url":"/B.内核/02-进程与调度/PELT：per-entity-负载跟踪/","type":"outgoing"},{"id":"/B.内核/02-进程与调度/CFS-调度类：源码、组调度与带宽控制/","title":"CFS 调度类：源码、组调度与带宽控制","url":"/B.内核/02-进程与调度/CFS-调度类：源码、组调度与带宽控制/","type":"outgoing"},{"id":"/B.内核/02-进程与调度/Linux-调度器：从-O(n)-到-CFS-与实时调度/","title":"Linux 调度器：从 O(n) 到 CFS 与实时调度","url":"/B.内核/02-进程与调度/Linux-调度器：从-O(n)-到-CFS-与实时调度/","type":"outgoing"},{"id":"/B.内核/01-源码结构与构建/Linux内核架构与源码地图/","title":"Linux内核架构与源码地图","url":"/B.内核/01-源码结构与构建/Linux内核架构与源码地图/","type":"backlink"},{"id":"/B.内核/02-进程与调度/进程切换：上下文、TLB-与切换开销/","title":"进程切换：上下文、TLB 与切换开销","url":"/B.内核/02-进程与调度/进程切换：上下文、TLB-与切换开销/","type":"backlink"}],"links":[{"source":"/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/","target":"/B.内核/02-进程与调度/PELT：per-entity-负载跟踪/","type":"direct"},{"source":"/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/","target":"/B.内核/02-进程与调度/CFS-调度类：源码、组调度与带宽控制/","type":"direct"},{"source":"/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/","target":"/B.内核/02-进程与调度/Linux-调度器：从-O(n)-到-CFS-与实时调度/","type":"direct"},{"source":"/B.内核/01-源码结构与构建/Linux内核架构与源码地图/","target":"/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/","type":"direct"},{"source":"/B.内核/02-进程与调度/CFS-调度类：源码、组调度与带宽控制/","target":"/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/","type":"direct"},{"source":"/B.内核/02-进程与调度/PELT：per-entity-负载跟踪/","target":"/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/","type":"direct"},{"source":"/B.内核/02-进程与调度/进程切换：上下文、TLB-与切换开销/","target":"/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/","type":"direct"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

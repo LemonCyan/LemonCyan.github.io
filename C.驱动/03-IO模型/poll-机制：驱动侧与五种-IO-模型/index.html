@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>poll 机制：驱动侧与五种 IO 模型 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">poll 机制：驱动侧与五种 IO 模型</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/C.驱动/03-IO模型/poll-机制：驱动侧与五种-IO-模型/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">poll 机制：驱动侧与五种 IO 模型</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">poll 机制：驱动侧与五种 IO 模型</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <p>上一篇解决了&quot;一个设备怎么阻塞地等&quot;，这一篇解决&quot;<strong>一个进程怎么同时等多个设备</strong>&quot;。</p>
+<p><strong>本文覆盖</strong>：五种 I/O 模型的完整对比（含同步/异步的判据）、阻塞/非阻塞/多路复用/信号驱动四种模型在按键读取上的递进、<code>poll</code> 的驱动侧实现与 <code>poll_wait</code> 语义、状态掩码表、<code>select</code> 与 <code>poll</code> 的系统调用形式对照、驱动唤醒链条、按键驱动 poll 改造。</p>
+<p><strong>本文不覆盖</strong>：<code>do_poll</code> / <code>__pollwait</code> / <code>pollwake</code> 的内核源码剖析见《poll/select 内核实现》；等待队列的 <code>wait_event</code> 家族与疯狂兽群见《阻塞、非阻塞与等待队列》；<code>SIGIO</code> 与 <code>fasync</code> 见《信号驱动 IO 与异步通知》。</p>
+<h2 id="一问题的由来一个只能阻塞的-read" tabindex="-1">一、问题的由来：一个只能阻塞的 read <a class="header-anchor" href="#一问题的由来一个只能阻塞的-read"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面用中断方式获取按键值时，应用程序是这样写的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/stat.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;fcntl.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">int</span> argc, <span class="hljs-type">char</span> **argv)</span>
+{
+    <span class="hljs-type">int</span> fd, ret;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> key_val = <span class="hljs-number">0</span>;
+
+    fd = open(<span class="hljs-string">&quot;/dev/buttons&quot;</span>, O_RDWR);
+    <span class="hljs-keyword">if</span> (fd &lt; <span class="hljs-number">0</span>) {
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;can&#x27;t open!\n&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    <span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+        <span class="hljs-comment">/* 读取一个字节值。在等待队列中本进程会进入休眠状态，
+           只有按键按下或者松开才会返回 */</span>
+        ret = read(fd, &amp;key_val, <span class="hljs-number">1</span>);
+        <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) {
+            <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;read error\n&quot;</span>);
+            <span class="hljs-keyword">continue</span>;
+        }
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;key_val = 0x%x\n&quot;</span>, key_val);
+    }
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>这实际上是<strong>同步 I/O</strong> 操作——一个 <code>read</code> 就阻塞了当前线程，导致其他代码无法执行。解决这个问题有若干种办法：</p>
+<ul>
+<li><strong>异步 I/O</strong>：需要执行耗时的 IO 操作时，只发出 IO 指令，不等待结果，转去执行其他代码；一段时间后 IO 返回结果再通知调用者。</li>
+<li><strong>多线程</strong>：用并发解决，但系统不能无上限地增加线程。线程切换开销也很大，线程数量过多时 CPU 时间全花在切换上，真正运行代码的时间少了，性能严重下降。</li>
+</ul>
+<p>要真正解决，得先理解 IO 模型的分类。</p>
+<h2 id="二五种-io-模型" tabindex="-1">二、五种 I/O 模型 <a class="header-anchor" href="#二五种-io-模型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Linux 下有五种 IO 模型：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>模型</th>
+<th>机制</th>
+<th>同步/异步</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>阻塞 IO</strong></td>
+<td><code>read</code> 睡眠直到有数据</td>
+<td>同步</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>非阻塞 IO</strong></td>
+<td><code>read</code> 立即返回，应用轮询</td>
+<td>同步</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>多路复用 IO</strong></td>
+<td><code>select</code>/<code>poll</code>/<code>epoll</code> 等，就绪再 read</td>
+<td>同步</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>信号驱动 IO</strong></td>
+<td>内核发 <code>SIGIO</code> 通知</td>
+<td>同步</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>异步 IO</strong></td>
+<td><code>aio_read</code>，内核全程代办</td>
+<td><strong>异步</strong></td>
+</tr>
+</tbody>
+</table></div><p><strong>前四种都是同步 IO，只有最后一种是异步 IO。</strong></p>
+<h3 id="2.1-判据看第二阶段" tabindex="-1">2.1 判据：看第二阶段 <a class="header-anchor" href="#2.1-判据看第二阶段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>进程无法直接操作 IO 设备，必须通过系统调用请求内核协助，内核为每个 IO 设备维护一个 buffer。一次设备 IO（以 <code>read</code> 为例）涉及两个系统对象——调用 IO 的进程/线程，以及系统内核——并经历两个阶段：</p>
+<ul>
+<li><strong>阶段 1 · 等待设备数据就绪</strong>：用户进程发起请求，内核接收到请求后从 IO 设备中获取数据到 buffer（Waiting for the data to be ready）；</li>
+<li><strong>阶段 2 · 将数据从内核空间拷贝到用户空间</strong>：把 buffer 中的数据 copy 到用户进程的地址空间（Copying the data from the kernel to the process）。</li>
+</ul>
+<p>在<strong>异步 IO 模型</strong>中，用户进程发起系统调用后立刻可以去做别的事，直到 IO 执行的两个阶段都完成之后，内核才给用户进程发送通知说操作已完成。异步 IO 的读操作通过 <code>aio_read</code> 实现。</p>
+<h3 id="2.2-两条关键判据" tabindex="-1">2.2 两条关键判据 <a class="header-anchor" href="#2.2-两条关键判据"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li><strong>异步 IO 和同步 IO 的主要区别在于 IO 操作的第二阶段</strong>：同步 IO 用户进程会发生堵塞，而异步 IO 用户进程不会。</li>
+<li><strong>阻塞 IO 和非阻塞 IO 主要就在于当设备没有数据时，我们调用 <code>read</code> 是立即返回还是处于睡眠状态。</strong></li>
+</ul>
+<h3 id="2.3-四种同步模型的递进" tabindex="-1">2.3 四种同步模型的递进 <a class="header-anchor" href="#2.3-四种同步模型的递进"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>以按键测试程序调用 <code>read</code> 为例：</p>
+<h4 id="1阻塞-io-模型" tabindex="-1">（1）阻塞 IO 模型 <a class="header-anchor" href="#1阻塞-io-模型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h4>
+<p>也就是第一章那个例子。调用 <code>read</code> 的线程一直处于阻塞状态，一直等到有按键变化，才会将数据从内核拷贝到用户空间。</p>
+<pre><code><div class="code-block"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>应用:   read ──────────等待数据──────────▶ 拷贝 ─▶ 返回
+内核:         ░░░░░░░░░ 睡眠 ░░░░░░░░░       ██
+</code></pre></div></code></pre>
+<h4 id="2非阻塞-io-模型" tabindex="-1">（2）非阻塞 IO 模型 <a class="header-anchor" href="#2非阻塞-io-模型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h4>
+<p>如果在 <code>open</code> 打开 <code>/dev/buttons</code> 时指定了 <code>O_NONBLOCK</code> 标志，<code>read</code> 函数就不会阻塞。如果没有按键发生改变，就会立即返回 -1。</p>
+<p>采用轮询方式反复调用 <code>read</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>)
+{
+    ret1 = read(设备<span class="hljs-number">1</span>);
+    <span class="hljs-keyword">if</span> (ret1 &gt; <span class="hljs-number">0</span>)
+        处理数据;
+
+    ret2 = read(设备<span class="hljs-number">2</span>);
+    <span class="hljs-keyword">if</span> (ret2 &gt; <span class="hljs-number">0</span>)
+        处理数据;
+
+    <span class="hljs-comment">/* ...... */</span>
+}
+</code></pre></div></code></pre>
+<p>调用者只是查询一下，不会阻塞在这里，这样可以同时监控多个设备。</p>
+<p><strong>但上面的代码有问题</strong>：线程会不停轮询，导致 <strong>CPU 使用率急剧升高</strong>。</p>
+<p>因此可以在循环最后加入一定时长的睡眠，但这又带来另一个问题——如果设备有数据到达，睡眠可能导致<strong>数据处理不及时</strong>。于是衍生了 IO 多路复用模型。</p>
+<h4 id="3io-多路复用模型" tabindex="-1">（3）IO 多路复用模型 <a class="header-anchor" href="#3io-多路复用模型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h4>
+<p>IO 多路复用通过一种机制，让一个进程/线程可以监视多个设备，一旦某个设备就绪（一般是读就绪或写就绪），能够通知程序进行相应的读写操作。</p>
+<p>Linux 下目前支持 IO 多路复用的系统调用有 <strong><code>select</code>、<code>pselect</code>、<code>poll</code>、<code>epoll</code></strong>。</p>
+<p>在调用 <code>read</code> 之前先调用 <code>select</code>/<code>poll</code>/<code>epoll</code>，它们可以阻塞地同时监视多个设备，还可以设定阻塞等待的超时时间，并且当内核准备好数据时会通知调用者，这时候再去调用 <code>read</code> 读取数据。</p>
+<pre><code><div class="code-block"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>应用:   select/poll ──等待任一就绪──▶ read ─▶ 返回
+内核:   同时监视 fd1, fd2, fd3 ...      ██
+</code></pre></div></code></pre>
+<h4 id="4信号驱动-io-模型" tabindex="-1">（4）信号驱动 IO 模型 <a class="header-anchor" href="#4信号驱动-io-模型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h4>
+<p>应用注册 <code>SIGIO</code> 处理函数后立即返回，内核在数据就绪时发信号通知，应用在信号处理函数里 <code>read</code>。省掉了主动轮询，但<strong>阶段 2 仍然是同步的</strong>，见《信号驱动 IO 与异步通知》。</p>
+<h3 id="2.4-四者对照" tabindex="-1">2.4 四者对照 <a class="header-anchor" href="#2.4-四者对照"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th></th>
+<th>阻塞 IO</th>
+<th>非阻塞 IO</th>
+<th>多路复用</th>
+<th>信号驱动</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>阶段 1 谁在等</td>
+<td>进程睡眠</td>
+<td>进程反复问</td>
+<td>进程睡在 select/poll</td>
+<td>进程干别的事</td>
+</tr>
+<tr>
+<td>CPU 占用</td>
+<td>低</td>
+<td><strong>高</strong></td>
+<td>低</td>
+<td>低</td>
+</tr>
+<tr>
+<td>能否同时等多个 fd</td>
+<td>否</td>
+<td>是（要自己轮询）</td>
+<td><strong>是</strong></td>
+<td>是（每个 fd 信号）</td>
+</tr>
+<tr>
+<td>数据就绪通知方式</td>
+<td>无（阻塞自然返回）</td>
+<td>无（自己问）</td>
+<td>返回后自己 read</td>
+<td>信号回调</td>
+</tr>
+<tr>
+<td>驱动侧依赖</td>
+<td>等待队列</td>
+<td><code>O_NONBLOCK</code> 检查</td>
+<td><strong><code>.poll</code> 方法</strong></td>
+<td><code>.fasync</code></td>
+</tr>
+</tbody>
+</table></div><h2 id="三poll-系统调用" tabindex="-1">三、poll 系统调用 <a class="header-anchor" href="#三poll-系统调用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="3.1-两种系统调用形式" tabindex="-1">3.1 两种系统调用形式 <a class="header-anchor" href="#3.1-两种系统调用形式"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>select</code> 与 <code>poll</code> 做的事一样，接口形式不同：</p>
+<p><strong><code>select</code></strong>（BSD 引入，用得较广）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/select.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">select</span><span class="hljs-params">(<span class="hljs-type">int</span> maxfdp1, fd_set *readset, fd_set *writeset,
+           fd_set *exceptset, <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> timeval *timeout)</span>;
+</code></pre></div></code></pre>
+<p><strong><code>poll</code></strong>（System V 引入）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;poll.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">poll</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> pollfd *fds, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> nfds, <span class="hljs-type">int</span> timeout)</span>;
+</code></pre></div></code></pre>
+<p><code>poll</code> 的优势是<strong>不用受 <code>FD_SETSIZE</code>（通常 1024）限制</strong>，而且把&quot;关注什么事件&quot;和&quot;发生了什么事件&quot;分开表达：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">pollfd</span> {</span>
+    <span class="hljs-type">int</span>   fd;       <span class="hljs-comment">/* 要监视的文件描述符 */</span>
+    <span class="hljs-type">short</span> events;   <span class="hljs-comment">/* 请求监视的事件（输入） */</span>
+    <span class="hljs-type">short</span> revents;  <span class="hljs-comment">/* 实际发生的事件（输出） */</span>
+};
+</code></pre></div></code></pre>
+<h3 id="3.2-为什么要用-poll-而不是轮询-read" tabindex="-1">3.2 为什么要用 poll 而不是轮询 read <a class="header-anchor" href="#3.2-为什么要用-poll-而不是轮询-read"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th></th>
+<th>轮询 read</th>
+<th>select/poll</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU 占用</td>
+<td>高（不停调用）</td>
+<td>低（无事件时睡眠）</td>
+</tr>
+<tr>
+<td>空闲时行为</td>
+<td>一直跑</td>
+<td>阻塞在 <code>schedule()</code></td>
+</tr>
+<tr>
+<td>多设备</td>
+<td>挨个试</td>
+<td>一次监视一批</td>
+</tr>
+<tr>
+<td>超时控制</td>
+<td>要自己算</td>
+<td>内核原生支持</td>
+</tr>
+</tbody>
+</table></div><h2 id="四驱动侧poll-方法" tabindex="-1">四、驱动侧：poll 方法 <a class="header-anchor" href="#四驱动侧poll-方法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="4.1-原型" tabindex="-1">4.1 原型 <a class="header-anchor" href="#4.1-原型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">unsigned</span> <span class="hljs-title function_">int</span> <span class="hljs-params">(*poll)</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *filp, <span class="hljs-keyword">struct</span> poll_table_struct *wait)</span>;
+</code></pre></div></code></pre>
+<p>第一个参数是 <code>file</code> 结构体指针，第二个是<strong>轮询表指针</strong>（<code>poll_table</code>）。</p>
+<h3 id="4.2-poll-方法只做两件事" tabindex="-1">4.2 poll 方法只做两件事 <a class="header-anchor" href="#4.2-poll-方法只做两件事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>a — 注册等待队列</strong></p>
+<p>对可能引起设备文件状态变化的等待队列调用 <code>poll_wait()</code>，把对应的等待队列头添加到 <code>poll_table</code>。如果没有文件描述符可用来执行 I/O，内核使进程在传递到该系统调用的所有文件描述符对应的等待队列上等待。</p>
+<p><strong>b — 返回掩码</strong></p>
+<p>返回表示是否能对设备进行无阻塞读、写访问的掩码。</p>
+<h3 id="4.3-状态掩码" tabindex="-1">4.3 状态掩码 <a class="header-anchor" href="#4.3-状态掩码"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>掩码</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POLLIN</code></td>
+<td>设备有数据可读，读操作不会阻塞</td>
+</tr>
+<tr>
+<td><code>POLLRDNORM</code></td>
+<td>常规数据可读（常与 <code>POLLIN</code> 并用）</td>
+</tr>
+<tr>
+<td><code>POLLOUT</code></td>
+<td>设备缓冲区有空间，写操作不会阻塞</td>
+</tr>
+<tr>
+<td><code>POLLWRNORM</code></td>
+<td>常规数据可写（常与 <code>POLLOUT</code> 并用）</td>
+</tr>
+<tr>
+<td><code>POLLERR</code></td>
+<td>设备发生错误</td>
+</tr>
+<tr>
+<td><code>POLLHUP</code></td>
+<td>设备挂起（对端已关闭）</td>
+</tr>
+<tr>
+<td><code>POLLNVAL</code></td>
+<td>文件描述符未打开</td>
+</tr>
+</tbody>
+</table></div><p>惯例写法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>设备可读，通常返回：(POLLIN | POLLRDNORM)
+设备可写，通常返回：(POLLOUT | POLLWRNORM)
+</code></pre></div></code></pre>
+<h3 id="4.4-poll_wait-的语义关键" tabindex="-1">4.4 poll_wait 的语义（关键） <a class="header-anchor" href="#4.4-poll_wait-的语义关键"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">poll_wait</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *filp, <span class="hljs-type">wait_queue_head_t</span> *<span class="hljs-built_in">queue</span>, poll_table *wait)</span>;
+</code></pre></div></code></pre>
+<p><strong><code>poll_wait()</code> 不会引起阻塞。</strong> 它所做的工作是把当前进程添加到 <code>wait</code> 参数指定的等待列表（<code>poll_table</code>）中。</p>
+<p>真正的阻塞动作是上层的 <code>select</code>/<code>poll</code> 函数中完成的：<code>select</code>/<code>poll</code> 会在一个循环中对每个需要监听的设备调用它们自己的 poll 支持函数，以使得当前进程被加入各个设备的等待列表。若当前没有任何被监听的设备就绪，则内核进行调度（调用 <code>schedule</code>）让出 CPU 进入阻塞状态；<code>schedule</code> 返回时再次循环检测是否有操作可以进行，如此反复；若任意一个设备就绪，<code>select</code>/<code>poll</code> 都立即返回。</p>
+<p><strong>这是最容易误解的一点</strong>：<code>poll_wait</code> 只是&quot;挂个号&quot;，不是&quot;等在这儿&quot;。</p>
+<h3 id="4.5-典型实现" tabindex="-1">4.5 典型实现 <a class="header-anchor" href="#4.5-典型实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> <span class="hljs-title function_">XXX_poll</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *filp, poll_table *wait)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> mask = <span class="hljs-number">0</span>;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">XXX_dev</span> *<span class="hljs-title">dev</span> =</span> filp-&gt;private_data;   <span class="hljs-comment">/* 获得设备结构指针 */</span>
+
+    poll_wait(filp, &amp;dev-&gt;r_wait, wait);        <span class="hljs-comment">/* 加读等待队列头 */</span>
+    poll_wait(filp, &amp;dev-&gt;w_wait, wait);        <span class="hljs-comment">/* 加写等待队列头 */</span>
+
+    <span class="hljs-keyword">if</span> (<span class="hljs-comment">/* 可读 */</span>) {
+        mask |= POLLIN | POLLRDNORM;            <span class="hljs-comment">/* 标识数据可获得 */</span>
+    }
+    <span class="hljs-keyword">if</span> (<span class="hljs-comment">/* 可写 */</span>) {
+        mask |= POLLOUT | POLLWRNORM;           <span class="hljs-comment">/* 标识数据可写入 */</span>
+    }
+
+    <span class="hljs-keyword">return</span> mask;
+}
+</code></pre></div></code></pre>
+<h2 id="五完整调用过程" tabindex="-1">五、完整调用过程 <a class="header-anchor" href="#五完整调用过程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="5.1-两轮循环" tabindex="-1">5.1 两轮循环 <a class="header-anchor" href="#5.1-两轮循环"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>第一轮</strong>：用户程序第一次调用 <code>select</code> 或 <code>poll</code>，驱动调用 <code>poll_wait</code> 使两条队列都加入 <code>poll_table</code> 结构中，作为下次调用驱动 <code>poll</code> 的条件。一个 <code>mask</code> 返回值指示设备是否可操作，<strong>0 为未准备状态</strong>。如果文件描述符未准备好可读或可写，用户进程会被加入到写或读等待队列中进入睡眠状态。</p>
+<p><strong>第二轮</strong>：当驱动执行了某些操作（例如写缓冲或读缓冲——写缓冲使读队列被唤醒，读缓冲使写队列被唤醒），<code>select</code> 或 <code>poll</code> 系统调用在将要返回给用户进程时<strong>再次调用驱动 <code>poll</code></strong>。驱动依然调用 <code>poll_wait</code> 使两条队列都加入 <code>poll_table</code>，并判断可写或可读条件是否满足：</p>
+<ul>
+<li>如果 <code>mask</code> 返回 <code>POLLIN | POLLRDNORM</code> 或 <code>POLLOUT | POLLWRNORM</code>，指示可读或可写，这时 <code>select</code>/<code>poll</code> <strong>真正返回</strong>给用户进程；</li>
+<li>如果 <code>mask</code> 还是返回 0，则 <code>select</code>/<code>poll</code> <strong>继续不返回</strong>。</li>
+</ul>
+<h3 id="5.2-内核侧的调用顺序" tabindex="-1">5.2 内核侧的调用顺序 <a class="header-anchor" href="#5.2-内核侧的调用顺序"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>Linux 下 <code>select</code> 调用的过程：</p>
+<ol>
+<li>用户层应用调用 <code>select()</code>，底层调用 <code>poll()</code>；</li>
+<li>核心层调用 <code>sys_select()</code> → <code>do_select()</code>，最终调用文件描述符 <code>fd</code> 对应 <code>struct file</code> 的 <code>struct file_operations *f_op</code> 的 <code>poll</code> 函数：
+<ul>
+<li>如果当前可读写，返回读写信息；</li>
+<li>如果当前不可读写，则<strong>阻塞进程</strong>，并等待驱动程序唤醒，重新调用 <code>poll</code> 函数，或超时返回；</li>
+</ul>
+</li>
+<li>驱动需要实现 <code>poll</code> 函数。当驱动发现有数据可以读写时，通知核心层，核心层重新调用 <code>poll</code> 指向的函数查询信息。</li>
+</ol>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>poll_wait(filp, &amp;wait_q, wait);   <span class="hljs-comment">/* 此处将当前进程加入等待队列，但并不阻塞 */</span>
+<span class="hljs-comment">/* 中断中 */</span>
+wake_up_interruptible(&amp;wait_q);   <span class="hljs-comment">/* 唤醒等待队列 */</span>
+</code></pre></div></code></pre>
+<h3 id="5.3-驱动侧要做的事" tabindex="-1">5.3 驱动侧要做的事 <a class="header-anchor" href="#5.3-驱动侧要做的事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位置</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.poll</code> 方法里</td>
+<td><code>poll_wait()</code> 注册每个相关等待队列；按当前状态返回 mask</td>
+</tr>
+<tr>
+<td>中断 / 写函数里</td>
+<td>改变状态后 <code>wake_up_interruptible(&amp;wq)</code></td>
+</tr>
+<tr>
+<td><code>read</code>/<code>write</code> 里</td>
+<td>检查 <code>O_NONBLOCK</code>，非阻塞时返回 <code>-EAGAIN</code></td>
+</tr>
+</tbody>
+</table></div><p>三者缺一，<code>select</code> 就会永远不返回或者立即返回错误值。</p>
+<h2 id="六驱动侧实现示例" tabindex="-1">六、驱动侧实现示例 <a class="header-anchor" href="#六驱动侧实现示例"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/poll.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/fs.h&gt;</span></span>
+
+<span class="hljs-keyword">extern</span> <span class="hljs-type">wait_queue_head_t</span> wq;    <span class="hljs-comment">/* 读等待队列 */</span>
+<span class="hljs-keyword">extern</span> <span class="hljs-type">wait_queue_head_t</span> wwq;   <span class="hljs-comment">/* 写等待队列 */</span>
+<span class="hljs-keyword">extern</span> <span class="hljs-type">int</span> havedata;            <span class="hljs-comment">/* 数据就绪标志：0 无数据，1 有数据 */</span>
+
+<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> <span class="hljs-title function_">hello_poll</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *file, <span class="hljs-keyword">struct</span> poll_table_struct *ptbl)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> mask = <span class="hljs-number">0</span>;
+
+    <span class="hljs-comment">/* 1. 把当前进程的轮询表项挂载到对应的读/写等待队列中
+          poll_wait 并不会使进程休眠，它只是把进程&quot;注册&quot;到队列中，
+          这样一旦设备就绪，驱动才能唤醒它 */</span>
+    poll_wait(file, &amp;wq, ptbl);
+    poll_wait(file, &amp;wwq, ptbl);
+
+    <span class="hljs-comment">/* 2. 根据当前的硬件数据状态，计算并返回掩码 */</span>
+    <span class="hljs-keyword">if</span> (havedata == <span class="hljs-number">0</span>)
+        mask |= POLLOUT | POLLWRNORM;   <span class="hljs-comment">/* 当前无数据可读，可以写入 */</span>
+
+    <span class="hljs-keyword">if</span> (havedata == <span class="hljs-number">1</span>)
+        mask |= POLLIN | POLLRDNORM;    <span class="hljs-comment">/* 当前有数据未读，可以读取 */</span>
+
+    <span class="hljs-keyword">return</span> mask;
+}
+</code></pre></div></code></pre>
+<h3 id="6.1-数据就绪后的唤醒" tabindex="-1">6.1 数据就绪后的唤醒 <a class="header-anchor" href="#6.1-数据就绪后的唤醒"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>当驱动从外部硬件中断或其他写入途径接收到数据、并将 <code>havedata</code> 置为 1 时，<strong>必须显式调用</strong>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>havedata = <span class="hljs-number">1</span>;
+wake_up_interruptible(&amp;wq);    <span class="hljs-comment">/* 唤醒挂在 wq 上的读轮询进程 */</span>
+</code></pre></div></code></pre>
+<p>此时处于 <code>poll()</code> 等待状态的用户进程被唤醒，重新调用 <code>hello_poll</code>，返回的 mask 包含 <code>POLLIN</code>，应用层随之退出阻塞并执行 <code>read</code>。</p>
+<h2 id="七按键驱动-poll-改造" tabindex="-1">七、按键驱动 poll 改造 <a class="header-anchor" href="#七按键驱动-poll-改造"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把前面 <code>read</code> 只能阻塞等按键的驱动，改造成支持多路复用的版本。目标：<strong>当有按键改变时，我们再去调用 <code>read</code> 函数，否则进程就阻塞（通过 poll 函数设置等待超时时间）</strong>。</p>
+<h3 id="7.1-驱动侧改动" tabindex="-1">7.1 驱动侧改动 <a class="header-anchor" href="#7.1-驱动侧改动"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 1. 在设备结构体里加一个等待队列头 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">button_dev</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">cdev</span> <span class="hljs-title">cdev</span>;</span>
+    <span class="hljs-comment">/* ... */</span>
+    <span class="hljs-type">wait_queue_head_t</span> r_wait;   <span class="hljs-comment">/* 读等待队列 */</span>
+    <span class="hljs-type">int</span> key_pressed;            <span class="hljs-comment">/* 按键状态标志 */</span>
+};
+
+<span class="hljs-comment">/* 2. 在 probe / init 里初始化 */</span>
+init_waitqueue_head(&amp;btn-&gt;r_wait);
+
+<span class="hljs-comment">/* 3. 新增 poll 方法 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> <span class="hljs-title function_">button_poll</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *filp, poll_table *wait)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> mask = <span class="hljs-number">0</span>;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">button_dev</span> *<span class="hljs-title">dev</span> =</span> filp-&gt;private_data;
+
+    poll_wait(filp, &amp;dev-&gt;r_wait, wait);
+
+    <span class="hljs-keyword">if</span> (dev-&gt;key_pressed)
+        mask |= POLLIN | POLLRDNORM;
+
+    <span class="hljs-keyword">return</span> mask;
+}
+
+<span class="hljs-comment">/* 4. 中断处理里置位并唤醒 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">irqreturn_t</span> <span class="hljs-title function_">button_irq</span><span class="hljs-params">(<span class="hljs-type">int</span> irq, <span class="hljs-type">void</span> *dev_id)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">button_dev</span> *<span class="hljs-title">dev</span> =</span> dev_id;
+
+    dev-&gt;key_pressed = <span class="hljs-number">1</span>;
+    wake_up_interruptible(&amp;dev-&gt;r_wait);
+
+    <span class="hljs-keyword">return</span> IRQ_HANDLED;
+}
+
+<span class="hljs-comment">/* 5. 注册 poll 方法 */</span>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">file_operations</span> <span class="hljs-title">button_fops</span> =</span> {
+    .owner = THIS_MODULE,
+    .open  = button_open,
+    .read  = button_read,
+    .poll  = button_poll,
+};
+</code></pre></div></code></pre>
+<h3 id="7.2-应用侧改动" tabindex="-1">7.2 应用侧改动 <a class="header-anchor" href="#7.2-应用侧改动"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;poll.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;fcntl.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">pollfd</span> <span class="hljs-title">fds</span>[1];</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> key_val;
+    <span class="hljs-type">int</span> ret;
+
+    fds[<span class="hljs-number">0</span>].fd = open(<span class="hljs-string">&quot;/dev/buttons&quot;</span>, O_RDWR);
+    <span class="hljs-keyword">if</span> (fds[<span class="hljs-number">0</span>].fd &lt; <span class="hljs-number">0</span>) {
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;can&#x27;t open!\n&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    fds[<span class="hljs-number">0</span>].events = POLLIN;      <span class="hljs-comment">/* 关心&quot;可读&quot; */</span>
+
+    <span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+        ret = poll(fds, <span class="hljs-number">1</span>, <span class="hljs-number">3000</span>);   <span class="hljs-comment">/* 超时 3000ms */</span>
+        <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) {
+            perror(<span class="hljs-string">&quot;poll&quot;</span>);
+            <span class="hljs-keyword">break</span>;
+        }
+        <span class="hljs-keyword">if</span> (ret == <span class="hljs-number">0</span>) {
+            <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;time out\n&quot;</span>);
+            <span class="hljs-keyword">continue</span>;
+        }
+
+        <span class="hljs-keyword">if</span> (fds[<span class="hljs-number">0</span>].revents &amp; POLLIN) {
+            read(fds[<span class="hljs-number">0</span>].fd, &amp;key_val, <span class="hljs-number">1</span>);
+            <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;key_val = 0x%x\n&quot;</span>, key_val);
+        }
+    }
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>改造后，应用不再需要一个线程死等在 <code>read</code> 上——<code>poll</code> 返回 0 时可以去做超时处理，返回 <code>POLLIN</code> 时才去 <code>read</code>，同一个循环里还能同时监视多个设备。</p>
+<h2 id="八速查" tabindex="-1">八、速查 <a class="header-anchor" href="#八速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>角色</th>
+<th>该做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>驱动 · <code>.poll</code></td>
+<td>先 <code>poll_wait</code> 注册每个相关队列，再按状态返回 mask</td>
+</tr>
+<tr>
+<td>驱动 · 中断/写</td>
+<td>状态变化后 <code>wake_up_interruptible()</code></td>
+</tr>
+<tr>
+<td>驱动 · <code>read</code></td>
+<td>非阻塞且无数据时返回 <code>-EAGAIN</code></td>
+</tr>
+<tr>
+<td>应用 · <code>select</code></td>
+<td>注意 <code>nfds</code> 是最大 fd + 1，且每次返回后 fd_set 会被修改，需重新 <code>FD_SET</code></td>
+</tr>
+<tr>
+<td>应用 · <code>poll</code></td>
+<td>每次调用前重设 <code>events</code>，检查返回后的 <code>revents</code></td>
+</tr>
+<tr>
+<td>常见错误</td>
+<td><code>poll_wait</code> 写进 <code>if</code> 里导致某些状态下没注册 → <code>select</code> 永远不醒</td>
+</tr>
+</tbody>
+</table></div><h2 id="素材来源与勘误" tabindex="-1">素材来源与勘误 <a class="header-anchor" href="#素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>本篇主体为原 <code>linux驱动移植-IO多路复用模型poll机制.md</code>（714 行，36 处代码围栏，是全目录质量最好的一篇）。它原本混讲了&quot;五种 IO 模型&quot;与&quot;poll 机制&quot;两件事，本篇按&quot;为什么要多路复用 → 五种模型 → poll 系统调用 → 驱动侧实现 → 按键改造&quot;的认知顺序重组。</p>
+<p><strong>整理说明</strong>：</p>
+<ol>
+<li><strong>与其他篇的分工</strong>：原素材的&quot;二、linux poll 机制分析&quot;一节（约 440 行）讲的是 <code>do_poll</code>/<code>__pollwait</code>/<code>pollwake</code> 的内核源码，与同目录 <code>poll与select内核机制分析.md</code> 高度重叠。本篇只保留驱动侧需要的调用顺序（5.2 节），内核源码剖析统一归到《poll/select 内核实现》，避免两篇内容打架。</li>
+<li><strong>示例代码按素材原有风格保留</strong>：原文代码质量较好（有围栏、有注释），未做大规模重写，只补了 7.1 节中 <code>button_dev</code> 结构体与 <code>file_operations</code> 的衔接，原文此处的上下文被省略了。</li>
+<li><strong>新增内容</strong>：2.4 的四模型对照表、3.1 的 <code>struct pollfd</code> 展开、3.2 的轮询 read 与 select 对比表、4.3 的状态掩码表（原文散落在正文，未成表）、4.4 的&quot;poll_wait 不阻塞&quot;强调、5.3 的三处必做清单、6.1 的唤醒要求、第八章速查表。</li>
+<li><strong>原文两处笔误</strong>：<code>unsigned int(*poll)(struct file *filp, struct poll_table * wait)</code> 中 <code>poll_table</code> 应为 <code>struct poll_table_struct *</code>（<code>poll_table</code> 是其 typedef，两种写法都能编译，本篇统一为完整类型名）；&quot;上一小节&quot;与&quot;下一篇博客单独介绍&quot;这类跨篇指代已改为明确的篇名引用。</li>
+<li><strong>原文末尾的「四、代码下载」与「参考文章」</strong>（外部网盘/博客链接）已失效，未保留。</li>
+</ol>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一问题的由来一个只能阻塞的-read" data-toc-target="一问题的由来一个只能阻塞的-read">一、问题的由来：一个只能阻塞的 read</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二五种-io-模型" data-toc-target="二五种-io-模型">二、五种 I/O 模型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.1-判据看第二阶段" data-toc-target="2.1-判据看第二阶段">2.1 判据：看第二阶段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.2-两条关键判据" data-toc-target="2.2-两条关键判据">2.2 两条关键判据</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.3-四种同步模型的递进" data-toc-target="2.3-四种同步模型的递进">2.3 四种同步模型的递进</a>
+                    
+                    <a class="toc-item toc-lv4" href="#1阻塞-io-模型" data-toc-target="1阻塞-io-模型">（1）阻塞 IO 模型</a>
+                    
+                    <a class="toc-item toc-lv4" href="#2非阻塞-io-模型" data-toc-target="2非阻塞-io-模型">（2）非阻塞 IO 模型</a>
+                    
+                    <a class="toc-item toc-lv4" href="#3io-多路复用模型" data-toc-target="3io-多路复用模型">（3）IO 多路复用模型</a>
+                    
+                    <a class="toc-item toc-lv4" href="#4信号驱动-io-模型" data-toc-target="4信号驱动-io-模型">（4）信号驱动 IO 模型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.4-四者对照" data-toc-target="2.4-四者对照">2.4 四者对照</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三poll-系统调用" data-toc-target="三poll-系统调用">三、poll 系统调用</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.1-两种系统调用形式" data-toc-target="3.1-两种系统调用形式">3.1 两种系统调用形式</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.2-为什么要用-poll-而不是轮询-read" data-toc-target="3.2-为什么要用-poll-而不是轮询-read">3.2 为什么要用 poll 而不是轮询 read</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四驱动侧poll-方法" data-toc-target="四驱动侧poll-方法">四、驱动侧：poll 方法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.1-原型" data-toc-target="4.1-原型">4.1 原型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.2-poll-方法只做两件事" data-toc-target="4.2-poll-方法只做两件事">4.2 poll 方法只做两件事</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.3-状态掩码" data-toc-target="4.3-状态掩码">4.3 状态掩码</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.4-poll_wait-的语义关键" data-toc-target="4.4-poll_wait-的语义关键">4.4 poll_wait 的语义（关键）</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.5-典型实现" data-toc-target="4.5-典型实现">4.5 典型实现</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五完整调用过程" data-toc-target="五完整调用过程">五、完整调用过程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.1-两轮循环" data-toc-target="5.1-两轮循环">5.1 两轮循环</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.2-内核侧的调用顺序" data-toc-target="5.2-内核侧的调用顺序">5.2 内核侧的调用顺序</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.3-驱动侧要做的事" data-toc-target="5.3-驱动侧要做的事">5.3 驱动侧要做的事</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六驱动侧实现示例" data-toc-target="六驱动侧实现示例">六、驱动侧实现示例</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.1-数据就绪后的唤醒" data-toc-target="6.1-数据就绪后的唤醒">6.1 数据就绪后的唤醒</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七按键驱动-poll-改造" data-toc-target="七按键驱动-poll-改造">七、按键驱动 poll 改造</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.1-驱动侧改动" data-toc-target="7.1-驱动侧改动">7.1 驱动侧改动</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.2-应用侧改动" data-toc-target="7.2-应用侧改动">7.2 应用侧改动</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八速查" data-toc-target="八速查">八、速查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#素材来源与勘误" data-toc-target="素材来源与勘误">素材来源与勘误</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/C.驱动/03-IO模型/poll-机制：驱动侧与五种-IO-模型/","title":"poll 机制：驱动侧与五种 IO 模型","url":"/C.驱动/03-IO模型/poll-机制：驱动侧与五种-IO-模型/","type":"current"},{"id":"/C.驱动/03-IO模型/poll-select-内核实现/","title":"poll-select 内核实现","url":"/C.驱动/03-IO模型/poll-select-内核实现/","type":"neighbor"},{"id":"/C.驱动/03-IO模型/信号驱动-IO-与异步通知/","title":"信号驱动 IO 与异步通知","url":"/C.驱动/03-IO模型/信号驱动-IO-与异步通知/","type":"neighbor"},{"id":"/C.驱动/03-IO模型/阻塞、非阻塞与等待队列/","title":"阻塞、非阻塞与等待队列","url":"/C.驱动/03-IO模型/阻塞、非阻塞与等待队列/","type":"neighbor"}],"links":[{"source":"/C.驱动/03-IO模型/poll-机制：驱动侧与五种-IO-模型/","target":"/C.驱动/03-IO模型/poll-select-内核实现/","type":"neighbor"},{"source":"/C.驱动/03-IO模型/poll-机制：驱动侧与五种-IO-模型/","target":"/C.驱动/03-IO模型/信号驱动-IO-与异步通知/","type":"neighbor"},{"source":"/C.驱动/03-IO模型/poll-机制：驱动侧与五种-IO-模型/","target":"/C.驱动/03-IO模型/阻塞、非阻塞与等待队列/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

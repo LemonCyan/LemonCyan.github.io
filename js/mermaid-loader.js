@@ -5,21 +5,27 @@
 
   var CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
 
+  var lastTheme = '';
+
   function render(mod) {
-    var dark = document.body.dataset.scheme === 'dark';
+    var theme = document.body.dataset.scheme === 'dark' ? 'dark' : 'default';
+    if (theme === lastTheme) return;
+    lastTheme = theme;
+
     mod.initialize({
       startOnLoad: false,
-      theme: dark ? 'dark' : 'default',
+      theme: theme,
       securityLevel: 'loose',
       fontFamily: 'inherit'
     });
     blocks.forEach(function (el, i) {
-      if (el.dataset.rendered === 'true') return;
-      var src = el.textContent.trim();
+      if (el.dataset.src === undefined) el.dataset.src = el.textContent.trim();
+      var src = el.dataset.src;
       if (!src) return;
       mod.render('mmd-' + i + '-' + Date.now(), src).then(function (res) {
         el.innerHTML = res.svg;
         el.dataset.rendered = 'true';
+        el.removeAttribute('data-error');
         var svg = el.querySelector('svg');
         if (svg) {
           svg.removeAttribute('height');
@@ -37,6 +43,12 @@
     var mod = m.default || m;
     window.mermaid = mod;
     render(mod);
+    if ('MutationObserver' in window) {
+      new MutationObserver(function () { render(mod); }).observe(document.body, {
+        attributes: true,
+        attributeFilter: ['data-scheme']
+      });
+    }
   }).catch(function () {
     blocks.forEach(function (el) {
       el.dataset.error = 'true';

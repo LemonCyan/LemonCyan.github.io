@@ -1,0 +1,1783 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>spinlock：自旋锁的原理、实现与陷阱 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">spinlock：自旋锁的原理、实现与陷阱</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">spinlock：自旋锁的原理、实现与陷阱</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">spinlock：自旋锁的原理、实现与陷阱</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>本篇只讲最基础的 <code>spinlock_t</code>：它要解决什么问题、为什么不能睡、<code>spin_lock()</code> 从顶层宏一路走到 <code>arch_spin_lock()</code> 的完整路径、<code>_irq</code> / <code>_irqsave</code> / <code>_bh</code> 的差别、单核抢占与非抢占、多核三种场景下它各自表现成什么样、ARM 上 <code>ldrex</code>/<code>strex</code>/<code>wfe</code> 与 ticket 排队号怎么配合，最后是误用清单。</p>
+<p>不讲 <code>rwlock_t</code> 与 <code>seqlock_t</code>，那是同批《读写锁与 seqlock》的活。不讲 qspinlock 的队列状态机与 mutex，那是同批《排队自旋锁与 mutex》的活；本篇碰到 qspinlock 只在必要处点一句「排队锁见同批另一篇」。</p>
+<p>内核版本：<code>spinlock</code> 的三层封装、ticket 化、<code>_irqsave</code> 家族的代码取自 3.x～4.x mainline，ARM64 汇编取自 4.1.10，ARM32 ticket 汇编取自 3.x，历史对比用 2.6.23。凡是原文没给版本、我也没查证的，行文里直接标「未验证」。</p>
+</blockquote>
+<h2 id="一自旋锁要解决什么问题" tabindex="-1">一、自旋锁要解决什么问题 <a class="header-anchor" href="#一自旋锁要解决什么问题"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核里最常见的麻烦是这样一屏：一块共享数据，进程上下文在读，中断上下文也在写。</p>
+<p>进程上下文之间的互斥好办，<code>semaphore</code>、<code>mutex</code> 都能干，策略是「抢不到就睡，把 CPU 让出去，等人叫醒」。这套策略在中断上下文里直接失效——那儿没有 task 可以挂，没有 <code>schedule()</code> 可以调，睡下去没人唤醒你。于是需要一种「抢不到也不睡，原地重试」的锁。<code>spinlock</code> 就是这个东西。它的特点四条：</p>
+<ol>
+<li><strong>死等</strong>。冲突时不挂起当前执行流，而是不停重试，直到持锁者放手。</li>
+<li><strong>只允许一个执行流进入</strong>。<code>semaphore</code> 的计数可以大于 1，允许多个执行流同时进入；<code>spinlock</code> 永远只有一个赢家，其余在门口空转。</li>
+<li><strong>临界区必须短</strong>。空转是在烧 CPU，几行代码的临界区适合，几百行的循环不适合。ARM 提供了 <code>wfe</code>/<code>sev</code> 这类指令让空转的核进入低功耗等待，能把烧 CPU 的代价压下来，但压不到零。</li>
+<li><strong>能用在中断上下文</strong>。因为它不睡。</li>
+</ol>
+<p>第 4 条是它存在的全部理由。你只要记住：<code>spinlock</code> 不是「更快的 mutex」，它是「唯一能在中断上下文里用的互斥」。</p>
+<h3 id="实现演进的三段" tabindex="-1">实现演进的三段 <a class="header-anchor" href="#实现演进的三段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>余华兵在《Linux内核深度解析》里把这段历史切成三段，我们照抄这个切法，因为它解释了为什么今天的锁长这样：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>阶段</th>
+<th>策略</th>
+<th>问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无序竞争</td>
+<td>一个整数，0/1，CAS 抢</td>
+<td>不公平，弱内存序硬件下有人饿死</td>
+</tr>
+<tr>
+<td>入场券（ticket）</td>
+<td><code>owner</code> / <code>next</code> 双字段排队叫号</td>
+<td>所有人在同一个变量上自旋，缓存行反复失效</td>
+</tr>
+<tr>
+<td>MCS（qspinlock）</td>
+<td>每个 CPU 一个本地节点，在本地变量上自旋</td>
+<td>结构变大，后来被压进 4 字节</td>
+</tr>
+</tbody>
+</table></div><p>第一段对应 2.6.23 的 ARM 实现，第二段对应 3.x 之后的 ARM/ARM64，第三段是 4.2 之后 x86 的默认实现。本篇主线走前两段，第三段只交代结论。</p>
+<h3 id="自旋锁有三种实现这句话的准确含义" tabindex="-1">「自旋锁有三种实现」这句话的准确含义 <a class="header-anchor" href="#自旋锁有三种实现这句话的准确含义"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>网上流传一张表，说自旋锁有三种实现。它是从「锁最终编译成什么」这个角度看问题的：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th><code>spin_lock()</code> 实际做什么</th>
+<th>有自旋吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单核 + 非抢占（<code>!CONFIG_SMP &amp;&amp; !CONFIG_PREEMPT</code>）</td>
+<td>空操作</td>
+<td>无</td>
+</tr>
+<tr>
+<td>单核 + 抢占（<code>!CONFIG_SMP &amp;&amp; CONFIG_PREEMPT</code>）</td>
+<td>只 <code>preempt_disable()</code></td>
+<td>无</td>
+</tr>
+<tr>
+<td>多核（<code>CONFIG_SMP</code>）</td>
+<td><code>preempt_disable()</code> + 独占指令忙等</td>
+<td>有</td>
+</tr>
+</tbody>
+</table></div><p>三行的差别不是配置差异，是语义差异。第一行连锁变量都不存在，第二行锁变量存在但永远抢得到，第三行才是真锁。后面第四、五、六章分别把这三行摊开。</p>
+<h2 id="二自旋锁与睡眠为什么它不能睡" tabindex="-1">二、自旋锁与睡眠：为什么它不能睡 <a class="header-anchor" href="#二自旋锁与睡眠为什么它不能睡"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一句话版本：<strong>持锁者睡下去，等锁的人就永远等不到释放。</strong></p>
+<p>展开成两条路径。</p>
+<p>路径一，不同 CPU。CPU0 上的 A 持锁后睡了，CPU1 上的 B 在自旋。B 不会自己退出（<code>spin_lock</code> 没有超时），它就一直占着 CPU1 空转。等 A 被唤醒后释放锁，B 才能走。这条路只是浪费，不致命。</p>
+<p>路径二，同一个 CPU。CPU0 上的 A 持锁后睡了，调度器把 C 换上来，C 也要这把锁。于是 C 在 CPU0 上自旋，而唯一能释放锁的 A 正躺在运行队列里等 CPU0。CPU0 被 C 占着不放，A 永远上不来，这一个 CPU 直接锁死。素材 5 把这个叫「第二种死锁」，描述得很准：</p>
+<blockquote>
+<p>最坏的情况是，那个想获取锁的线程刚好和你的代码运行在同一个处理器上，这时它将一直持有 CPU 进行自旋操作，而你的代码永远得不到 CPU 去释放这个锁。</p>
+</blockquote>
+<p>所以在临界区里，下面这些函数一个都不能碰：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>copy_from_user() / copy_to_user()   缺页时睡眠
+kmalloc(GFP_KERNEL)                 内存回收时睡眠
+msleep() / schedule()               主动让出 CPU
+mutex_lock()                        拿不到就睡
+down()                              信号量，睡
+阻塞式 I/O、等待完成量的 read/write
+</code></pre></div></code></pre>
+<p>要分配内存就用 <code>GFP_ATOMIC</code>，要拷贝用户数据就挪到临界区外面先拷完。</p>
+<p><code>spin_lock</code> 本身会调 <code>preempt_disable()</code>，所以临界区期间本 CPU 的内核抢占是关的。这挡得住「被更高优先级进程抢走」，挡不住「自己主动调 <code>schedule()</code>」，也挡不住「被中断打断」。前者是你自己写错，后者是第十章要处理的事。</p>
+<h2 id="三spinlock_t-的数据结构" tabindex="-1">三、spinlock_t 的数据结构 <a class="header-anchor" href="#三spinlock_t-的数据结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>spinlock_t</code> 的定义在 <code>include/linux/spinlock_types.h</code>。它是三层套娃，一层比一层接近硬件：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">spinlock</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">raw_spinlock</span> <span class="hljs-title">rlock</span>;</span>
+} <span class="hljs-type">spinlock_t</span>;
+
+<span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">raw_spinlock</span> {</span>
+    <span class="hljs-type">arch_spinlock_t</span> raw_lock;
+} <span class="hljs-type">raw_spinlock_t</span>;
+</code></pre></div></code></pre>
+<p>3.x 之后实际的 <code>spinlock_t</code> 外面还套了一层 <code>union</code>，因为要放 lockdep 的 <code>dep_map</code>、<code>owner</code> 之类调试字段：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">spinlock</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">union</span> {</span>
+                <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">raw_spinlock</span> <span class="hljs-title">rlock</span>;</span>
+                <span class="hljs-comment">/* debug 字段，CONFIG_DEBUG_* 打开时才有内容 */</span>
+        };
+} <span class="hljs-type">spinlock_t</span>;
+</code></pre></div></code></pre>
+<p><code>arch_spinlock_t</code> 由各架构自己定义，在 <code>arch/*/include/asm/spinlock_types.h</code>。</p>
+<h3 id="为什么要有-raw_spinlock-这一层" tabindex="-1">为什么要有 raw_spinlock 这一层 <a class="header-anchor" href="#为什么要有-raw_spinlock-这一层"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这不是为了好看，是被 PREEMPT_RT 逼出来的。旧内核（比如 2.6.23）命名很直白：通用层叫 <code>spinlock_t</code>，各架构定义自己的 <code>struct raw_spinlock</code>。实时分支（<code>CONFIG_PREEMPT_RT</code>）要求把 <code>spinlock</code> 分成两类：一类在实时内核里可以睡（底层换成带优先级继承的 mutex），一类在任何配置下都必须真自旋。于是定成三个名字：<code>spinlock</code>（配了 <code>PREEMPT_RT</code> 时可以被抢占，底层换成 mutex）、<code>raw_spinlock</code>（即便配了 <code>PREEMPT_RT</code> 也要顽强地自旋）、<code>arch_spinlock</code>（架构相关的实现，永远是最底层）。</p>
+<p>主线内核没打 RT 补丁，<code>spinlock</code> 就是 <code>raw_spinlock</code> 的一层空壳，两者行为一致。为了将来兼容 RT，写代码守三条：优先用 <code>spinlock</code>；绝对不能睡、不能被抢占的地方用 <code>raw_spinlock</code>；临界区足够小的地方，<code>raw_spinlock</code> 更省。</p>
+<h3 id="up-上的-arch_spinlock_t-是空结构体" tabindex="-1">UP 上的 arch_spinlock_t 是空结构体 <a class="header-anchor" href="#up-上的-arch_spinlock_t-是空结构体"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>include/linux/spinlock_types_up.h</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span> } <span class="hljs-type">arch_spinlock_t</span>;
+</code></pre></div></code></pre>
+<p>什么都没有，一切皆空。这跟第四章的分析对得上：单核非抢占下根本不需要锁变量。空结构体在 C 里占 1 字节（GCC 扩展），不占实际存储，关键是让 <code>&amp;lock-&gt;rlock.raw_lock</code> 这类表达式还能编译通过。</p>
+<h3 id="arm32ticket-的双字段" tabindex="-1">ARM32：ticket 的双字段 <a class="header-anchor" href="#arm32ticket-的双字段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>arch/arm/include/asm/spinlock_types.h</code>（3.x）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">union</span> {</span>
+        u32 slock;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> __<span class="hljs-title">raw_tickets</span> {</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> __ARMEB__                        <span class="hljs-comment">/* 大端，高字节在低地址 */</span></span>
+            u16 next;
+            u16 owner;
+<span class="hljs-meta">#<span class="hljs-keyword">else</span>                                   <span class="hljs-comment">/* 小端，低字节在低地址 */</span></span>
+            u16 owner;
+            u16 next;
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        } tickets;
+    };
+} <span class="hljs-type">arch_spinlock_t</span>;
+</code></pre></div></code></pre>
+<p><code>owner</code> 是当前叫到的号（服务号），<code>next</code> 是下一个要发的号（排队号）。整个锁就是一个 <code>u32</code>，<code>owner</code> 占低 16 位，<code>next</code> 占高 16 位。<code>TICKET_SHIFT</code> 定义为 16，所以 <code>next++</code> 在数值上等于 <code>slock += (1 &lt;&lt; 16)</code>。<code>__ARMEB__</code> 那个分支不是装饰：字节序反了，<code>u32</code> 的低 16 位落到 <code>next</code> 上，<code>next++</code> 会变成 <code>owner++</code>，锁直接失效。</p>
+<h3 id="arm644.x-里干脆写成两个裸-u16" tabindex="-1">ARM64：4.x 里干脆写成两个裸 u16 <a class="header-anchor" href="#arm644.x-里干脆写成两个裸-u16"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>arch/arm64/include/asm/spinlock_types.h</code>（4.x）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> __AARCH64EB__     <span class="hljs-comment">/* 大端字节序（高位存放在低地址） */</span></span>
+     u16 next;
+     u16 owner;
+<span class="hljs-meta">#<span class="hljs-keyword">else</span>                    <span class="hljs-comment">/* 小端字节序（低位存放在低地址） */</span></span>
+     u16 owner;
+     u16 next;
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+} __aligned(<span class="hljs-number">4</span>) <span class="hljs-type">arch_spinlock_t</span>;
+</code></pre></div></code></pre>
+<p>ARM64 版本去掉了 <code>union</code>。ARM32 需要 <code>slock</code> 这个 32 位视图，是因为它要用 <code>ldrex</code>/<code>strex</code> 一次性把整个 32 位读出来再写回；ARM64 用 <code>ldaxr</code>/<code>stxr</code> 处理 32 位、<code>ldaxrh</code> 处理 16 位 <code>owner</code>，不需要那个别名。<code>__aligned(4)</code> 保证 4 字节对齐，独占访问指令对非对齐地址会失败。</p>
+<h3 id="初始化链" tabindex="-1">初始化链 <a class="header-anchor" href="#初始化链"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>spin_lock_init()</code> 是一条四层宏链，逐层剥：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/linux/spinlock.h */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> spin_lock_init(_lock)                           \
+do {                                                    \
+        spinlock_check(_lock);                          \
+        raw_spin_lock_init(&amp;(_lock)-&gt;rlock);            \
+} while (0)</span>
+
+<span class="hljs-comment">/* include/linux/spinlock.h */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> raw_spin_lock_init(lock)                               \
+        do { *(lock) = __RAW_SPIN_LOCK_UNLOCKED(lock); } while (0)</span>
+
+<span class="hljs-comment">/* include/linux/spinlock_types.h */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __RAW_SPIN_LOCK_INITIALIZER(lockname)   \
+        {                                       \
+        .raw_lock = __ARCH_SPIN_LOCK_UNLOCKED,  \
+        SPIN_DEBUG_INIT(lockname)               \
+        SPIN_DEP_MAP_INIT(lockname) }</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __RAW_SPIN_LOCK_UNLOCKED(lockname)      \
+        (raw_spinlock_t) __RAW_SPIN_LOCK_INITIALIZER(lockname)</span>
+
+<span class="hljs-comment">/* arch/arm/include/asm/spinlock_types.h */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __ARCH_SPIN_LOCK_UNLOCKED       { { 0 } }</span>
+</code></pre></div></code></pre>
+<p>落点就是 <code>slock = 0</code>，也就是 <code>owner = 0</code>、<code>next = 0</code>。<code>owner == next</code> 表示空闲。静态定义用 <code>DEFINE_SPINLOCK(x)</code>，编译期就填好；运行时动态初始化用 <code>spin_lock_init(x)</code>，这类锁多嵌在 <code>kmalloc</code> 出来的结构体里。</p>
+<h3 id="顺带说说-2.6.23-长什么样" tabindex="-1">顺带说说 2.6.23 长什么样 <a class="header-anchor" href="#顺带说说-2.6.23-长什么样"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>那一版 ARM 的 <code>raw_spinlock_t</code>（注意那时还没有 <code>arch_spinlock_t</code>）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-keyword">volatile</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> lock;
+} <span class="hljs-type">raw_spinlock_t</span>;
+</code></pre></div></code></pre>
+<p>0 表示未锁，1 表示已锁。<code>__raw_spin_lock</code> 不断读这个值，等于 0 就用独占指令写 1，不等于 0 就继续读。<code>__raw_spin_unlock</code> 就是写 0。</p>
+<p>能跑，无冲突时性能还不错，问题是不公平。所有 CPU 都在无序抢，谁手快谁得，不管等了多久。Nick Piggin 当年在提交信息里写过一段：&gt; On an 8 core (2 socket) Opteron, spinlock unfairness is extremely noticable, with a userspace test having a difference of up to 2x runtime per thread, and some threads are starved or &quot;unfairly&quot; granted the lock up to 1 000 000 (!) times.</p>
+<p>有线程被饿了一百万次。概率上无序竞争应该均匀，硬件把这事搞坏了：锁在内存里，每个 CPU 的 L1 都缓存了它；持锁者释放锁时执行 <code>smp_mb()</code>，其他自旋 CPU 的 cache line 全部失效，而刚释放锁那个 CPU 的 L1 里数据是热的，它下一次抢到锁的概率就高得多。越抢越热，越热越容易抢到。这就是第十二章 ticket spinlock 要解决的问题。</p>
+<h2 id="四非抢占单核下的自旋锁" tabindex="-1">四、非抢占单核下的自旋锁 <a class="header-anchor" href="#四非抢占单核下的自旋锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>CONFIG_SMP</code> 没开，<code>CONFIG_PREEMPT</code> 也没开。这种内核里，一个进程进了内核态只要不自己调 <code>schedule()</code>，就一路跑到返回用户态，中间不会被换下去，系统调用的执行完全串行。</p>
+<p>推论很直接：共享数据只被进程上下文访问时，<strong>根本不需要保护</strong>。没有并发，谈何保护。所以这种配置下 <code>spin_lock()</code> 编译出来是空操作，<code>arch_spinlock_t</code> 是空结构体，锁变量连一个字节都不占。</p>
+<h3 id="但代码不能这么写" tabindex="-1">但代码不能这么写 <a class="header-anchor" href="#但代码不能这么写"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>「不需要保护」和「你可以不写保护」是两件事。内核代码要跨配置编译，你在自己的单核板子上验证通过，代码挪到 SMP 配置上就散架。驱动里该写的 <code>spin_lock</code> 一个都不能省，它在 UP 上被编译器吃掉，在 SMP 上救你的命。</p>
+<h3 id="中断重入是另一码事" tabindex="-1">中断重入是另一码事 <a class="header-anchor" href="#中断重入是另一码事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>进程上下文之间没并发，不代表中断上下文和进程上下文之间没并发。中断可以在任何时刻打断内核代码，包括打断那块「反正不需要保护」的共享数据。素材 4 把这个场景追得很细，它问两个问题。</p>
+<p><strong>问题一：UP 下持有 <code>spin_lock</code> 的进程会被调度器切走吗？</strong></p>
+<p>不会。<code>preempt_disable()</code> 的自增让抢占计数非零，<code>check_preempt_tick()</code> 到点只会调 <code>resched_task()</code> 给当前进程打 <code>TIF_NEED_RESCHED</code> 标记，真正的切换发生在中断返回路径上，而那一步会看抢占计数。计数非零，切换不执行，所以临界区不会被进程上下文重入。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">check_preempt_tick</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> cfs_rq *cfs_rq, <span class="hljs-keyword">struct</span> sched_entity *curr)</span>
+{
+	ideal_runtime = sched_slice(cfs_rq, curr);
+
+	<span class="hljs-keyword">if</span> (delta_exec &gt; ideal_runtime) {
+		<span class="hljs-comment">/* 实际运行时间超过预期，打个需要重调度的标记 */</span>
+		resched_task(rq_of(cfs_rq)-&gt;curr);
+		clear_buddies(cfs_rq, curr);
+		<span class="hljs-keyword">return</span>;
+	}
+
+	<span class="hljs-keyword">if</span> (delta_exec &lt; sysctl_sched_min_granularity)
+			<span class="hljs-keyword">return</span>;
+	...
+}
+</code></pre></div></code></pre>
+<p>（原文此处写「真正的调度工作交给了中断返回时的 <code>do_work_pending()</code>」。<code>do_work_pending</code> 是 ARM 返回用户态时的收尾路径，处理信号和 <code>TIF_NEED_RESCHED</code>；内核抢占的入口是 <code>preempt_schedule_irq()</code>。方向对，函数名不准，见勘误。）</p>
+<p><strong>问题二：中断上下文会重入临界区吗？</strong></p>
+<p>会。A 进程拿到锁进临界区，中断来了，ISR 里也要这把锁。UP 上的 <code>spin_lock()</code> 不会失败，因为压根没有锁可以失败，ISR 直接穿过去跟 A 撞在一起，临界变量被改了一半，A 毫不知情。</p>
+<p><strong>UP 下的结论</strong>：<code>spin_lock()</code> 保护的临界区被 ISR 重入时，结果是数据错乱，不是死锁（没有自旋，没人卡住）。要挡住它只有关本地中断，也就是用 <code>spin_lock_irq()</code> 而不是光秃秃的 <code>spin_lock()</code>。</p>
+<h2 id="五抢占式单核下的自旋锁" tabindex="-1">五、抢占式单核下的自旋锁 <a class="header-anchor" href="#五抢占式单核下的自旋锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>!CONFIG_SMP</code>，但 <code>CONFIG_PREEMPT</code> 开了。这时一个在内核态跑的进程，会在中断返回时被更高优先级的进程顶掉。</p>
+<p>素材 3 把抢占点列得很清楚。抢占式内核里，内核态进程会在四种情况下被切换：运行完成返回用户空间；主动让出 CPU（调 <code>schedule()</code> 或阻塞在某个等待上）；中断处理程序执行完、返回内核空间之前（此时抢占计数要为 0）；内核代码重新变得可抢占的时候，比如解锁、使能软中断。第 3、4 条是抢占内核多出来的，非抢占内核只有 1、2 两条。</p>
+<h3 id="这里锁退化成什么" tabindex="-1">这里锁退化成什么 <a class="header-anchor" href="#这里锁退化成什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>raw_spin_lock()</code> 展开到 <code>_raw_spin_lock()</code>，再到 UP 版本的 <code>__LOCK()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/linux/spinlock_api_up.h */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _raw_spin_lock(lock)            __LOCK(lock)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __LOCK(lock) \
+    do { preempt_disable(); ___LOCK(lock); } while (0)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> ___LOCK(lock) \
+  do { __acquire(lock); (void)(lock); } while (0)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_disable() \
+do { \
+         preempt_count_inc(); \
+         barrier(); \
+  } while (0)</span>
+</code></pre></div></code></pre>
+<p><code>___LOCK()</code> 是空的（<code>__acquire</code> 是 sparse 静态检查用的标注，<code>(void)(lock)</code> 只是压掉「参数未使用」的警告）。真正干活的只有 <code>preempt_disable()</code>。</p>
+<p>也就是说，<strong>抢占式单核上，<code>spin_lock()</code> 等价于「禁止内核抢占」，没有自旋</strong>。锁变量存在，但永远不会被争用，<code>arch_spin_lock()</code> 在 UP 上压根不会被调用。</p>
+<p><code>barrier()</code> 不能省。它挡住编译器把临界区里的访存重排到 <code>preempt_count_inc()</code> 之前，也挡住把锁外的访存挪进临界区。</p>
+<h3 id="那个永久-spin的场景" tabindex="-1">那个「永久 spin」的场景 <a class="header-anchor" href="#那个永久-spin的场景"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>素材 1 用这个例子说明为什么要禁抢占：进程 A 在系统调用里访问共享资源 R；A 访问到一半中断来了，中断唤醒了沉睡的、优先级更高的 B；中断返回现场时发生进程切换，B 跑起来也要访问 R；B 去拿 <code>spin_lock</code>，锁在 A 手里，B 自旋。如果 A 和 B 在不同 CPU 上，这没问题：A 会继续跑并释放锁，B 转两圈就拿到了。但在单核上，A 被 B 顶掉了，A 跑不了，锁放不掉，B 永远自旋——CPU 卡死。</p>
+<p><code>preempt_disable()</code> 就是切断第 3 步的：A 持锁期间抢占计数非零，中断返回时切不了人，B 只能等 A 出临界区。所以「永久 spin」在本 CPU 上被排除了。</p>
+<h3 id="还有一个残留的口子" tabindex="-1">还有一个残留的口子 <a class="header-anchor" href="#还有一个残留的口子"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>preempt_disable()</code> 只关抢占，不关中断，中断照常进来。如果中断处理程序也要这把锁，第四章分析过：UP 下没有自旋，ISR 直接穿墙，数据错乱。所以「中断会不会碰这块数据」这个问题必须由你自己回答，答案是「会」就得升到 <code>spin_lock_irq()</code>。关抢占只是挡「进程偷进程」，挡不了「中断偷进程」。</p>
+<h2 id="六多核下的自旋锁" tabindex="-1">六、多核下的自旋锁 <a class="header-anchor" href="#六多核下的自旋锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>CONFIG_SMP</code> 开了，这时才有真正的自旋。</p>
+<p>持锁的那条路径执行 <code>preempt_disable()</code> 之后，共享数据只剩被别的 CPU 碰这一条路。所以要两件事：<code>preempt_disable()</code> 挡住本 CPU 上的进程抢占自己，独占指令（ARM 上是 <code>ldrex</code>/<code>strex</code>）挡住别的 CPU 同时改锁变量。</p>
+<p>第二件事只能用硬件指令做。普通 <code>ldr</code> + <code>cmp</code> + <code>str</code> 会在中间被打断，两个 CPU 同时看到「锁是空的」，同时写 1，双双进入临界区。</p>
+<h3 id="三行对照表" tabindex="-1">三行对照表 <a class="header-anchor" href="#三行对照表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>把第四、五、六章压成一张表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>项目</th>
+<th>非抢占单核</th>
+<th>抢占单核</th>
+<th>多核</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>arch_spinlock_t</code></td>
+<td>空结构体</td>
+<td>空结构体</td>
+<td>有内容（ticket / u32）</td>
+</tr>
+<tr>
+<td><code>spin_lock()</code> 展开</td>
+<td>空操作</td>
+<td><code>preempt_disable()</code></td>
+<td><code>preempt_disable()</code> + 自旋</td>
+</tr>
+<tr>
+<td>锁变量占空间</td>
+<td>否</td>
+<td>否</td>
+<td>是，4 字节</td>
+</tr>
+<tr>
+<td>会死循环等锁</td>
+<td>否</td>
+<td>否</td>
+<td>是</td>
+</tr>
+<tr>
+<td>进程上下文能重入</td>
+<td>否（不调度）</td>
+<td>否（抢占计数）</td>
+<td>否（抢占计数）</td>
+</tr>
+<tr>
+<td>中断上下文能重入</td>
+<td>是，数据错乱</td>
+<td>是，数据错乱</td>
+<td>是，本 CPU 死锁</td>
+</tr>
+<tr>
+<td>需要的保护</td>
+<td>无（但代码要写全）</td>
+<td><code>preempt_disable</code> 足够</td>
+<td><code>preempt_disable</code> + 独占指令</td>
+</tr>
+</tbody>
+</table></div><p>最后一列那句「本 CPU 死锁」是素材 4 追出来的。推理是：SMP 上 ISR 拿不到锁会调 <code>wfe</code> 进入低功耗等待，等的是「持锁者释放锁」这个事件。可持锁者就是被这个中断打断的那条路径，它跑不了，锁放不掉，事件等不到，CPU 卡死在 <code>wfe</code> 上。换个 CPU 执行 ISR 就没事，那个 CPU 等一会儿能等到。</p>
+<h3 id="素材-5-的三种死锁逐条核对" tabindex="-1">素材 5 的三种死锁，逐条核对 <a class="header-anchor" href="#素材-5-的三种死锁逐条核对"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>第一种：跨 CPU 的持锁休眠。</strong> A 在 CPU-A 上持锁进临界区，B 在 CPU-B 上自旋。A 那边程序阻塞（睡眠）了，CPU-A 切换跑 C，C 也要这把锁，也在 CPU-A 上自旋。于是 A 和 C 死锁：C 占着 A 需要的 CPU，A 占着 C 需要的锁。这是真的，它再次印证第二章那条：持锁期间不能睡。</p>
+<p><strong>第二种：同 CPU 的持锁睡眠。</strong> 第二章那条路径二，原理一样，不重复。</p>
+<p><strong>第三种：同 CPU 的中断重入。</strong> 进程 A 调 <code>spin_lock(&amp;lock)</code> 进临界区，中断来了，ISR 里也 <code>spin_lock(&amp;lock)</code>。同一个 CPU，锁在 A 手里，SMP 上 ISR 自旋，A 跑不了，锁放不掉，死锁。反过来，这个中断跑在别的 CPU 上就不死：那个 CPU 自旋一会儿，A 退出临界区放锁，中断拿到锁。</p>
+<p><strong>素材 5 这个段落有个说法要改</strong>：它写「由于是在同一个 CPU 上被中断，进程 A 会被设置为 TASK_INTERRUPT 状态……由于进程 A 被设置为中断状态，<code>schedule()</code> 进程调度就无法再调度进程 A 运行」。</p>
+<p>内核不会因为「被中断」就把 A 设成 <code>TASK_INTERRUPTIBLE</code>（那是进程主动调 <code>set_current_state()</code> 才进的睡眠态）。真因是：A 被本 CPU 的硬中断打断，中断上下文在当前 CPU 上自旋，A 所在的执行流根本没有机会继续跑，所以锁永远不释放。结论对，机制写错了，见勘误。</p>
+<h3 id="那现代-cpu-有自旋超时吗" tabindex="-1">那现代 CPU 有自旋超时吗 <a class="header-anchor" href="#那现代-cpu-有自旋超时吗"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>素材 5 最后一句写「现代处理器在处理自旋锁时都会设定自旋上限时间以防死锁」。这句是错的，得改。</p>
+<p>Linux 的 <code>spinlock</code> 没有自旋超时，没有退避上限，也没有「超时后放弃」。<code>arch_spin_lock()</code> 里的循环是无界的，持锁者不释放，等锁者就一直等。防止「永远等不到」靠的不是锁本身，是外部检测：NMI watchdog、<code>hung_task</code> 检测、<code>CONFIG_DEBUG_SPINLOCK</code> 的持有者记录。它们的作用是「卡住之后报出来」，不是「卡住之后自动解开」。</p>
+<p>这一点决定了设计取向：<code>spinlock</code> 的正确性完全依赖你不在临界区里睡、不在持锁时被中断抢走。锁不会救你，它只会把你拖死。</p>
+<h2 id="七spin_lock-的完整实现路径" tabindex="-1">七、spin_lock 的完整实现路径 <a class="header-anchor" href="#七spin_lock-的完整实现路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>从 API 到汇编隔了六层。每层解决一个独立问题：通用接口、RT 兼容、调试检查、统计、架构抽象。</p>
+<h3 id="一路剥下去" tabindex="-1">一路剥下去 <a class="header-anchor" href="#一路剥下去"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>spin_lock(lock)
+  └─ raw_spin_lock(&amp;lock-&gt;rlock)
+       └─ _raw_spin_lock(lock)
+            ├─ [UP]   __LOCK(lock)  →  preempt_disable()
+            └─ [SMP]  __raw_spin_lock(lock)
+                        ├─ preempt_disable()
+                        ├─ spin_acquire(&amp;lock-&gt;dep_map, 0, 0, _RET_IP_)
+                        └─ LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock)
+                             └─ do_raw_spin_lock(lock)
+                                  └─ arch_spin_lock(&amp;lock-&gt;raw_lock)
+</code></pre></div></code></pre>
+<p>最上面两层是薄壳，早期 <code>spin_lock</code> 还带 <code>__always_inline</code>，后来为了 lockdep 记录调用点改成普通 <code>static inline</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">spin_lock</span><span class="hljs-params">(<span class="hljs-type">spinlock_t</span> *lock)</span>
+{
+    raw_spin_lock(&amp;lock-&gt;rlock);
+}
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> raw_spin_lock(lock)    _raw_spin_lock(lock)</span>
+</code></pre></div></code></pre>
+<p>分叉点在 <code>_raw_spin_lock</code>。它有两个实现，由 <code>spinlock.h</code> 按 <code>CONFIG_SMP</code> 选一个 include 进来：单核用 <code>include/linux/spinlock_api_up.h</code>，多核用 <code>kernel/locking/spinlock.c</code>。这也是为什么不能直接 include <code>spinlock_api_up.h</code>——它依赖外层的配置判断。</p>
+<h3 id="up-分支与-smp-分支" tabindex="-1">UP 分支与 SMP 分支 <a class="header-anchor" href="#up-分支与-smp-分支"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/linux/spinlock_api_up.h —— 单核 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> _raw_spin_lock(lock)            __LOCK(lock)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __LOCK(lock) \
+ do { preempt_disable(); ___LOCK(lock); } while (0)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> ___LOCK(lock) \
+  do { __acquire(lock); (void)(lock); } while (0)</span>
+</code></pre></div></code></pre>
+<p><code>___LOCK()</code> 在 non-debug 版本里是空的，<code>__acquire()</code> 只在 sparse 检查时有意义。UP 上整个 <code>spin_lock()</code> 就剩一句 <code>preempt_disable()</code>。素材 3 提到的 debug 版（<code>spinlock_up.h</code>）会在 <code>___LOCK</code> 里加锁状态校验和持有者记录，依然不加自旋——UP 上没有第二个 CPU 跟你抢。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* kernel/locking/spinlock.c —— 多核 */</span>
+<span class="hljs-type">void</span> __lockfunc _raw_spin_lock(<span class="hljs-type">raw_spinlock_t</span> *lock)
+{
+    __raw_spin_lock(lock);
+}
+
+<span class="hljs-comment">/* include/linux/spinlock_api_smp.h */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> __raw_spin_lock(<span class="hljs-type">raw_spinlock_t</span> *lock)
+{
+    preempt_disable();
+    spin_acquire(&amp;lock-&gt;dep_map, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>, _RET_IP_);
+    LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+}
+</code></pre></div></code></pre>
+<p><code>__lockfunc</code> 是段属性宏，把这些函数放进 <code>.spinlock.text</code> 段，<code>CONFIG_LOCKDEP</code> 打开时按函数逐个生成，方便定位是哪个锁函数出的问题。三句正文各管一件事：<code>preempt_disable()</code> 挡本 CPU 抢占，<code>spin_acquire()</code> 给 lockdep 记「我在这里拿了这把锁」，<code>LOCK_CONTENDED()</code> 真正去抢。<code>spin_acquire()</code> 展开成 <code>lock_acquire_exclusive()</code> 再展开成 <code>lock_acquire()</code>，没开 <code>CONFIG_LOCKDEP</code> 时它是空函数：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/linux/lockdep.h */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> lock_acquire_exclusive(l, s, t, n, i)           lock_acquire(l, s, t, 0, 1, n, i)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> spin_acquire(l, s, t, i)                lock_acquire_exclusive(l, s, t, NULL, i)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> lock_acquire(l, s, t, r, c, n, i) do { } while (0)</span>
+</code></pre></div></code></pre>
+<h3 id="lock_contended先试一次再死等" tabindex="-1">LOCK_CONTENDED：先试一次再死等 <a class="header-anchor" href="#lock_contended先试一次再死等"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> LOCK_CONTENDED(_lock, try, lock)                        \
+do {                                                            \
+        <span class="hljs-keyword">if</span> (!try(_lock)) {                                      \
+                lock_contended(&amp;(_lock)-&gt;dep_map, _RET_IP_);    \
+                lock(_lock);                                    \
+        }                                                       \
+        lock_acquired(&amp;(_lock)-&gt;dep_map, _RET_IP_);             \
+} while (0)</span>
+</code></pre></div></code></pre>
+<p>名字里带 <code>CONTENDED</code>，但<strong>没开 <code>CONFIG_LOCK_STAT</code></strong> 时它只是 <code>#define LOCK_CONTENDED(_lock, try, lock)  lock(_lock)</code>。开了统计才走上面那个「先 try 一次、失败记一笔 contended、再死等」的版本。所以未开统计时 <code>do_raw_spin_trylock()</code> 根本不会被调用——<code>spin_lock()</code> 一上来就是死等，不是先试后等。<code>lock_contended()</code> / <code>lock_acquired()</code> 只负责记录「这把锁被等过几次、等了多久」。</p>
+<h3 id="do_raw_spin_lock两个版本" tabindex="-1">do_raw_spin_lock：两个版本 <a class="header-anchor" href="#do_raw_spin_lock两个版本"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>同名函数有两个实现，取决于 <code>CONFIG_DEBUG_SPINLOCK</code>。<strong>non-debug</strong> 版本在 <code>include/linux/spinlock.h</code>，是内联的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">do_raw_spin_lock</span><span class="hljs-params">(<span class="hljs-type">raw_spinlock_t</span> *lock)</span> __<span class="hljs-title function_">acquires</span><span class="hljs-params">(lock)</span>
+{
+    __acquire(lock);
+    arch_spin_lock(&amp;lock-&gt;raw_lock);
+}
+</code></pre></div></code></pre>
+<p><strong>debug</strong> 版本在 <code>kernel/locking/spinlock_debug.c</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/*
+ * We are now relying on the NMI watchdog to detect lockup instead of doing
+ * the detection here with an unfair lock which can cause problem of its own.
+ */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">do_raw_spin_lock</span><span class="hljs-params">(<span class="hljs-type">raw_spinlock_t</span> *lock)</span>
+{
+        debug_spin_lock_before(lock);
+        arch_spin_lock(&amp;lock-&gt;raw_lock);
+        mmiowb_spin_lock();
+        debug_spin_lock_after(lock);
+}
+</code></pre></div></code></pre>
+<p><code>debug_spin_lock_before()</code> 检查锁是不是已经被当前 CPU 持有（递归加锁会直接报错而不是卡死），<code>debug_spin_lock_after()</code> 记下持有者，<code>mmiowb_spin_lock()</code> 处理 MMIO 写序。注释那句值得读：<strong>内核靠 NMI watchdog 检测锁死，不再在锁内部做周期性检测</strong>，因为在不公平的锁上做检测本身会引入新问题。素材 3 给的是 debug 版，素材 1 给的是 non-debug 版，两份都对，只是配置不同。</p>
+<h3 id="最后一跳与一张表" tabindex="-1">最后一跳与一张表 <a class="header-anchor" href="#最后一跳与一张表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>到 <code>arch_spin_lock</code> 就彻底交给架构了，ARM32 / ARM64 的实现在第十一章展开。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层</th>
+<th>位置</th>
+<th>干什么</th>
+<th>谁在管</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spin_lock</code></td>
+<td><code>include/linux/spinlock.h</code></td>
+<td>通用入口</td>
+<td>无</td>
+</tr>
+<tr>
+<td><code>raw_spin_lock</code></td>
+<td>同上</td>
+<td>宏转发</td>
+<td>PREEMPT_RT 兼容</td>
+</tr>
+<tr>
+<td><code>_raw_spin_lock</code></td>
+<td><code>spinlock_api_up.h</code> / <code>kernel/locking/spinlock.c</code></td>
+<td>UP/SMP 分叉</td>
+<td><code>CONFIG_SMP</code></td>
+</tr>
+<tr>
+<td><code>__raw_spin_lock</code></td>
+<td><code>spinlock_api_smp.h</code></td>
+<td>禁抢占 + 统计 + 抢锁</td>
+<td><code>CONFIG_LOCKDEP</code></td>
+</tr>
+<tr>
+<td><code>LOCK_CONTENDED</code></td>
+<td><code>include/linux/lockdep.h</code></td>
+<td>先试后等 / 直接等</td>
+<td><code>CONFIG_LOCK_STAT</code></td>
+</tr>
+<tr>
+<td><code>do_raw_spin_lock</code></td>
+<td><code>spinlock.h</code> / <code>spinlock_debug.c</code></td>
+<td>调试检查 + 跳架构</td>
+<td><code>CONFIG_DEBUG_SPINLOCK</code></td>
+</tr>
+<tr>
+<td><code>arch_spin_lock</code></td>
+<td><code>arch/*/include/asm/spinlock.h</code></td>
+<td>真抢锁</td>
+<td>架构</td>
+</tr>
+</tbody>
+</table></div><p>四层宏、三个内联、一次架构跳转，就这。</p>
+<h2 id="八spin_lock_irqsave-与它的兄弟们" tabindex="-1">八、spin_lock_irqsave 与它的兄弟们 <a class="header-anchor" href="#八spin_lock_irqsave-与它的兄弟们"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>基础款 <code>spin_lock</code> 只关抢占。要关中断、关软中断，得另外加料。内核把这几种组合都封好了。</p>
+<h3 id="六个组合宏" tabindex="-1">六个组合宏 <a class="header-anchor" href="#六个组合宏"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>素材 3 给的等价关系是对的，照抄并补上返回值说明：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>spin_lock_irq()      = spin_lock() + local_irq_disable()
+spin_unlock_irq()    = spin_unlock() + local_irq_enable()
+
+spin_lock_irqsave()  = spin_lock() + local_irq_save(flags)
+spin_unlock_irqrestore() = spin_unlock() + local_irq_restore(flags)
+
+spin_lock_bh()       = spin_lock() + local_bh_disable()
+spin_unlock_bh()     = spin_unlock() + local_bh_enable()
+</code></pre></div></code></pre>
+<p><code>local_irq_save(flags)</code> 多了一个参数：它先把当前 CPU 的中断使能状态读进 <code>flags</code>，再关中断。<code>local_irq_restore(flags)</code> 按 <code>flags</code> 恢复，而不是无脑开中断。这个差别是要命的。如果进临界区之前中断本来就是关的（比如你正处在一段临界区里，外面已经关过），<code>spin_unlock_irq()</code> 会无脑把中断打开，把外层的关中断意图破坏掉；<code>spin_unlock_irqrestore()</code> 会恢复成关的状态，外层的保护还在。</p>
+<h3 id="四种变体对照" tabindex="-1">四种变体对照 <a class="header-anchor" href="#四种变体对照"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>变体</th>
+<th>关抢占</th>
+<th>关本地硬中断</th>
+<th>关软中断</th>
+<th>保存/恢复中断状态</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>spin_lock</code></td>
+<td>是</td>
+<td>否</td>
+<td>否</td>
+<td>否</td>
+<td>纯进程上下文互斥，确定没有中断/软中断会碰这块数据</td>
+</tr>
+<tr>
+<td><code>spin_lock_bh</code></td>
+<td>是</td>
+<td>否</td>
+<td>是</td>
+<td>否</td>
+<td>进程上下文 vs 软中断/tasklet 共享数据</td>
+</tr>
+<tr>
+<td><code>spin_lock_irq</code></td>
+<td>是</td>
+<td>是</td>
+<td>隐含是</td>
+<td>否</td>
+<td>确定进入时中断是开着的</td>
+</tr>
+<tr>
+<td><code>spin_lock_irqsave</code></td>
+<td>是</td>
+<td>是</td>
+<td>隐含是</td>
+<td>是</td>
+<td>不确定进入时中断状态，或会被别的临界区嵌套调用</td>
+</tr>
+</tbody>
+</table></div><p><code>spin_lock_irq</code> 和 <code>spin_lock_irqsave</code> 都关了硬中断，软中断自然进不来（软中断只在硬中断退出时或 <code>local_bh_enable()</code> 时跑）。所以「关硬中断」打勾的，软中断那一列不用单独打。</p>
+<p><code>raw_spin_lock_bh()</code>、<code>raw_spin_lock_irq()</code>、<code>raw_spin_lock_irqsave()</code>、<code>raw_spin_trylock()</code> 和对应的 <code>raw_spin_unlock_*()</code>，接口形状完全一致，区别只在操作的是 <code>raw_spinlock_t</code> 而不是 <code>spinlock_t</code>。给 RT 内核准备的逃生门，主线里两者等价。</p>
+<h3 id="还有-trylock" tabindex="-1">还有 trylock <a class="header-anchor" href="#还有-trylock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">spin_trylock</span><span class="hljs-params">(<span class="hljs-type">spinlock_t</span> *lock)</span>;
+</code></pre></div></code></pre>
+<p>抢到返回 1，抢不到返回 0，<strong>不自旋</strong>。它同样会 <code>preempt_disable()</code>，但返回 0 时抢占计数已经被减回去了，你不用管；返回 1 就正常走 <code>spin_unlock()</code>。用处是「宁可走备用路径，也不要卡在这里」——比如中断处理程序想拿一把会被长时间持有的锁，拿不到就丢进队列延后处理。</p>
+<h3 id="一个容易踩的坑解锁顺序" tabindex="-1">一个容易踩的坑：解锁顺序 <a class="header-anchor" href="#一个容易踩的坑解锁顺序"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>spin_unlock_irqrestore(lock, flags)</code> 展开到 <code>__raw_spin_unlock_irqrestore()</code> 是<strong>先解锁，后恢复中断状态</strong>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> spin_unlock_irqrestore(lock, flags) \
+do {                                    \
+        raw_spin_unlock_irqrestore(lock, flags); \
+} while (0)</span>
+</code></pre></div></code></pre>
+<p>这个顺序是必须的。如果先开中断再解锁，中断进来的那一刻你还持着锁，中断里要这把锁就死锁，第六章分析过。先放锁再开中断，中断进来时锁已经是自由的了。</p>
+<h2 id="九为什么要区分-spin_lock--_irq--_irqsave--_bh" tabindex="-1">九、为什么要区分 spin_lock / _irq / _irqsave / _bh <a class="header-anchor" href="#九为什么要区分-spin_lock--_irq--_irqsave--_bh"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>答案只有一个：<strong>你要挡住的是谁，就用对应的那一款</strong>。挡错了不是性能问题，是死锁或者数据错乱。</p>
+<h3 id="判断流程" tabindex="-1">判断流程 <a class="header-anchor" href="#判断流程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>问三个问题，按顺序：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>1. 这块数据会被硬中断处理程序碰吗？
+     会  → 进程上下文用 spin_lock_irqsave（或确定中断开着时用 spin_lock_irq）
+            中断上下文里用 spin_lock
+     不会 → 下一步
+
+2. 这块数据会被软中断 / tasklet / timer callback 碰吗？
+     会  → 进程上下文用 spin_lock_bh
+            软中断上下文里用 spin_lock
+     不会 → 下一步
+
+3. 只在进程上下文之间共享？
+     → spin_lock
+</code></pre></div></code></pre>
+<p>第 1 步为什么中断上下文里用裸 <code>spin_lock</code> 就够？因为硬中断处理程序运行时，本 CPU 的中断是关的（新内核不区分 fast/slow handler，所有 handler 都在关中断的上下文里跑），同一个中断不会在同一个 CPU 上嵌套自己，别的 CPU 上的同一个中断由锁本身挡住。所以中断侧不需要再关一次。</p>
+<h3 id="为什么进程侧要用-irqsave-而不是-irq" tabindex="-1">为什么进程侧要用 irqsave 而不是 irq <a class="header-anchor" href="#为什么进程侧要用-irqsave-而不是-irq"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>因为进程上下文的中断状态不可预知。你这段代码会被另一个已经关了中断的临界区调用。这时候 <code>spin_lock_irq()</code> 记不住「进来时是关的」，<code>spin_unlock_irq()</code> 会把中断误开。</p>
+<p><code>spin_lock_irq()</code> 只在你能百分百确定「进这里时中断必然是开的」时才能用。驱动里这种情况少，所以内核代码里 <code>spin_lock_irqsave</code> 的出现频率远高于 <code>spin_lock_irq</code>。</p>
+<h3 id="素材-1-那个牛刀杀鸡的说法" tabindex="-1">素材 1 那个「牛刀杀鸡」的说法 <a class="header-anchor" href="#素材-1-那个牛刀杀鸡的说法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>素材 1 讨论 softirq 场景时写：用 <code>spin_lock</code> + 关本地中断当然能保护，但拿牛刀杀鸡，<code>local_bh_disable()</code> 就够了。</p>
+<p>这个判断是对的。软中断不会在硬中断上下文之外异步打断你，它只在硬中断退出、或 <code>local_bh_enable()</code>、或 ksoftirqd 调度时执行。关掉 bh 就把它挡在门外了，不需要连硬中断一起关。关硬中断的代价更高——它会让整个系统的中断响应变差。</p>
+<h3 id="一个跨平台的反直觉要求" tabindex="-1">一个跨平台的反直觉要求 <a class="header-anchor" href="#一个跨平台的反直觉要求"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>素材 3 提了一条，值得单独抄出来：<strong>即便你在单核上写代码，也要按多核来想</strong>。它的例子是：单核上「进程里用 <code>spin_lock_irqsave</code>，中断里不调 <code>spin_lock</code>」也能工作，因为 <code>spin_lock_irqsave</code> 已经保证本 CPU 的 ISR 跑不了。但换到多核，<code>spin_lock_irqsave</code> 关的是本 CPU 的中断，别的 CPU 上的同一个中断照样能进来，两边同时改数据。所以中断处理程序里也必须调 <code>spin_lock</code>。这条规则不分架构：<strong>只要进程和中断共享数据，两侧都要加锁，进程侧加 irqsave</strong>。</p>
+<h2 id="十中断上下文里用普通-spin_lock-会死锁的那一幕" tabindex="-1">十、中断上下文里用普通 spin_lock 会死锁的那一幕 <a class="header-anchor" href="#十中断上下文里用普通-spin_lock-会死锁的那一幕"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把这一场完整走一遍，它是最容易犯、后果最重的一个错。</p>
+<h3 id="布景" tabindex="-1">布景 <a class="header-anchor" href="#布景"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一块共享数据 <code>R</code>，被两处访问：进程上下文里 <code>foo()</code> 用 <code>spin_lock(&amp;lock)</code> 保护 <code>R</code> 的读改写，外设 P 的中断 handler 里也要读写 <code>R</code>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-title function_">DEFINE_SPINLOCK</span><span class="hljs-params">(lock)</span>;
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> counter;
+
+<span class="hljs-type">static</span> <span class="hljs-type">irqreturn_t</span> <span class="hljs-title function_">p_handler</span><span class="hljs-params">(<span class="hljs-type">int</span> irq, <span class="hljs-type">void</span> *dev)</span>
+{
+    spin_lock(&amp;lock);          <span class="hljs-comment">/* 错在这里：普通 spin_lock */</span>
+    counter++;
+    spin_unlock(&amp;lock);
+    <span class="hljs-keyword">return</span> IRQ_HANDLED;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">foo</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    spin_lock(&amp;lock);          <span class="hljs-comment">/* 同一个错 */</span>
+    counter++;
+    spin_unlock(&amp;lock);
+}
+</code></pre></div></code></pre>
+<h3 id="走一遍" tabindex="-1">走一遍 <a class="header-anchor" href="#走一遍"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ol>
+<li>CPU0 上的进程 A 调 <code>foo()</code>，<code>spin_lock()</code> 成功，<code>counter</code> 是 42，A 准备写 43。</li>
+<li>A 还没写完，外设 P 的中断来了，落在 CPU0 上。</li>
+<li>CPU0 转去跑 <code>p_handler()</code>，它也要 <code>spin_lock(&amp;lock)</code>。</li>
+<li>锁在 A 手里。SMP 上 <code>p_handler()</code> 进 <code>wfe</code> 等待 owner 变化。</li>
+<li>谁能让 owner 变？只有 A。而 A 被这个中断打断了，它的执行流就压在中断栈底下。</li>
+<li>中断不返回，A 不继续；A 不继续，锁不释放；锁不释放，中断不返回。</li>
+</ol>
+<p>CPU0 卡在 <code>wfe</code> 上，直到看门狗把它报出来。</p>
+<h3 id="换成-irqsave-就没事" tabindex="-1">换成 irqsave 就没事 <a class="header-anchor" href="#换成-irqsave-就没事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">foo</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+
+    spin_lock_irqsave(&amp;lock, flags);
+    counter++;
+    spin_unlock_irqrestore(&amp;lock, flags);
+}
+</code></pre></div></code></pre>
+<p>第 1 步之后 <code>local_irq_save()</code> 把 CPU0 的中断关了。第 2 步的中断落不到 CPU0 上，会被路由到别的 CPU（SMP 下由中断控制器的亲和性设置决定），或者挂起到中断重新使能。A 安稳地把 <code>counter</code> 写完、放锁、恢复中断，中断此时才进来，锁是自由的，<code>p_handler()</code> 一次拿到。</p>
+<p>关键在于：<strong>关中断这个动作必须和拿锁在一起</strong>。分开放（先 <code>local_irq_disable()</code> 再 <code>spin_lock()</code>）功能上等价，但解锁时容易配错——<code>spin_unlock_irqrestore()</code> 会替你按正确顺序做「放锁、恢复中断」两件事。</p>
+<h3 id="中断侧为什么用裸-spin_lock" tabindex="-1">中断侧为什么用裸 spin_lock <a class="header-anchor" href="#中断侧为什么用裸-spin_lock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>p_handler()</code> 保持 <code>spin_lock()</code> 就好。它运行时本 CPU 中断是关的，自己不会再被打断（NMI 除外，NMI 不能拿普通 spinlock，这是另一条规矩）。它要防的是别的 CPU 上的进程 A，独占指令已经够了。中断侧写成 <code>spin_lock_irqsave()</code> 不会错，只是白干——白白保存恢复一次中断状态。### 那一幕的变体：软中断</p>
+<p>把 handler 换成 tasklet，进程侧用 <code>spin_lock_bh()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">p_tasklet</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> data)</span>
+{
+    spin_lock(&amp;lock);
+    counter++;
+    spin_unlock(&amp;lock);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">foo</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    spin_lock_bh(&amp;lock);
+    counter++;
+    spin_unlock_bh(&amp;lock);
+}
+</code></pre></div></code></pre>
+<p>同样的道理。<code>local_bh_disable()</code> 之后本 CPU 上的软中断被推迟到 <code>local_bh_enable()</code> 之后再跑，那时锁已经放了。不用关硬中断，代价小得多。这里误用 <code>spin_lock()</code> 的话，进程 A 在临界区里被软中断打断，tasklet 里 <code>spin_lock</code> 自旋，A 跑不了——同一个死锁，只是触发源从硬中断换成软中断。</p>
+<h2 id="十一spinlock-在-arm-上的实现ldrexstrex-与-wfe" tabindex="-1">十一、spinlock 在 ARM 上的实现：ldrex/strex 与 wfe <a class="header-anchor" href="#十一spinlock-在-arm-上的实现ldrexstrex-与-wfe"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>ARM 的独占访问机制是这套东西的硬件基础，先讲清楚它，后面的 ticket 汇编才读得懂。</p>
+<h3 id="ldrex--strex-干了什么" tabindex="-1">ldrex / strex 干了什么 <a class="header-anchor" href="#ldrex--strex-干了什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>ldrex</code>（Load-Exclusive）和 <code>strex</code>（Store-Exclusive）是一对。它们不是原子指令，<strong>配对使用才构成原子操作</strong>。</p>
+<pre><code class="language-asm"><div class="code-block" data-lang="armasm"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">armasm</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">ldrex</span>  <span class="hljs-built_in">r0</span>, [<span class="hljs-built_in">r1</span>]        <span class="hljs-comment">@ 读 [r1] 到 r0，同时给 [r1] 这块地址打上独占标记</span>
+<span class="hljs-keyword">add</span>    <span class="hljs-built_in">r0</span>, <span class="hljs-built_in">r0</span>, <span class="hljs-number">#1</span>      <span class="hljs-comment">@ 中间随便算，可以插任意指令</span>
+<span class="hljs-keyword">strex</span>  <span class="hljs-built_in">r2</span>, <span class="hljs-built_in">r0</span>, [<span class="hljs-built_in">r1</span>]    <span class="hljs-comment">@ 尝试写回：独占标记还在就写成功，r2 = 0</span>
+                       <span class="hljs-comment">@             标记没了就写失败，r2 = 1，[r1] 不变</span>
+</code></pre></div></code></pre>
+<p>关键点：<code>ldrex</code> 之后，如果有任何其他 PE（处理单元）对同一地址执行了写，本 PE 的独占标记就被清掉，<code>strex</code> 必定失败并返回 1。软件看到 <code>strex</code> 返回非 0，就知道「我算的这遍白算了」，回到 <code>ldrex</code> 重来。</p>
+<p>这就是一个无锁的「读-改-写」原子序列。它比 CAS 灵活（中间可以做任意运算），但要求中间不能有别的写碰这块地址，所以循环是必须的。三条使用铁律：<code>ldrex</code> 和 <code>strex</code> 必须访问同一地址，否则行为未定义；中间的指令数不能太多，独占监视器（exclusive monitor）不是无限的，具体上限「未验证」，实践上都是几条指令；<code>strex</code> 的返回值必须检查，忽略它就是一个静默的错误。</p>
+<h3 id="独占监视器与-wfe-的联动" tabindex="-1">独占监视器与 wfe 的联动 <a class="header-anchor" href="#独占监视器与-wfe-的联动"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>ARM ARM 里有一张 global monitor 的状态迁移图（Figure B2-5）：PE(n) 对地址 x 发起 exclusive 操作时，PE(n) 的 global monitor 从 open access 迁移到 exclusive access；此时<strong>来自其他 PE 针对 x 的 store 操作</strong>会让 PE(n) 的 global monitor 退回 open access，并且把 PE(n) 的 Event register 写上一个 event，把 PE(n) 唤醒。</p>
+<p>这条硬件行为有个实际后果：<strong><code>arch_spin_unlock()</code> 里不需要 <code>sev</code> 指令</strong>。等锁的 PE 在自旋前都执行过 <code>ldrex</code>（ARM32）或 <code>ldaxrh</code>（ARM64）读 owner，已经把自己设成了「在 x 上等待」，解锁那次 store 会自动给它们发 event。省一条指令，也省一次广播。</p>
+<h3 id="wfe--sev--sevl" tabindex="-1">wfe / sev / sevl <a class="header-anchor" href="#wfe--sev--sevl"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>wfe</code>（Wait For Event）让 CPU 进入低功耗等待，直到 Event register 收到 event 才继续。它和 <code>wfi</code>（等中断）的区别是 <code>wfe</code> 可以被 <code>sev</code> 唤醒，也可以被硬件事件（上面那条）唤醒，不要求真中断。<code>sev</code>（Send Event）向所有 PE 广播 event，<code>sevl</code>（Send Event Local）只给自己发一个 event，先把 Event register 置位。</p>
+<p><code>sevl</code> 的用处很具体。ARM64 的 <code>arch_spin_lock</code> 在进入 <code>wfe</code> 循环前先 <code>sevl</code>，堵一个窗口：如果解锁恰好发生在「判断 owner 不相等」和「执行 <code>wfe</code>」之间，这个 event 就丢了，<code>wfe</code> 会睡到下一次 event 才醒，白等一个来回。先 <code>sevl</code> 把 register 置位，下一句 <code>wfe</code> 立刻返回，重新读 owner，继续判断。</p>
+<p>ARM32 的旧代码没有 <code>sevl</code>，靠的是 <code>wfe</code> 之前那次 <code>ldrex</code>/<code>ldr</code> 建立的监视状态。这个差异在 3.x 的 ARM32 和 4.x 的 ARM64 之间真实存在。</p>
+<h3 id="为什么-v6-之后的-arm-需要内存屏障" tabindex="-1">为什么 V6 之后的 ARM 需要内存屏障 <a class="header-anchor" href="#为什么-v6-之后的-arm-需要内存屏障"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>arch_spin_lock()</code> 结尾有一句 <code>smp_mb()</code>，注释写得明白：</p>
+<blockquote>
+<p>A memory barrier is required after we get a lock, and before we release it, because V6 CPUs are assumed to have weakly ordered memory.</p>
+</blockquote>
+<p>拿到锁之后必须有一条屏障，否则临界区里的访存会被重排到锁之前执行——锁还没真正到手，数据已经被改了。释放锁之前同样需要。</p>
+<p>ARMv8 引入的 Load-Acquire / Store-Release 语义可以用指令自带屏障替换显式 <code>dmb</code>：<code>ldaxr</code> 是 load + acquire，保证这条 load 之后的指令在所有 observer 看来都在它之后执行；<code>stlrh</code> / <code>stlr</code> 是 store + release，保证这条 store 之前的指令都在它之前完成。</p>
+<p>省一条 <code>dmb</code> 在锁这种每纳秒都在跑的热路径上不是小事。这就是为什么 ARM64 的 <code>arch_spin_lock()</code> 结尾没有 <code>smp_mb()</code>，而 ARM32 有。</p>
+<h2 id="十二ticket-spinlock为什么要排队" tabindex="-1">十二、ticket spinlock：为什么要排队 <a class="header-anchor" href="#十二ticket-spinlock为什么要排队"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>第三章留下的问题：无序竞争为什么会饿死人。答案在 cache 一致性，解法在排队。</p>
+<h3 id="问题重述" tabindex="-1">问题重述 <a class="header-anchor" href="#问题重述"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>锁在内存里，每个 CPU 的 L1 都缓存了它。CPU0 持锁、释放（执行 <code>smp_mb()</code> 让别人的 cache line 失效），它自己的 L1 里那份数据还是热的，下一次去抢几乎必然赢。而刚被失效了缓存的 CPU1 得从内存重新取，慢一大截。结果就是「越抢越热、越热越抢」，Nick Piggin 说的「被饿一百万次」就是这么来的。</p>
+<h3 id="解法叫号" tabindex="-1">解法：叫号 <a class="header-anchor" href="#解法叫号"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>ticket spinlock 借的是银行柜台的模型。进门先取号，柜台叫号，号对上的人才上前。<code>owner</code> 是当前叫到的号（服务号），<code>next</code> 是下一个要发的号（排队号）。</p>
+<p>规则三条：拿锁时原子地把 <code>next</code> 加一，自己留下旧的 <code>next</code> 值作为自己的号；然后轮询 <code>owner</code> 是否等于自己的号，等于就进临界区，不等就继续等；释放锁时 <code>owner</code> 加一，下一个人的号就对上了。因为发号是原子的（<code>ldrex</code>/<code>strex</code>），不会有两个 CPU 拿到同一个号。所以<strong>严格先来先得</strong>，饿死在这里不存在。</p>
+<h3 id="用餐馆讲一遍" tabindex="-1">用餐馆讲一遍 <a class="header-anchor" href="#用餐馆讲一遍"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>素材 1 用「九毛九只有一张桌子」打比方，我们沿用。最开始 <code>slock = 0</code>，<code>owner = next = 0</code>，两者相等表示空闲。</p>
+<p>第一个人来（thread 调 <code>spin_lock</code>），看到 <code>owner == next</code>，直接入席，同时 <code>next++</code> 变成 1——「下一个人来，给他 1 号」。这个人吃得快，没人竞争就 <code>spin_unlock</code>，<code>owner++</code> 变成 1，表示「1 号可以入席了」。</p>
+<p>1 号来了，取号拿到 1，<code>next++</code> 变成 2。1 号吃饭巨慢（thread 不该长期持锁，但存在）。期间 2 号、3 号、4 号陆续来，依次拿到 2、3、4，<code>next</code> 一路涨到 5，<code>owner</code> 停在 1 不动，所有人都在门口等。1 号终于吃完，<code>spin_unlock</code>，<code>owner++</code> 变成 2，2 号看到号对上了入席，3 号、4 号继续等。<code>owner</code> 一次只加一，所以<strong>严格按取号顺序放行</strong>。</p>
+<h3 id="arm32-的-arch_spin_lock" tabindex="-1">ARM32 的 arch_spin_lock <a class="header-anchor" href="#arm32-的-arch_spin_lock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>arch/arm/include/asm/spinlock.h</code>（3.x）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arch_spin_lock</span><span class="hljs-params">(<span class="hljs-type">arch_spinlock_t</span> *lock)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> tmp;
+    u32 newval;
+    <span class="hljs-type">arch_spinlock_t</span> lockval;
+
+    prefetchw(&amp;lock-&gt;slock);                          <span class="hljs-comment">/* (1) */</span>
+
+    __asm__ __volatile__(
+<span class="hljs-string">&quot;1:    ldrex    %0, [%3]\n&quot;</span>                           <span class="hljs-comment">/* (2) */</span>
+<span class="hljs-string">&quot;    add      %1, %0, %4\n&quot;</span>                           <span class="hljs-comment">/* (3) */</span>
+<span class="hljs-string">&quot;    strex    %2, %1, [%3]\n&quot;</span>                         <span class="hljs-comment">/* (4) */</span>
+<span class="hljs-string">&quot;    teq      %2, #0\n&quot;</span>                               <span class="hljs-comment">/* (5) */</span>
+<span class="hljs-string">&quot;    bne      1b&quot;</span>
+    : <span class="hljs-string">&quot;=&amp;r&quot;</span> (lockval), <span class="hljs-string">&quot;=&amp;r&quot;</span> (newval), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp)
+    : <span class="hljs-string">&quot;r&quot;</span> (&amp;lock-&gt;slock), <span class="hljs-string">&quot;I&quot;</span> (<span class="hljs-number">1</span> &lt;&lt; TICKET_SHIFT)
+    : <span class="hljs-string">&quot;cc&quot;</span>);
+
+    <span class="hljs-keyword">while</span> (lockval.tickets.next != lockval.tickets.owner) {   <span class="hljs-comment">/* (6) */</span>
+        wfe();                                                <span class="hljs-comment">/* (7) */</span>
+        lockval.tickets.owner = READ_ONCE(lock-&gt;tickets.owner); <span class="hljs-comment">/* (8) */</span>
+    }
+
+    smp_mb();                                                 <span class="hljs-comment">/* (9) */</span>
+}
+</code></pre></div></code></pre>
+<p>逐条：</p>
+<ol>
+<li><code>prefetchw()</code> 把 cache line 预取成独占状态，纯粹为性能。ARM32 上它展开成 <code>pldw</code>，老核上是空实现。</li>
+<li><code>ldrex</code> 把整个 <code>slock</code>（<code>owner</code> + <code>next</code> 打成 32 位）读进 <code>lockval</code>，同时打独占标记。</li>
+<li><code>newval = lockval + (1 &lt;&lt; 16)</code>。因为 <code>next</code> 在高 16 位，这等价于 <code>next++</code>。</li>
+<li><code>strex</code> 写回。成功 <code>tmp = 0</code>，失败 <code>tmp = 1</code>。</li>
+<li>失败就 <code>bne 1b</code> 回去重来。这是「取号」的原子操作。</li>
+<li>取完号，比较自己 <code>lockval</code> 里的 <code>next</code>（自己拿到的号）和 <code>owner</code>（服务号）。相等就直接进临界区，一次也没等——无竞争时零开销。</li>
+<li>不相等就 <code>wfe</code> 睡下等 event。谁发 event？持锁者 <code>spin_unlock</code> 时写 <code>owner</code>，第十一章讲过，硬件会自动给在 <code>slock</code> 上做过 exclusive load 的 PE 发 event。</li>
+<li>被唤醒后重新读 <code>owner</code>（用 <code>READ_ONCE</code> 防止编译器把它提到循环外），回到 6 判断。只读 16 位而非整个 <code>slock</code>，虽然两者同在一个 cache line，终究会失效。</li>
+<li><code>smp_mb()</code>，ARM64 上被 acquire/release 指令代替了，ARM32 上必须有。</li>
+</ol>
+<h3 id="三个进程同时抢的一次完整推演" tabindex="-1">三个进程同时抢的一次完整推演 <a class="header-anchor" href="#三个进程同时抢的一次完整推演"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>slock</code> 初始 0（<code>owner = 0</code>, <code>next = 0</code>），三个 CPU 同时执行到 <code>ldrex</code>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>时刻</th>
+<th>CPU0</th>
+<th>CPU1</th>
+<th>CPU2</th>
+<th><code>lock-&gt;slock</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>起始</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td><code>owner=0, next=0</code></td>
+</tr>
+<tr>
+<td>CPU0 抢到独占</td>
+<td><code>lockval=0</code>，<code>newval=1&lt;&lt;16</code>，<code>strex</code> 成功</td>
+<td>同时 <code>ldrex</code>，标记被抢</td>
+<td>同时 <code>ldrex</code>，标记被抢</td>
+<td><code>next=1</code></td>
+</tr>
+<tr>
+<td>CPU0 判断</td>
+<td><code>next(0) == owner(0)</code>，持锁进临界区</td>
+<td><code>strex</code> 失败，<code>bne 1b</code></td>
+<td><code>strex</code> 失败，<code>bne 1b</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>CPU1 重来</td>
+<td>在临界区</td>
+<td><code>lockval=1&lt;&lt;16</code>，<code>newval=2&lt;&lt;16</code>，成功</td>
+<td>又失败</td>
+<td><code>next=2</code></td>
+</tr>
+<tr>
+<td>CPU1 判断</td>
+<td>在临界区</td>
+<td><code>next(1) != owner(0)</code>，<code>wfe</code></td>
+<td>重来</td>
+<td>—</td>
+</tr>
+<tr>
+<td>CPU2 重来</td>
+<td>在临界区</td>
+<td>睡着</td>
+<td><code>lockval=2&lt;&lt;16</code>，<code>newval=3&lt;&lt;16</code>，成功</td>
+<td><code>next=3</code></td>
+</tr>
+<tr>
+<td>CPU2 判断</td>
+<td>在临界区</td>
+<td>睡着</td>
+<td><code>next(2) != owner(0)</code>，<code>wfe</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>CPU0 解锁</td>
+<td><code>owner++</code> → 1</td>
+<td>被 event 唤醒</td>
+<td>睡着</td>
+<td><code>owner=1, next=3</code></td>
+</tr>
+<tr>
+<td>CPU1 判断</td>
+<td>出临界区</td>
+<td><code>next(1) == owner(1)</code>，持锁</td>
+<td>仍 <code>next(2) != owner(1)</code>，继续睡</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div><p>三个人各自拿到的号是 0、1、2，<code>owner</code> 一次加一，放行顺序 0 → 1 → 2。这就是公平性。</p>
+<h3 id="素材-3-那段推演的三个错" tabindex="-1">素材 3 那段推演的三个错 <a class="header-anchor" href="#素材-3-那段推演的三个错"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>素材 3 也做了这个推演，写的是：</p>
+<blockquote>
+<p>此时第一个进程释放spinlock，则执行 lock-&gt;tickets.owner++，lock-&gt;tickets.owner=2；
+虽然此时第二个进程和第三个进程都在等待spinlock，但是因为第二个进程的修改了 lockval.tickets.owner，满足了 ...</p>
+</blockquote>
+<p>两处错。<code>owner</code> 从 0 加一得 1，不是 2；真跳到 2，进程 2 的号（1）就被跳过了，进程 3 会先拿到锁，公平性直接消失——而公平性正是 ticket lock 存在的理由。「第二个进程修改了 <code>lockval.tickets.owner</code>」这个说法把方向搞反了：<code>lockval</code> 是每个 CPU 自己的栈上局部变量，别人改不了。进程 2 是在 <code>wfe</code> 循环里<strong>重新读</strong>了 <code>lock-&gt;tickets.owner</code> 并写进自己的 <code>lockval</code>（上面第 8 步），然后重新比较。素材 3 自己给的代码写的就是 <code>lockval.tickets.owner = ACCESS_ONCE(lock-&gt;tickets.owner)</code>，是对的，推演段落写岔了。</p>
+<p>素材 3 的汇编逐条表也有问题：它有 13 行，里面 <code>ldrex R0, [R3]</code> 出现了三次、<code>strex R1, R0, [R3]</code> 出现一次（这条在源码里不存在）。那张表把三个 CPU 的执行交织错了位。以上面那张表为准。</p>
+<h3 id="arm64-的-arch_spin_lock" tabindex="-1">ARM64 的 arch_spin_lock <a class="header-anchor" href="#arm64-的-arch_spin_lock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>arch/arm64/include/asm/spinlock.h</code>（4.1.10）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arch_spin_lock</span><span class="hljs-params">(<span class="hljs-type">arch_spinlock_t</span> *lock)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> tmp;
+    <span class="hljs-type">arch_spinlock_t</span> lockval, newval;
+
+    <span class="hljs-keyword">asm</span> <span class="hljs-title function_">volatile</span><span class="hljs-params">(
+    <span class="hljs-comment">/* Atomically increment the next ticket. */</span>
+<span class="hljs-string">&quot;    prfm    pstl1strm, %3\n&quot;</span>                      <span class="hljs-comment">/* (A) */</span>
+<span class="hljs-string">&quot;1:    ldaxr    %w0, %3\n&quot;</span>                        <span class="hljs-comment">/* (B) lockval = lock */</span>
+<span class="hljs-string">&quot;    add      %w1, %w0, %w5\n&quot;</span>                    <span class="hljs-comment">/* newval = lockval + (1&lt;&lt;16) */</span>
+<span class="hljs-string">&quot;    stxr     %w2, %w1, %3\n&quot;</span>                     <span class="hljs-comment">/* lock = newval */</span>
+<span class="hljs-string">&quot;    cbnz     %w2, 1b\n&quot;</span>                          <span class="hljs-comment">/* 有其他 PE 插入？重来 */</span>
+
+    <span class="hljs-comment">/* Did we get the lock? */</span>
+<span class="hljs-string">&quot;    eor      %w1, %w0, %w0, ror #16\n&quot;</span>           <span class="hljs-comment">/* 把 next 和 owner 异或到一起 */</span>
+<span class="hljs-string">&quot;    cbz      %w1, 3f\n&quot;</span>                          <span class="hljs-comment">/* 相等就是 0，持锁进临界区 */</span>
+
+    <span class="hljs-comment">/*
+     * No: spin on the owner. Send a local event to avoid missing an
+     * unlock before the exclusive load.
+     */</span>
+<span class="hljs-string">&quot;    sevl\n&quot;</span>                                       <span class="hljs-comment">/* (C) */</span>
+<span class="hljs-string">&quot;2:    wfe\n&quot;</span>                                      <span class="hljs-comment">/* (D) */</span>
+<span class="hljs-string">&quot;    ldaxrh   %w2, %4\n&quot;</span>                           <span class="hljs-comment">/* (E) 读 owner（半字） */</span>
+<span class="hljs-string">&quot;    eor      %w1, %w2, %w0, lsr #16\n&quot;</span>            <span class="hljs-comment">/* 自己的号 == owner？ */</span>
+<span class="hljs-string">&quot;    cbnz     %w1, 2b\n&quot;</span>                           <span class="hljs-comment">/* 不等，回 2 继续睡 */</span>
+
+    <span class="hljs-comment">/* We got the lock. Critical section starts here. */</span>
+<span class="hljs-string">&quot;3:&quot;</span>
+    : <span class="hljs-string">&quot;=&amp;r&quot;</span> (lockval), <span class="hljs-string">&quot;=&amp;r&quot;</span> (newval), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp), <span class="hljs-string">&quot;+Q&quot;</span> (*lock)
+    : <span class="hljs-string">&quot;Q&quot;</span> (lock-&gt;owner), <span class="hljs-string">&quot;I&quot;</span> (<span class="hljs-number">1</span> &lt;&lt; TICKET_SHIFT)
+    : <span class="hljs-string">&quot;memory&quot;</span>)</span>;
+}
+</code></pre></div></code></pre>
+<p>和 ARM32 的差别，逐条对照：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>项目</th>
+<th>ARM32</th>
+<th>ARM64</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>预取</td>
+<td><code>prefetchw</code></td>
+<td><code>prfm pstl1strm</code></td>
+</tr>
+<tr>
+<td>独占加载</td>
+<td><code>ldrex</code>（无 acquire）</td>
+<td><code>ldaxr</code>（带 acquire）</td>
+</tr>
+<tr>
+<td>独占存储</td>
+<td><code>strex</code></td>
+<td><code>stxr</code></td>
+</tr>
+<tr>
+<td>取号后的内存屏障</td>
+<td>结尾 <code>smp_mb()</code></td>
+<td>无，acquire 语义已含</td>
+</tr>
+<tr>
+<td>比对方式</td>
+<td>逐字段 <code>!=</code></td>
+<td><code>eor</code> + <code>ror #16</code> 一次算完</td>
+</tr>
+<tr>
+<td>进入等待前的防丢事件</td>
+<td>无</td>
+<td><code>sevl</code></td>
+</tr>
+<tr>
+<td>读 owner</td>
+<td><code>ldr</code> / <code>READ_ONCE</code> 整字后拆</td>
+<td><code>ldaxrh</code> 半字，带 acquire</td>
+</tr>
+</tbody>
+</table></div><p><code>eor %w1, %w0, %w0, ror #16</code> 这一句干净：把 32 位值循环右移 16 位再和原值异或，若 <code>owner == next</code> 则高低半字抵消，结果为 0。一条指令代替两次取值比较。</p>
+<p><code>ldaxrh</code> 末尾的 <code>h</code> 是 halfword，只读 2 字节的 <code>owner</code>。ARM64 的 <code>arch_spinlock_t</code> 是两个裸 <code>u16</code>，本来就能单独寻址 <code>owner</code>，这是它去掉 <code>union</code> 的收益。</p>
+<h3 id="arm64-的-arch_spin_unlock" tabindex="-1">ARM64 的 arch_spin_unlock <a class="header-anchor" href="#arm64-的-arch_spin_unlock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arch_spin_unlock</span><span class="hljs-params">(<span class="hljs-type">arch_spinlock_t</span> *lock)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> tmp;
+
+    <span class="hljs-keyword">asm</span> <span class="hljs-title function_">volatile</span><span class="hljs-params">(ARM64_LSE_ATOMIC_INSN(
+    <span class="hljs-comment">/* LL/SC */</span>
+    <span class="hljs-string">&quot;    ldrh    %w1, %0\n&quot;</span>
+    <span class="hljs-string">&quot;    add     %w1, %w1, #1\n&quot;</span>
+    <span class="hljs-string">&quot;    stlrh   %w1, %0&quot;</span>,
+   <span class="hljs-comment">/* 大系统扩展的原子指令 */</span>
+    <span class="hljs-string">&quot;    mov     %w1, #1\n&quot;</span>
+    <span class="hljs-string">&quot;    staddlh %w1, %0\n&quot;</span>
+    __nops(<span class="hljs-number">1</span>))
+    : <span class="hljs-string">&quot;=Q&quot;</span> (lock-&gt;owner), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp)
+    :
+    : <span class="hljs-string">&quot;memory&quot;</span>)</span>;
+}
+</code></pre></div></code></pre>
+<p>主体是「读 <code>owner</code>、加一、写回」，三步。<strong>这里不需要 <code>ldrex</code>/<code>strex</code></strong>——一次只有一个执行流在临界区里，只有一个执行流会走到 <code>unlock</code>，<code>owner</code> 的读改写不会被并发。这个推论解释了为什么 <code>unlock</code> 比 <code>lock</code> 短得多。</p>
+<p><code>stlrh</code> 的 <code>l</code> 是 release。它保证临界区里的所有写，在别的 CPU 看来都发生在 <code>owner</code> 更新之前。少了这个，下一个持锁者会先看到 <code>owner</code> 变了、拿锁进临界区，然后才看到上一个持锁者写的数据——数据竞争。<code>ARM64_LSE_ATOMIC_INSN</code> 是个编译期二选一：处理器有 LSE（Large System Extensions，ARMv8.1 引入的原子指令扩展）时用 <code>staddlh</code>（带 release 的原子加）一条搞定，没有就用 <code>ldrh</code>/<code>add</code>/<code>stlrh</code> 三连。前面取号那半段同理，有 LSE 就用 <code>ldadda</code>。</p>
+<h3 id="为什么-arm-至今还是-ticket" tabindex="-1">为什么 ARM 至今还是 ticket <a class="header-anchor" href="#为什么-arm-至今还是-ticket"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>4.2 之后 x86 换成了 qspinlock（MCS 的 4 字节压缩版），ARM 一直留在 ticket。原因不是 ARM 落后，是 qspinlock 依赖 <code>xchg</code> 和 per-CPU 变量布局，在 ARM 上的收益相对小；而 ARM 的 ticket 已经配好了 <code>wfe</code>，空转不烧 CPU，cache 行争用的痛点被削弱了。排队锁的状态机、<code>pending</code> 位、<code>_Q_LOCKED_VAL</code> 那些，本篇不展开，<strong>排队锁见同批另一篇</strong>。</p>
+<h2 id="十三自旋锁保护的边界它保护的是数据不是代码" tabindex="-1">十三、自旋锁保护的边界：它保护的是数据，不是代码 <a class="header-anchor" href="#十三自旋锁保护的边界它保护的是数据不是代码"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这是误解最多的一条。写下来一句话：<strong>锁保护的是数据实例，不是代码段。</strong></p>
+<p>一条推论会让人不适应：同一个函数可以在两个 CPU 上同时执行，只要它不碰受保护的数据。<code>spin_lock</code> 不负责「让这个函数串行」，它只负责「让通过这把锁访问这份数据的执行流串行」。举两个写错的样子。</p>
+<p><strong>错法一：以为加锁就串行了。</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-title function_">DEFINE_SPINLOCK</span><span class="hljs-params">(lock)</span>;
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">update</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    spin_lock(&amp;lock);
+    a++;                 <span class="hljs-comment">/* 受保护，对的 */</span>
+    spin_unlock(&amp;lock);
+
+    b++;                 <span class="hljs-comment">/* 不受保护，别的 CPU 照样能同时改 b */</span>
+}
+</code></pre></div></code></pre>
+<p><code>b++</code> 在锁外，<code>update()</code> 在两个 CPU 上跑就是数据竞争。要保护 <code>b</code> 就把它挪进临界区，或者给它另一把锁。</p>
+<p><strong>错法二：一把全局锁保护所有东西。</strong> <code>static DEFINE_SPINLOCK(big_lock);</code> 能跑，但在多核上是性能灾难，所有 CPU 排队过同一把锁，本来能并行的路径全串起来。</p>
+<p><strong>第三层：锁要跟着数据走，不是跟着函数走。</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">queue</span> {</span>
+    <span class="hljs-type">spinlock_t</span> lock;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">head</span>;</span>
+};
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">queue_push</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> <span class="hljs-built_in">queue</span> *q, <span class="hljs-keyword">struct</span> item *it)</span>
+{
+    spin_lock(&amp;q-&gt;lock);
+    list_add_tail(&amp;it-&gt;node, &amp;q-&gt;head);
+    spin_unlock(&amp;q-&gt;lock);
+}
+</code></pre></div></code></pre>
+<p>锁嵌在 <code>queue</code> 里，每个队列一把。一百个队列就是一百把独立的锁，互不干扰。写成函数外的 <code>static DEFINE_SPINLOCK(lock)</code>，一百个队列就抢一把。</p>
+<h3 id="临界区的边界怎么划" tabindex="-1">临界区的边界怎么划 <a class="header-anchor" href="#临界区的边界怎么划"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>标准是「不变量」：临界区要刚好包住「不变量被破坏」的那段窗口，不多不少。链表插入的不变量是「<code>head</code> 的指针和 <code>it-&gt;node</code> 的指针要么都旧、要么都新」，所以 <code>list_add_tail()</code> 整段必须在锁内。插入之后要打印一行日志，那行打印不该在锁内——它不参与不变量，放进去只让临界区变长。</p>
+<h3 id="一个反直觉的结论" tabindex="-1">一个反直觉的结论 <a class="header-anchor" href="#一个反直觉的结论"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>自旋锁不阻止任何代码执行，它只让抢不到锁的执行流原地空转。「加了锁」从来不等于「安全了」。安全的充分条件是：<strong>所有访问这份数据的路径，都用了同一把锁</strong>。漏掉一条，锁就等于没加。这也是 <code>CONFIG_DEBUG_SPINLOCK</code> 和 lockdep 存在的理由——它们检查的正是「有没有漏」。</p>
+<h2 id="十四嵌套与加锁顺序" tabindex="-1">十四、嵌套与加锁顺序 <a class="header-anchor" href="#十四嵌套与加锁顺序"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="同一把锁不能嵌套" tabindex="-1">同一把锁不能嵌套 <a class="header-anchor" href="#同一把锁不能嵌套"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>已经持有 <code>spin_lock(&amp;lock)</code>，再 <code>spin_lock(&amp;lock)</code> 一次会怎样？</p>
+<p>SMP 上：第二次发现 <code>next != owner</code>，<code>wfe</code> 睡下等自己释放锁，等到天荒地老。这叫自死锁（self-deadlock）。</p>
+<p>UP 上更阴：<code>spin_lock</code> 只做 <code>preempt_disable()</code>，第二次调用照样成功返回，抢占计数变成 2，代码一路跑下去看着没事。等第一次 <code>spin_unlock()</code> 把计数减回 1，锁其实已经「放」了，你的代码却以为还持有——保护漏了。UP 上不报错，只是静默失效。</p>
+<p><code>CONFIG_DEBUG_SPINLOCK</code> 的 <code>debug_spin_lock_before()</code> 专门查这个：它记了持有者，发现当前 CPU 已经持有同一把锁就立刻报错，不让你卡死。这是第七章那个 debug 版本存在的最大价值。<strong>绝不对同一把锁递归加锁。</strong> 需要递归保护的场景说明临界区划分有问题，重新设计。</p>
+<h3 id="多把锁必须定序" tabindex="-1">多把锁必须定序 <a class="header-anchor" href="#多把锁必须定序"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>两个临界区各要两把锁，顺序不一致就是 ABBA 死锁：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* CPU0 */</span>                    <span class="hljs-comment">/* CPU1 */</span>
+spin_lock(&amp;a);                spin_lock(&amp;b);
+spin_lock(&amp;b);                spin_lock(&amp;a);
+</code></pre></div></code></pre>
+<p>CPU0 拿到 a 等 b，CPU1 拿到 b 等 a。两边都在自旋，谁都不放，系统挂死。</p>
+<p>规则：<strong>给所有锁排一个全局顺序，任何路径都按这个顺序加锁。</strong> 顺序怎么定都行，关键是要有，且全代码库一致，用「锁的地址大小」「模块内编号」「数据结构层次」都可以，写进注释。内核里成对使用、顺序已经定死的有 <code>mm-&gt;page_table_lock</code> 与 <code>pte_lock</code>、<code>task_struct-&gt;alloc_lock</code> 与 <code>signal-&gt;siglock</code>，这类顺序在内核文档里有记载，改之前要先查。### 嵌套时的 irqsave 变量</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">outer</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+
+    spin_lock_irqsave(&amp;a, flags);
+    inner();
+    spin_unlock_irqrestore(&amp;a, flags);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">inner</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> f2;
+
+    spin_lock_irqsave(&amp;b, f2);     <span class="hljs-comment">/* 注意：用另一个变量 */</span>
+    <span class="hljs-comment">/* ... */</span>
+    spin_unlock_irqrestore(&amp;b, f2);
+}
+</code></pre></div></code></pre>
+<p>两层各用自己的 <code>flags</code> 变量。图省事共用一个，内层 <code>local_irq_save()</code> 会把「外层已经关了中断」这个事实覆盖掉，外层恢复时就恢复错了。这也是 <code>local_irq_save()</code> 存在的全部理由——它把状态存下来，恢复时按存的值恢复，不是无脑开。</p>
+<h3 id="lockdep-能查什么" tabindex="-1">lockdep 能查什么 <a class="header-anchor" href="#lockdep-能查什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>CONFIG_PROVE_LOCKING</code>（lockdep）在运行时记录「谁在持有什么锁的时候申请了什么锁」，维护一张锁依赖图。它抓得住的：ABBA 死锁的潜在顺序（还没真死就报）、持有锁时申请另一把已知会冲突的锁、中断上下文与进程上下文的锁使用不一致（靠 <code>spin_lock_irqsave</code> 与 <code>spin_lock</code> 的类别标记推断）、同一把锁递归申请。它抓不住数据竞争本身。锁用对了，代码照样会漏保护某条路径，那个得靠 KCSAN 这类工具。</p>
+<h2 id="十五几道常见的自旋锁问题" tabindex="-1">十五、几道常见的自旋锁问题 <a class="header-anchor" href="#十五几道常见的自旋锁问题"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>素材 4 是问答体，把它的两个问题和另外几个常被问到的合并在这里。</p>
+<h3 id="q1单核上-spin_lock-什么都不做那我写了有什么用" tabindex="-1">Q1：单核上 <code>spin_lock()</code> 什么都不做，那我写了有什么用？ <a class="header-anchor" href="#q1单核上-spin_lock-什么都不做那我写了有什么用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>在你自己那块单核板子上，确实什么都没做。但代码不是只为一块板子写的。三个理由：跨配置编译（同一份代码在 SMP 配置下需要它）；关抢占这个副作用真实生效，它挡住了内核态抢占；<code>CONFIG_DEBUG_SPINLOCK</code> / lockdep 打开后它是检查器挂载点，能抓出漏保护的路径。省掉它的代价是「在你的板子上能跑，在别人的板子上炸」。</p>
+<h3 id="q2持锁期间我的代码会被打断吗" tabindex="-1">Q2：持锁期间，我的代码会被打断吗？ <a class="header-anchor" href="#q2持锁期间我的代码会被打断吗"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>分三层：<strong>被别的进程抢走</strong>——不会，<code>preempt_disable()</code> 挡住了；<strong>被硬中断打断</strong>——会，<code>spin_lock()</code> 不关中断，除非你用 <code>spin_lock_irq</code> / <code>spin_lock_irqsave</code>；<strong>被软中断打断</strong>——会，除非你用 <code>spin_lock_bh</code>。所以「持锁期间不可打断」这句话只在 <code>spin_lock_irqsave</code> 这个级别成立，裸 <code>spin_lock</code> 只保证「不会被别的进程抢走 CPU」。</p>
+<h3 id="q3spin_lock-和-spin_lock_irqsave-到底怎么选" tabindex="-1">Q3：<code>spin_lock</code> 和 <code>spin_lock_irqsave</code> 到底怎么选？ <a class="header-anchor" href="#q3spin_lock-和-spin_lock_irqsave-到底怎么选"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>回到第九章那三个问题。核心判据只有一条：<strong>这块数据会被中断处理程序碰吗？</strong> 会就用 <code>spin_lock_irqsave</code>（进程侧），不会就有机会用便宜的。</p>
+<p>不确定的时候选 <code>spin_lock_irqsave</code>。它多一点开销（保存恢复一次中断状态），但错了会死锁，而死锁在现场极难查。</p>
+<h3 id="q4临界区里能不能-printk" tabindex="-1">Q4：临界区里能不能 <code>printk</code>？ <a class="header-anchor" href="#q4临界区里能不能-printk"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>能。<code>printk()</code> 可以在原子上下文调用，它自己处理了重入（用 per-CPU 缓冲和锁的嵌套计数），调试时在锁里打日志不会立刻炸。</p>
+<p><code>printk()</code> 很慢，串口输出一行要几十微秒，在自旋锁里打日志会把临界区拉长几个数量级。调试期可以，提交前删掉。真正不能碰的是 <code>printk</code> 之外那些会睡的：<code>kmalloc(GFP_KERNEL)</code>、<code>copy_from_user()</code>、<code>mutex_lock()</code>，第二章列过清单。</p>
+<h3 id="q5既然锁里不能睡那我为什么不用-mutex" tabindex="-1">Q5：既然锁里不能睡，那我为什么不用 mutex？ <a class="header-anchor" href="#q5既然锁里不能睡那我为什么不用-mutex"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>因为 mutex 在中断上下文里用不了，而 <code>spinlock</code> 能。这不是偏好问题，是可用性问题。选择标准很硬：<strong>临界区会不会在中断上下文（或任何不能调度的上下文）执行？</strong> 会就只能 <code>spinlock</code>，临界区必须做到极短；不会就优先 mutex，抢不到会睡，不烧 CPU，临界区可以长。</p>
+<p><code>spinlock</code> 是给「不能睡」的场景用的，不是给「想快」的场景用的。能睡的地方用它，纯属自找麻烦。</p>
+<h3 id="q6spin_lock-会一直自旋吗有没有超时" tabindex="-1">Q6：<code>spin_lock</code> 会一直自旋吗？有没有超时？ <a class="header-anchor" href="#q6spin_lock-会一直自旋吗有没有超时"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>没有超时，没有退避上限，没有放弃机制。<code>arch_spin_lock()</code> 里的循环是无界的，第六章末尾讲过。</p>
+<p>唯一会「退出」的情况是持锁者释放锁。持锁者因为任何原因跑不下去，等锁者就陪它一起卡着，检测交给 NMI watchdog 和 <code>hung_task</code>，它们只报不解。</p>
+<h3 id="q7为什么不干脆用原子操作代替锁" tabindex="-1">Q7：为什么不干脆用原子操作代替锁？ <a class="header-anchor" href="#q7为什么不干脆用原子操作代替锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>原子操作只有一条指令的粒度。<code>atomic_inc()</code> 保证加一是原子的，但保证不了「读 A、判断、再改 B」这一串的原子性。</p>
+<p>只要能用一个原子操作表达完整的不变量，就用原子操作，比锁便宜得多。一旦需要多条语句共同维持一个不变量，就得上锁。</p>
+<h2 id="十六易错点速查" tabindex="-1">十六、易错点速查 <a class="header-anchor" href="#十六易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>按「症状 → 原因 → 修法」排，方便现场对照。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>症状</th>
+<th>原因</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>单核上数据错乱，多核上直接挂死</td>
+<td>中断处理程序也碰这块数据，但进程侧只用了 <code>spin_lock</code></td>
+<td>进程侧换 <code>spin_lock_irqsave</code>，中断侧保持 <code>spin_lock</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>软中断并发下数据错乱</td>
+<td>进程侧用 <code>spin_lock</code>，tasklet 里也用它</td>
+<td>进程侧换 <code>spin_lock_bh</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>系统偶发整体卡死，无 oops</td>
+<td>临界区里调了会睡的函数，持锁者睡下去</td>
+<td>找出 <code>copy_from_user</code>/<code>kmalloc(GFP_KERNEL)</code>/<code>msleep</code>，挪出临界区</td>
+</tr>
+<tr>
+<td>4</td>
+<td>调用某个函数就卡住，栈里停在 <code>wfe</code></td>
+<td>同一把锁递归加锁</td>
+<td>拆临界区，绝不对同一把锁嵌套</td>
+</tr>
+<tr>
+<td>5</td>
+<td>两个线程互相等，各自拿着对方要的锁</td>
+<td>加锁顺序不一致（ABBA）</td>
+<td>定全局顺序，全库统一</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>spin_unlock_irq()</code> 之后中断状态不对</td>
+<td>进入时中断本来就是关的，被无脑打开了</td>
+<td>换 <code>spin_lock_irqsave</code> + <code>spin_unlock_irqrestore</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>UP 上验证通过，SMP 上崩</td>
+<td>按单核写了锁，或省掉了 <code>spin_lock</code></td>
+<td>一律按 SMP 写；中断里也要加锁</td>
+</tr>
+<tr>
+<td>8</td>
+<td>解锁后别的 CPU 读到旧数据</td>
+<td>缺内存屏障，或用了 <code>_relaxed</code> 变体</td>
+<td>用标准 <code>spin_lock</code>/<code>spin_unlock</code>，别自己拼屏障</td>
+</tr>
+<tr>
+<td>9</td>
+<td>临界区里 <code>printk</code> 后系统变慢</td>
+<td>串口输出把临界区拉长几十倍</td>
+<td>调试完删掉，或挪出临界区</td>
+</tr>
+<tr>
+<td>10</td>
+<td>一把锁成了全局瓶颈</td>
+<td>用一把模块级锁保护所有数据</td>
+<td>按数据实例分锁</td>
+</tr>
+<tr>
+<td>11</td>
+<td>NMI 里用 <code>spin_lock</code> 卡死</td>
+<td>NMI 不能被屏蔽，持锁者永远等不到</td>
+<td>NMI 里不能用普通 <code>spinlock</code>，要用 <code>raw_spin_lock</code> 加特殊处理</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>spin_trylock</code> 抢到后忘了 <code>spin_unlock</code></td>
+<td>把它当纯查询用</td>
+<td>返回非 0 就必须配对释放</td>
+</tr>
+</tbody>
+</table></div><p>再补三条不属于「误用」但经常被忽略的：</p>
+<ul>
+<li><strong>用 <code>DEFINE_SPINLOCK</code> 而不是手写初始化</strong>。手写初始化容易漏掉 debug 字段，<code>CONFIG_DEBUG_SPINLOCK</code> 打开后行为异常。</li>
+<li><strong>锁变量要跟着数据一起分配和释放</strong>。<code>kmalloc</code> 出来的结构体，里面的锁必须 <code>spin_lock_init()</code>，否则是一堆随机字节。</li>
+<li><strong>别在持有锁时 <code>return</code> 忘了解锁</strong>。这是最常见的泄漏，<code>CONFIG_DEBUG_SPINLOCK</code> 会在释放路径上抓。</li>
+</ul>
+<h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="章节出处" tabindex="-1">章节出处 <a class="header-anchor" href="#章节出处"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>章节</th>
+<th>主要素材</th>
+<th>补充</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开篇、一</td>
+<td>素材 1《Linux内核同步机制之四spin lock》第二章；素材 2《Linux内核的自旋锁》开篇；素材 3 第一章</td>
+<td>素材 5 的三段演进表</td>
+</tr>
+<tr>
+<td>二</td>
+<td>素材 5 第二节「第二种死锁」</td>
+<td>素材 1 第二章场景分析</td>
+</tr>
+<tr>
+<td>三</td>
+<td>素材 1 第三章第 2 节；素材 2 第 1 节；素材 3 第二章；素材 4 第二章</td>
+<td>2.6.23 历史对比取自素材 1</td>
+</tr>
+<tr>
+<td>四</td>
+<td>素材 1 第二章；素材 4 第一章</td>
+<td>—</td>
+</tr>
+<tr>
+<td>五</td>
+<td>素材 1 第二章「preemptive 场景」；素材 3 第一章</td>
+<td>素材 5 第一节</td>
+</tr>
+<tr>
+<td>六</td>
+<td>素材 1 第二章；素材 4 第二章；素材 5 全部</td>
+<td>—</td>
+</tr>
+<tr>
+<td>七</td>
+<td>素材 3 第二章；素材 1 第三章第 3 节；素材 4 第二章</td>
+<td><code>LOCK_CONTENDED</code> 与 <code>do_raw_spin_lock</code> 两版本对照为新补</td>
+</tr>
+<tr>
+<td>八</td>
+<td>素材 3 第一章末尾的六个等价式；素材 2 第 2 节 API 列表</td>
+<td>解锁顺序、<code>trylock</code> 语义为新补</td>
+</tr>
+<tr>
+<td>九</td>
+<td>素材 3 第一章；素材 1 第二章 softirq 段</td>
+<td>判断流程图为新补</td>
+</tr>
+<tr>
+<td>十</td>
+<td>素材 3 第一章「硬件中断为例」；素材 5 第三节</td>
+<td>完整代码示例为新补</td>
+</tr>
+<tr>
+<td>十一</td>
+<td>素材 1 第四章第 3 节末尾两个知识点；素材 4 第二章汇编</td>
+<td><code>ldrex</code>/<code>strex</code>/<code>wfe</code>/<code>sevl</code> 机制说明为新补</td>
+</tr>
+<tr>
+<td>十二</td>
+<td>素材 1 第四章；素材 3 第二章；素材 2 第 3 节</td>
+<td>ARM64 与 LSE 对照为新补</td>
+</tr>
+<tr>
+<td>十三</td>
+<td>素材 3 第三章要点；素材 2 第 2 节</td>
+<td>全部为新补，素材原文无对应章节</td>
+</tr>
+<tr>
+<td>十四</td>
+<td>素材 3 第三章「递归使用」</td>
+<td>ABBA 定序、lockdep 为新补</td>
+</tr>
+<tr>
+<td>十五</td>
+<td>素材 4 第一章、第二章的问答；素材 3 第三章要点</td>
+<td>Q4～Q7 为新补</td>
+</tr>
+<tr>
+<td>十六</td>
+<td>五篇素材的要点归纳</td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div><h3 id="修正的错误" tabindex="-1">修正的错误 <a class="header-anchor" href="#修正的错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位置</th>
+<th>原文说法</th>
+<th>修正</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>素材 5，第三节末尾</td>
+<td>「现代处理器在处理自旋锁时都会设定自旋上限时间以防死锁」</td>
+<td>错。Linux <code>spinlock</code> 无超时、无退避上限。卡住靠 NMI watchdog / <code>hung_task</code> 检测上报，不是自动解开。见第六章末、Q6</td>
+</tr>
+<tr>
+<td>素材 5，第三节</td>
+<td>「被自旋锁保护的临界区代码执行时不能被其他中断中断」</td>
+<td>错。裸 <code>spin_lock</code> 不关中断。只有 <code>_irq</code>/<code>_irqsave</code> 变体才关。见第八章表</td>
+</tr>
+<tr>
+<td>素材 5，第二种死锁段</td>
+<td>「进程 A 会被设置为 TASK_INTERRUPT 状态……<code>schedule()</code> 无法再调度进程 A」</td>
+<td>机制错。内核不会因为「被中断」就把进程设成 <code>TASK_INTERRUPTIBLE</code>。真因是本 CPU 被中断上下文占住，A 的执行流没机会继续。见第六章</td>
+</tr>
+<tr>
+<td>素材 3，ticket 推演段</td>
+<td>「第一个进程释放 spinlock，<code>owner++</code>，<code>lock-&gt;tickets.owner=2</code>」</td>
+<td>错。0 加一得 1，不是 2。跳到 2 会跳过 1 号，公平性失效。见第十二章</td>
+</tr>
+<tr>
+<td>素材 3，同一段</td>
+<td>「第二个进程修改了 <code>lockval.tickets.owner</code>」</td>
+<td>方向反了。<code>lockval</code> 是各 CPU 自己的局部变量，别人改不了。第二个进程是在 <code>wfe</code> 循环里重新读 <code>lock-&gt;tickets.owner</code> 写进自己的 <code>lockval</code>。素材 3 自己给的代码是对的，推演段写岔了</td>
+</tr>
+<tr>
+<td>素材 3，汇编逐条表</td>
+<td>13 行表里 <code>ldrex R0,[R3]</code> 出现三次，<code>strex R1,R0,[R3]</code> 出现一次</td>
+<td>该指令在源码里不存在，表是把三个 CPU 的交织错位了。以第十二章的推演表为准</td>
+</tr>
+<tr>
+<td>素材 4，第一章末尾</td>
+<td>「真正的调度工作交给了中断返回时的 <code>do_work_pending()</code>」</td>
+<td>函数名不准。<code>do_work_pending</code> 是 ARM 返回用户态的收尾路径；内核抢占的入口是 <code>preempt_schedule_irq()</code>。结论（禁抢占期间不切换）成立</td>
+</tr>
+<tr>
+<td>素材 1，第三章第 3 节</td>
+<td>把 <code>do_raw_spin_lock()</code> 的代码指到 <code>kernel/locking/spinlock_debug.c</code></td>
+<td>那是 debug 版本。non-debug 版本是 <code>include/linux/spinlock.h</code> 里的内联函数，只做 <code>__acquire</code> + <code>arch_spin_lock</code>。素材 3 给的也是 debug 版，两份都对但需标明配置</td>
+</tr>
+<tr>
+<td>素材 3，第二章</td>
+<td><code>LOCK_CONTENDED</code> 展开后「先调 <code>do_raw_spin_trylock()</code> 尝试获得锁，不等待，如果失败再调 <code>do_raw_spin_lock()</code>」</td>
+<td>只在 <code>CONFIG_LOCK_STAT</code> 打开时成立。未开统计时 <code>LOCK_CONTENDED(_lock, try, lock)</code> 直接展开成 <code>lock(_lock)</code>，没有 try 那一步。见第七章</td>
+</tr>
+<tr>
+<td>素材 1 第三章第 2 节</td>
+<td>「初始化的时候被设定为 1。当 thread 想要持有锁的时候……将整数值减去 1」</td>
+<td>这是无序竞争时代的语义。ticket 化之后 <code>slock</code> 初始为 0，<code>spin_lock</code> 做的是 <code>next++</code> 后比对 <code>owner</code>。见第三章、第十二章</td>
+</tr>
+<tr>
+<td>素材 3，第一章</td>
+<td>「ticket spinlock」写作「自选锁」</td>
+<td>笔误，全文统一为「自旋锁」</td>
+</tr>
+</tbody>
+</table></div><h3 id="未验证项" tabindex="-1">未验证项 <a class="header-anchor" href="#未验证项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>以下内容在素材里没有明确版本信息，或我未逐一比对源码，行文中已按「未验证」处理：</p>
+<ol>
+<li><strong><code>prefetchw()</code> 在 ARM32 上的展开</strong>。老核上是空实现还是 <code>pldw</code>，取决于内核版本与 <code>CONFIG_ARM</code> 子版本，未验证。文中只说「纯粹为性能」。</li>
+<li><strong><code>ldrex</code>/<code>strex</code> 之间可插入的指令数上限</strong>。取决于具体微架构的独占监视器实现，ARM ARM 未给统一数值，文中标「未验证」。</li>
+<li><strong><code>__lockfunc</code> 与 <code>.spinlock.text</code> 段的对应细节</strong>。段名与生成条件与 <code>CONFIG_LOCKDEP</code> 的耦合关系，未逐版本核对。</li>
+<li><strong><code>spin_trylock()</code> 失败时抢占计数已被还原这一点</strong>。按 <code>_raw_spin_trylock()</code> 的实现推导，未在具体版本上打点验证。</li>
+<li><strong>ARM32 ticket 化引入的具体内核版本</strong>。文中写「3.x」，精确到哪个 minor 未验证。ARM64 的 <code>arch_spin_lock</code> 汇编取自素材 1 标注的 4.1.10。</li>
+<li><strong>qspinlock 引入版本 4.2</strong>。按社区记录，未在素材中出现，本文仅在第一章演进表里提一句，细节归同批《排队自旋锁与 mutex》。</li>
+<li><strong><code>printk()</code> 内部锁的嵌套计数机制</strong>。文中说「可以在原子上下文调用」，这一点确定；具体靠 per-CPU 缓冲还是 <code>logbuf_lock</code> 的嵌套标记，未展开验证。</li>
+<li><strong><code>lockdep</code> 能推断「中断上下文与进程上下文锁使用不一致」的具体判据</strong>。按 <code>spin_lock_irqsave</code> 与 <code>spin_lock</code> 的 usage bit 记录推断，未逐行核对。</li>
+</ol>
+<h3 id="与同批其他篇的边界" tabindex="-1">与同批其他篇的边界 <a class="header-anchor" href="#与同批其他篇的边界"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li><code>rwlock_t</code> 的读写语义、读者计数、写者饥饿 → 《读写锁与 seqlock》。</li>
+<li><code>seqlock_t</code> 的 <code>sequence</code> 计数、读者重试、<code>write_seqcount_begin</code> → 《读写锁与 seqlock》。</li>
+<li>qspinlock 的 <code>locked</code>/<code>pending</code>/<code>tail</code> 三字段状态机、MCS 队列节点、<code>_Q_LOCKED_VAL</code> → 《排队自旋锁与 mutex》。</li>
+<li>mutex 的乐观自旋、<code>owner</code> 指针、优先级继承 → 《排队自旋锁与 mutex》。</li>
+</ul>
+<p>本篇碰到的交集只有一处：第十二章末尾说明 ARM 为何仍用 ticket、x86 为何转 qspinlock，那段是结论性对照，状态机细节不在这里。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一自旋锁要解决什么问题" data-toc-target="一自旋锁要解决什么问题">一、自旋锁要解决什么问题</a>
+                    
+                    <a class="toc-item toc-lv3" href="#实现演进的三段" data-toc-target="实现演进的三段">实现演进的三段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#自旋锁有三种实现这句话的准确含义" data-toc-target="自旋锁有三种实现这句话的准确含义">「自旋锁有三种实现」这句话的准确含义</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二自旋锁与睡眠为什么它不能睡" data-toc-target="二自旋锁与睡眠为什么它不能睡">二、自旋锁与睡眠：为什么它不能睡</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三spinlock_t-的数据结构" data-toc-target="三spinlock_t-的数据结构">三、spinlock_t 的数据结构</a>
+                    
+                    <a class="toc-item toc-lv3" href="#为什么要有-raw_spinlock-这一层" data-toc-target="为什么要有-raw_spinlock-这一层">为什么要有 raw_spinlock 这一层</a>
+                    
+                    <a class="toc-item toc-lv3" href="#up-上的-arch_spinlock_t-是空结构体" data-toc-target="up-上的-arch_spinlock_t-是空结构体">UP 上的 arch_spinlock_t 是空结构体</a>
+                    
+                    <a class="toc-item toc-lv3" href="#arm32ticket-的双字段" data-toc-target="arm32ticket-的双字段">ARM32：ticket 的双字段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#arm644.x-里干脆写成两个裸-u16" data-toc-target="arm644.x-里干脆写成两个裸-u16">ARM64：4.x 里干脆写成两个裸 u16</a>
+                    
+                    <a class="toc-item toc-lv3" href="#初始化链" data-toc-target="初始化链">初始化链</a>
+                    
+                    <a class="toc-item toc-lv3" href="#顺带说说-2.6.23-长什么样" data-toc-target="顺带说说-2.6.23-长什么样">顺带说说 2.6.23 长什么样</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四非抢占单核下的自旋锁" data-toc-target="四非抢占单核下的自旋锁">四、非抢占单核下的自旋锁</a>
+                    
+                    <a class="toc-item toc-lv3" href="#但代码不能这么写" data-toc-target="但代码不能这么写">但代码不能这么写</a>
+                    
+                    <a class="toc-item toc-lv3" href="#中断重入是另一码事" data-toc-target="中断重入是另一码事">中断重入是另一码事</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五抢占式单核下的自旋锁" data-toc-target="五抢占式单核下的自旋锁">五、抢占式单核下的自旋锁</a>
+                    
+                    <a class="toc-item toc-lv3" href="#这里锁退化成什么" data-toc-target="这里锁退化成什么">这里锁退化成什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#那个永久-spin的场景" data-toc-target="那个永久-spin的场景">那个「永久 spin」的场景</a>
+                    
+                    <a class="toc-item toc-lv3" href="#还有一个残留的口子" data-toc-target="还有一个残留的口子">还有一个残留的口子</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六多核下的自旋锁" data-toc-target="六多核下的自旋锁">六、多核下的自旋锁</a>
+                    
+                    <a class="toc-item toc-lv3" href="#三行对照表" data-toc-target="三行对照表">三行对照表</a>
+                    
+                    <a class="toc-item toc-lv3" href="#素材-5-的三种死锁逐条核对" data-toc-target="素材-5-的三种死锁逐条核对">素材 5 的三种死锁，逐条核对</a>
+                    
+                    <a class="toc-item toc-lv3" href="#那现代-cpu-有自旋超时吗" data-toc-target="那现代-cpu-有自旋超时吗">那现代 CPU 有自旋超时吗</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七spin_lock-的完整实现路径" data-toc-target="七spin_lock-的完整实现路径">七、spin_lock 的完整实现路径</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一路剥下去" data-toc-target="一路剥下去">一路剥下去</a>
+                    
+                    <a class="toc-item toc-lv3" href="#up-分支与-smp-分支" data-toc-target="up-分支与-smp-分支">UP 分支与 SMP 分支</a>
+                    
+                    <a class="toc-item toc-lv3" href="#lock_contended先试一次再死等" data-toc-target="lock_contended先试一次再死等">LOCK_CONTENDED：先试一次再死等</a>
+                    
+                    <a class="toc-item toc-lv3" href="#do_raw_spin_lock两个版本" data-toc-target="do_raw_spin_lock两个版本">do_raw_spin_lock：两个版本</a>
+                    
+                    <a class="toc-item toc-lv3" href="#最后一跳与一张表" data-toc-target="最后一跳与一张表">最后一跳与一张表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八spin_lock_irqsave-与它的兄弟们" data-toc-target="八spin_lock_irqsave-与它的兄弟们">八、spin_lock_irqsave 与它的兄弟们</a>
+                    
+                    <a class="toc-item toc-lv3" href="#六个组合宏" data-toc-target="六个组合宏">六个组合宏</a>
+                    
+                    <a class="toc-item toc-lv3" href="#四种变体对照" data-toc-target="四种变体对照">四种变体对照</a>
+                    
+                    <a class="toc-item toc-lv3" href="#还有-trylock" data-toc-target="还有-trylock">还有 trylock</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一个容易踩的坑解锁顺序" data-toc-target="一个容易踩的坑解锁顺序">一个容易踩的坑：解锁顺序</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九为什么要区分-spin_lock--_irq--_irqsave--_bh" data-toc-target="九为什么要区分-spin_lock--_irq--_irqsave--_bh">九、为什么要区分 spin_lock / _irq / _irqsave / _bh</a>
+                    
+                    <a class="toc-item toc-lv3" href="#判断流程" data-toc-target="判断流程">判断流程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#为什么进程侧要用-irqsave-而不是-irq" data-toc-target="为什么进程侧要用-irqsave-而不是-irq">为什么进程侧要用 irqsave 而不是 irq</a>
+                    
+                    <a class="toc-item toc-lv3" href="#素材-1-那个牛刀杀鸡的说法" data-toc-target="素材-1-那个牛刀杀鸡的说法">素材 1 那个「牛刀杀鸡」的说法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一个跨平台的反直觉要求" data-toc-target="一个跨平台的反直觉要求">一个跨平台的反直觉要求</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十中断上下文里用普通-spin_lock-会死锁的那一幕" data-toc-target="十中断上下文里用普通-spin_lock-会死锁的那一幕">十、中断上下文里用普通 spin_lock 会死锁的那一幕</a>
+                    
+                    <a class="toc-item toc-lv3" href="#布景" data-toc-target="布景">布景</a>
+                    
+                    <a class="toc-item toc-lv3" href="#走一遍" data-toc-target="走一遍">走一遍</a>
+                    
+                    <a class="toc-item toc-lv3" href="#换成-irqsave-就没事" data-toc-target="换成-irqsave-就没事">换成 irqsave 就没事</a>
+                    
+                    <a class="toc-item toc-lv3" href="#中断侧为什么用裸-spin_lock" data-toc-target="中断侧为什么用裸-spin_lock">中断侧为什么用裸 spin_lock</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一spinlock-在-arm-上的实现ldrexstrex-与-wfe" data-toc-target="十一spinlock-在-arm-上的实现ldrexstrex-与-wfe">十一、spinlock 在 ARM 上的实现：ldrex/strex 与 wfe</a>
+                    
+                    <a class="toc-item toc-lv3" href="#ldrex--strex-干了什么" data-toc-target="ldrex--strex-干了什么">ldrex / strex 干了什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#独占监视器与-wfe-的联动" data-toc-target="独占监视器与-wfe-的联动">独占监视器与 wfe 的联动</a>
+                    
+                    <a class="toc-item toc-lv3" href="#wfe--sev--sevl" data-toc-target="wfe--sev--sevl">wfe / sev / sevl</a>
+                    
+                    <a class="toc-item toc-lv3" href="#为什么-v6-之后的-arm-需要内存屏障" data-toc-target="为什么-v6-之后的-arm-需要内存屏障">为什么 V6 之后的 ARM 需要内存屏障</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二ticket-spinlock为什么要排队" data-toc-target="十二ticket-spinlock为什么要排队">十二、ticket spinlock：为什么要排队</a>
+                    
+                    <a class="toc-item toc-lv3" href="#问题重述" data-toc-target="问题重述">问题重述</a>
+                    
+                    <a class="toc-item toc-lv3" href="#解法叫号" data-toc-target="解法叫号">解法：叫号</a>
+                    
+                    <a class="toc-item toc-lv3" href="#用餐馆讲一遍" data-toc-target="用餐馆讲一遍">用餐馆讲一遍</a>
+                    
+                    <a class="toc-item toc-lv3" href="#arm32-的-arch_spin_lock" data-toc-target="arm32-的-arch_spin_lock">ARM32 的 arch_spin_lock</a>
+                    
+                    <a class="toc-item toc-lv3" href="#三个进程同时抢的一次完整推演" data-toc-target="三个进程同时抢的一次完整推演">三个进程同时抢的一次完整推演</a>
+                    
+                    <a class="toc-item toc-lv3" href="#素材-3-那段推演的三个错" data-toc-target="素材-3-那段推演的三个错">素材 3 那段推演的三个错</a>
+                    
+                    <a class="toc-item toc-lv3" href="#arm64-的-arch_spin_lock" data-toc-target="arm64-的-arch_spin_lock">ARM64 的 arch_spin_lock</a>
+                    
+                    <a class="toc-item toc-lv3" href="#arm64-的-arch_spin_unlock" data-toc-target="arm64-的-arch_spin_unlock">ARM64 的 arch_spin_unlock</a>
+                    
+                    <a class="toc-item toc-lv3" href="#为什么-arm-至今还是-ticket" data-toc-target="为什么-arm-至今还是-ticket">为什么 ARM 至今还是 ticket</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三自旋锁保护的边界它保护的是数据不是代码" data-toc-target="十三自旋锁保护的边界它保护的是数据不是代码">十三、自旋锁保护的边界：它保护的是数据，不是代码</a>
+                    
+                    <a class="toc-item toc-lv3" href="#临界区的边界怎么划" data-toc-target="临界区的边界怎么划">临界区的边界怎么划</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一个反直觉的结论" data-toc-target="一个反直觉的结论">一个反直觉的结论</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四嵌套与加锁顺序" data-toc-target="十四嵌套与加锁顺序">十四、嵌套与加锁顺序</a>
+                    
+                    <a class="toc-item toc-lv3" href="#同一把锁不能嵌套" data-toc-target="同一把锁不能嵌套">同一把锁不能嵌套</a>
+                    
+                    <a class="toc-item toc-lv3" href="#多把锁必须定序" data-toc-target="多把锁必须定序">多把锁必须定序</a>
+                    
+                    <a class="toc-item toc-lv3" href="#lockdep-能查什么" data-toc-target="lockdep-能查什么">lockdep 能查什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五几道常见的自旋锁问题" data-toc-target="十五几道常见的自旋锁问题">十五、几道常见的自旋锁问题</a>
+                    
+                    <a class="toc-item toc-lv3" href="#q1单核上-spin_lock-什么都不做那我写了有什么用" data-toc-target="q1单核上-spin_lock-什么都不做那我写了有什么用">Q1：单核上 spin_lock() 什么都不做，那我写了有什么用？</a>
+                    
+                    <a class="toc-item toc-lv3" href="#q2持锁期间我的代码会被打断吗" data-toc-target="q2持锁期间我的代码会被打断吗">Q2：持锁期间，我的代码会被打断吗？</a>
+                    
+                    <a class="toc-item toc-lv3" href="#q3spin_lock-和-spin_lock_irqsave-到底怎么选" data-toc-target="q3spin_lock-和-spin_lock_irqsave-到底怎么选">Q3：spin_lock 和 spin_lock_irqsave 到底怎么选？</a>
+                    
+                    <a class="toc-item toc-lv3" href="#q4临界区里能不能-printk" data-toc-target="q4临界区里能不能-printk">Q4：临界区里能不能 printk？</a>
+                    
+                    <a class="toc-item toc-lv3" href="#q5既然锁里不能睡那我为什么不用-mutex" data-toc-target="q5既然锁里不能睡那我为什么不用-mutex">Q5：既然锁里不能睡，那我为什么不用 mutex？</a>
+                    
+                    <a class="toc-item toc-lv3" href="#q6spin_lock-会一直自旋吗有没有超时" data-toc-target="q6spin_lock-会一直自旋吗有没有超时">Q6：spin_lock 会一直自旋吗？有没有超时？</a>
+                    
+                    <a class="toc-item toc-lv3" href="#q7为什么不干脆用原子操作代替锁" data-toc-target="q7为什么不干脆用原子操作代替锁">Q7：为什么不干脆用原子操作代替锁？</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六易错点速查" data-toc-target="十六易错点速查">十六、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#章节出处" data-toc-target="章节出处">章节出处</a>
+                    
+                    <a class="toc-item toc-lv3" href="#修正的错误" data-toc-target="修正的错误">修正的错误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#未验证项" data-toc-target="未验证项">未验证项</a>
+                    
+                    <a class="toc-item toc-lv3" href="#与同批其他篇的边界" data-toc-target="与同批其他篇的边界">与同批其他篇的边界</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","title":"spinlock：自旋锁的原理、实现与陷阱","url":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","type":"current"},{"id":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","title":"RCU：从 classic 到 sleepable 的实现演进","url":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","type":"neighbor"},{"id":"/B.内核/06-内核同步/RCU：原理、API-与使用/","title":"RCU：原理、API 与使用","url":"/B.内核/06-内核同步/RCU：原理、API-与使用/","type":"neighbor"},{"id":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","title":"信号量、completion 与 Per-CPU","url":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","type":"neighbor"},{"id":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","title":"原子操作与内存屏障：内核的底层保证","url":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","type":"neighbor"}],"links":[{"source":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","target":"/B.内核/06-内核同步/RCU：从-classic-到-sleepable-的实现演进/","type":"neighbor"},{"source":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","target":"/B.内核/06-内核同步/RCU：原理、API-与使用/","type":"neighbor"},{"source":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","target":"/B.内核/06-内核同步/信号量、completion-与-Per-CPU/","type":"neighbor"},{"source":"/B.内核/06-内核同步/spinlock：自旋锁的原理、实现与陷阱/","target":"/B.内核/06-内核同步/原子操作与内存屏障：内核的底层保证/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

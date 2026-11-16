@@ -7,7 +7,6 @@
   if (!links.length) return;
 
   var scroller = document.querySelector('.reader-main');
-  var content = document.querySelector('.reader-content');
 
   var items = links
     .map(function (a) {

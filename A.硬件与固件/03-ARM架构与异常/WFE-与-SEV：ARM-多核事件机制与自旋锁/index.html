@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WFE 与 SEV：ARM 多核事件机制与自旋锁 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">WFE 与 SEV：ARM 多核事件机制与自旋锁</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/A.硬件与固件/03-ARM架构与异常/WFE-与-SEV：ARM-多核事件机制与自旋锁/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">WFE 与 SEV：ARM 多核事件机制与自旋锁</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">WFE 与 SEV：ARM 多核事件机制与自旋锁</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <h2 id="一从-spin_lock-看-wfesev" tabindex="-1">一、从 spin_lock 看 WFE/SEV <a class="header-anchor" href="#一从-spin_lock-看-wfesev"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>首先 spin_lock 函数，搞内核的大家都知道，那么我把 linux-stable 的代码粘出来如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> __always_inline <span class="hljs-type">void</span> <span class="hljs-title function_">spin_lock</span><span class="hljs-params">(<span class="hljs-type">spinlock_t</span> *lock)</span>
+{
+	raw_spin_lock(&amp;lock-&gt;rlock);
+}
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> raw_spin_lock(lock)	_raw_spin_lock(lock)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifndef</span> CONFIG_INLINE_SPIN_LOCK</span>
+<span class="hljs-type">void</span> __lockfunc _raw_spin_lock(<span class="hljs-type">raw_spinlock_t</span> *lock)
+{
+	__raw_spin_lock(lock);
+}
+EXPORT_SYMBOL(_raw_spin_lock);
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> __raw_spin_lock(<span class="hljs-type">raw_spinlock_t</span> *lock)
+{
+	preempt_disable();
+	spin_acquire(&amp;lock-&gt;dep_map, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>, _RET_IP_);
+	LOCK_CONTENDED(lock, do_raw_spin_trylock, do_raw_spin_lock);
+}
+<span class="hljs-comment">/*
+* We are now relying on the NMI watchdog to detect lockup instead of doing
+* the detection here with an unfair lock which can cause problem of its own.
+*/</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">do_raw_spin_lock</span><span class="hljs-params">(<span class="hljs-type">raw_spinlock_t</span> *lock)</span>
+{
+	debug_spin_lock_before(lock);
+	arch_spin_lock(&amp;lock-&gt;raw_lock);
+	mmiowb_spin_lock();
+	debug_spin_lock_after(lock);
+}
+<span class="hljs-comment">/*
+* ARMv6 ticket-based spin-locking.
+*
+* A memory barrier is required after we get a lock, and before we
+* release it, because V6 CPUs are assumed to have weakly ordered
+* memory.
+*/</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arch_spin_lock</span><span class="hljs-params">(<span class="hljs-type">arch_spinlock_t</span> *lock)</span>
+{
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> tmp;
+	u32 newval;
+	<span class="hljs-type">arch_spinlock_t</span> lockval;
+	prefetchw(&amp;lock-&gt;slock);
+	__asm__ __volatile__(
+<span class="hljs-string">&quot;1: ldrex %0, [%3]\n&quot;</span>
+<span class="hljs-string">&quot; add %1, %0, %4\n&quot;</span>
+<span class="hljs-string">&quot; strex %2, %1, [%3]\n&quot;</span>
+<span class="hljs-string">&quot; teq %2, #0\n&quot;</span>
+<span class="hljs-string">&quot; bne 1b&quot;</span>
+	: <span class="hljs-string">&quot;=&amp;r&quot;</span> (lockval), <span class="hljs-string">&quot;=&amp;r&quot;</span> (newval), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp)
+	: <span class="hljs-string">&quot;r&quot;</span> (&amp;lock-&gt;slock), <span class="hljs-string">&quot;I&quot;</span> (<span class="hljs-number">1</span> &lt;&lt; TICKET_SHIFT)
+	: <span class="hljs-string">&quot;cc&quot;</span>);
+	<span class="hljs-keyword">while</span> (lockval.tickets.next != lockval.tickets.owner) {
+		wfe();
+		lockval.tickets.owner = READ_ONCE(lock-&gt;tickets.owner);
+	}
+	smp_mb();
+}
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">if</span> __LINUX_ARM_ARCH__ &gt;= 7 || \
+	(__LINUX_ARM_ARCH__ == 6 &amp;&amp; defined(CONFIG_CPU_32v6K))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> sev()	__asm__ __volatile__ (<span class="hljs-string">&quot;sev&quot;</span> : : : <span class="hljs-string">&quot;memory&quot;</span>)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> wfe()	__asm__ __volatile__ (<span class="hljs-string">&quot;wfe&quot;</span> : : : <span class="hljs-string">&quot;memory&quot;</span>)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> wfi()	__asm__ __volatile__ (<span class="hljs-string">&quot;wfi&quot;</span> : : : <span class="hljs-string">&quot;memory&quot;</span>)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> wfe()	do { } while (0)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> sev()		asm volatile(<span class="hljs-string">&quot;sev&quot;</span> : : : <span class="hljs-string">&quot;memory&quot;</span>)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> wfe()		asm volatile(<span class="hljs-string">&quot;wfe&quot;</span> : : : <span class="hljs-string">&quot;memory&quot;</span>)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> wfi()		asm volatile(<span class="hljs-string">&quot;wfi&quot;</span> : : : <span class="hljs-string">&quot;memory&quot;</span>)</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arch_spin_unlock</span><span class="hljs-params">(<span class="hljs-type">arch_spinlock_t</span> *lock)</span>
+{
+	smp_mb();
+	lock-&gt;tickets.owner++;
+	dsb_sev();
+}
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> SEV		__ALT_SMP_ASM(WASM(sev), WASM(nop))</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">dsb_sev</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	dsb(ishst);
+	__asm__(SEV);
+}
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_SMP</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __ALT_SMP_ASM(smp, up)						\
+	<span class="hljs-string">&quot;9998: &quot;</span> smp <span class="hljs-string">&quot;\n&quot;</span>						\
+	<span class="hljs-string">&quot; .pushsection \&quot;.alt.smp.init\&quot;, \&quot;a\&quot;\n&quot;</span>		\
+	<span class="hljs-string">&quot; .long 9998b\n&quot;</span>					\
+	<span class="hljs-string">&quot; &quot;</span> up <span class="hljs-string">&quot;\n&quot;</span>						\
+	<span class="hljs-string">&quot; .popsection\n&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __ALT_SMP_ASM(smp, up)	up</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+</code></pre></div></code></pre>
+<p>以上我们可以看出，在 lock 的时候使用 WFE，在 unlock 的时候使用 SEV，这个必须要成对使用，原因我下面会说。</p>
+<p>对于内核版本 Linux 3.0.56：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">arch_spin_lock</span><span class="hljs-params">(<span class="hljs-type">arch_spinlock_t</span> *lock)</span>
+{
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> tmp;
+	__asm__ __volatile__(
+<span class="hljs-string">&quot;1: ldrex %0, [%1]\n&quot;</span>
+<span class="hljs-string">&quot; teq %0, #0\n&quot;</span>
+	WFE(<span class="hljs-string">&quot;ne&quot;</span>)
+<span class="hljs-string">&quot; strexeq %0, %2, [%1]\n&quot;</span>
+<span class="hljs-string">&quot; teqeq %0, #0\n&quot;</span>
+<span class="hljs-string">&quot; bne 1b&quot;</span>
+	: <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp)
+	: <span class="hljs-string">&quot;r&quot;</span> (&amp;lock-&gt;lock), <span class="hljs-string">&quot;r&quot;</span> (<span class="hljs-number">1</span>)
+	: <span class="hljs-string">&quot;cc&quot;</span>);
+	smp_mb();
+}
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>define _raw_spin_lock(lock)     __raw_spin_lock(&amp;(lock)-&gt;raw_lock)
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> __raw_spin_lock(<span class="hljs-type">raw_spinlock_t</span> *lock)
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> tmp;
+    __asm__ __volatile__(
+<span class="hljs-string">&quot;1: ldrex %0, [%1]\n&quot;</span>
+<span class="hljs-string">&quot; teq %0, #0\n&quot;</span>
+<span class="hljs-string">&quot; strexeq %0, %2, [%1]\n&quot;</span>
+<span class="hljs-string">&quot; teqeq %0, #0\n&quot;</span>
+<span class="hljs-string">&quot; bne 1b&quot;</span>
+    : <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp)
+    : <span class="hljs-string">&quot;r&quot;</span> (&amp;lock-&gt;lock), <span class="hljs-string">&quot;r&quot;</span> (<span class="hljs-number">1</span>)
+    : <span class="hljs-string">&quot;cc&quot;</span>);
+    smp_mb();
+}
+</code></pre></div></code></pre>
+<h2 id="二sev" tabindex="-1">二、SEV <a class="header-anchor" href="#二sev"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>SEV causes an event to be signaled to all cores within a multiprocessor system. If SEV is implemented, WFE must also be implemented.</p>
+<p>SEV 指令可以产生事件信号，发送给全部的 cpu，让他们唤醒。如果 SEV 实现了，那么 WFE 也必须被实现。这里的事件信号其实会表现为 Event register，这是个一 bit 的 register，如果有事件，那么此 bit 为真。</p>
+<h2 id="三wfe" tabindex="-1">三、WFE <a class="header-anchor" href="#三wfe"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>对于 WFE，如果 Event Register 没有设置，WFE 会让 cpu 进入 low-power state，直到下面列举的五个 events 产生，比如说中断等等都会唤醒当前因为 WFE 而 suspend 的 cpu。</p>
+<p>如果 Event Register 被设置了，那么 WFE 会直接返回，不让 cpu 进入 low-power state，目的是因为既然有事件产生了，说明当前 cpu 需要干活，不能 suspend，所以才这样设计。</p>
+<p>这里我很好奇 Event Register 到底是怎么理解的。因此需要阅读手册《ARM Architecture Reference Manual.pdf》，下面我会做说明。</p>
+<h2 id="四wfi" tabindex="-1">四、WFI <a class="header-anchor" href="#四wfi"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>• a Debug Entry request, regardless of whether Debug is enabled.</p>
+<p>• an FIQ interrupt, regardless of the CPSR F-bit</p>
+<p>而对于 WFI 这种，不会判断 Event register，暴力的直接让 cpu 进入 low-power state，直到有上述四个 events 产生才会唤醒 cpu。</p>
+<p>注意，这里 WFE 比 WFI 多了一个唤醒特性：</p>
+<p>an Event signaled by another processor using the SEV instruction.</p>
+<p>也就是说 SEV 是不会唤醒 WFI 指令休眠的 cpu 的。这点需要特别注意。</p>
+<h2 id="五event-register" tabindex="-1">五、Event Register <a class="header-anchor" href="#五event-register"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>接下来我谈下这个 Event Register 是怎么回事了。看这个文档《ARM Architecture Reference Manual.pdf》</p>
+<p>Software cannot read or write the value of the Event Register directly.</p>
+<p>The Event Register is cleared only by a Wait For Event instruction.</p>
+<p>以上就是 Event Register 的表述，上述已经说的很明白了，Event Register 只有一个 bit，可以被 set 的情况总有四种大类型。当任意一个条件满足的时候，Event Register 都可以被 set，那么当 WFE 进入的时候会进行 Event Register 的判断，如果为真，就直接返回。</p>
+<p>再来看看 WFE 的介绍：</p>
+<p>Wait For Event is a hint instruction that permits the processor to enter a low-power state until one of a number of events occurs, including events signaled by executing the SEV instruction on any processor in the multiprocessor system. For more information, see Wait For Event and Send Event on page B1-1197.</p>
+<p>In an implementation that includes the Virtualization Extensions, if HCR.TWE is set to 1, execution of a WFE instruction in a Non-secure mode other than Hyp mode generates a Hyp Trap exception if, ignoring the value of the HCR.TWE bit, conditions permit the processor to suspend execution. For more information see Trapping use of the WFI and WFE instructions on page B1-1249.</p>
+<h2 id="六wfe-的伪代码流程" tabindex="-1">六、WFE 的伪代码流程 <a class="header-anchor" href="#六wfe-的伪代码流程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>接下来上 WFE 这条指令的伪代码流程：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Assembler syntax
+WFE{&lt;c&gt;}{&lt;q&gt;}
+where:
+&lt;c&gt;, &lt;q&gt; See Standard assembler syntax fields on page A8-285.
+Operation
+if ConditionPassed() then
+    EncodingSpecificOperations();
+    if EventRegistered() then
+        ClearEventRegister();
+    else
+        if HaveVirtExt() &amp;&amp; !IsSecure() &amp;&amp; !CurrentModeIsHyp() &amp;&amp; HCR.TWE == &#x27;1&#x27; then
+            HSRString = Zeros(25);
+            HSRString&lt;0&gt; = &#x27;1&#x27;;
+            WriteHSR(&#x27;000001&#x27;, HSRString);
+            TakeHypTrapException();
+        else
+            WaitForEvent();
+Exceptions
+Hyp Trap.
+</code></pre></div></code></pre>
+<p>看了上面这段 WFE 的伪代码，一目了然，首先判断 ConditionPassed()，这些函数大家可以在 arm 手册中查看其详细含义，如果 EventRegistered() 函数为真，也就是这个 1 bit 的寄存器为真，那么就清除此 bit，然后退出返回，不会让 cpu 进入 low power state；</p>
+<p>如果不是异常处理，TakeHypTrapException()，那么就 WaitForEvent()，等待唤醒事件到来，到来了，就唤醒当前 cpu。</p>
+<p>为什么有事件来了就直接返回呢，因为 WFE 的设计认为，如果此时有 event 事件，那么说明当前 cpu 要干活，那就没必要进入 low power state 模式。</p>
+<p>如果没有事件产生，那么就可以进入 low power state 模式，因为 cpu 反正也是在等待锁，此时也干不了别的事情，还不如休眠还可以降低功耗。</p>
+<p>当然，irq，fiq 等很多中断都可以让 WFE 休眠的 cpu 唤醒，那么这样做还有什么意义呢？比如说时钟中断是一直产生的，那么 cpu 很快就醒了啊，都不用等到发 SEV，那么既然是用 spin_lock，也可以在中断上半部使用，也可以在进程上下文，既然是自旋锁，就意味着保护的这段代码是要足够精简，不希望被其他东西打断，那么如果你保护的这部分代码非常长，这时候整个系统响应很可能会变慢，因为如果这时候有人也要使用这个锁的话，那么是否保护的这段代码设计上是有问题的。因此用 spin_lock 保护的函数尽可能要短，如果长的话可能需要换其他锁，或者考虑下是否真的要这么长的保护措施。</p>
+<p>TakeHypTrapException()，是进入异常处理</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Pseudocode description of taking the Hyp Trap exception
+The TakeHypTrapException() pseudocode procedure describes how the processor takes the exception:
+// TakeHypTrapException()
+// ======================
+TakeHypTrapException()
+    // HypTrapException is caused by executing an instruction that is trapped to Hyp mode as a
+    // result of a trap set by a bit in the HCR, HCPTR, HSTR or HDCR. By definition, it can only
+    // be generated in a Non-secure mode other than Hyp mode.
+    // Note that, when a Supervisor Call exception is taken to Hyp mode because HCR.TGE==1, this
+    // is not a trap of the SVC instruction. See the TakeSVCException() pseudocode for this case.
+    preferred_exceptn_return = if CPSR.T == &#x27;1&#x27; then PC-4 else PC-8;
+    new_spsr_value = CPSR;
+    EnterHypMode(new_spsr_value, preferred_exceptn_return, 20);
+Additional pseudocode functions for exception handling on page B1-1221 defines the EnterHypMode() pseudocode
+procedure.
+</code></pre></div></code></pre>
+<p>ClearEventRegister()</p>
+<p>Clear the Event Register of the current processor 清除 Event Register 的 bit</p>
+<p>EventRegistered()</p>
+<p>Determine whether the Event Register of the current processor is set Event Register bit 为真，即被设置过</p>
+<p>WaitForEvent()</p>
+<p>Wait until WFE instruction completes</p>
+<p>等待 Events 事件，有任何一个 Event 事件来临，都会唤醒当前被 WFE suspend 下去的 cpu，如果是 SEV，会唤醒全部被 WFE suspend 下去的 cpu。</p>
+<p>如下是关于 WFE 的 wake up events 事件描述和列举：</p>
+<p>• WFE wake-up events</p>
+<p>NoteFor more information about CPSR masking see Asynchronous exception masking on page B1-1181. If the configuration of the masking controls provided by the Security Extensions, or Virtualization Extensions, mean that a CPSR mask bit cannot mask the corresponding exception, then the physical exception is a WFE wake-up event, regardless of the value of the CPSR mask bit.</p>
+<p>As shown in the list of wake-up events, an implementation can include IMPLEMENTATION DEFINED hardware mechanisms to generate wake-up events.</p>
+<h2 id="七wfi-的伪代码" tabindex="-1">七、WFI 的伪代码 <a class="header-anchor" href="#七wfi-的伪代码"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>接下来我们看下 WFI 的伪代码：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Assembler syntax
+WFI{&lt;c&gt;}{&lt;q&gt;}
+where:
+&lt;c&gt;, &lt;q&gt; See Standard assembler syntax fields on page A8-285.
+Operation
+if ConditionPassed() then
+    EncodingSpecificOperations();
+    if HaveVirtExt() &amp;&amp; !IsSecure() &amp;&amp; !CurrentModeIsHyp() &amp;&amp; HCR.TWI == &#x27;1&#x27; then
+        HSRString = Zeros(25);
+        HSRString&lt;0&gt; = &#x27;1&#x27;;
+        WriteHSR(&#x27;000001&#x27;, HSRString);
+        TakeHypTrapException();
+    else
+        WaitForInterrupt();
+Exceptions
+Hyp Trap.
+</code></pre></div></code></pre>
+<p>相关解释：</p>
+<p>以上我们可以看出，WFI 并没有去判断 event register，因此看伪代码可以很直观地看出 WFI 与 WFE 的区别。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一从-spin_lock-看-wfesev" data-toc-target="一从-spin_lock-看-wfesev">一、从 spin_lock 看 WFE/SEV</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二sev" data-toc-target="二sev">二、SEV</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三wfe" data-toc-target="三wfe">三、WFE</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四wfi" data-toc-target="四wfi">四、WFI</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五event-register" data-toc-target="五event-register">五、Event Register</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六wfe-的伪代码流程" data-toc-target="六wfe-的伪代码流程">六、WFE 的伪代码流程</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七wfi-的伪代码" data-toc-target="七wfi-的伪代码">七、WFI 的伪代码</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/A.硬件与固件/03-ARM架构与异常/WFE-与-SEV：ARM-多核事件机制与自旋锁/","title":"WFE 与 SEV：ARM 多核事件机制与自旋锁","url":"/A.硬件与固件/03-ARM架构与异常/WFE-与-SEV：ARM-多核事件机制与自旋锁/","type":"current"},{"id":"/A.硬件与固件/03-ARM架构与异常/ARM-WFI-与-WFE：两条低功耗指令的语义与差异/","title":"ARM WFI 与 WFE：两条低功耗指令的语义与差异","url":"/A.硬件与固件/03-ARM架构与异常/ARM-WFI-与-WFE：两条低功耗指令的语义与差异/","type":"neighbor"},{"id":"/A.硬件与固件/03-ARM架构与异常/ARM-体系结构与异常模型/","title":"ARM 体系结构与异常模型","url":"/A.硬件与固件/03-ARM架构与异常/ARM-体系结构与异常模型/","type":"neighbor"},{"id":"/A.硬件与固件/03-ARM架构与异常/ARM-汇编与-C-混合编程/","title":"ARM 汇编与 C 混合编程","url":"/A.硬件与固件/03-ARM架构与异常/ARM-汇编与-C-混合编程/","type":"neighbor"},{"id":"/A.硬件与固件/03-ARM架构与异常/ARM64-内核启动与页表建立/","title":"ARM64 内核启动与页表建立","url":"/A.硬件与固件/03-ARM架构与异常/ARM64-内核启动与页表建立/","type":"neighbor"}],"links":[{"source":"/A.硬件与固件/03-ARM架构与异常/WFE-与-SEV：ARM-多核事件机制与自旋锁/","target":"/A.硬件与固件/03-ARM架构与异常/ARM-WFI-与-WFE：两条低功耗指令的语义与差异/","type":"neighbor"},{"source":"/A.硬件与固件/03-ARM架构与异常/WFE-与-SEV：ARM-多核事件机制与自旋锁/","target":"/A.硬件与固件/03-ARM架构与异常/ARM-体系结构与异常模型/","type":"neighbor"},{"source":"/A.硬件与固件/03-ARM架构与异常/WFE-与-SEV：ARM-多核事件机制与自旋锁/","target":"/A.硬件与固件/03-ARM架构与异常/ARM-汇编与-C-混合编程/","type":"neighbor"},{"source":"/A.硬件与固件/03-ARM架构与异常/WFE-与-SEV：ARM-多核事件机制与自旋锁/","target":"/A.硬件与固件/03-ARM架构与异常/ARM64-内核启动与页表建立/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

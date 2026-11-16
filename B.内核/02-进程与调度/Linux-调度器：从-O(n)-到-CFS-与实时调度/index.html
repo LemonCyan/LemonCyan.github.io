@@ -1,0 +1,1747 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Linux 调度器：从 O(n) 到 CFS 与实时调度 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">Linux 调度器：从 O(n) 到 CFS 与实时调度</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/02-进程与调度/Linux-调度器：从-O(n)-到-CFS-与实时调度/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">Linux 调度器：从 O(n) 到 CFS 与实时调度</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">Linux 调度器：从 O(n) 到 CFS 与实时调度</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <h2 id="一调度器要同时满足的四件事" tabindex="-1">一、调度器要同时满足的四件事 <a class="header-anchor" href="#一调度器要同时满足的四件事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>调度器的活是把 task 铺到 CPU 上，同时满足四类互相打架的需求：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>需求</th>
+<th>谁最在意</th>
+<th>调的旋钮</th>
+<th>调坏的后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>公平</td>
+<td>time-sharing 的普通进程</td>
+<td>权重、vruntime</td>
+<td>有人吃撑有人饿死</td>
+</tr>
+<tr>
+<td>响应</td>
+<td>交互式进程、实时进程</td>
+<td>调度延迟、抢占粒度</td>
+<td>用户能摸到卡顿</td>
+</tr>
+<tr>
+<td>吞吐</td>
+<td>批处理进程</td>
+<td>时间片长度、cache 亲和</td>
+<td>CPU 时间全花在切换上</td>
+</tr>
+<tr>
+<td>功耗</td>
+<td>手持设备</td>
+<td>任务放置、频率</td>
+<td>电池和温度</td>
+</tr>
+</tbody>
+</table></div><p>先说称呼。进程是资源管理单位，线程才是调度单位。叫「线程调度器」读着别扭，本文沿用「任务调度器」，简称调度器。文中的「进程」指 <code>task_struct</code> 代表的实体。</p>
+<p>需求先按任务类型切开。实时进程只认一条：deadline 之前跑完。普通进程要兼顾公平、响应、吞吐，三样互相冲突，于是再切一刀：交互式进程（等用户输入，对延迟敏感，CPU 占用低）和批处理进程（后台闷头干活，只看吞吐）。</p>
+<p>这一刀还不够。有些批处理进程是 IO-bound 的，比如数据库服务进程，天生对延迟不敏感却频繁阻塞在 disk IO 上。看到它老睡就抬动态优先级，纯属浪费——受害的是等 CPU 的交互式进程。反过来，交互进程也时常突然变成 CPU-bound，调度器却判断不出它需要补偿。</p>
+<p>落到实现上只有两把刷子：优先级（大量 RTOS 是 priority-based，官大一级压死人）和时间片（切大了响应烂，切小了切换开销吃掉吞吐）。功耗这条早期没进视野，Linux 铺到手机上才不得不面对，本文不展开。</p>
+<h2 id="二调度类与调度器sched_class-的分层" tabindex="-1">二、调度类与调度器：sched_class 的分层 <a class="header-anchor" href="#二调度类与调度器sched_class-的分层"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Linux 里同时存在 RT scheduler、Deadline scheduler、CFS scheduler、Idle scheduler。它们分层共存，不是互斥的。2.6.23 引入 <code>sched_class</code> 做模块化：核心调度代码只认这个结构体，具体策略由各调度类自己实现。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_class</span> {</span>
+	<span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_class</span> *<span class="hljs-title">next</span>;</span>
+	<span class="hljs-type">void</span> (*enqueue_task) (<span class="hljs-keyword">struct</span> rq *rq, <span class="hljs-keyword">struct</span> task_struct *p, <span class="hljs-type">int</span> flags);
+	<span class="hljs-type">void</span> (*dequeue_task) (<span class="hljs-keyword">struct</span> rq *rq, <span class="hljs-keyword">struct</span> task_struct *p, <span class="hljs-type">int</span> flags);
+	<span class="hljs-type">void</span> (*check_preempt_curr)(<span class="hljs-keyword">struct</span> rq *rq, <span class="hljs-keyword">struct</span> task_struct *p, <span class="hljs-type">int</span> flags);
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">task_struct</span> * (*<span class="hljs-title">pick_next_task</span>)(<span class="hljs-keyword">struct</span> <span class="hljs-title">rq</span> *<span class="hljs-title">rq</span>, <span class="hljs-keyword">struct</span> <span class="hljs-title">task_struct</span> *<span class="hljs-title">prev</span>, <span class="hljs-keyword">struct</span> <span class="hljs-title">rq_flags</span> *<span class="hljs-title">rf</span>);</span>
+	<span class="hljs-comment">/* ... */</span>
+};
+</code></pre></div></code></pre>
+<ul>
+<li><code>next</code>：指向低一档优先级的调度类。整条链就是优先级顺序。</li>
+<li><code>enqueue_task</code> / <code>dequeue_task</code>：入队、出队。</li>
+<li><code>check_preempt_curr</code>：task 被唤醒或新建时，判断它能否抢占当前 task，能就置 <code>TIF_NEED_RESCHED</code>。</li>
+<li><code>pick_next_task</code>：挑最该跑的那个。这是每个调度类真正见功底的地方。</li>
+</ul>
+<p>选择逻辑顺着链走，谁先给出结果用谁：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>for_each_class(class) {   <span class="hljs-comment">/* 按优先级顺序遍历，顺着 next 走单链表 */</span>
+	p = class-&gt;pick_next_task(rq, prev, rf);
+	<span class="hljs-keyword">if</span> (p)
+		<span class="hljs-keyword">return</span> p;
+}
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Linux 4.18（CONFIG_SMP）：
+stop_sched_class -&gt; dl_sched_class -&gt; rt_sched_class -&gt; fair_sched_class -&gt; idle_sched_class -&gt; NULL
+</code></pre></div></code></pre>
+<p>版本账要记清楚：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>调度类</th>
+<th>管什么策略</th>
+<th>出现版本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stop_sched_class</code></td>
+<td>停机/迁移线程，最高档</td>
+<td>2.6 后期，仅 SMP</td>
+</tr>
+<tr>
+<td><code>dl_sched_class</code></td>
+<td><code>SCHED_DEADLINE</code></td>
+<td>3.14</td>
+</tr>
+<tr>
+<td><code>rt_sched_class</code></td>
+<td><code>SCHED_FIFO</code>、<code>SCHED_RR</code></td>
+<td>2.6 起</td>
+</tr>
+<tr>
+<td><code>fair_sched_class</code></td>
+<td><code>SCHED_NORMAL</code>、<code>SCHED_BATCH</code>、<code>SCHED_IDLE</code></td>
+<td>2.6.23 起</td>
+</tr>
+<tr>
+<td><code>idle_sched_class</code></td>
+<td>空闲线程</td>
+<td>2.6 起</td>
+</tr>
+</tbody>
+</table></div><p>2.6.23 刚并主线时链条只有三节：<code>rt_sched_class</code> → <code>fair_sched_class</code> → <code>idle_sched_class</code>，<code>dl_sched_class</code> 还不存在。拿 2.6.23 的代码去找 deadline 调度类的，找不着。</p>
+<p>分层带来一个实质好处：<code>SCHED_FIFO</code> 的实时进程永远排在 <code>SCHED_NORMAL</code> 前面，不是因为 CFS 内部礼让，而是核心调度器压根还没轮到 <code>fair_sched_class</code>。普通进程再多也碍不着实时进程——这一点在 O(n) 时代做不到。</p>
+<h2 id="三2.4-的-on-调度器怎么做" tabindex="-1">三、2.4 的 O(n) 调度器怎么做 <a class="header-anchor" href="#三2.4-的-on-调度器怎么做"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>考古范围定在 2.4.18。代码短到可以整段读完，是理解后续所有改进的基线。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">task_struct</span> {</span>
+	<span class="hljs-keyword">volatile</span> <span class="hljs-type">long</span> need_resched;      <span class="hljs-comment">/* 该让出 CPU 了 */</span>
+	<span class="hljs-type">long</span> counter;                    <span class="hljs-comment">/* 本周期还剩多少 tick 额度 */</span>
+	<span class="hljs-type">long</span> nice;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> policy;
+	<span class="hljs-type">int</span> processor;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> cpus_runnable, cpus_allowed;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">run_list</span>;</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> rt_priority;
+	<span class="hljs-comment">/* ...... */</span>
+};
+</code></pre></div></code></pre>
+<p>切换有两条路径。一条是等不到资源，自己调 <code>schedule</code> 挂起。另一条是跑得正欢被时间片耗尽打断，被迫让出。第二条不立刻切，只把 <code>need_resched</code> 置 1，等最近的调度点到——2.4 不是抢占式内核，调度点基本只在返回用户空间那一刻出现。</p>
+<h3 id="1全局就绪队列" tabindex="-1">1、全局就绪队列 <a class="header-anchor" href="#1全局就绪队列"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>整个系统一个 <code>runqueue_head</code> 链表头。不管普通还是实时进程，状态变成可运行就挂进去；fork 挂入，阻塞或退出摘出。所有 CPU 共享这条链，同步靠一把自旋锁——这是后来所有 SMP 问题的根。链路外还有一条包含所有 task 的链（表头 <code>init_task</code>），周期结束重算时间片时用。</p>
+<h3 id="2静态优先级与动态优先级" tabindex="-1">2、静态优先级与动态优先级 <a class="header-anchor" href="#2静态优先级与动态优先级"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>静态优先级是 task 固有的：实时进程看 <code>rt_priority</code>，普通进程看 <code>20 - nice</code>。真正决定谁跑的是 <code>goodness</code> 算出的动态优先级。实时进程直接加固定偏移，好让实时段整体压在普通段之上：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>weight = <span class="hljs-number">1000</span> + p-&gt;rt_priority;          <span class="hljs-comment">/* 实时进程 */</span>
+
+weight = p-&gt;counter;                     <span class="hljs-comment">/* 普通进程 */</span>
+<span class="hljs-keyword">if</span> (!weight)
+	<span class="hljs-keyword">goto</span> out;
+weight += <span class="hljs-number">20</span> - p-&gt;nice;
+</code></pre></div></code></pre>
+<p>规则两条：时间片耗尽则动态优先级为 0，本轮彻底没戏；时间片有剩则等于剩余 tick 加静态优先级。用 <code>20 - nice</code> 是为了让静态优先级单调上升。第二条的「剩余时间片」是给睡眠进程的奖励——睡得久、剩得多，回来优先级就高。机制粗糙，意图明确：猜谁是交互式进程。</p>
+<p>调度器还顺手照顾 cache 和 TLB。A、B 优先级相同、剩余都是 3 tick，但 A 上次就跑在本 CPU 上，命中率更好，就把 A 抬一点。备选进程和当前进程共享地址空间时（同线程组两个线程，或借用上个进程地址空间的内核线程），切换不用换地址空间，也做些倾斜。</p>
+<p>几个具体情形：优先级高且剩余多，必定先跑；优先级高但只剩几 tick，会让位给优先级中等、剩得多的人；优先级低是双重打击。但不管优先级多高，时间片用完就得下台——低优先级进程因此总有出头机会，这是 O(n) 唯一的兜底。</p>
+<h3 id="3时间片怎么发" tabindex="-1">3、时间片怎么发 <a class="header-anchor" href="#3时间片怎么发"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>规则三条：按静态优先级固定分配缺省时间片，优先级越高分得越多；被调度后每 tick 递减，耗尽失去本轮资格；runqueue 里额度全用完 = 一个周期结束，全体重新充值。</p>
+<p>tick 是最小单位，所以 nice=19 的缺省时间片就是 1 个 tick。中间的 nice=0 落在 60ms（HZ=100）或 41ms（HZ=1000），跟着 HZ 漂——同一个 nice 在不同 HZ 下拿到的时间片不一样，调度行为跟 HZ 绑死。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>nice</th>
+<th>HZ=100（tick）</th>
+<th>HZ=100（时间）</th>
+<th>HZ=1000（tick）</th>
+<th>HZ=1000（时间）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>-20</td>
+<td>11</td>
+<td>110ms</td>
+<td>81</td>
+<td>81ms</td>
+</tr>
+<tr>
+<td>-10</td>
+<td>8</td>
+<td>80ms</td>
+<td>61</td>
+<td>61ms</td>
+</tr>
+<tr>
+<td>0</td>
+<td>6</td>
+<td>60ms</td>
+<td>41</td>
+<td>41ms</td>
+</tr>
+<tr>
+<td>10</td>
+<td>3</td>
+<td>30ms</td>
+<td>21</td>
+<td>21ms</td>
+</tr>
+<tr>
+<td>19</td>
+<td>1</td>
+<td>10ms</td>
+<td>3</td>
+<td>3ms</td>
+</tr>
+</tbody>
+</table></div><p>周期结束时的充值：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (unlikely(!c)) {
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">task_struct</span> *<span class="hljs-title">p</span>;</span>
+	for_each_task(p)
+		p-&gt;counter = (p-&gt;counter &gt;&gt; <span class="hljs-number">1</span>) + NICE_TO_TICKS(p-&gt;nice);
+	<span class="hljs-keyword">goto</span> repeat_schedule;
+}
+</code></pre></div></code></pre>
+<p><code>c</code> 是扫完 runqueue 拿到的最大动态优先级。等于 0 意味着两件事同时成立：没有可运行的实时进程，普通进程的额度也全耗光。</p>
+<p><code>for_each_task</code> 遍历系统里<strong>所有</strong>进程，不区分状态。runqueue 上的普通进程 <code>counter</code> 已是 0，新额度就是 <code>NICE_TO_TICKS(p-&gt;nice)</code>。睡在等待队列里的进程还有余量，会带进新周期——这就是对睡眠进程的奖励。为防止老是睡醒的交互式进程攒出巨额时间片，余量只带一半（<code>&gt;&gt; 1</code>）。</p>
+<p>tick 到来时的扣减，扣到 0 就置 <code>need_resched</code>，等调度点剥夺执行权：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (--p-&gt;counter &lt;= <span class="hljs-number">0</span>) {
+	p-&gt;counter = <span class="hljs-number">0</span>;
+	p-&gt;need_resched = <span class="hljs-number">1</span>;
+}
+</code></pre></div></code></pre>
+<h3 id="4调度时机" tabindex="-1">4、调度时机 <a class="header-anchor" href="#4调度时机"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>进程主动调度</td>
+<td>等不到资源，自己调 <code>schedule</code></td>
+</tr>
+<tr>
+<td>timer 中断</td>
+<td>发现当前进程时间片耗尽</td>
+</tr>
+<tr>
+<td>进程唤醒</td>
+<td>比如唤醒一个 RT 进程</td>
+</tr>
+<tr>
+<td>fork</td>
+<td>父进程时间片与子进程均分；只剩 1 tick 时全给子进程</td>
+</tr>
+<tr>
+<td>进程切换</td>
+<td>某 CPU 发生切换，别的 CPU 上也许还有更该跑的</td>
+</tr>
+<tr>
+<td>主动让出</td>
+<td>用户进程放弃 CPU</td>
+</tr>
+<tr>
+<td>改调度参数</td>
+<td>用户进程调 nice 等接口</td>
+</tr>
+</tbody>
+</table></div><p>除主动调度外，其余都只置 <code>need_resched</code>，等调度点。拿唤醒场景细看，后面的演进都绕不开它，唤醒方是 waker，被唤醒方是 wakee。</p>
+<p>sync wakeup 指 waker 知道自己马上要睡，调 <code>try_to_wake_up</code> 时最好不要抢占——它很快就主动让出；两者往往有亲和性（比如共享内存通信），放同一 CPU 上性能更好，此时抢占反而把 wakee 甩到别的空闲 CPU 上，白白 CPU bouncing。non-sync wakeup 指两者没有同步关系，唤醒后各干各的，可以尝试触发调度。sync 也不是绝对不调度：waker 在 CPU A 上唤醒 wakee，但 wakee 的 <code>cpus_allowed</code> 说明它压根不能在 CPU A 上跑，那就别管 sync 不 sync，直接调 <code>reschedule_idle</code>。</p>
+<p>UP 场景没花样，就一个 CPU，谁抢到取决于动态优先级，wakee 更高就置 <code>need_resched</code>。SMP 场景里 CPU 多，不必拼个你死我活：</p>
+<ol>
+<li>优先把 wakee 放到空闲 CPU 上。上次跑的 CPU 正好 idle 就优先它；否则扫所有 CPU，挑最近刚进 idle 的（cache 更热）。</li>
+<li>全都 busy，遍历各 CPU 当前 task，比动态优先级，找最低的。</li>
+<li>最低的仍比 wakee 高，算了，继续排队。wakee 更高就置对方 <code>need_resched</code>；不抢 waker 本身的话，发 IPI 踢一脚。</li>
+</ol>
+<p>这套设计把「选 runqueue」和「选 task」搅在一起，后来的负载均衡模块独立出去就是为了解这个结。</p>
+<h3 id="5主调度器" tabindex="-1">5、主调度器 <a class="header-anchor" href="#5主调度器"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>list_for_each(tmp, &amp;runqueue_head) {
+	p = list_entry(tmp, <span class="hljs-keyword">struct</span> task_struct, run_list);
+	<span class="hljs-type">int</span> weight = goodness(p, this_cpu, prev-&gt;active_mm);
+	<span class="hljs-keyword">if</span> (weight &gt; c)
+		c = weight, next = p;
+}
+</code></pre></div></code></pre>
+<p>扫全链，动态优先级最大的上台。就看这一段——哪怕链表第一个节点恰好就是最优解，它照样把整条链扫完，所以复杂度是 O(n)。</p>
+<p><code>SCHED_RR</code> 还得在扫之前先处理时间片轮转：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (unlikely(prev-&gt;policy == SCHED_RR))
+	<span class="hljs-keyword">if</span> (!prev-&gt;counter) {
+		prev-&gt;counter = NICE_TO_TICKS(prev-&gt;nice);
+		move_last_runqueue(prev);
+	}
+</code></pre></div></code></pre>
+<p>时间片用光的 RR 进程被挪到链尾，下一轮扫到同优先级时命中的就是链表第一个，轮转就这么实现。古怪之处在于：RR 的时间片按 nice 算，而 nice 本该只对普通进程有意义。</p>
+<h2 id="四on-的三个死穴" tabindex="-1">四、O(n) 的三个死穴 <a class="header-anchor" href="#四on-的三个死穴"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>如果「简单」是唯一标准，O(n) 天下无敌。问题在于它不是。三个死穴是<strong>遍历复杂度</strong>、<strong>全局锁的扩展性</strong>、<strong>周期同步导致的空转</strong>。原稿列了七条，剩下四条放在本节末尾。</p>
+<h3 id="1死穴一select-next-是线性扫描" tabindex="-1">1、死穴一：select next 是线性扫描 <a class="header-anchor" href="#1死穴一select-next-是线性扫描"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>runqueue 上可运行进程一多，<code>select next</code> 的运算量线性上涨，这就是「O(n)」的由来。更糟的是周期结束后的充值：大型系统里同时存在的进程（含睡着的）数以千计，给每个算一遍时间片的代价太高。</p>
+<h3 id="2死穴二一把全局锁掐死-smp" tabindex="-1">2、死穴二：一把全局锁掐死 SMP <a class="header-anchor" href="#2死穴二一把全局锁掐死-smp"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>访问 runqueue 的地方多得离谱：调度时要遍历找 next，wakeup 或 block 时要加删节点。每次都得先上自旋锁、关本地中断，做完再放锁开中断。CPU 少时还能忍，一多，<code>runqueue</code> 自旋锁就成了系统瓶颈——所有 CPU 排在同一把锁后面。</p>
+<h3 id="3死穴三时间片重算把-l1-打成筛子还让-cpu-空转" tabindex="-1">3、死穴三：时间片重算把 L1 打成筛子，还让 CPU 空转 <a class="header-anchor" href="#3死穴三时间片重算把-l1-打成筛子还让-cpu-空转"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>全体时间片耗尽就得为系统里<strong>所有</strong>进程重算额度。这个操作足以把该 CPU 的 L1 cache 全部干掉——重算完，你面对一堆毫无意义的 cache 行，命中率断崖式下跌。</p>
+<p>浪费的不只是 cache。4 个 CPU，T0~T3 分别跑在 CPU0~CPU3 上，T2 先耗尽，但 CPU2 无法调度——扫遍 runqueue 找不到有额度的进程，只能 idle。随后 T0、T3 也耗尽，只剩 T1 还在 CPU1 上跑，另外三个 CPU 干看着烧电。唯一能破局的是 T1 也耗尽。CPU 越多，这个窗口浪费的算力越多。</p>
+<h3 id="4剩下的四条" tabindex="-1">4、剩下的四条 <a class="header-anchor" href="#4剩下的四条"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>（1）<strong>task bouncing</strong>。理想情况下进程该从一而终。O(n) 下进程在 CPU 间跳来跳去是常态，根子还是时间片算法：新周期开始时额度满满、可选对象多，加上调度器偏向上次跑本 CPU 的进程，多数能落回原地；可随着额度一个个耗光，可选项被压缩，进程就被挤到亲和性差得多的 CPU 上——上次在 CPU0，这次落到 CPU1，cache 全在 CPU0。</p>
+<p>（2）<strong>RT 和普通进程混排</strong>。两者挂同一条链，调实时进程时得把整条链扫一遍，算完所有进程的调度指数，包括跟实时性毫无关系的普通进程。更根本的是 2.4 不是抢占式内核，几毫秒的系统调用或中断处理必须返回用户空间才能调度。优先级反转也能要命：RT 进程变成 runnable 了，却只能看着低优先级进程跑，直到后者释放资源。</p>
+<p>（3）<strong>交互式判断失准</strong>。O(n) 不区分交互式和批处理，只是给爱睡的进程发奖励。IO-bound 的批处理进程（数据库服务是典型）也老睡，奖励它纯属无效，还推高其他交互式进程的延迟。反过来，CPU-bound 的交互式进程得不到补偿。</p>
+<p>（4）<strong>时间片粒度跟着负载漂</strong>。HZ=100、5 个 nice=0 的可运行进程、每人 60ms，一个周期就是 300ms。进程耗尽后只能等下个周期，周期越长响应越差。负载越高响应越烂，这是结构性的。</p>
+<p>社区当时基本认可这套算法，所以新调度器不是推翻重来，而是对症下药。2.6 的 O(1) 只改痛点，不动哲学。</p>
+<h2 id="五2.6-的-o1-调度器prio_array-与两张-bitmap" tabindex="-1">五、2.6 的 O(1) 调度器：prio_array 与两张 bitmap <a class="header-anchor" href="#五2.6-的-o1-调度器prio_array-与两张-bitmap"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>O(1) 调度器以 2.6.11 为准。它和 O(n) 没有本质区别，还是「把 CPU 切成时间片分给可运行进程，用完被抢，等下个周期」，改的是数据结构和同步粒度。</p>
+<p>第一刀砍在全局 runqueue 上：改成 per-CPU runqueue。所有可运行进程先经负载均衡模块挂到各 CPU 的 runqueue，再由主调度器和 tick 调度器驱动本 CPU 的调度行为。全局锁随之消失，换成 per-CPU runqueue 内部的一把锁（<code>rq-&gt;lock</code>）——一把大锁拆成多把小锁，调度延迟降下来。结构调整顺手解决了 SMP 扩展性和 CPU 空转，task bouncing 则交给好的负载均衡算法去治。</p>
+<h3 id="1prio_array140-个链表--一张-bitmap" tabindex="-1">1、prio_array：140 个链表 + 一张 bitmap <a class="header-anchor" href="#1prio_array140-个链表--一张-bitmap"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>基本思路是把一条单链拆成多条：每个优先级一条链表。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">prio_array</span> {</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> nr_active;              <span class="hljs-comment">/* 队列里有多少 task */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> bitmap[BITMAP_SIZE];   <span class="hljs-comment">/* 每个 bit 标记该优先级链表空不空 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">queue</span>[<span class="hljs-title">MAX_PRIO</span>];</span>     <span class="hljs-comment">/* 140 个链表头 */</span>
+};
+</code></pre></div></code></pre>
+<p>优先级 0~99 归实时进程，100~139 归普通进程。RT 与普通进程从此分居两个空间，普通进程再多也污染不到 RT 的调度。runqueue 里有两个 <code>prio_array</code>，一个管 active（时间片还有剩），一个管 expired（已耗尽），runqueue 上有两个指针分别指着它们。</p>
+<p>运行中 active 上的 task 一个个耗尽额度被挂进 expired。active 空了就交换两个指针，新一轮开始——交换是常数时间，没有任何遍历。</p>
+<h3 id="2主调度器算法" tabindex="-1">2、主调度器算法 <a class="header-anchor" href="#2主调度器算法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>idx = sched_find_first_bit(<span class="hljs-built_in">array</span>-&gt;bitmap);
+<span class="hljs-built_in">queue</span> = <span class="hljs-built_in">array</span>-&gt;<span class="hljs-built_in">queue</span> + idx;
+next = list_entry(<span class="hljs-built_in">queue</span>-&gt;next, <span class="hljs-type">task_t</span>, run_list);
+</code></pre></div></code></pre>
+<p>在当前 active 队列的 bitmap 上找第一个非空的优先级链表，取该链表的第一个节点。没有遍历，复杂度是常量。active 空了就换指针：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (unlikely(!<span class="hljs-built_in">array</span>-&gt;nr_active)) {
+	rq-&gt;active = rq-&gt;expired;
+	rq-&gt;expired = <span class="hljs-built_in">array</span>;
+	<span class="hljs-built_in">array</span> = rq-&gt;active;
+}
+</code></pre></div></code></pre>
+<p>对比 O(n) 那次遍历全系统重算时间片，这里只是两次指针赋值。runqueue 临界区被大幅压缩，前面三个死穴都被绕开。</p>
+<h3 id="3静态优先级与动态优先级" tabindex="-1">3、静态优先级与动态优先级 <a class="header-anchor" href="#3静态优先级与动态优先级"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>「优先级队列」里的优先级指动态优先级，不是静态优先级。这一点上 O(1) 和 O(n) 反而统一了。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>字段</th>
+<th>范围</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>实时进程</td>
+<td><code>rt_priority</code></td>
+<td>1（最低）~ 99（最高）</td>
+<td>越大越高</td>
+</tr>
+<tr>
+<td>普通进程</td>
+<td><code>static_prio</code></td>
+<td>100（最高）~ 139（最低）</td>
+<td>对应 nice -20 ~ 19</td>
+</tr>
+</tbody>
+</table></div><p>静态优先级数轴上有个尴尬：RT 段单调上升，普通段 100~139 单调下降。而实际调度用的动态优先级（<code>prio</code>）必须整体单调。RT 侧用一次映射抹平：<code>p-&gt;prio = MAX_USER_RT_PRIO-1 - p-&gt;rt_priority;</code>，翻转之后在数轴上也单调下降了。普通进程麻烦得多：除了静态优先级，还要看平均睡眠时间 <code>sleep_avg</code>，据此奖惩，实现在 <code>effective_prio</code>，最终落在 100~139。</p>
+<p>和 O(n) 的对比很说明问题。两者思路一致：拿静态优先级做底，再评估「用户交互指数」，交互性强的抬、弱的压。差别在评估质量：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>O(n)</th>
+<th>O(1)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>评估输入</td>
+<td>仅睡眠进程的剩余时间片</td>
+<td>平均睡眠时间，含 CPU 执行时间、runqueue 等待时间、睡眠时长、睡眠时是否可被信号打断、唤醒发生在中断还是进程上下文</td>
+</tr>
+<tr>
+<td>交互式识别</td>
+<td>隐式（剩余时间片多者胜）</td>
+<td>显式（<code>TASK_INTERACTIVE</code> 宏）</td>
+</tr>
+<tr>
+<td>结果</td>
+<td>粗糙，误伤 IO-bound 批处理进程</td>
+<td>判断更准，但常数全是实验凑出来的</td>
+</tr>
+</tbody>
+</table></div><h3 id="4时间片" tabindex="-1">4、时间片 <a class="header-anchor" href="#4时间片"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>缺省时间片由 <code>task_timeslice</code> 算，已和 HZ 解绑。不管 HZ 怎么设，nice 从 -20 到 0 到 19，缺省时间片就是 800ms → 100ms → 5ms。</p>
+<p>tick 到来时扣减，扣到 0 就摘出 active、置 resched、就地重置额度：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>dequeue_task(p, rq-&gt;active);
+set_tsk_need_resched(p);
+p-&gt;time_slice = task_timeslice(p);
+</code></pre></div></code></pre>
+<p>关键在于「就地重置、分散处理」：每个 task 耗尽时立刻补，不再有一次遍历全系统所有进程的重算。这就是第三死穴的解药。</p>
+<h3 id="5交互式进程的特殊照顾" tabindex="-1">5、交互式进程的特殊照顾 <a class="header-anchor" href="#5交互式进程的特殊照顾"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>正常路径是耗尽 → 挂进 expired → 等下次交换。有些场景要开小灶：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (!TASK_INTERACTIVE(p) || EXPIRED_STARVING(rq)) {
+	enqueue_task(p, rq-&gt;expired);
+	<span class="hljs-keyword">if</span> (p-&gt;static_prio &lt; rq-&gt;best_expired_prio)
+		rq-&gt;best_expired_prio = p-&gt;static_prio;
+} <span class="hljs-keyword">else</span>
+	enqueue_task(p, rq-&gt;active);
+</code></pre></div></code></pre>
+<p><code>TASK_INTERACTIVE</code> 判断是不是交互式进程——依据还是平均睡眠时间。是的话重新塞回 active，让它接着有机会跑。但也不能太过分：<code>EXPIRED_STARVING</code> 就是那道闸，expired 里的进程等太久了说明不公平已严重，此时哪怕当前是交互式的，也照丢 expired，尽快让两边交换。</p>
+<p>判断交互指数那套算法极度复杂，hardcode 了一堆不知所以然的常数，估计是拿大量实验场景凑出来的。它的价值在于比只看睡眠时间的 O(n) 强，代价是没人敢动。</p>
+<h3 id="6抢占式内核" tabindex="-1">6、抢占式内核 <a class="header-anchor" href="#6抢占式内核"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>2.4 时代主战场是服务器，非抢占内核的选择无可厚非。往桌面和嵌入式渗之后，响应成了投诉重灾区。2.5 开发期引入 <code>CONFIG_PREEMPT</code>：不配，行为与 2.4 一致；配了，大部分内核执行路径可被抢占，不必苦等调度点。</p>
+<h2 id="六o1-解决了什么又留下了什么" tabindex="-1">六、O(1) 解决了什么，又留下了什么 <a class="header-anchor" href="#六o1-解决了什么又留下了什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>2.5 开发期 Ingo Molnar 用 O(1) 替换掉简陋的 O(n)，扩展性和性能问题都治好了。商用 2.4 发行版里不少厂商把 O(1) 反向移植回去，可见性能确实能打。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>2.4 O(n)</th>
+<th>2.6 O(1)</th>
+<th>2.6.23 CFS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>runqueue</td>
+<td>全局单链表</td>
+<td>per-CPU + 140 条优先级链</td>
+<td>per-CPU + 红黑树</td>
+</tr>
+<tr>
+<td>选择算法</td>
+<td>遍历全链，O(n)</td>
+<td>bitmap 找首位，O(1)</td>
+<td>取最左节点，插入 O(log n)</td>
+</tr>
+<tr>
+<td>同步粒度</td>
+<td>一把全局锁</td>
+<td>一把 per-CPU 锁</td>
+<td>一把 per-CPU 锁</td>
+</tr>
+<tr>
+<td>时间片</td>
+<td>按 nice 算 tick，跟 HZ 绑死</td>
+<td><code>task_timeslice</code>，与 HZ 解绑</td>
+<td>无固定时间片，按权重比例分</td>
+</tr>
+<tr>
+<td>周期重算</td>
+<td>遍历全系统所有进程</td>
+<td>无（耗尽即补）</td>
+<td>无</td>
+</tr>
+<tr>
+<td>RT 与普通进程</td>
+<td>同一链表混排</td>
+<td>优先级区间隔离</td>
+<td>不同调度类隔离</td>
+</tr>
+<tr>
+<td>交互式识别</td>
+<td>剩余时间片</td>
+<td><code>sleep_avg</code> + 一堆常数</td>
+<td>不做识别，只维护公平</td>
+</tr>
+<tr>
+<td>SMP 扩展性</td>
+<td>差</td>
+<td>好</td>
+<td>好</td>
+</tr>
+</tbody>
+</table></div><p>O(1) 没解决的那件事恰恰最要命：桌面卡顿。只要跑起吃 CPU 的进程，现存的交互式程序（比如你在浏览器里翻网页）就能感到明显延迟。一堆工程师试图靠改交互指数算法解决，Con Kolivas 也在其中。可无论怎么调都像拆东墙补西墙：这个场景修好了，那个场景又冒出来。</p>
+<p>调这类参数的人容易烦躁，这时候最需要的是停下想清楚。Con Kolivas 看了一遍代码，发现出问题的是评估交互指数那段。为什么调度器要根据进程行为猜它对交互性的需求？这活根本干不对——你永远猜不准，跟猜喜欢的人在想什么一样：性格、爱好、做事风格、逻辑水平、星座、生理周期全收集一遍，照样猜错。</p>
+<p>进程调度凭什么不能按确定的东西来？静态优先级已经把调度需求说完了。不猜，只维持公平。所谓公平，就是进程拿到和静态优先级匹配的 CPU 时间。</p>
+<h2 id="七公平调度思想的引入从分时间片到分权重" tabindex="-1">七、公平调度思想的引入：从「分时间片」到「分权重」 <a class="header-anchor" href="#七公平调度思想的引入从分时间片到分权重"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>顺着这条思路，Con Kolivas 提出 RSDL（Rotating Staircase Deadline）。</p>
+<h3 id="1固定时间片的悖论" tabindex="-1">1、固定时间片的悖论 <a class="header-anchor" href="#1固定时间片的悖论"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>O(n) 和 O(1) 都固定分配时间片，静态优先级越高片子越大。直觉上没毛病——优先级高就该多跑。潜台词是：高优先级进程会拿到更多<strong>连续</strong>执行机会，这正是 CPU-bound 进程想要的。可现实里 CPU-bound 进程多在后台跑，优先级恰恰偏低。于是两难：</p>
+<ul>
+<li>想给交互式进程高优先级改善体验，可给它大时间片毫无意义——它大部分时间在阻塞等输入。</li>
+<li>后台进程优先级低，按优先级分到的小时间片反而伤它性能。这类进程最该趁 cache hot 一口气狂奔。</li>
+</ul>
+<p>结论刺耳：固定分配时间片这个设计概念，本身就是错的。</p>
+<h3 id="2rsdl-的三个词" tabindex="-1">2、RSDL 的三个词 <a class="header-anchor" href="#2rsdl-的三个词"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>RSDL 沿用 O(1) 的数据结构和软件结构，只把评估交互指数那段删干净。</p>
+<p><strong>Staircase（优先级楼梯）</strong>：进程的时间片不再集中在一个优先级上，而是散布在一串优先级里。静态优先级 120 的进程，时间片摊在 120~139 上。周期开始挂在 120 队列，跑满一个级别的时间配额（假设每级 6ms），降到 121，这就是一次 priority minor rotating。一路下楼梯，到 139 还耗尽，全部额度用完，挂进 expired 等下一个周期——这次叫 major rotating。</p>
+<p><strong>Rotating</strong>：上面那个逐级下沉的动作。</p>
+<p><strong>Deadline</strong>：任何进程都能精确预估自己的调度延迟。runqueue 里两个 task，A 是 130，B 是 139。A 只有沿着楼梯从 130 走到 139，B 才有机会跑，延迟是 9 × 6ms = 54ms。</p>
+<p>算法就这么干净：只维持公平，不统计睡眠/运行时间，不算交互指数，不藏常数。</p>
+<h3 id="3为什么进不了主线" tabindex="-1">3、为什么进不了主线 <a class="header-anchor" href="#3为什么进不了主线"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>RSDL 始终没进 mainline，取而代之的是同样基于公平思想的 CFS。CFS 并入主线时保留了模块化设计，理论上给 RSDL 或其他调度器留了进门的路。Con Kolivas 后来带着对内核开发模式的不满退出社区——技术之外的事，留给后人评说。</p>
+<p>CFS 的设计理念一句话：在真实硬件上实现理想的、精确的完全公平多任务调度。这样的调度器不存在，实现时必须折衷。</p>
+<h3 id="4公平的度量分权重不分时间片" tabindex="-1">4、公平的度量：分权重，不分时间片 <a class="header-anchor" href="#4公平的度量分权重不分时间片"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>CFS 追求的是 CPU 运算资源分配的公平：资源被精确地按比例分给在其上运行的 task。2 个静态优先级相同的 task 跑在一颗 CPU 上各拿 50%；优先级不同就按比例分。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>分配给进程的时间 = 总的 CPU 时间 * 进程的权重 / 就绪队列所有进程权重之和
+</code></pre></div></code></pre>
+<p>3 个可运行线程 A、B、C，权重 a、b、c，A 该拿 a/(a+b+c)。</p>
+<p>CPU 资源分配是抽象概念，实现时必须落地，最省事的落地方式还是切成时间片。看到「时间片」三个字，你八成会本能地觉得 CFS 和 O(1) 没区别。不是。O(1) 给每个进程一个缺省时间片，用完挂 expired，全体耗光就整体重置回 active。CFS 没有静态时间片概念，它的时间片是动态的，取决于当前 CPU 上可运行进程的数量和它们的优先级。</p>
+<p>用观察窗口理解：以 100ms 粒度看，两个同优先级进程 A、B 各分 50ms——不一定是 A 跑满 50ms 再切 B，期间切换了无数次，但 A 总共占 50ms。以 1ms 粒度看，是否各跑 500us？继续缩到 1us 呢？显然做不到每进程 500ns——那样 CPU 时间几乎全耗在切换上。所以 CFS 有个时间粒度，即调度周期。</p>
+<h2 id="八cfs-的三块基石权重虚拟时间红黑树" tabindex="-1">八、CFS 的三块基石：权重、虚拟时间、红黑树 <a class="header-anchor" href="#八cfs-的三块基石权重虚拟时间红黑树"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>权重代表优先级，进程之间按权重比例分 CPU。A 权重 1024，B 权重 2048：A 拿 1024/(1024+2048) = 33.3%，B 拿 66.7%。权重越大分到的时间越多，等价于优先级越高。nice 值与权重一一对应，范围 [-20, 19]，数值越小优先级越大、权重越大。</p>
+<h3 id="1虚拟时间" tabindex="-1">1、虚拟时间 <a class="header-anchor" href="#1虚拟时间"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>CFS 像一位母亲，手里只有一个玩具（CPU），要公平分给一群孩子（进程）。两个孩子就轮流各玩 10 分钟。落到调度器上，就是记录每个进程的执行时间，谁跑得少让谁跑。</p>
+<p>问题是权重不同，物理时间本来就不该相等。调度周期 6ms，A、B 权重分别是 1024 和 820（nice 0 和 1）：A 跑 6 × 1024/(1024+820) = 3.3ms，占 55%；B 跑 2.7ms，占 45%。两个进程实际执行时间不等，可 CFS 要的是「虚拟时间相等」，于是把它们各过一个公式，得到同一个值：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>              NICE_0_LOAD                    NICE_0_LOAD * 2^32
+vruntime = wall_time * ---------------- = (wall_time * ---------------------) &gt;&gt; 32
+                 weight                              weight
+
+         = (wall_time * NICE_0_LOAD * inv_weight) &gt;&gt; 32    (inv_weight = 2^32 / weight)
+</code></pre></div></code></pre>
+<p>A：3.3 × 1024/1024 = 3.3ms，nice=0 的进程虚拟时间等于实际时间。B：2.7 × 1024/820 = 3.3ms。权重不同，虚拟时间相同。于是 CFS 只需保证每个进程的虚拟时间一致，选 next 时找最小的即可。</p>
+<p>浮点数不能用，内核用「先放大再缩小」保精度。<code>inv_weight</code> 预先算好存进 <code>sched_prio_to_wmult</code>，即 <code>2^32 / sched_prio_to_weight[i]</code>。权重信息用 <code>struct load_weight</code> 描述，两个字段：<code>weight</code> 和 <code>inv_weight</code>。实际时间转虚拟时间的实现是 <code>calc_delta_fair()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> u64 <span class="hljs-title function_">calc_delta_fair</span><span class="hljs-params">(u64 delta, <span class="hljs-keyword">struct</span> sched_entity *se)</span>
+{
+	<span class="hljs-keyword">if</span> (unlikely(se-&gt;load.weight != NICE_0_LOAD))             <span class="hljs-comment">/* 1 */</span>
+		delta = __calc_delta(delta, NICE_0_LOAD, &amp;se-&gt;load);  <span class="hljs-comment">/* 2 */</span>
+	<span class="hljs-keyword">return</span> delta;
+}
+</code></pre></div></code></pre>
+<p>权重等于 <code>NICE_0_LOAD</code> 时虚拟时间就是实际时间，不用算；否则调 <code>__calc_delta()</code>，它算的是 <code>delta_exec * weight / lw-&gt;weight</code>，用 <code>(u64)(u32)fact * lw-&gt;inv_weight</code> 加移位把除法换成乘法。</p>
+<h3 id="2红黑树" tabindex="-1">2、红黑树 <a class="header-anchor" href="#2红黑树"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>有了 vruntime 这个一维标量就能排序。二维的（权重，物理时间）被压成一维的虚拟时间轴：权重高的进程虚拟时间轴走得慢，权重低的走得快。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>操作</th>
+<th>频次</th>
+<th>红黑树代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>插入调度实体</td>
+<td>每次入队</td>
+<td>O(log n)</td>
+</tr>
+<tr>
+<td>删除调度实体</td>
+<td>每次出队</td>
+<td>O(log n)</td>
+</tr>
+<tr>
+<td>取最小 vruntime</td>
+<td>每次调度</td>
+<td>O(1)（缓存最左节点）</td>
+</tr>
+</tbody>
+</table></div><p>CFS 怎么保证公平：每个进程的 vruntime 追平了最左节点就让它上。跑过的进程 vruntime 变大，慢慢往树右边挪；原来在右边的迟早跑到最左边。</p>
+<h3 id="32.6.23-和-2.6.24-不是一回事" tabindex="-1">3、2.6.23 和 2.6.24 不是一回事 <a class="header-anchor" href="#32.6.23-和-2.6.24-不是一回事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这里必须点明一个容易搞错的细节，因为大量二手资料写反了。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>版本</th>
+<th>排序键</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.6.23（CFS 刚并主线）</td>
+<td><code>se-&gt;fair_key</code></td>
+<td>由 <code>cfs_rq-&gt;fair_clock</code> 推出来，配合 <code>se-&gt;wait_runtime</code> 记账</td>
+</tr>
+<tr>
+<td>2.6.24 起</td>
+<td><code>se-&gt;vruntime</code></td>
+<td>引入 <code>min_vruntime</code>、<code>entity_key()</code>，取代 fair_clock + wait_runtime</td>
+</tr>
+</tbody>
+</table></div><p>2.6.23 的 <code>sched_fair.c</code> 里根本没有 <code>vruntime</code> 这个字段。它是靠 <code>fair_clock</code>（按 runqueue 总负载缩放的虚拟时钟）和每个实体的 <code>wait_runtime</code>（欠账）算出一个 <code>fair_key</code> 当树键：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 2.6.23：入队时更新 fair_key */</span>
+key = cfs_rq-&gt;fair_clock;
+<span class="hljs-keyword">if</span> (likely(se-&gt;load.weight == NICE_0_LOAD))
+	key -= se-&gt;wait_runtime;
+<span class="hljs-keyword">else</span>
+	<span class="hljs-comment">/* 按 inv_weight 缩放 wait_runtime */</span>
+se-&gt;fair_key = key;
+</code></pre></div></code></pre>
+<p><code>min_vruntime</code> 和 <code>entity_key()</code> 是 2.6.24 才出现的，<code>entity_key()</code> 就一句 <code>return se-&gt;vruntime - cfs_rq-&gt;min_vruntime;</code>。所以「CFS 从 2.6.23 起就用 vruntime 排序」这个说法不准确。准确的说法是：2.6.23 用 fair_clock + wait_runtime 记账，2.6.24 简化成 vruntime + min_vruntime。本文后面讲 vruntime 的地方，默认指 2.6.24 之后的实现。</p>
+<h2 id="九权重表-prio_to_weight-与-nice-的换算" tabindex="-1">九、权重表 prio_to_weight 与 nice 的换算 <a class="header-anchor" href="#九权重表-prio_to_weight-与-nice-的换算"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先把虚拟时间为什么必须存在讲透，这是所有后续机制的起点。</p>
+<p>假设进程之间没有优先级差别，问题简单到不用想：记录每个进程的实际运行时间，每次挑跑得最少的那个上。现实是进程有轻重，用户认为重要的进程就该跑得更久。这时候「谁跑得少」这个判据失效了——不同进程的运行时间本来就该不一样，拿什么比？</p>
+<p>所以造一把尺子：让不同优先级按各自比例分到的物理时间，经过一个公式换算后得到同一个值。这个值就是虚拟时间。选 next 时挑最小的即可。这就是 vruntime 存在的全部理由——不是为了好看，是为了把「多目标」压成「单目标」。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">const</span> <span class="hljs-type">int</span> sched_prio_to_weight[<span class="hljs-number">40</span>] = {
+ <span class="hljs-comment">/* -20 */</span>     <span class="hljs-number">88761</span>,     <span class="hljs-number">71755</span>,     <span class="hljs-number">56483</span>,     <span class="hljs-number">46273</span>,     <span class="hljs-number">36291</span>,
+ <span class="hljs-comment">/* -15 */</span>     <span class="hljs-number">29154</span>,     <span class="hljs-number">23254</span>,     <span class="hljs-number">18705</span>,     <span class="hljs-number">14949</span>,     <span class="hljs-number">11916</span>,
+ <span class="hljs-comment">/* -10 */</span>      <span class="hljs-number">9548</span>,      <span class="hljs-number">7620</span>,      <span class="hljs-number">6100</span>,      <span class="hljs-number">4904</span>,      <span class="hljs-number">3906</span>,
+ <span class="hljs-comment">/*  -5 */</span>      <span class="hljs-number">3121</span>,      <span class="hljs-number">2501</span>,      <span class="hljs-number">1991</span>,      <span class="hljs-number">1586</span>,      <span class="hljs-number">1277</span>,
+ <span class="hljs-comment">/*   0 */</span>      <span class="hljs-number">1024</span>,       <span class="hljs-number">820</span>,       <span class="hljs-number">655</span>,       <span class="hljs-number">526</span>,       <span class="hljs-number">423</span>,
+ <span class="hljs-comment">/*   5 */</span>       <span class="hljs-number">335</span>,       <span class="hljs-number">272</span>,       <span class="hljs-number">215</span>,       <span class="hljs-number">172</span>,       <span class="hljs-number">137</span>,
+ <span class="hljs-comment">/*  10 */</span>       <span class="hljs-number">110</span>,        <span class="hljs-number">87</span>,        <span class="hljs-number">70</span>,        <span class="hljs-number">56</span>,        <span class="hljs-number">45</span>,
+ <span class="hljs-comment">/*  15 */</span>        <span class="hljs-number">36</span>,        <span class="hljs-number">29</span>,        <span class="hljs-number">23</span>,        <span class="hljs-number">18</span>,        <span class="hljs-number">15</span>,
+};
+</code></pre></div></code></pre>
+<p>摊平看：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>nice</th>
+<th>权重</th>
+<th>nice</th>
+<th>权重</th>
+<th>nice</th>
+<th>权重</th>
+<th>nice</th>
+<th>权重</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>-20</td>
+<td>88761</td>
+<td>-10</td>
+<td>9548</td>
+<td>0</td>
+<td>1024</td>
+<td>10</td>
+<td>110</td>
+</tr>
+<tr>
+<td>-19</td>
+<td>71755</td>
+<td>-9</td>
+<td>7620</td>
+<td>1</td>
+<td>820</td>
+<td>11</td>
+<td>87</td>
+</tr>
+<tr>
+<td>-18</td>
+<td>56483</td>
+<td>-8</td>
+<td>6100</td>
+<td>2</td>
+<td>655</td>
+<td>12</td>
+<td>70</td>
+</tr>
+<tr>
+<td>-17</td>
+<td>46273</td>
+<td>-7</td>
+<td>4904</td>
+<td>3</td>
+<td>526</td>
+<td>13</td>
+<td>56</td>
+</tr>
+<tr>
+<td>-16</td>
+<td>36291</td>
+<td>-6</td>
+<td>3906</td>
+<td>4</td>
+<td>423</td>
+<td>14</td>
+<td>45</td>
+</tr>
+<tr>
+<td>-15</td>
+<td>29154</td>
+<td>-5</td>
+<td>3121</td>
+<td>5</td>
+<td>335</td>
+<td>15</td>
+<td>36</td>
+</tr>
+<tr>
+<td>-14</td>
+<td>23254</td>
+<td>-4</td>
+<td>2501</td>
+<td>6</td>
+<td>272</td>
+<td>16</td>
+<td>29</td>
+</tr>
+<tr>
+<td>-13</td>
+<td>18705</td>
+<td>-3</td>
+<td>1991</td>
+<td>7</td>
+<td>215</td>
+<td>17</td>
+<td>23</td>
+</tr>
+<tr>
+<td>-12</td>
+<td>14949</td>
+<td>-2</td>
+<td>1586</td>
+<td>8</td>
+<td>172</td>
+<td>18</td>
+<td>18</td>
+</tr>
+<tr>
+<td>-11</td>
+<td>11916</td>
+<td>-1</td>
+<td>1277</td>
+<td>9</td>
+<td>137</td>
+<td>19</td>
+<td>15</td>
+</tr>
+</tbody>
+</table></div><p>数组的值可以看成 <code>weight = 1024 / 1.25^nice</code>。1.25 这个底数的来由是：进程每降低一级 nice，多拿约 10% 的 CPU 时间。以 1024 为基准，对应 nice=0，这个权重叫 <code>NICE_0_LOAD</code>。为什么不是 1.10 或 1.20？因为 10% 是相对且累积的：往上走一级少 10%，往下走一级多 10%，两者相对差距约 25%。</p>
+<p><code>inv_weight</code> 那套预计算同理，数组名是 <code>sched_prio_to_wmult[40]</code>，nice=0 那格是 <code>4194304</code>，正好是 <code>2^32 / 1024</code>。它的意义只有一个：把除法换成乘法，调度器在 tick 里跑，除法太贵。</p>
+<h3 id="1名字会变" tabindex="-1">1、名字会变 <a class="header-anchor" href="#1名字会变"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>版本</th>
+<th>数组名</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.6.23</td>
+<td><code>prio_to_weight[40]</code></td>
+<td><code>static const int</code>，在 <code>sched.c</code></td>
+</tr>
+<tr>
+<td>4.18 及以后</td>
+<td><code>sched_prio_to_weight[40]</code></td>
+<td><code>const int</code>，在 <code>kernel/sched/core.c</code></td>
+</tr>
+</tbody>
+</table></div><p>数值一个没变，只是挪了位置、加了前缀。看老文章时别以为这是两个东西。</p>
+<h2 id="十调度延迟调度周期与最小粒度" tabindex="-1">十、调度延迟、调度周期与最小粒度 <a class="header-anchor" href="#十调度延迟调度周期与最小粒度"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>物理时间怎么换成虚拟时间讲完了，接下来是「一个进程该跑多久」。CFS 的答案是：不预设，现场算。</p>
+<p>调度延迟就是保证每个可运行进程至少跑一次的时间间隔。每进程跑 10ms、2 个进程 → 20ms；5 个进程 → 50ms。硬把延迟钉死在 6ms 会怎样：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>可运行进程数</th>
+<th>每进程分到的时间</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2</td>
+<td>3ms</td>
+</tr>
+<tr>
+<td>6</td>
+<td>1ms</td>
+</tr>
+<tr>
+<td>100</td>
+<td>0.06ms</td>
+</tr>
+</tbody>
+</table></div><p>进程越多，每人分到的时间越少，切换越频繁，开销吃掉越来越多。所以 CFS 的调度延迟不是定值。规则两条：就绪进程数不超过阈值（4.18 里是 <code>sched_nr_latency</code>，默认 8）时，调度周期固定为 <code>sysctl_sched_latency</code>（4.18 默认 6ms）；超过阈值就保证每个进程至少跑 <code>sysctl_sched_min_granularity</code>（4.18 默认 0.75ms）才让出 CPU。</p>
+<p>那个「至少跑多久」就是最小粒度时间。于是调度周期是动态的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> u64 __sched_period(<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> nr_running)
+{
+	<span class="hljs-keyword">if</span> (unlikely(nr_running &gt; sched_nr_latency))
+		<span class="hljs-keyword">return</span> nr_running * sysctl_sched_min_granularity;
+	<span class="hljs-keyword">else</span>
+		<span class="hljs-keyword">return</span> sysctl_sched_latency;
+}
+</code></pre></div></code></pre>
+<h3 id="1参数在版本之间变过" tabindex="-1">1、参数在版本之间变过 <a class="header-anchor" href="#1参数在版本之间变过"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这些数字不能张冠李戴：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>版本</th>
+<th><code>sched_latency</code></th>
+<th><code>sched_min_granularity</code></th>
+<th><code>sched_nr_latency</code></th>
+<th>周期公式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2.6.23</td>
+<td>20ms</td>
+<td>2ms</td>
+<td>未单独定义</td>
+<td><code>period × nr / nr_latency</code></td>
+</tr>
+<tr>
+<td>2.6.24</td>
+<td>20ms</td>
+<td>4ms</td>
+<td>5</td>
+<td><code>period × nr / nr_latency</code></td>
+</tr>
+<tr>
+<td>4.18</td>
+<td>6ms</td>
+<td>0.75ms</td>
+<td>8</td>
+<td><code>nr × min_granularity</code></td>
+</tr>
+<tr>
+<td>6.6</td>
+<td>无（改 <code>sysctl_sched_base_slice</code>）</td>
+<td>无</td>
+<td>无</td>
+<td>走 EEVDF，不按周期算</td>
+</tr>
+</tbody>
+</table></div><p>2.6.23 是「延迟 × 进程数 / 阈值」，4.18 是「进程数 × 最小粒度」，后者更直接地表达「每人至少拿最小粒度」。</p>
+<p>4.18 还有个容易忽略的点：这几个值会按 CPU 数放大。<code>get_update_sysctl_factor()</code> 用 <code>1 + ilog2(min(ncpus, 8))</code> 做因子，CPU 越多颗粒越粗，理由是 CPU 多了之后用户能感知到的延迟会变小。这个点子的来源是 Con Kolivas 的 SD 调度器。所以 8 核机器上的 <code>sysctl_sched_latency</code> 是 6ms × 4 = 24ms。</p>
+<h3 id="2最小粒度不总成立" tabindex="-1">2、最小粒度不总成立 <a class="header-anchor" href="#2最小粒度不总成立"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>先看一个反例。所有进程优先级都一样时，<code>nr × min_granularity</code> 确实能保证每人至少跑 min_granularity。可一旦优先级不同且进程数超过阈值，nice 值高的进程就未必能跑满最小粒度——它在一个周期内分到的总时间本来就不足 <code>sysctl_sched_min_granularity</code>。这是公式的边界，不是 bug。</p>
+<p>分到的份额大于最小粒度时才能保证。看 <code>check_preempt_tick()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>	ideal_runtime = sched_slice(cfs_rq, curr);
+	delta_exec = curr-&gt;sum_exec_runtime - curr-&gt;prev_sum_exec_runtime;
+	<span class="hljs-keyword">if</span> (delta_exec &gt; ideal_runtime) {                     <span class="hljs-comment">/* 1 跑超了，直接抢 */</span>
+		resched_curr(rq_of(cfs_rq));
+		clear_buddies(cfs_rq, curr);                       <span class="hljs-comment">/* 清 buddy，否则它又被选回来 */</span>
+		<span class="hljs-keyword">return</span>;
+	}
+	<span class="hljs-keyword">if</span> (delta_exec &lt; sysctl_sched_min_granularity)         <span class="hljs-comment">/* 2 没跑够最小粒度，不抢 */</span>
+		<span class="hljs-keyword">return</span>;
+	se = __pick_first_entity(cfs_rq);
+	delta = curr-&gt;vruntime - se-&gt;vruntime;
+	<span class="hljs-keyword">if</span> (delta &lt; <span class="hljs-number">0</span>)
+		<span class="hljs-keyword">return</span>;
+	<span class="hljs-keyword">if</span> (delta &gt; ideal_runtime)                             <span class="hljs-comment">/* 3 落后够多才抢 */</span>
+		resched_curr(rq_of(cfs_rq));
+</code></pre></div></code></pre>
+<p>第 2 句挡在前面，意味着「跑够最小粒度」是抢占的必要条件——只要不满足，后面 vruntime 差多少都不抢。</p>
+<h3 id="3和传统调度器的对比" tabindex="-1">3、和传统调度器的对比 <a class="header-anchor" href="#3和传统调度器的对比"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>传统调度器保证不了有界延迟。两个 nice=0 的 A、B，各分 100ms 固定时间片，A 先跑到耗尽再换 B，延迟 100ms。再挂进 C、D，四个交替，延迟变 300ms。负载一涨延迟跟着涨。</p>
+<p>CFS 从设计之初就把延迟参数定下来了，叫 targeted latency，概念上类似传统调度器的调度周期。区别在于：过去一个周期里的时间片是固定分给各进程的；CFS 是在一个 targeted latency 内不停检查公平性有没有被破坏。<code>sysctl_sched_min_granularity</code> 的作用就是防止 overscheduling——一个进程被调度上 CPU 后至少跑这么久，不许刚上来就被踢下去。</p>
+<p>所以 CFS 保证的是：一个 targeted latency 内，所有可运行进程至少执行一次。延迟因此有界、可预测。</p>
+<h3 id="4调度器怎么运作" tabindex="-1">4、调度器怎么运作 <a class="header-anchor" href="#4调度器怎么运作"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>CFS 里没有「固定分配时间片」，只有「固定权重」。选一个进程上 CPU 后立刻开始跟踪 virtual runtime，tick 到来时更新。有了 vruntime，调度器检查的不是「时间片用完没」，而是「公平性还在不在」：算 targeted latency，算出当前进程应得的物理时间片，算出它已累积执行的物理时间，超过了就更新 vruntime、置 need_resched。</p>
+<p>选 next 就是从红黑树取最左节点。失去 CPU 的进程重新插回树里，位置由它的 vruntime 决定。</p>
+<p>计时靠 runqueue 上的两块表：<code>clock</code> 记物理时间，<code>clock_task</code> 记真正执行 task 的时间。为什么要两块？因为 task 执行期间会撞上中断等异步事件，这些时间不该算到它头上。<code>clock_task</code> 把中断处理时间剔掉，只在真正跑任务时累加。于是计时变成：开始时读一次记为 A，需要统计时再读一次记为 B，B-A 就是物理执行时间，再用 <code>calc_delta_fair</code> 转成虚拟时间累加进 <code>se-&gt;vruntime</code>——这就是红黑树的键。</p>
+<h2 id="十一调度实体与就绪队列结构" tabindex="-1">十一、调度实体与就绪队列结构 <a class="header-anchor" href="#十一调度实体与就绪队列结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>调度类管理和调度的单位是<strong>调度实体</strong>。支持组调度时一个 cgroup 也会抽象成调度实体，它根本不是 task。所以 <code>task_struct</code> 里塞了三个调度类的实体：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">task_struct</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_entity</span>    <span class="hljs-title">se</span>;</span>   <span class="hljs-comment">/* CFS */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_rt_entity</span> <span class="hljs-title">rt</span>;</span>   <span class="hljs-comment">/* RT */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_dl_entity</span> <span class="hljs-title">dl</span>;</span>   <span class="hljs-comment">/* Deadline */</span>
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_entity</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">load_weight</span> <span class="hljs-title">load</span>;</span>          <span class="hljs-comment">/* 权重，算虚拟时间用 inv_weight */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rb_node</span>     <span class="hljs-title">run_node</span>;</span>      <span class="hljs-comment">/* 挂红黑树的节点 */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>       on_rq;         <span class="hljs-comment">/* 入队 1，出队 0 */</span>
+	u64  sum_exec_runtime;            <span class="hljs-comment">/* 累计实际运行时间 */</span>
+	u64  vruntime;                    <span class="hljs-comment">/* 累计虚拟运行时间 */</span>
+};
+</code></pre></div></code></pre>
+<p>每颗 CPU 一个全局就绪队列 <code>struct rq</code>（per-cpu 类型），每个调度类在 <code>rq</code> 里有自己的就绪队列：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rq</span> {</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">cfs_rq</span> <span class="hljs-title">cfs</span>;</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rt_rq</span> <span class="hljs-title">rt</span>;</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">dl_rq</span> <span class="hljs-title">dl</span>;</span> };
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rb_root_cached</span> {</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rb_root</span> <span class="hljs-title">rb_root</span>;</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rb_node</span> *<span class="hljs-title">rb_leftmost</span>;</span> };
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">cfs_rq</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">load_weight</span> <span class="hljs-title">load</span>;</span>              <span class="hljs-comment">/* 所有实体权重之和 */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> nr_running;              <span class="hljs-comment">/* 实体个数 */</span>
+	u64 min_vruntime;                     <span class="hljs-comment">/* 最小虚拟时间的单调下界 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rb_root_cached</span> <span class="hljs-title">tasks_timeline</span>;</span> <span class="hljs-comment">/* 按 vruntime 排序的红黑树 */</span>
+};
+</code></pre></div></code></pre>
+<p><code>rb_leftmost</code> 是个缓存。取最左节点本是 O(log n)，缓存之后变 O(1)，而「取最左」是每次调度都要做的事。</p>
+<h3 id="1min_vruntime-到底管什么" tabindex="-1">1、min_vruntime 到底管什么 <a class="header-anchor" href="#1min_vruntime-到底管什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>名义上是「队列上所有实体的最小虚拟时间」，但实际用途有三个，一个比一个重要。</p>
+<p>（1）<strong>给新建进程定初值</strong>。fork 出来的新进程 vruntime 不能是 0。老进程的 vruntime 都已经很大了，新进程从 0 起跑，CFS 会一直挑它，让它疯跑到追平别人。</p>
+<p>（2）<strong>给唤醒进程定初值</strong>。进程睡一觉醒来也是物是人非，处境跟新进程类似，同样要按 <code>min_vruntime</code> 调整。</p>
+<p>（3）<strong>给迁移进程做换算</strong>。每颗 CPU 的 <code>min_vruntime</code> 差得不少。进程从 CPU0 迁到 CPU1，vruntime 必须换算，否则迁移本身就变成奖励或惩罚。做法是减去源 CPU 的 <code>min_vruntime</code>，入队时加上目标 CPU 的。4.18 的 <code>migrate_task_rq_fair()</code> 里就是 <code>se-&gt;vruntime -= min_vruntime;</code>——减在迁移时做，加在入队时做，分成两处是因为迁移那一刻还没拿到新 runqueue 的锁。</p>
+<h3 id="2不是所有-vruntime-都大于-min_vruntime" tabindex="-1">2、不是所有 vruntime 都大于 min_vruntime <a class="header-anchor" href="#2不是所有-vruntime-都大于-min_vruntime"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>min_vruntime</code> 的定义听着像一条不变式：任何实体的 vruntime 都 ≥ min_vruntime。不是。至少有一类反例：给唤醒进程做补偿时会把它 vruntime 减一截，减完就掉到下面去了。</p>
+<p>所以 <code>min_vruntime</code> 更准确的理解是「一个单调递增的下界参考」，而不是「当前最小值」。4.18 的实现也印证了这点——它只增不减：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* ensure we never gain time by being placed backwards. */</span>
+cfs_rq-&gt;min_vruntime = max_vruntime(cfs_rq-&gt;min_vruntime, vruntime);
+</code></pre></div></code></pre>
+<h3 id="3min_vruntime-的初值" tabindex="-1">3、min_vruntime 的初值 <a class="header-anchor" href="#3min_vruntime-的初值"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">init_cfs_rq</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> cfs_rq *cfs_rq)</span>
+{
+	cfs_rq-&gt;min_vruntime = (u64)(-(<span class="hljs-number">1LL</span> &lt;&lt; <span class="hljs-number">20</span>));
+}
+</code></pre></div></code></pre>
+<p>这个初值是 <code>2^64 - 2^20</code>，也就是 <code>U64_MAX</code> 往下 2^20 那个位置附近。为什么不用 0？</p>
+<p><code>min_vruntime</code> 单位是 ns。从这么大一个数起跑，系统运行约 2^20 ns（约 1.05ms）就溢出一次。所以初值设在这里，目的多半是为了让溢出问题早点暴露。设成 0 的话，按 nice=0 的进程算得跑 545 年才溢出一次，测试根本等不到。</p>
+<p><strong>这是推测，没有 commit message 佐证</strong>。原稿也承认没找到答案。真要下定论得去翻 2.6.24 前后的邮件列表。</p>
+<h2 id="十二九个常见问题vruntime-初值min_vruntime唤醒抢占周期设定" tabindex="-1">十二、九个常见问题：vruntime 初值、min_vruntime、唤醒抢占、周期设定 <a class="header-anchor" href="#十二九个常见问题vruntime-初值min_vruntime唤醒抢占周期设定"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面几章是按机制铺的，但踩坑的人往往卡在几个具体问题上。这一节把它们集中摆出来，同时给一份索引。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>问题</th>
+<th>答案在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>为什么非要引入 vruntime？</td>
+<td>第九章开头</td>
+</tr>
+<tr>
+<td>2</td>
+<td>新建进程的 vruntime 初值是多少？为什么不能是 0？</td>
+<td>第十一章第 1 节</td>
+</tr>
+<tr>
+<td>3</td>
+<td>min_vruntime 有什么作用？</td>
+<td>第十一章第 1 节</td>
+</tr>
+<tr>
+<td>4</td>
+<td>睡眠进程唤醒后 vruntime 怎么处理？</td>
+<td>本节第 1 小节</td>
+</tr>
+<tr>
+<td>5</td>
+<td>是否所有进程的 vruntime 都大于 min_vruntime？</td>
+<td>第十一章第 2 节</td>
+</tr>
+<tr>
+<td>6</td>
+<td>唤醒进程会立刻抢占吗？</td>
+<td>本节第 2 小节</td>
+</tr>
+<tr>
+<td>7</td>
+<td>min_vruntime 的初值为什么不是 0？</td>
+<td>第十一章第 3 节</td>
+</tr>
+<tr>
+<td>8</td>
+<td>调度周期是怎么定的？</td>
+<td>第十章第 1 节</td>
+</tr>
+<tr>
+<td>9</td>
+<td>「最小粒度」真能保证吗？</td>
+<td>第十章第 2 节</td>
+</tr>
+</tbody>
+</table></div><h3 id="1睡眠进程唤醒后的-vruntime" tabindex="-1">1、睡眠进程唤醒后的 vruntime <a class="header-anchor" href="#1睡眠进程唤醒后的-vruntime"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>第 2 问的答案对唤醒进程同样适用：睡久了醒来，vruntime 要按 <code>min_vruntime</code> 重定，具体做法是「在 min_vruntime 的基础上再减一截」。为什么要减？这段时间它本来就没占 CPU，给点补偿说得过去。交互式程序大多是这种模式——睡很久，醒来要立刻响应，减一截正好把响应速度拉起来。</p>
+<p>减多少有讲究，看 4.18 的 <code>place_entity()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>	u64 vruntime = cfs_rq-&gt;min_vruntime;
+
+	<span class="hljs-keyword">if</span> (initial &amp;&amp; sched_feat(START_DEBIT))   <span class="hljs-comment">/* 新进程：往后排，排到周期尾巴的空位 */</span>
+		vruntime += sched_vslice(cfs_rq, se);
+
+	<span class="hljs-keyword">if</span> (!initial) {                            <span class="hljs-comment">/* 唤醒进程：往前排，减掉一个阈值 */</span>
+		<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> thresh = sysctl_sched_latency;
+		<span class="hljs-keyword">if</span> (sched_feat(GENTLE_FAIR_SLEEPERS))  <span class="hljs-comment">/* 睡眠效果打对折 */</span>
+			thresh &gt;&gt;= <span class="hljs-number">1</span>;
+		vruntime -= thresh;
+	}
+
+	<span class="hljs-comment">/* 补偿归补偿，不许借补偿把 vruntime 倒推回去 */</span>
+	se-&gt;vruntime = max_vruntime(se-&gt;vruntime, vruntime);
+</code></pre></div></code></pre>
+<p>最后一句还有副作用：<code>se-&gt;vruntime</code> 只取两者中的较大值，补偿是「有上限的」——如果一个进程的 vruntime 本来就比 <code>min_vruntime - thresh</code> 大，它一点补偿也拿不到。睡得太短就没有干涉的必要。</p>
+<p>和第 2 问对照着看就通了：新进程往后排（<code>initial</code> 分支加 vslice），唤醒进程往前排（减阈值）。方向相反，理由一致——都是让它的位置和它「该被对待的样子」匹配。</p>
+<h3 id="2唤醒会不会立刻抢占" tabindex="-1">2、唤醒会不会立刻抢占 <a class="header-anchor" href="#2唤醒会不会立刻抢占"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>分两种情况，取决于唤醒抢占特性 <code>sched_feat(WAKEUP_PREEMPTION)</code>。没开的话，后面的话都不用说，插进树里就完事。</p>
+<p>开了呢？由于唤醒的进程刚按 <code>min_vruntime</code> 拿过补偿，它的 vruntime 有相当概率小于当前运行进程。那是不是「只要更小就抢」？不是。条件有两个且必须同时满足：差值还必须大于「唤醒粒度时间」。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span>
+<span class="hljs-title function_">wakeup_preempt_entity</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sched_entity *curr, <span class="hljs-keyword">struct</span> sched_entity *se)</span>
+{
+	s64 vdiff = curr-&gt;vruntime - se-&gt;vruntime, gran;
+
+	<span class="hljs-keyword">if</span> (vdiff &lt;= <span class="hljs-number">0</span>)
+		<span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;                  <span class="hljs-comment">/* 唤醒方更晚，不该抢 */</span>
+	gran = calc_delta_fair(sysctl_sched_wakeup_granularity, se);
+	<span class="hljs-keyword">if</span> (vdiff &gt; gran)
+		<span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;                   <span class="hljs-comment">/* 差得够远，该抢 */</span>
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;                       <span class="hljs-comment">/* 可抢可不抢，看调用方 */</span>
+}
+</code></pre></div></code></pre>
+<p><code>sysctl_sched_wakeup_granularity</code> 在 4.18 里默认 1ms，和 <code>sched_latency</code>、<code>min_granularity</code> 一样按 <code>1 + ilog2(ncpus)</code> 放大。</p>
+<p>注意 <code>wakeup_gran()</code> 里传的是 <code>se</code>（唤醒方）而不是 <code>curr</code>（当前方），这个选择是有意的。代码注释说得明白：用 <code>se</code> 会惩罚轻量级任务，让它们更容易被抢占。<code>gran</code> 越大，<code>vdiff &gt; gran</code> 越难成立，也就不容易被抢。换个角度看，正是「保护重任务不被轻任务频繁打断」。</p>
+<h2 id="十三实时调度rt-调度器" tabindex="-1">十三、实时调度：RT 调度器 <a class="header-anchor" href="#十三实时调度rt-调度器"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面十二章讲的全是普通进程。从现在起换赛道。实时任务和普通任务的分界线是 deadline：实时任务有 deadline，超了就不能产生正确的逻辑结果；普通任务没这条线。Linux 给实时任务准备了两套调度器：POSIX realtime scheduler（RT）和 deadline scheduler（DL）。本节讲 RT。</p>
+<p>RT 有两种策略：<code>SCHED_FIFO</code> 和 <code>SCHED_RR</code>，都按实时优先级 <code>rt_priority</code> 调，最高优先级的先拿 CPU。在实时理论里这叫固定优先级调度器——每个 rt 任务预先固定一个优先级。优先级不同时，FIFO 和 RR 没有任何区别，区别只在优先级相同时：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>策略</th>
+<th>同优先级行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SCHED_FIFO</code></td>
+<td>最先进入 runnable 的任务先拿 CPU，一直占着不放，直到睡眠或阻塞</td>
+</tr>
+<tr>
+<td><code>SCHED_RR</code></td>
+<td>同优先级轮流执行。任务开始跑后若不阻塞，会一直跑到时间片到期，然后被放到链表末尾，调度器再取下一个</td>
+</tr>
+</tbody>
+</table></div><p>RR 的「链表」有前提：只有相同优先级的任务在一条链表上，不同优先级各占一条。这和第五章的 <code>prio_array</code> 是同一套结构。RT 的选择算法是 O(1)：<code>rt_prio_array</code> 里 100 条链表加一张 bitmap，找第一个非空链表，就是少了 expired 那一半。</p>
+<p>配置 RT 任务只涉及两个参数：策略和固定实时优先级，<code>chrt -f 10 video_processing_tool</code> 就是让该任务归 RT 调度器管、实时优先级 10、策略 <code>SCHED_FIFO</code>（<code>-f</code>）。</p>
+<p>RT 有个绕不开的坑：跑飞的实时任务会把机器锁死。内核给了兜底——RT 带宽控制。默认周期 1s、可用运行时 0.95s，剩下 0.05s 留给 <code>SCHED_OTHER</code>，好让你还能登进去救回来。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>默认值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/proc/sys/kernel/sched_rt_period_us</code></td>
+<td>1000000（1s）</td>
+<td>等价于 100% CPU 带宽的调度周期</td>
+</tr>
+<tr>
+<td><code>/proc/sys/kernel/sched_rt_runtime_us</code></td>
+<td>950000（0.95s）</td>
+<td>实时调度在周期内可用时间的全局上限</td>
+</tr>
+</tbody>
+</table></div><p>设成 -1 就恢复老行为（不限）。开了 <code>CONFIG_RT_GROUP_SCHED</code> 之后，这些值还成了各组带宽的总闸。</p>
+<p>RT 的根本问题是优先级得靠人算。每个 rt 任务的优先级都要人配，配完还得验证整个任务集能被调度到，系统一变就得重来。DL 要解决的正是这件事。</p>
+<h2 id="十四deadline-调度器与-edf-算法" tabindex="-1">十四、DEADLINE 调度器与 EDF 算法 <a class="header-anchor" href="#十四deadline-调度器与-edf-算法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>DL 调度器不看优先级，看 deadline。调度点到来时，永远挑 deadline 离当前最近的那个任务。</p>
+<h3 id="1三个参数" tabindex="-1">1、三个参数 <a class="header-anchor" href="#1三个参数"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>DL 任务要配三个参数：周期（period）、运行时间（runtime）、最后期限（deadline）。拿视频处理任务举例，每秒处理 60 帧，每 16ms 处理一帧，周期就是 16ms。runtime 是一帧处理需要多少 CPU 时间，这个值不能拍脑袋，必须按最坏情况估（worst-case execution time，WCET）——最慢那帧要 5ms，runtime 就得设 5ms。deadline 是处理结果必须交付的最后期限：假定这帧必须在周期的前 10ms 内交给下一个模块，deadline 就是 10ms。于是 5ms 的 runtime 必须落在这个 16ms 周期的前 10ms 里。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>chrt -d --sched-runtime 5000000 --sched-deadline 10000000 \
+     --sched-period 16666666 0 video_processing_tool
+</code></pre></div></code></pre>
+<p><code>-d</code> 说明策略是 deadline；<code>--sched-runtime</code> 是 5ms；<code>--sched-deadline</code> 是 10ms；<code>--sched-period</code> 是 ≈16.67ms；最后的 <code>0</code> 是优先级占位符，DL 不用它。设定之后，DL 保证每 16ms 周期里给这个任务 5ms CPU，并且这 5ms 落在 10ms 的 deadline 之前。</p>
+<p>DL 参数看着复杂，其实简单：知道 task 的行为就能推出参数，只跟自己有关，跟系统无关。RT 不一样，它得看整个系统，把合适的 rt priority 分给各个 rt task，才能保证整体能跑。</p>
+<p>这个差别还有个直接后果：DL 任务明确告诉了调度器自己要多少 CPU，所以新 DL 任务进来时调度器能判断 CPU 扛不扛得住。空闲就放进来，加进去会超过 100% 就拒之门外。一旦接纳，就必须按参数兑现。</p>
+<h3 id="2edf-为什么被叫最优" tabindex="-1">2、EDF 为什么被叫「最优」 <a class="header-anchor" href="#2edf-为什么被叫最优"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>评估实时调度器性能的方法很朴素：造一组实时任务给调度器跑，看它能不能全部按期完成。</p>
+<p>结论：单处理器上 Early Deadline First（EDF）最优。所谓最优，意思是 EDF 调不了的任务集，换别的调度器也调不了。对 periodic 和 sporadic 任务、且 deadline 不大于周期（constrained deadline）的场景，按 deadline 调度的表现最好。对于 deadline 等于周期的情形，只要任务集总利用率不超过 100%，EDF 都能全部满足。<strong>Linux 的 DL 调度器实现的就是 EDF。</strong></p>
+<p>看一组例子，deadline 等于 period：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>任务</th>
+<th>runtime</th>
+<th>period</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A</td>
+<td>1</td>
+<td>4</td>
+</tr>
+<tr>
+<td>B</td>
+<td>2</td>
+<td>6</td>
+</tr>
+<tr>
+<td>C</td>
+<td>3</td>
+<td>8</td>
+</tr>
+</tbody>
+</table></div><p>总利用率 <code>1/4 + 2/6 + 3/8 = 23/24</code>，没到 100%，这组任务 EDF 能全部按期完成。换成固定优先级的调度器（比如内核里的 FIFO）呢？无论怎么调 rt priority，总有一个任务的 job 会拖到 deadline 之后。</p>
+<h3 id="3edf-的代价" tabindex="-1">3、EDF 的代价 <a class="header-anchor" href="#3edf-的代价"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>好处先说：知道任务集里每个任务的参数，不需要分析其他任务就能判断这组任务能否按期完成；单处理器上按 deadline 调度产生的上下文切换次数往往更少；在同样满足 deadline 的前提下，能调度的任务数比固定优先级多。</p>
+<p>缺点三条。</p>
+<p>（1）<strong>不保证最小响应时间</strong>。deadline 调度器保证每个任务在 deadline 前完成，但不保证谁响应最快。固定优先级正好相反——最高优先级的任务永远有最小的响应延迟。</p>
+<p>（2）<strong>算法本身更贵</strong>。固定优先级的复杂度可以是 O(1)（Linux 的 RT 调度器就是），deadline 调度器是 O(log n)（Linux 的 DL 用按 deadline 排序的红黑树）。公平地说，固定优先级的 O(1) 只算了「调度」这一步，它还需要给每个 task 挑一个最合适的优先级，这个最优优先级的计算是 O(N!)，往往离线做。</p>
+<p>（3）<strong>多米诺效应</strong>。系统过载时（新任务加进来，或 WCET 估错），deadline 调度的麻烦会扩散：一个任务因为 runtime 超支而在 deadline 之后才完成，把结果交给下游，下游跟着错过 deadline，一路传下去。固定优先级反过来，一个任务出岔子，受影响的主要是优先级最低的那个。</p>
+<p>Linux 的 DL 实现了 CBS（Constant Bandwidth Server）来治多米诺效应，细节不在本文范围。</p>
+<h2 id="十五实时调度的任务模型与-deadline-分类" tabindex="-1">十五、实时调度的任务模型与 deadline 分类 <a class="header-anchor" href="#十五实时调度的任务模型与-deadline-分类"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>要讲清调度，得先把任务抽象成模型。评估实时调度器性能的标准做法，就是造一组实时任务（实时任务集）让调度器跑，看所有任务的 deadline 能不能都满足。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>到达规律</th>
+<th>举例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>周期性（Periodic）</td>
+<td>固定间隔到达</td>
+<td>音频处理程序每隔 20ms 压缩一帧</td>
+</tr>
+<tr>
+<td>零散（Sporadic）</td>
+<td>只定义最小间隔，实际可以更晚</td>
+<td>最小间隔 20ms，则两次之间可以是 20ms 也可以是 30ms，但不会小于 20ms</td>
+</tr>
+<tr>
+<td>非周期</td>
+<td>无固定模式</td>
+<td>用户按键触发的处理</td>
+</tr>
+</tbody>
+</table></div><p>一个实时任务的 deadline 有三种：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>关系</th>
+<th>时间要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>隐含型（implicit）</td>
+<td>deadline = period</td>
+<td>相对宽松，只要在本周期内分到 runtime 的 CPU 时间即可</td>
+</tr>
+<tr>
+<td>受限型（constrained）</td>
+<td>deadline ≤ period</td>
+<td>要求高一些，必须在周期结束之前的某个时间窗内分到 CPU</td>
+</tr>
+<tr>
+<td>任意型（arbitrary）</td>
+<td>deadline 与 period 无关</td>
+<td>最一般的情形</td>
+</tr>
+</tbody>
+</table></div><p>这三种形态直接决定可调度性分析的难度。EDF 的「最优」结论在 constrained deadline 下最干净；arbitrary deadline 就麻烦得多。</p>
+<p>任务模型的意义在于把「实时」这个模糊的词量化成三个数：period、runtime、deadline。有了这三个数才能回答「这组任务能不能跑」。这也是 DL 比 RT 好用的根本原因：RT 只要求你给一个优先级，而优先级是个相对量——你得看全局才知道给得对不对，改动一个任务的优先级，整套分析都得重来。DL 要求的是绝对量，每个任务的参数只描述自己。</p>
+<h2 id="十六多核实时调度器的分类" tabindex="-1">十六、多核实时调度器的分类 <a class="header-anchor" href="#十六多核实时调度器的分类"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>单核只需决定任务先后顺序。多核还得决定任务落在哪颗 CPU 上。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类别</th>
+<th>含义</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全局类（Global）</td>
+<td>一个调度器管所有 CPU，任务可自由迁移</td>
+<td>实现简单，分析最难</td>
+</tr>
+<tr>
+<td>集群类（Clustered）</td>
+<td>CPU 分成互不相交的 cluster，调度器管 cluster 内</td>
+<td>折衷方案</td>
+</tr>
+<tr>
+<td>分区类（Partitioned）</td>
+<td>每个 CPU 一个调度器实例，各管自己</td>
+<td>分析最简单</td>
+</tr>
+<tr>
+<td>任意类（Arbitrary）</td>
+<td>每个任务可以跑在任意 CPU 子集上</td>
+<td>最一般</td>
+</tr>
+</tbody>
+</table></div><p>partitioned deadline 调度器是最优的——多核的调度问题被严格分解成一个个单核 deadline 调度问题，前面那套单核理论直接可用。global、clustered、arbitrary 三类都不是最优。</p>
+<p>这个「不是最优」不是理论上的吹毛求疵。M 个处理器的系统里，有 M 个 runtime 等于 period 的任务，调度器轻松处理——一人一颗 CPU 就行。4 个「大活」，runtime 和 period 都是 1000ms，4 核系统各跑一个，利用率 400%：<code>4 * 1000/1000 = 4</code>，这么重的负载都能扛。</p>
+<p>再看轻负载，直觉上更该没问题。4 个「小活」加 1 个「大活」：小活 runtime 1ms、周期 999ms，大活同上。总利用率 <code>4 * (1/999) + 1000/1000 = 1.004</code>，远小于 4，按直觉这套「4 小 1 大」应该轻松拿下。</p>
+<p>结果不是。单核上最优的 EDF，到了多核（指 Global EDF）会出问题：所有任务同时释放，4 个小活的 deadline 更早，被分到 4 颗 CPU 上，大活得等它们全跑完才能开始，于是大活的 deadline 满足不了。这就是 <strong>Dhall 效应</strong>。</p>
+<p>它说明一件反直觉的事：把若干任务分配给若干处理器本质上是个装箱问题，NP-hard。既然 NP-hard，就别指望哪个算法能全面压倒其他算法——各种异常场景都会冒出来。多核实时调度因此没有银弹，只能按场景挑合适的那一类。</p>
+<h2 id="十七6.6-之后eevdf-替代了-cfs-的排序键" tabindex="-1">十七、6.6 之后：EEVDF 替代了 CFS 的排序键 <a class="header-anchor" href="#十七6.6-之后eevdf-替代了-cfs-的排序键"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面十六章讲的是 2.4 到 3.14 的演进。这一章讲一件更新的事：<strong>从 6.6 起，普通进程的调度算法换成了 EEVDF</strong>，CFS 退居二线。</p>
+<h3 id="1为什么换" tabindex="-1">1、为什么换 <a class="header-anchor" href="#1为什么换"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>CFS 从 2.6.23 进来，靠 vruntime 排序保证公平，效果不差。但它有个解决不了的短板：<strong>没有表达延迟需求的接口</strong>。</p>
+<p>有些进程不需要很多 CPU，但需要的时候必须马上给。另一些进程可以多跑，等一等也无所谓。nice 值只能表达「多给点 CPU」，表达不了「快点给我 CPU」。能表达延迟的只有实时类，可实时类是特权操作，跑飞的实时任务会拖累整个系统。latency nice 那套补丁试过解决这件事，思路是让对延迟敏感的 CFS 进程插队。补丁能用，但 Peter Zijlstra 认为有更好的办法——换算法。</p>
+<h3 id="2eevdf-是什么" tabindex="-1">2、EEVDF 是什么 <a class="header-anchor" href="#2eevdf-是什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>Earliest Eligible Virtual Deadline First，1995 年由 Ion Stoica 和 Hussein Abdel-Wahab 提出。名字长得像 EDF，但 EEVDF 不是实时调度器。三个核心概念：</p>
+<p><strong>lag（欠账）</strong>：每个进程算出「本该拿到多少 CPU」和「实际拿到多少」的差。lag 为正说明被亏待了，应该早点跑；为负说明超额了。</p>
+<p><strong>eligible（合格）</strong>：lag ≥ 0 的进程才算合格，lag 为负的不许跑。不合格的进程在未来的某个时刻会被「该拿的时间追平实拿的时间」，那一刻叫 eligible time，从那时起它重新合格。</p>
+<p><strong>virtual deadline（虚拟截止期）</strong>：合格时刻加上分配给它的时间片。一个 10ms 时间片、eligible time 在 20ms 之后的进程，虚拟截止期是 30ms 之后。</p>
+<p>算法就一句话：在合格的进程里，挑虚拟截止期最早的那个。</p>
+<p>延迟需求自然就解决了。算时间片时把 latency nice 算进去：延迟要求紧的进程拿更短的时间片，不敏感的拿更长的。时间片短 → 虚拟截止期近 → 先被调度。两个 nice 相同的进程拿到的 CPU <strong>总量</strong>一样，只是延迟敏感的进程把它拆成更多更短的片。</p>
+<h3 id="3代码长什么样" tabindex="-1">3、代码长什么样 <a class="header-anchor" href="#3代码长什么样"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>se-&gt;slice</code></td>
+<td>本次时间片，默认取 <code>sysctl_sched_base_slice</code>（750000ns，即 0.75ms）</td>
+</tr>
+<tr>
+<td><code>se-&gt;deadline</code></td>
+<td>虚拟截止期</td>
+</tr>
+<tr>
+<td><code>se-&gt;vlag</code></td>
+<td>虚拟 lag（省掉权重那一维的 lag）</td>
+</tr>
+<tr>
+<td><code>se-&gt;min_deadline</code></td>
+<td>子树内的最小 deadline，红黑树的增强数据</td>
+</tr>
+</tbody>
+</table></div><p>时间片和截止期是这么算的（<code>update_deadline()</code>）：先判 <code>if ((s64)(se-&gt;vruntime - se-&gt;deadline) &lt; 0) return;</code>，然后 <code>se-&gt;slice = sysctl_sched_base_slice;</code>，最后 <code>se-&gt;deadline = se-&gt;vruntime + calc_delta_fair(se-&gt;slice, se);</code>——即 <code>vd_i = ve_i + r_i / w_i</code>，虚拟时间斜率由 nice 决定，请求长度由 base_slice 决定。</p>
+<p><code>sysctl_sched_latency</code>、<code>sysctl_sched_min_granularity</code>、<code>sched_nr_latency</code> 这几个参数在 6.6 里全没了，<code>__sched_period()</code> 也没了。这是换血，不是打补丁。</p>
+<p>红黑树还在，但排序键和查找方式都变了。树仍然按 vruntime 排（<code>__entity_less</code> 比的就是 vruntime），同时靠 <code>min_deadline</code> 做增强，让树兼当按 deadline 排的堆：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> __enqueue_entity(<span class="hljs-keyword">struct</span> cfs_rq *cfs_rq, <span class="hljs-keyword">struct</span> sched_entity *se)
+{
+	avg_vruntime_add(cfs_rq, se);
+	se-&gt;min_deadline = se-&gt;deadline;
+	rb_add_augmented_cached(&amp;se-&gt;run_node, &amp;cfs_rq-&gt;tasks_timeline,
+				__entity_less, &amp;min_deadline_cb);
+}
+</code></pre></div></code></pre>
+<h3 id="4别再把-rb_leftmost-当成下一个要跑的" tabindex="-1">4、别再把 rb_leftmost 当成下一个要跑的 <a class="header-anchor" href="#4别再把-rb_leftmost-当成下一个要跑的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这是本文最需要记住的一条实践提醒。</p>
+<p>5.x 及以前，问「下一个跑谁」，答案就是 <code>tasks_timeline.rb_leftmost</code>。<code>__pick_first_entity()</code> 直接返回它，所有调试技巧、crash 分析、看 <code>/proc/sched_debug</code> 的直觉都建立在这个前提上。</p>
+<p>6.6 起不成立了。<code>__pick_eevdf()</code> 从<strong>树根</strong>开始往下搜索，不是从左端取：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>	<span class="hljs-keyword">while</span> (node) {
+		<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_entity</span> *<span class="hljs-title">se</span> =</span> __node_2_se(node);
+
+		<span class="hljs-comment">/* 不合格就只看左子树 */</span>
+		<span class="hljs-keyword">if</span> (!entity_eligible(cfs_rq, se)) {
+			node = node-&gt;rb_left;
+			<span class="hljs-keyword">continue</span>;
+		}
+		<span class="hljs-comment">/* 在合格的子树里按 min_deadline 找最早的那个 */</span>
+		<span class="hljs-keyword">if</span> (!best || deadline_gt(deadline, best, se))
+			best = se;
+	}
+</code></pre></div></code></pre>
+<p>注释把算法交代得很清楚：其一，任务必须合格（must be owed service）；其二，在合格的里面选虚拟截止期最早的；靠 <code>se-&gt;min_deadline = min(se-&gt;deadline, se-&gt;{left,right}-&gt;min_deadline)</code> 在子树上做类 EDF 的搜索，代价 O(log n)。</p>
+<p>也就是说：最左节点是 vruntime 最小的，但 vruntime 最小 ≠ 该跑，它 lag 为负（不合格）就得跳过。真正决定谁跑的是「合格 + 虚拟截止期最早」，扫的是整棵树。</p>
+<p>代码里还留了个兜底，说明「只靠最左」是错的：<code>pick_eevdf()</code> 调 <code>__pick_eevdf()</code>，拿不到结果时才退回 <code>__pick_first_entity()</code>，同时打一条 <code>pr_err(&quot;EEVDF scheduling fail, picking leftmost\n&quot;)</code>。看到这条报错，说明调度器已经在走异常路径。</p>
+<p><code>rb_leftmost</code> 缓存本身还在，因为入队/删除时维护它仍然有用，<code>update_min_vruntime()</code>、<code>check_spread()</code> 之类的辅助逻辑还在读它。但<strong>它不再是「下一个要跑的实体」</strong>。写调试脚本、看 sched_debug 输出、读 crash dump 时，这个前提必须换掉。</p>
+<h3 id="5迁移建议" tabindex="-1">5、迁移建议 <a class="header-anchor" href="#5迁移建议"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>你原来的假设</th>
+<th>6.6 之后</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>看 <code>rb_leftmost</code> 就知道下一个跑谁</td>
+<td>要跑 <code>__pick_eevdf()</code> 的逻辑：先筛合格，再比 deadline</td>
+</tr>
+<tr>
+<td>调 <code>sched_latency_ns</code> 调延迟</td>
+<td>该参数已不存在，调 <code>base_slice_ns</code></td>
+</tr>
+<tr>
+<td>算 <code>sched_slice()</code> 得时间片</td>
+<td>时间片是 <code>se-&gt;slice</code>，默认 <code>sysctl_sched_base_slice</code></td>
+</tr>
+<tr>
+<td>min_vruntime 是最小 vruntime</td>
+<td>还是单调递增下界，但语义重心转向 lag 计算（<code>avg_vruntime()</code> 加权平均）</td>
+</tr>
+<tr>
+<td>CFS 就是 fair_sched_class</td>
+<td><code>fair_sched_class</code> 还在，里面装的是 EEVDF</td>
+</tr>
+</tbody>
+</table></div><p>需要说明的是，6.6 的改动不是「CFS 加了个新特性」，是「fair 调度类换了内核算法」。<code>fair_sched_class</code> 这个名字、<code>sched_entity</code> 这个结构、rbtree 这个载体都保留了，但排序语义、选择逻辑、参数集全变了。看 6.6 之后的 fair.c，按 CFS 的直觉去读会处处不对劲。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+                <div class="rail-card rail-backlinks-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                      </svg>
+                      反向链接
+                    </span>
+                    <span class="rail-badge">5</span>
+                  </div>
+                  <ul class="backlinks-list">
+                    
+                    <li><a class="backlink-item" href="/B.内核/02-进程与调度/CFS-调度类：源码、组调度与带宽控制/">CFS 调度类：源码、组调度与带宽控制</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/02-进程与调度/PELT：per-entity-负载跟踪/">PELT：per-entity 负载跟踪</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/">多核负载均衡：调度域、任务放置与 load_balance</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/02-进程与调度/进程切换：上下文、TLB-与切换开销/">进程切换：上下文、TLB 与切换开销</a></li>
+                    
+                    <li><a class="backlink-item" href="/B.内核/02-进程与调度/进程基础：标识、凭证与创建/">进程基础：标识、凭证与创建</a></li>
+                    
+                  </ul>
+                </div>
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一调度器要同时满足的四件事" data-toc-target="一调度器要同时满足的四件事">一、调度器要同时满足的四件事</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二调度类与调度器sched_class-的分层" data-toc-target="二调度类与调度器sched_class-的分层">二、调度类与调度器：sched_class 的分层</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三2.4-的-on-调度器怎么做" data-toc-target="三2.4-的-on-调度器怎么做">三、2.4 的 O(n) 调度器怎么做</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1全局就绪队列" data-toc-target="1全局就绪队列">1、全局就绪队列</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2静态优先级与动态优先级" data-toc-target="2静态优先级与动态优先级">2、静态优先级与动态优先级</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3时间片怎么发" data-toc-target="3时间片怎么发">3、时间片怎么发</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4调度时机" data-toc-target="4调度时机">4、调度时机</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5主调度器" data-toc-target="5主调度器">5、主调度器</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四on-的三个死穴" data-toc-target="四on-的三个死穴">四、O(n) 的三个死穴</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1死穴一select-next-是线性扫描" data-toc-target="1死穴一select-next-是线性扫描">1、死穴一：select next 是线性扫描</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2死穴二一把全局锁掐死-smp" data-toc-target="2死穴二一把全局锁掐死-smp">2、死穴二：一把全局锁掐死 SMP</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3死穴三时间片重算把-l1-打成筛子还让-cpu-空转" data-toc-target="3死穴三时间片重算把-l1-打成筛子还让-cpu-空转">3、死穴三：时间片重算把 L1 打成筛子，还让 CPU 空转</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4剩下的四条" data-toc-target="4剩下的四条">4、剩下的四条</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五2.6-的-o1-调度器prio_array-与两张-bitmap" data-toc-target="五2.6-的-o1-调度器prio_array-与两张-bitmap">五、2.6 的 O(1) 调度器：prio_array 与两张 bitmap</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1prio_array140-个链表--一张-bitmap" data-toc-target="1prio_array140-个链表--一张-bitmap">1、prio_array：140 个链表 + 一张 bitmap</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2主调度器算法" data-toc-target="2主调度器算法">2、主调度器算法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3静态优先级与动态优先级" data-toc-target="3静态优先级与动态优先级">3、静态优先级与动态优先级</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4时间片" data-toc-target="4时间片">4、时间片</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5交互式进程的特殊照顾" data-toc-target="5交互式进程的特殊照顾">5、交互式进程的特殊照顾</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6抢占式内核" data-toc-target="6抢占式内核">6、抢占式内核</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六o1-解决了什么又留下了什么" data-toc-target="六o1-解决了什么又留下了什么">六、O(1) 解决了什么，又留下了什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七公平调度思想的引入从分时间片到分权重" data-toc-target="七公平调度思想的引入从分时间片到分权重">七、公平调度思想的引入：从「分时间片」到「分权重」</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1固定时间片的悖论" data-toc-target="1固定时间片的悖论">1、固定时间片的悖论</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2rsdl-的三个词" data-toc-target="2rsdl-的三个词">2、RSDL 的三个词</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3为什么进不了主线" data-toc-target="3为什么进不了主线">3、为什么进不了主线</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4公平的度量分权重不分时间片" data-toc-target="4公平的度量分权重不分时间片">4、公平的度量：分权重，不分时间片</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八cfs-的三块基石权重虚拟时间红黑树" data-toc-target="八cfs-的三块基石权重虚拟时间红黑树">八、CFS 的三块基石：权重、虚拟时间、红黑树</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1虚拟时间" data-toc-target="1虚拟时间">1、虚拟时间</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2红黑树" data-toc-target="2红黑树">2、红黑树</a>
+                    
+                    <a class="toc-item toc-lv3" href="#32.6.23-和-2.6.24-不是一回事" data-toc-target="32.6.23-和-2.6.24-不是一回事">3、2.6.23 和 2.6.24 不是一回事</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九权重表-prio_to_weight-与-nice-的换算" data-toc-target="九权重表-prio_to_weight-与-nice-的换算">九、权重表 prio_to_weight 与 nice 的换算</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1名字会变" data-toc-target="1名字会变">1、名字会变</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十调度延迟调度周期与最小粒度" data-toc-target="十调度延迟调度周期与最小粒度">十、调度延迟、调度周期与最小粒度</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1参数在版本之间变过" data-toc-target="1参数在版本之间变过">1、参数在版本之间变过</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2最小粒度不总成立" data-toc-target="2最小粒度不总成立">2、最小粒度不总成立</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3和传统调度器的对比" data-toc-target="3和传统调度器的对比">3、和传统调度器的对比</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4调度器怎么运作" data-toc-target="4调度器怎么运作">4、调度器怎么运作</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一调度实体与就绪队列结构" data-toc-target="十一调度实体与就绪队列结构">十一、调度实体与就绪队列结构</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1min_vruntime-到底管什么" data-toc-target="1min_vruntime-到底管什么">1、min_vruntime 到底管什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2不是所有-vruntime-都大于-min_vruntime" data-toc-target="2不是所有-vruntime-都大于-min_vruntime">2、不是所有 vruntime 都大于 min_vruntime</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3min_vruntime-的初值" data-toc-target="3min_vruntime-的初值">3、min_vruntime 的初值</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二九个常见问题vruntime-初值min_vruntime唤醒抢占周期设定" data-toc-target="十二九个常见问题vruntime-初值min_vruntime唤醒抢占周期设定">十二、九个常见问题：vruntime 初值、min_vruntime、唤醒抢占、周期设定</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1睡眠进程唤醒后的-vruntime" data-toc-target="1睡眠进程唤醒后的-vruntime">1、睡眠进程唤醒后的 vruntime</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2唤醒会不会立刻抢占" data-toc-target="2唤醒会不会立刻抢占">2、唤醒会不会立刻抢占</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三实时调度rt-调度器" data-toc-target="十三实时调度rt-调度器">十三、实时调度：RT 调度器</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四deadline-调度器与-edf-算法" data-toc-target="十四deadline-调度器与-edf-算法">十四、DEADLINE 调度器与 EDF 算法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1三个参数" data-toc-target="1三个参数">1、三个参数</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2edf-为什么被叫最优" data-toc-target="2edf-为什么被叫最优">2、EDF 为什么被叫「最优」</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3edf-的代价" data-toc-target="3edf-的代价">3、EDF 的代价</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五实时调度的任务模型与-deadline-分类" data-toc-target="十五实时调度的任务模型与-deadline-分类">十五、实时调度的任务模型与 deadline 分类</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六多核实时调度器的分类" data-toc-target="十六多核实时调度器的分类">十六、多核实时调度器的分类</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十七6.6-之后eevdf-替代了-cfs-的排序键" data-toc-target="十七6.6-之后eevdf-替代了-cfs-的排序键">十七、6.6 之后：EEVDF 替代了 CFS 的排序键</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1为什么换" data-toc-target="1为什么换">1、为什么换</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2eevdf-是什么" data-toc-target="2eevdf-是什么">2、EEVDF 是什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3代码长什么样" data-toc-target="3代码长什么样">3、代码长什么样</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4别再把-rb_leftmost-当成下一个要跑的" data-toc-target="4别再把-rb_leftmost-当成下一个要跑的">4、别再把 rb_leftmost 当成下一个要跑的</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5迁移建议" data-toc-target="5迁移建议">5、迁移建议</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/02-进程与调度/Linux-调度器：从-O(n)-到-CFS-与实时调度/","title":"Linux 调度器：从 O(n) 到 CFS 与实时调度","url":"/B.内核/02-进程与调度/Linux-调度器：从-O(n)-到-CFS-与实时调度/","type":"current"},{"id":"/B.内核/02-进程与调度/CFS-调度类：源码、组调度与带宽控制/","title":"CFS 调度类：源码、组调度与带宽控制","url":"/B.内核/02-进程与调度/CFS-调度类：源码、组调度与带宽控制/","type":"backlink"},{"id":"/B.内核/02-进程与调度/PELT：per-entity-负载跟踪/","title":"PELT：per-entity 负载跟踪","url":"/B.内核/02-进程与调度/PELT：per-entity-负载跟踪/","type":"backlink"},{"id":"/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/","title":"多核负载均衡：调度域、任务放置与 load_balance","url":"/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/","type":"backlink"},{"id":"/B.内核/02-进程与调度/进程切换：上下文、TLB-与切换开销/","title":"进程切换：上下文、TLB 与切换开销","url":"/B.内核/02-进程与调度/进程切换：上下文、TLB-与切换开销/","type":"backlink"},{"id":"/B.内核/02-进程与调度/进程基础：标识、凭证与创建/","title":"进程基础：标识、凭证与创建","url":"/B.内核/02-进程与调度/进程基础：标识、凭证与创建/","type":"backlink"}],"links":[{"source":"/B.内核/02-进程与调度/CFS-调度类：源码、组调度与带宽控制/","target":"/B.内核/02-进程与调度/Linux-调度器：从-O(n)-到-CFS-与实时调度/","type":"direct"},{"source":"/B.内核/02-进程与调度/PELT：per-entity-负载跟踪/","target":"/B.内核/02-进程与调度/Linux-调度器：从-O(n)-到-CFS-与实时调度/","type":"direct"},{"source":"/B.内核/02-进程与调度/多核负载均衡：调度域、任务放置与-load_balance/","target":"/B.内核/02-进程与调度/Linux-调度器：从-O(n)-到-CFS-与实时调度/","type":"direct"},{"source":"/B.内核/02-进程与调度/进程切换：上下文、TLB-与切换开销/","target":"/B.内核/02-进程与调度/Linux-调度器：从-O(n)-到-CFS-与实时调度/","type":"direct"},{"source":"/B.内核/02-进程与调度/进程基础：标识、凭证与创建/","target":"/B.内核/02-进程与调度/Linux-调度器：从-O(n)-到-CFS-与实时调度/","type":"direct"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

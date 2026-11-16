@@ -1,0 +1,2139 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>UART 驱动：serial_core 与具体实现 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E8%AF%AD%E8%A8%80%E4%B8%8E%E7%B3%BB%E7%BB%9F%E7%BC%96%E7%A8%8B/" class="topnav-item" style="--dot:#3f51b5" title="语言与系统编程">语言与系统编程</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E5%BA%94%E7%94%A8%E4%B8%8E%E7%95%8C%E9%9D%A2/" class="topnav-item" style="--dot:#ff9800" title="应用与界面">应用与界面</a>
+        
+        <a href="/I.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/J.%E8%A1%8C%E4%B8%9A%E4%B8%8E%E9%A2%86%E5%9F%9F/" class="topnav-item" style="--dot:#795548" title="行业与领域">行业与领域</a>
+        
+        <a href="/K.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">UART 驱动：serial_core 与具体实现</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/C.驱动/10-显示与终端/UART-驱动：serial_core-与具体实现/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">UART 驱动：serial_core 与具体实现</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">UART 驱动：serial_core 与具体实现</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>本篇讲串口控制器驱动：serial_core 提供的 <code>uart_driver</code>/<code>uart_port</code>/<code>uart_ops</code> 三件套怎么填、怎么挂、怎么收发，以及 console 与 serial console 怎么复用同一条硬件路径。</p>
+<p>讲什么：serial_core 与具体驱动的分层、<code>uart_driver</code>/<code>uart_state</code>/<code>uart_port</code> 全字段与 <code>UPF_*</code>/<code>UPSTAT_*</code> 宏、<code>uart_ops</code> 二十多个回调的职责、<code>uart_register_driver</code> 与 <code>uart_add_one_port</code> 的注册链、一次完整 probe、发送与接收路径、中断处理与 DMA、<code>struct console</code> 与 serial console 的注册、early console、调试手段与故障表。</p>
+<p>不讲什么：<code>tty_driver</code>/<code>tty_struct</code>/<code>tty_port</code>/line discipline/termios 的内部实现不展开，只在调用链上一笔带过；RS-232 电气细节、波特率误差公式也不在这里。这些全在 <a href="/C.%E9%A9%B1%E5%8A%A8/10-%E6%98%BE%E7%A4%BA%E4%B8%8E%E7%BB%88%E7%AB%AF/TTY-%E5%AD%90%E7%B3%BB%E7%BB%9F%EF%BC%9A%E4%BB%8E%E5%8D%8F%E8%AE%AE%E5%88%B0%E6%A1%86%E6%9E%B6/" class="wikilink">TTY 子系统：从协议到框架</a>。</p>
+<p>跨篇指路：TTY 抽象层、TTY 注册与注销、从驱动到用户态的调用路径看 <a href="/C.%E9%A9%B1%E5%8A%A8/10-%E6%98%BE%E7%A4%BA%E4%B8%8E%E7%BB%88%E7%AB%AF/TTY-%E5%AD%90%E7%B3%BB%E7%BB%9F%EF%BC%9A%E4%BB%8E%E5%8D%8F%E8%AE%AE%E5%88%B0%E6%A1%86%E6%9E%B6/" class="wikilink">TTY 子系统：从协议到框架</a>；显示见 <a href="/C.%E9%A9%B1%E5%8A%A8/10-%E6%98%BE%E7%A4%BA%E4%B8%8E%E7%BB%88%E7%AB%AF/Linux-%E5%9B%BE%E5%BD%A2%E6%A0%88%E4%B8%8E-DRM-%E6%9E%B6%E6%9E%84/" class="wikilink">Linux 图形栈与 DRM 架构</a>；键盘输入见 <a href="/C.%E9%A9%B1%E5%8A%A8/10-%E6%98%BE%E7%A4%BA%E4%B8%8E%E7%BB%88%E7%AB%AF/Linux-input-%E6%A1%86%E6%9E%B6%EF%BC%9Ainput_dev-%E4%B8%8E-handler/" class="wikilink">Linux input 框架：input_dev 与 handler</a>。</p>
+<p>素材基线：Linux 5.2.8（S3C2440 / Mini2440）+ 4.6-rc5（Bubblegum-96，Actions S900）。版本差异逐处标注，标不上的写「未验证」。</p>
+</blockquote>
+<h2 id="一uart-驱动的分层serial_core-与具体驱动" tabindex="-1">一、UART 驱动的分层：serial_core 与具体驱动 <a class="header-anchor" href="#一uart-驱动的分层serial_core-与具体驱动"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>串口是 TTY 设备的一种，内核为了方便串口驱动开发，在 TTY framework 基础上封装了 serial framework，位于 <code>drivers/tty/serial</code>。它把 TTY 的技术细节（<code>tty_struct</code> 内部锁、flip 缓冲、ldisc 交互）全部屏蔽，让驱动工程师只盯着串口控制器本身。serial core 实现三类功能：把串口设备的物理对象及其操作方法封装成结构体（<code>uart_port</code> 描述「串口」，<code>uart_ops</code> 描述「能对串口做的操作」，<code>uart_driver</code> 描述「驱动这类串口的东西」，<code>uart_state</code> 存运行期动态信息）；向底层 driver 提供 <code>uart_register_driver</code> / <code>uart_add_one_port</code> / <code>uart_remove_one_port</code> / <code>uart_suspend_port</code> / <code>uart_resume_port</code> 这类编程接口和一组环形缓冲宏；把 driver 看到的 serial driver 转换成 TTY driver——内部调 <code>alloc_tty_driver</code> + <code>tty_set_operations(normal, &amp;uart_ops)</code> + <code>tty_register_driver</code>，把每个 uart port 注册成 tty 设备。第三条是整个设计的关键。<code>struct tty_operations uart_ops</code>（注意不是 <code>struct uart_ops</code>，两个同名不同物）定义在 <code>drivers/tty/serial/serial_core.c</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">tty_operations</span> <span class="hljs-title">uart_ops</span> =</span> {
+        .install        = uart_install,
+        .open           = uart_open,
+        .close          = uart_close,
+        .write          = uart_write,
+        .put_char       = uart_put_char,
+        .flush_chars    = uart_flush_chars,
+        .write_room     = uart_write_room,
+        .chars_in_buffer= uart_chars_in_buffer,
+        .flush_buffer   = uart_flush_buffer,
+        .ioctl          = uart_ioctl,
+        .throttle       = uart_throttle,
+        .unthrottle     = uart_unthrottle,
+        .send_xchar     = uart_send_xchar,
+        .set_termios    = uart_set_termios,
+        .set_ldisc      = uart_set_ldisc,
+        .stop           = uart_stop,
+        .start          = uart_start,
+        .hangup         = uart_hangup,
+        .break_ctl      = uart_break_ctl,
+        .wait_until_sent= uart_wait_until_sent,
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_PROC_FS</span>
+        .proc_show      = uart_proc_show,
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        .tiocmget       = uart_tiocmget,
+        .tiocmset       = uart_tiocmset,
+        .set_serial     = uart_set_info_user,
+        .get_serial     = uart_get_info_user,
+        .get_icount     = uart_get_icount,
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_CONSOLE_POLL</span>
+        .poll_init      = uart_poll_init,
+        .poll_get_char  = uart_poll_get_char,
+        .poll_put_char  = uart_poll_put_char,
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+};
+tty_fops-&gt;tty_open()
+  -&gt; tty-&gt;ops-&gt;open(tty, filp)      <span class="hljs-comment">/* tty-&gt;ops 来自 alloc_tty_struct 的 tty-&gt;ops = driver-&gt;ops */</span>
+     -&gt; uart_open()                 <span class="hljs-comment">/* serial_core 的 tty_operations.open */</span>
+        -&gt; tty_port_open(&amp;state-&gt;port, tty, filp)
+           -&gt; port-&gt;ops-&gt;activate   <span class="hljs-comment">/* = uart_port_activate */</span>
+              -&gt; uport-&gt;ops-&gt;startup(uport)   <span class="hljs-comment">/* 你的驱动实现 */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">uart_register_driver</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_driver *uart)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">uart_unregister_driver</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_driver *uart)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">uart_add_one_port</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_driver *reg, <span class="hljs-keyword">struct</span> uart_port *port)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">uart_remove_one_port</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_driver *reg, <span class="hljs-keyword">struct</span> uart_port *port)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">uart_match_port</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *port1, <span class="hljs-keyword">struct</span> uart_port *port2)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">uart_suspend_port</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_driver *reg, <span class="hljs-keyword">struct</span> uart_port *port)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">uart_resume_port</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_driver *reg, <span class="hljs-keyword">struct</span> uart_port *port)</span>;
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">uart_tx_stopped</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *port)</span>;
+<span class="hljs-keyword">extern</span> <span class="hljs-type">void</span> <span class="hljs-title function_">uart_insert_char</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *port, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> status,
+                 <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> overrun, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> ch, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> flag)</span>;
+</code></pre></div></code></pre>
+<p><code>uart_register_driver</code> 在模块 init 里调，<code>uart_unregister_driver</code> 在 exit 里调；<code>uart_add_one_port</code> / <code>uart_remove_one_port</code> 在 platform driver 的 probe/remove 里调；<code>uart_suspend_port</code> / <code>uart_resume_port</code> 在电源管理状态切换时调；<code>uart_tx_stopped</code> 判断某个 port 的 tx 是否处于停止状态；<code>uart_insert_char</code> 驱动从串口收到一个字符后调用，把它放进 RX buffer，相比 <code>tty_insert_flip_char</code> 能做 overrun 处理。console 相关的两个：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">struct</span> tty_driver *<span class="hljs-title function_">uart_console_device</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> console *co, <span class="hljs-type">int</span> *index)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">uart_console_write</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *port, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *s,
+                        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> count,
+                        <span class="hljs-type">void</span> (*<span class="hljs-built_in">putchar</span>)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">int</span>))</span>;
+[    <span class="hljs-number">0.087281</span>] workingset: timestamp_bits=<span class="hljs-number">60</span> max_order=<span class="hljs-number">19</span> bucket_order=<span class="hljs-number">0</span>
+[    <span class="hljs-number">0.093281</span>] owl_serial_init
+[    <span class="hljs-number">0.096062</span>] owl_serial e012a000.serial: owl_serial_probe
+[    <span class="hljs-number">0.101343</span>] e012a000.serial: ttyS5 at MMIO <span class="hljs-number">0xe012a000</span> (irq = <span class="hljs-number">0</span>, base_baud = <span class="hljs-number">0</span>) is a unknown
+[    <span class="hljs-number">0.109656</span>] console [ttyS5] enabled
+[    <span class="hljs-number">0.116593</span>] bootconsole [owl_serial0] disabled
+</code></pre></div></code></pre>
+<p><code>owl_serial_probe</code> 是你的 platform driver；<code>ttyS5 at MMIO ...</code> 是 serial_core 打的（<code>uart_add_one_port</code> → <code>uart_configure_port</code>）；<code>console [ttyS5] enabled</code> 是 console core 打的（<code>register_console</code>）；<code>bootconsole [owl_serial0] disabled</code> 说明 early console 让位了。后面那个 <code>No working init found</code> 的 panic 和串口无关，是根文件系统还没配好。</p>
+<h2 id="二uart_driver-与-uart_port" tabindex="-1">二、uart_driver 与 uart_port <a class="header-anchor" href="#二uart_driver-与-uart_port"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="2.1-struct-uart_driver" tabindex="-1">2.1 struct uart_driver <a class="header-anchor" href="#2.1-struct-uart_driver"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>每款 SoC 的 UART 都要实现并定义一个属于自己的 <code>uart_driver</code>，它包含串口设备名、驱动名、主次设备号、可选的串口控制台，并封装 <code>tty_driver</code>。定义在 <code>include/linux/serial_core.h</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_driver</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">module</span>           *<span class="hljs-title">owner</span>;</span> <span class="hljs-type">const</span> <span class="hljs-type">char</span>              *driver_name; <span class="hljs-type">const</span> <span class="hljs-type">char</span>              *dev_name;
+        <span class="hljs-type">int</span>                      major; <span class="hljs-type">int</span>                      minor; <span class="hljs-type">int</span>                      nr;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">console</span>          *<span class="hljs-title">cons</span>;</span>
+        <span class="hljs-comment">/*
+         * these are private; the low level driver should not
+         * touch these; they should be initialised to NULL
+         */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_state</span>       *<span class="hljs-title">state</span>;</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">tty_driver</span>       *<span class="hljs-title">tty_driver</span>;</span>
+};
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>owner</code></td>
+<td>模块拥有者，填 <code>THIS_MODULE</code></td>
+</tr>
+<tr>
+<td><code>driver_name</code></td>
+<td>串口驱动名称，<code>/proc/tty/driver/&lt;driver_name&gt;</code> 用它</td>
+</tr>
+<tr>
+<td><code>dev_name</code></td>
+<td>串口设备名称，如 <code>&quot;ttyS&quot;</code>、<code>&quot;ttySAC&quot;</code>，体现在 <code>/dev/</code> 下</td>
+</tr>
+<tr>
+<td><code>major</code></td>
+<td>主设备号，可填 0 让内核动态分配</td>
+</tr>
+<tr>
+<td><code>minor</code></td>
+<td>次设备号（起始）</td>
+</tr>
+<tr>
+<td><code>nr</code></td>
+<td>驱动的串口数量。芯片手册说「多达 3 个 UART 接口」，这里就是 3</td>
+</tr>
+<tr>
+<td><code>cons</code></td>
+<td>对应的 console 指针，支持 serial console 才填，否则 NULL</td>
+</tr>
+<tr>
+<td><code>state</code></td>
+<td>下层指针，指向 <code>uart_state</code> 数组，<code>state[0]</code> 对应 UART0。驱动层不许碰，初始化必须是 NULL</td>
+</tr>
+<tr>
+<td><code>tty_driver</code></td>
+<td>上层指针，指向 serial core 申请的 <code>tty_driver</code>。驱动层不许碰，初始化必须是 NULL</td>
+</tr>
+<tr>
+<td><code>state</code> 和 <code>tty_driver</code> 的注释写得很直白：<strong>private; the low level driver should not touch these; they should be initialised to NULL</strong>。写驱动时这两个字段一律不填，<code>BUG_ON(drv-&gt;state)</code> 会拦住手贱的人。三星那份具体定义：</td>
+<td></td>
+</tr>
+</tbody>
+</table></div><pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_driver</span> <span class="hljs-title">s3c24xx_uart_drv</span> =</span> {
+        .owner          = THIS_MODULE,
+        .driver_name    = <span class="hljs-string">&quot;s3c2410_serial&quot;</span>,
+        .nr             = CONFIG_SERIAL_SAMSUNG_UARTS,  <span class="hljs-comment">/* 配置为 4，S3C2440 实际只有 3 个 */</span>
+        .cons           = S3C24XX_SERIAL_CONSOLE,
+        .dev_name       = S3C24XX_SERIAL_NAME,     <span class="hljs-comment">/* &quot;ttySAC&quot; */</span>
+        .major          = S3C24XX_SERIAL_MAJOR,    <span class="hljs-comment">/* 204 */</span>
+        .minor          = S3C24XX_SERIAL_MINOR,    <span class="hljs-comment">/* 64 */</span>
+};
+</code></pre></div></code></pre>
+<p><code>nr</code> 配成 4 而实际只有 3 个 UART，会导致 <code>tty_register_driver</code> 注册 4 个设备节点，<code>/dev/ttySAC3</code> 存在但永远 open 失败。这是从老代码继承下来的配置习惯，移植时按实际端口数改。</p>
+<h3 id="2.2-struct-uart_state" tabindex="-1">2.2 struct uart_state <a class="header-anchor" href="#2.2-struct-uart_state"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>每个 uart 端口对应一个 <code>uart_state</code>，它把 <code>uart_port</code> 和发送环形缓冲联系起来，有两个成员在底层驱动里会用到：<code>xmit</code> 和 <code>port</code>。用户态发数据时上层把数据存进 <code>xmit</code>，发送中断处理函数从 <code>xmit</code> 取数据发出去；接收中断通过 <code>port</code> 把数据交给 line discipline。定义在 <code>include/linux/serial_core.h</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code> * This is the state information which is persistent across opens.
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_state</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">tty_port</span>         <span class="hljs-title">port</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">uart_pm_state</span>      <span class="hljs-title">pm_state</span>;</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">circ_buf</span>         <span class="hljs-title">xmit</span>;</span> <span class="hljs-type">atomic_t</span>                refcount;
+        <span class="hljs-type">wait_queue_head_t</span>       remove_wait; <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_port</span>        *<span class="hljs-title">uart_port</span>;</span>
+};
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>port</code></td>
+<td>对应的 <code>struct tty_port</code>，uart port 是 tty port 的一个特例</td>
+</tr>
+<tr>
+<td><code>pm_state</code></td>
+<td>电源管理状态：<code>UART_PM_STATE_ON</code> / <code>UART_PM_STATE_OFF</code> / <code>UART_PM_STATE_UNDEFINED</code></td>
+</tr>
+<tr>
+<td><code>xmit</code></td>
+<td>待发送数据的环形缓冲区（<code>struct circ_buf</code>）</td>
+</tr>
+<tr>
+<td><code>refcount</code></td>
+<td>引用计数</td>
+</tr>
+<tr>
+<td><code>remove_wait</code></td>
+<td>移除端口时的等待队列</td>
+</tr>
+<tr>
+<td><code>uart_port</code></td>
+<td>指向所属的 <code>struct uart_port</code>，由 <code>uart_add_one_port</code> 填</td>
+</tr>
+<tr>
+<td><code>xmit</code> 的类型 <code>struct circ_buf</code> 只有两个字段：</td>
+<td></td>
+</tr>
+</tbody>
+</table></div><pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">circ_buf</span> {</span>
+        <span class="hljs-type">char</span> *buf; <span class="hljs-type">int</span> head; <span class="hljs-type">int</span> tail;
+};
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> uart_circ_empty(circ)           ((circ)-&gt;head == (circ)-&gt;tail)    #<span class="hljs-keyword">define</span> uart_circ_clear(circ)           ((circ)-&gt;head = (circ)-&gt;tail = 0)    #<span class="hljs-keyword">define</span> uart_circ_chars_pending(circ)   \
+        (CIRC_CNT((circ)-&gt;head, (circ)-&gt;tail, UART_XMIT_SIZE))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> uart_circ_chars_free(circ)      \
+        (CIRC_SPACE((circ)-&gt;head, (circ)-&gt;tail, UART_XMIT_SIZE))</span>
+</code></pre></div></code></pre>
+<h3 id="2.3-struct-uart_port" tabindex="-1">2.3 struct uart_port <a class="header-anchor" href="#2.3-struct-uart_port"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>uart_port</code> 存的是与 UART 硬件相关的信息，需要芯片厂家定义自己的 <code>uart_port</code> 并填充。定义在 <code>include/linux/serial_core.h</code>，是全套结构里字段最多的一个（5.2.8 全字段）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_port</span> {</span>
+        <span class="hljs-type">spinlock_t</span>              lock;                   <span class="hljs-comment">/* port lock */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>           iobase;                 <span class="hljs-comment">/* in/out[bwl] */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> __iomem   *membase;               <span class="hljs-comment">/* read/write[bwl] */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-title function_">int</span>            <span class="hljs-params">(*serial_in)</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">int</span>)</span>;
+        <span class="hljs-type">void</span>                    (*serial_out)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">int</span>, <span class="hljs-type">int</span>);
+        <span class="hljs-type">void</span>                    (*set_termios)(<span class="hljs-keyword">struct</span> uart_port *,
+                                               <span class="hljs-keyword">struct</span> ktermios *new,
+                                               <span class="hljs-keyword">struct</span> ktermios *old);
+        <span class="hljs-type">void</span>                    (*set_ldisc)(<span class="hljs-keyword">struct</span> uart_port *,
+                                             <span class="hljs-keyword">struct</span> ktermios *);
+        <span class="hljs-type">unsigned</span> <span class="hljs-title function_">int</span>            <span class="hljs-params">(*get_mctrl)</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *)</span>;
+        <span class="hljs-type">void</span>                    (*set_mctrl)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>);
+        <span class="hljs-type">unsigned</span> <span class="hljs-title function_">int</span>            <span class="hljs-params">(*get_divisor)</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *,
+                                               <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> baud,
+                                               <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> *frac)</span>;
+        <span class="hljs-type">void</span>                    (*set_divisor)(<span class="hljs-keyword">struct</span> uart_port *,
+                                               <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> baud,
+                                               <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> quot,
+                                               <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> quot_frac);
+        <span class="hljs-type">int</span>                     (*startup)(<span class="hljs-keyword">struct</span> uart_port *port);
+        <span class="hljs-type">void</span>                    (*shutdown)(<span class="hljs-keyword">struct</span> uart_port *port);
+        <span class="hljs-type">void</span>                    (*throttle)(<span class="hljs-keyword">struct</span> uart_port *port);
+        <span class="hljs-type">void</span>                    (*unthrottle)(<span class="hljs-keyword">struct</span> uart_port *port);
+        <span class="hljs-type">int</span>                     (*handle_irq)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">void</span>                    (*pm)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> state,
+                                      <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> old);
+        <span class="hljs-type">void</span>                    (*handle_break)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">int</span>                     (*rs485_config)(<span class="hljs-keyword">struct</span> uart_port *,
+                                                <span class="hljs-keyword">struct</span> serial_rs485 *rs485);
+        <span class="hljs-type">int</span>                     (*iso7816_config)(<span class="hljs-keyword">struct</span> uart_port *,
+                                                  <span class="hljs-keyword">struct</span> serial_iso7816 *iso7816);
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            irq;                    <span class="hljs-comment">/* irq number */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>           irqflags;               <span class="hljs-comment">/* irq flags  */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            uartclk;                <span class="hljs-comment">/* base uart clock */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            fifosize;               <span class="hljs-comment">/* tx fifo size */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>           x_char;                 <span class="hljs-comment">/* xon/xoff char */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>           regshift;               <span class="hljs-comment">/* reg offset shift */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>           iotype;                 <span class="hljs-comment">/* io access style */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>           quirks;                 <span class="hljs-comment">/* internal quirks */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            read_status_mask;       <span class="hljs-comment">/* driver specific */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            ignore_status_mask;     <span class="hljs-comment">/* driver specific */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_state</span>       *<span class="hljs-title">state</span>;</span>                 <span class="hljs-comment">/* pointer to parent state */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_icount</span>      <span class="hljs-title">icount</span>;</span>                 <span class="hljs-comment">/* statistics */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">console</span>          *<span class="hljs-title">cons</span>;</span>                  <span class="hljs-comment">/* struct console, if any */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">if</span> defined(CONFIG_SERIAL_CORE_CONSOLE) || defined(SUPPORT_SYSRQ)</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>           sysrq;                  <span class="hljs-comment">/* sysrq timeout */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            sysrq_ch;               <span class="hljs-comment">/* char for sysrq */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        <span class="hljs-type">upf_t</span>                   flags; <span class="hljs-type">upstat_t</span>                status;
+        <span class="hljs-type">int</span>                     hw_stopped;             <span class="hljs-comment">/* sw-assisted CTS flow state */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            mctrl;                  <span class="hljs-comment">/* current modem ctrl settings */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            timeout;                <span class="hljs-comment">/* character-based timeout */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            type;                   <span class="hljs-comment">/* port type */</span>
+        <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_ops</span>   *<span class="hljs-title">ops</span>;</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            custom_divisor;
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            line;                   <span class="hljs-comment">/* port index */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>            minor;
+        <span class="hljs-type">resource_size_t</span>         mapbase;                <span class="hljs-comment">/* for ioremap */</span>
+        <span class="hljs-type">resource_size_t</span>         mapsize;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device</span>           *<span class="hljs-title">dev</span>;</span>                   <span class="hljs-comment">/* parent device */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>           hub6;                   <span class="hljs-comment">/* this should be in the 8250 driver */</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>           suspended; <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>           unused[<span class="hljs-number">2</span>];
+        <span class="hljs-type">const</span> <span class="hljs-type">char</span>              *name;                  <span class="hljs-comment">/* port name */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">attribute_group</span>  *<span class="hljs-title">attr_group</span>;</span>            <span class="hljs-comment">/* port specific attributes */</span>
+        <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">attribute_group</span> **<span class="hljs-title">tty_groups</span>;</span>      <span class="hljs-comment">/* all attributes (serial core use only) */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">serial_rs485</span>     <span class="hljs-title">rs485</span>;</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">serial_iso7816</span>   <span class="hljs-title">iso7816</span>;</span>
+        <span class="hljs-type">void</span>                    *private_data;          <span class="hljs-comment">/* generic platform data pointer */</span>
+};
+</code></pre></div></code></pre>
+<p><code>iotype</code> 的取值：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>宏</th>
+<th>值来源</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>UPIO_PORT</code></td>
+<td><code>SERIAL_IO_PORT</code></td>
+<td>8 位 I/O 端口访问</td>
+</tr>
+<tr>
+<td><code>UPIO_HUB6</code></td>
+<td><code>SERIAL_IO_HUB6</code></td>
+<td>Hub6 ISA 卡</td>
+</tr>
+<tr>
+<td><code>UPIO_MEM</code></td>
+<td><code>SERIAL_IO_MEM</code></td>
+<td>内存映射，驱动自定义宽度</td>
+</tr>
+<tr>
+<td><code>UPIO_MEM32</code></td>
+<td><code>SERIAL_IO_MEM32</code></td>
+<td>32 位小端内存映射，最常用</td>
+</tr>
+<tr>
+<td><code>UPIO_AU</code></td>
+<td><code>SERIAL_IO_AU</code></td>
+<td>Au1x00 / RT288x 类型</td>
+</tr>
+<tr>
+<td><code>UPIO_TSI</code></td>
+<td><code>SERIAL_IO_TSI</code></td>
+<td>Tsi108/109 类型</td>
+</tr>
+<tr>
+<td><code>UPIO_MEM32BE</code></td>
+<td><code>SERIAL_IO_MEM32BE</code></td>
+<td>32 位大端内存映射</td>
+</tr>
+<tr>
+<td><code>UPIO_MEM16</code></td>
+<td><code>SERIAL_IO_MEM16</code></td>
+<td>16 位小端内存映射</td>
+</tr>
+<tr>
+<td><code>flags</code> 的 <code>UPF_*</code>（原文照抄，注释是原值）：</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div><pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_FOURPORT            ((__force upf_t) ASYNC_FOURPORT       <span class="hljs-comment">/* 1  */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_SAK                 ((__force upf_t) ASYNC_SAK            <span class="hljs-comment">/* 2  */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_SPD_HI              ((__force upf_t) ASYNC_SPD_HI         <span class="hljs-comment">/* 4  */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_SPD_VHI             ((__force upf_t) ASYNC_SPD_VHI        <span class="hljs-comment">/* 5  */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_SPD_CUST            ((__force upf_t) ASYNC_SPD_CUST   <span class="hljs-comment">/* 0x0030 */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_SPD_WARP            ((__force upf_t) ASYNC_SPD_WARP   <span class="hljs-comment">/* 0x1010 */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_SPD_MASK            ((__force upf_t) ASYNC_SPD_MASK   <span class="hljs-comment">/* 0x1030 */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_SKIP_TEST           ((__force upf_t) ASYNC_SKIP_TEST      <span class="hljs-comment">/* 6  */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_AUTO_IRQ            ((__force upf_t) ASYNC_AUTO_IRQ       <span class="hljs-comment">/* 7  */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_HARDPPS_CD          ((__force upf_t) ASYNC_HARDPPS_CD     <span class="hljs-comment">/* 11 */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_SPD_SHI             ((__force upf_t) ASYNC_SPD_SHI        <span class="hljs-comment">/* 12 */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_LOW_LATENCY         ((__force upf_t) ASYNC_LOW_LATENCY    <span class="hljs-comment">/* 13 */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_BUGGY_UART          ((__force upf_t) ASYNC_BUGGY_UART     <span class="hljs-comment">/* 14 */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_MAGIC_MULTIPLIER    ((__force upf_t) ASYNC_MAGIC_MULTIPLIER <span class="hljs-comment">/* 16 */</span> )</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_NO_THRE_TEST        ((__force upf_t) (1 &lt;&lt; 19))</span>
+<span class="hljs-comment">/* Port has hardware-assisted h/w flow control */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_AUTO_CTS            ((__force upf_t) (1 &lt;&lt; 20))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_AUTO_RTS            ((__force upf_t) (1 &lt;&lt; 21))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_HARD_FLOW           ((__force upf_t) (UPF_AUTO_CTS | UPF_AUTO_RTS))</span>
+<span class="hljs-comment">/* Port has hardware-assisted s/w flow control */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_SOFT_FLOW           ((__force upf_t) (1 &lt;&lt; 22))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_CONS_FLOW           ((__force upf_t) (1 &lt;&lt; 23))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_SHARE_IRQ           ((__force upf_t) (1 &lt;&lt; 24))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_EXAR_EFR            ((__force upf_t) (1 &lt;&lt; 25))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_BUG_THRE            ((__force upf_t) (1 &lt;&lt; 26))</span>
+<span class="hljs-comment">/* The exact UART type is known and should not be probed.  */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_FIXED_TYPE          ((__force upf_t) (1 &lt;&lt; 27))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_BOOT_AUTOCONF       ((__force upf_t) (1 &lt;&lt; 28))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_FIXED_PORT          ((__force upf_t) (1 &lt;&lt; 29))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_DEAD                ((__force upf_t) (1 &lt;&lt; 30))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_IOREMAP             ((__force upf_t) (1 &lt;&lt; 31))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __UPF_CHANGE_MASK       0x17fff</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_CHANGE_MASK         ((__force upf_t) __UPF_CHANGE_MASK)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> UPF_USR_MASK            ((__force upf_t) (UPF_SPD_MASK|UPF_LOW_LATENCY))</span>
+</code></pre></div></code></pre>
+<p>实践里最常用的四个：<code>UPF_BOOT_AUTOCONF</code> 让 serial_core 在 <code>uart_configure_port</code> 里自动探测端口类型，老平台驱动常设；<code>UPF_FIXED_TYPE</code> 表示类型已知不要探测，写驱动时推荐；<code>UPF_CONS_FLOW</code> 是 console 流控，意味着该端口作 console 时要关掉接收（三星驱动就在 <code>start_tx</code> 里判断它然后 <code>rx_disable</code>）；<code>UPF_DEAD</code> 表示端口已死，<code>uart_add_one_port</code> 末尾会 <code>uport-&gt;flags &amp;= ~UPF_DEAD;</code> 清掉它。<code>UPSTAT_*</code> 状态：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>宏</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>UPSTAT_CTS_ENABLE</code></td>
+<td>CTS 流控启用</td>
+</tr>
+<tr>
+<td><code>UPSTAT_DCD_ENABLE</code></td>
+<td>DCD 检测启用</td>
+</tr>
+<tr>
+<td><code>UPSTAT_AUTORTS</code></td>
+<td>自动 RTS</td>
+</tr>
+<tr>
+<td><code>UPSTAT_AUTOCTS</code></td>
+<td>自动 CTS</td>
+</tr>
+<tr>
+<td><code>UPSTAT_AUTOXOFF</code></td>
+<td>自动 XOFF</td>
+</tr>
+<tr>
+<td><code>UPSTAT_SYNC_FIFO</code></td>
+<td>FIFO 同步</td>
+</tr>
+<tr>
+<td><code>quirks</code> 目前只有 <code>UPQ_NO_TXEN_TEST</code>（<code>BIT(0)</code>），意思是别测 TX enable 位。</td>
+<td></td>
+</tr>
+</tbody>
+</table></div><h3 id="2.4-三者的关系" tabindex="-1">2.4 三者的关系 <a class="header-anchor" href="#2.4-三者的关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>uart_driver</code> → <code>state[]</code> → <code>uart_port</code> 三层，加上每个 <code>state</code> 里内嵌的 <code>tty_port</code>：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>uart_driver (一个)
+  ├── state[0] : uart_state
+  │     ├── port : tty_port        &lt;- 注册给 TTY core 的「设备」
+  │     ├── xmit : circ_buf        &lt;- 发送环形缓冲
+  │     └── uart_port *  ─────────&gt; uart_port (一个)
+  │                                   ├── ops : uart_ops   &lt;- 你实现的硬件操作
+  │                                   ├── state ─────────&gt; 指回 state[0]
+  │                                   └── line = 0
+  ├── state[1] : uart_state  ...
+  └── state[nr-1]
+</code></pre></div></code></pre>
+<p><code>uart_register_driver</code> 一次性地把 <code>state[0..nr-1]</code> 全部 <code>kcalloc</code> 好，所以 <code>state</code> 数组指针不会变。<code>uart_port</code> 由芯片厂商在 platform driver 的 probe 里填，一个端口调一次 <code>uart_add_one_port</code> 挂进去。</p>
+<h2 id="三uart_ops驱动要实现什么" tabindex="-1">三、uart_ops：驱动要实现什么 <a class="header-anchor" href="#三uart_ops驱动要实现什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>uart_ops</code> 定义硬件相关操作集，芯片厂家要做寄存器级适配。定义在 <code>include/linux/serial_core.h</code>（5.2.8 全字段）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code> * This structure describes all the operations that can be done on the
+ * physical hardware.  See Documentation/serial/driver.rst <span class="hljs-keyword">for</span> details.
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_ops</span> {</span>
+        <span class="hljs-type">unsigned</span> <span class="hljs-title function_">int</span>    <span class="hljs-params">(*tx_empty)</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *)</span>;
+        <span class="hljs-type">void</span>            (*set_mctrl)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> mctrl);
+        <span class="hljs-type">unsigned</span> <span class="hljs-title function_">int</span>    <span class="hljs-params">(*get_mctrl)</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *)</span>;
+        <span class="hljs-type">void</span>            (*stop_tx)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">void</span>            (*start_tx)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">void</span>            (*throttle)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">void</span>            (*unthrottle)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">void</span>            (*send_xchar)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">char</span> ch);
+        <span class="hljs-type">void</span>            (*stop_rx)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">void</span>            (*enable_ms)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">void</span>            (*break_ctl)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">int</span> ctl);
+        <span class="hljs-type">int</span>             (*startup)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">void</span>            (*shutdown)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">void</span>            (*flush_buffer)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">void</span>            (*set_termios)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-keyword">struct</span> ktermios *new,
+                                       <span class="hljs-keyword">struct</span> ktermios *old);
+        <span class="hljs-type">void</span>            (*set_ldisc)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-keyword">struct</span> ktermios *);
+        <span class="hljs-type">void</span>            (*pm)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> state,
+                              <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> oldstate);
+         * Return a <span class="hljs-built_in">string</span> describing the type of the port
+        <span class="hljs-type">const</span> <span class="hljs-type">char</span>      *(*type)(<span class="hljs-keyword">struct</span> uart_port *);
+         * Release IO and memory resources used by the port.
+         * This includes iounmap <span class="hljs-keyword">if</span> necessary.
+        <span class="hljs-type">void</span>            (*release_port)(<span class="hljs-keyword">struct</span> uart_port *);
+         * Request IO and memory resources used by the port.
+         * This includes iomapping the port <span class="hljs-keyword">if</span> necessary.
+        <span class="hljs-type">int</span>             (*request_port)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">void</span>            (*config_port)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">int</span>);
+        <span class="hljs-type">int</span>             (*verify_port)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-keyword">struct</span> serial_struct *);
+        <span class="hljs-type">int</span>             (*ioctl)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>);
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_CONSOLE_POLL</span>
+        <span class="hljs-type">int</span>             (*poll_init)(<span class="hljs-keyword">struct</span> uart_port *);
+        <span class="hljs-type">void</span>            (*poll_put_char)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>);
+        <span class="hljs-type">int</span>             (*poll_get_char)(<span class="hljs-keyword">struct</span> uart_port *);
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+};
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>回调</th>
+<th>何时被调</th>
+<th>要做什么</th>
+<th>必须性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>startup</code></td>
+<td>应用 open → <code>tty_port_open</code> → <code>activate</code></td>
+<td>使能时钟、申请中断、使能 RX、使能控制器</td>
+<td>必须</td>
+</tr>
+<tr>
+<td><code>shutdown</code></td>
+<td>应用 close</td>
+<td><code>startup</code> 反动作：禁 RX、禁控制器、释放中断</td>
+<td>必须</td>
+</tr>
+<tr>
+<td><code>start_tx</code></td>
+<td>有数据要发（<code>__uart_start</code>，关中断上下文）</td>
+<td>把 <code>xmit</code> 搬进 TX FIFO，或使能 TX 中断/DMA</td>
+<td>必须</td>
+</tr>
+<tr>
+<td><code>stop_tx</code> / <code>stop_rx</code></td>
+<td>上层要求停发 / 停收</td>
+<td>禁 TX / RX 中断</td>
+<td>必须</td>
+</tr>
+<tr>
+<td><code>tx_empty</code></td>
+<td><code>tcdrain</code>、<code>TCSBRK</code>、close 前</td>
+<td>FIFO 空返回 <code>TIOCSER_TEMT</code>，否则 0</td>
+<td>必须</td>
+</tr>
+<tr>
+<td><code>set_termios</code></td>
+<td><code>TCSETS*</code></td>
+<td>解 cflag、算分频、写控制寄存器、更新 <code>read_status_mask</code></td>
+<td>必须</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td>打日志、<code>/proc/tty/driver</code></td>
+<td>返回端口类型字符串</td>
+<td>必须</td>
+</tr>
+<tr>
+<td><code>request_port</code> / <code>release_port</code></td>
+<td>注册 / 卸载</td>
+<td>申请 I/O 资源 + <code>ioremap</code>；<code>iounmap</code> + 释放</td>
+<td>内存映射型必须</td>
+</tr>
+<tr>
+<td><code>set_mctrl</code> / <code>get_mctrl</code></td>
+<td>设/读 modem 控制线</td>
+<td>RTS/DTR/CTS/DSR 等</td>
+<td>可空，开流控就得实现</td>
+</tr>
+<tr>
+<td><code>pm</code></td>
+<td>suspend / resume</td>
+<td>存恢复寄存器、关开时钟</td>
+<td>建议</td>
+</tr>
+<tr>
+<td><code>config_port</code></td>
+<td><code>uart_configure_port</code></td>
+<td>自动探测端口类型</td>
+<td>可空（<code>UPF_BOOT_AUTOCONF</code> 时用）</td>
+</tr>
+<tr>
+<td><code>verify_port</code></td>
+<td><code>TIOCSSERIAL</code></td>
+<td>校验用户传的 <code>serial_struct</code></td>
+<td>可空</td>
+</tr>
+<tr>
+<td><code>enable_ms</code> / <code>break_ctl</code> / <code>send_xchar</code></td>
+<td>modem 状态中断 / <code>TCSBRK</code> / 立即发 XON-XOFF</td>
+<td>对应硬件操作</td>
+<td>可空</td>
+</tr>
+<tr>
+<td><code>set_ldisc</code> / <code>ioctl</code> / <code>throttle</code> / <code>unthrottle</code> / <code>flush_buffer</code></td>
+<td>ldisc 切换 / 私有 ioctl / 软件流控 / <code>TCOFLUSH</code></td>
+<td>大多留空走 serial core 默认</td>
+<td>可空</td>
+</tr>
+<tr>
+<td><code>poll_init</code> / <code>poll_put_char</code> / <code>poll_get_char</code></td>
+<td><code>CONFIG_CONSOLE_POLL</code>、kgdb</td>
+<td>轮询读写，不用中断</td>
+<td>可空</td>
+</tr>
+<tr>
+<td><code>set_termios</code> 里要干六件事：从 <code>new-&gt;c_cflag</code> 解出数据位、校验位、停止位、流控；用 <code>tty_termios_baud_rate(new)</code> 拿到目标波特率数值；按 <code>port-&gt;uartclk</code> 算分频写 <code>UBRDIV</code>（三星）或 <code>DLL/DLM</code>（8250）；更新 <code>port-&gt;read_status_mask</code> / <code>ignore_status_mask</code>，决定哪些错误状态要报给上层；处理流控，<code>CRTSCTS</code> 对应 <code>UPSTAT_AUTOCTS</code> / <code>UPSTAT_AUTORTS</code>；用 <code>uart_update_timeout(port, cflag, baud)</code> 更新字符级超时。<strong>版本注意</strong>：<code>uart_ops.set_termios</code> 在 2.6 早期是 <code>int</code>，3.x 之后一直是 <code>void</code>，本篇素材的 4.6-rc5 与 5.2.8 一致。<code>uart_ops</code> 里<strong>没有</strong> <code>rs485_config</code> / <code>iso7816_config</code>——那两个是 <code>uart_port</code> 的同名函数指针，别填错位置。移植起步先实现八个就能起来：</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div><pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_ops</span> <span class="hljs-title">AAA_uart_ops</span> =</span> {
+	.startup     = AAA_BBB_startup,
+	.shutdown    = AAA_BBB_shutdown,
+	.start_tx    = AAA_BBB_start_tx,
+	.stop_tx     = AAA_BBB_stop_tx,
+	.stop_rx     = AAA_BBB_stop_rx,
+	.tx_empty    = AAA_BBB_tx_empty,
+	.set_mctrl   = AAA_BBB_set_mctrl,
+	.set_termios = AAA_BBB_set_termios,
+};
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_ops</span> <span class="hljs-title">s3c24xx_serial_ops</span> =</span> {
+        .pm             = s3c24xx_serial_pm,
+        .tx_empty       = s3c24xx_serial_tx_empty,
+        .get_mctrl      = s3c24xx_serial_get_mctrl,
+        .set_mctrl      = s3c24xx_serial_set_mctrl,
+        .stop_tx        = s3c24xx_serial_stop_tx,
+        .start_tx       = s3c24xx_serial_start_tx,    <span class="hljs-comment">/* 写 tty 设备节点会调 */</span>
+        .stop_rx        = s3c24xx_serial_stop_rx,
+        .break_ctl      = s3c24xx_serial_break_ctl,
+        .startup        = s3c24xx_serial_startup,     <span class="hljs-comment">/* 打开 tty 设备节点会调 */</span>
+        .shutdown       = s3c24xx_serial_shutdown,
+        .set_termios    = s3c24xx_serial_set_termios,
+        .type           = s3c24xx_serial_type,
+        .release_port   = s3c24xx_serial_release_port,
+        .request_port   = s3c24xx_serial_request_port,
+        .config_port    = s3c24xx_serial_config_port,
+        .verify_port    = s3c24xx_serial_verify_port,
+<span class="hljs-meta">#<span class="hljs-keyword">if</span> defined(CONFIG_SERIAL_SAMSUNG_CONSOLE) &amp;&amp; defined(CONFIG_CONSOLE_POLL)</span>
+        .poll_get_char = s3c24xx_serial_get_poll_char,
+        .poll_put_char = s3c24xx_serial_put_poll_char,
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+};
+```它没有实现 `flush_buffer` / `send_xchar` / `set_ldisc` / `ioctl` / `throttle` / `unthrottle`，那些全走 serial core 的默认逻辑。`uart_port` 怎么被填起来，看三星为每个串口预置的静态数组：
+
+```c
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">s3c24xx_uart_port</span>
+<span class="hljs-title">s3c24xx_serial_ports</span>[<span class="hljs-title">CONFIG_SERIAL_SAMSUNG_UARTS</span>] =</span> {
+        [<span class="hljs-number">0</span>] = {
+                .port = {
+                        .lock           = __PORT_LOCK_UNLOCKED(<span class="hljs-number">0</span>),
+                        .iotype         = UPIO_MEM,
+                        .uartclk        = <span class="hljs-number">0</span>,
+                        .fifosize       = <span class="hljs-number">16</span>,
+                        .ops            = &amp;s3c24xx_serial_ops,
+                        .flags          = UPF_BOOT_AUTOCONF,
+                        .line           = <span class="hljs-number">0</span>,
+                },
+                },
+        [<span class="hljs-number">1</span>] = { .port = { .line = <span class="hljs-number">1</span>, .fifosize = <span class="hljs-number">16</span>, .ops = &amp;s3c24xx_serial_ops, ... } },
+<span class="hljs-meta">#<span class="hljs-keyword">if</span> CONFIG_SERIAL_SAMSUNG_UARTS &gt; 2</span>
+        [<span class="hljs-number">2</span>] = { .port = { .line = <span class="hljs-number">2</span>, .fifosize = <span class="hljs-number">16</span>, .ops = &amp;s3c24xx_serial_ops, ... } },
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+};
+</code></pre></div></code></pre>
+<p>注意 <code>fifosize = 16</code> 是静态初值，probe 里会被 <code>drv_data</code>/<code>info</code> 的值覆盖（S3C2440 实际 64）。<code>line</code> 也在这里预置，<code>of_alias_get_id</code> 拿到的是另一个数值，两者在 DTS 平台上要一致。容器结构 <code>s3c24xx_uart_port</code> 用 <code>container_of</code> 反查：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">s3c24xx_uart_port</span> {</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>            rx_claimed; <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>            tx_claimed; <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>             pm_level;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>            baudclk_rate;   <span class="hljs-comment">/* 波特率时钟频率 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>             min_dma_size;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>             rx_irq;    <span class="hljs-comment">/* 接收中断号 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>             tx_irq;    <span class="hljs-comment">/* 发送中断号 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>             tx_in_progress; <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>             tx_mode; <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>             rx_mode;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">s3c24xx_uart_info</span> *<span class="hljs-title">info</span>;</span>     <span class="hljs-comment">/* = &amp;s3c2440_serial_drv_data.info */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">clk</span>              *<span class="hljs-title">clk</span>;</span>       <span class="hljs-comment">/* uart 时钟 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">clk</span>              *<span class="hljs-title">baudclk</span>;</span>   <span class="hljs-comment">/* 波特率时钟 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_port</span>         <span class="hljs-title">port</span>;</span>      <span class="hljs-comment">/* serial core 的数据结构 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">s3c24xx_serial_drv_data</span> *<span class="hljs-title">drv_data</span>;</span>   <span class="hljs-comment">/* = &amp;s3c2440_serial_drv_data */</span>
+    <span class="hljs-comment">/* reference to platform data */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">s3c2410_uartcfg</span>   *<span class="hljs-title">cfg</span>;</span>      <span class="hljs-comment">/* 寄存器配置值 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">s3c24xx_uart_dma</span>  *<span class="hljs-title">dma</span>;</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_ARM_S3C24XX_CPUFREQ</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">notifier_block</span>    <span class="hljs-title">freq_transition</span>;</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+};
+</code></pre></div></code></pre>
+<p>这就是「不到万不得已不要新定义变量，先去 <code>struct uart_port</code> 找找」那条经验的来源：厂商要的自定义字段，全塞在 container 里，<code>uart_port</code> 本体不动。</p>
+<h2 id="四uart-的注册与-probe" tabindex="-1">四、UART 的注册与 probe <a class="header-anchor" href="#四uart-的注册与-probe"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="4.1-uart_register_driver" tabindex="-1">4.1 uart_register_driver <a class="header-anchor" href="#4.1-uart_register_driver"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">uart_register_driver</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_driver *drv)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">tty_driver</span> *<span class="hljs-title">normal</span>;</span> <span class="hljs-type">int</span> i, retval = -ENOMEM;
+        BUG_ON(drv-&gt;state);
+        drv-&gt;state = kcalloc(drv-&gt;nr, <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> uart_state), GFP_KERNEL);
+        <span class="hljs-keyword">if</span> (!drv-&gt;state)
+                <span class="hljs-keyword">goto</span> out;
+        normal = alloc_tty_driver(drv-&gt;nr);
+        <span class="hljs-keyword">if</span> (!normal)
+                <span class="hljs-keyword">goto</span> out_kfree;
+        drv-&gt;tty_driver = normal; normal-&gt;driver_name     = drv-&gt;driver_name; normal-&gt;name            = drv-&gt;dev_name;
+        normal-&gt;major           = drv-&gt;major; normal-&gt;minor_start     = drv-&gt;minor;
+        normal-&gt;type            = TTY_DRIVER_TYPE_SERIAL;
+        normal-&gt;subtype         = SERIAL_TYPE_NORMAL; normal-&gt;init_termios    = tty_std_termios;
+        normal-&gt;init_termios.c_cflag = B9600 | CS8 | CREAD | HUPCL | CLOCAL;
+        normal-&gt;init_termios.c_ispeed = normal-&gt;init_termios.c_ospeed = <span class="hljs-number">9600</span>;
+        normal-&gt;flags           = TTY_DRIVER_REAL_RAW | TTY_DRIVER_DYNAMIC_DEV; normal-&gt;driver_state    = drv;
+        tty_set_operations(normal, &amp;uart_ops);
+        <span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; drv-&gt;nr; i++) {
+                <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_state</span> *<span class="hljs-title">state</span> =</span> drv-&gt;state + i; <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">tty_port</span> *<span class="hljs-title">port</span> =</span> &amp;state-&gt;port;
+                tty_port_init(port);
+                port-&gt;ops = &amp;uart_port_ops;
+        }
+        retval = tty_register_driver(normal);
+        <span class="hljs-keyword">if</span> (retval &gt;= <span class="hljs-number">0</span>)
+                <span class="hljs-keyword">return</span> retval;
+        <span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; drv-&gt;nr; i++)
+                tty_port_destroy(&amp;drv-&gt;state[i].port);
+        put_tty_driver(normal);
+out_kfree:
+        kfree(drv-&gt;state);
+out:
+        <span class="hljs-keyword">return</span> retval;
+}
+</code></pre></div></code></pre>
+<p>七步：<code>BUG_ON(drv-&gt;state)</code> 强制 state 为 NULL → 按 <code>nr</code> 分配 <code>uart_state</code> 数组 → <code>alloc_tty_driver(nr)</code> → 填 <code>tty_driver</code> 字段（<code>type=SERIAL</code>、<code>subtype=SERIAL_TYPE_NORMAL</code>、<code>init_termios</code> 9600 8N1 + <code>CREAD|HUPCL|CLOCAL</code>、<code>flags = REAL_RAW|DYNAMIC_DEV</code>、<code>driver_state = drv</code>）→ <code>tty_set_operations(normal, &amp;uart_ops)</code> → 逐个 <code>tty_port_init</code> 挂 <code>uart_port_ops</code> → <code>tty_register_driver</code>。<strong>serial 驱动的注册本质就是 tty_driver 的注册。</strong> <code>flags</code> 里的 <code>TTY_DRIVER_DYNAMIC_DEV</code> 意味着 tty 设备不在这里批量建，而由每个 <code>uart_add_one_port</code> 自己调 <code>tty_port_register_device_attr_serdev</code> 建——「有几个端口几个节点」就是这么来的。<code>tty_register_driver</code> 内部怎么申请设备号、怎么建 <code>/sys/class/tty/&lt;name&gt;</code>，见 <a href="/C.%E9%A9%B1%E5%8A%A8/10-%E6%98%BE%E7%A4%BA%E4%B8%8E%E7%BB%88%E7%AB%AF/TTY-%E5%AD%90%E7%B3%BB%E7%BB%9F%EF%BC%9A%E4%BB%8E%E5%8D%8F%E8%AE%AE%E5%88%B0%E6%A1%86%E6%9E%B6/" class="wikilink">TTY 子系统：从协议到框架</a> 的注册一节。</p>
+<h3 id="4.2-uart_add_one_port" tabindex="-1">4.2 uart_add_one_port <a class="header-anchor" href="#4.2-uart_add_one_port"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>uart_register_driver</code> 只解决「驱动」，<code>uart_port</code> 得由芯片厂商填好再挂进来：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">uart_add_one_port</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_driver *drv, <span class="hljs-keyword">struct</span> uart_port *uport)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_state</span> *<span class="hljs-title">state</span>;</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">tty_port</span> *<span class="hljs-title">port</span>;</span> <span class="hljs-type">int</span> ret = <span class="hljs-number">0</span>; <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device</span> *<span class="hljs-title">tty_dev</span>;</span> <span class="hljs-type">int</span> num_groups;
+        BUG_ON(in_interrupt());
+        <span class="hljs-keyword">if</span> (uport-&gt;line &gt;= drv-&gt;nr)
+                <span class="hljs-keyword">return</span> -EINVAL;
+        state = drv-&gt;state + uport-&gt;line; port = &amp;state-&gt;port;
+        mutex_lock(&amp;port_mutex);
+        mutex_lock(&amp;port-&gt;mutex);
+        <span class="hljs-keyword">if</span> (state-&gt;uart_port) {
+                ret = -EINVAL; <span class="hljs-keyword">goto</span> out;
+        }
+        <span class="hljs-comment">/* Link the port to the driver state table and vice versa */</span>
+        atomic_set(&amp;state-&gt;refcount, <span class="hljs-number">1</span>);
+        init_waitqueue_head(&amp;state-&gt;remove_wait);
+        state-&gt;uart_port = uport; uport-&gt;state = state; state-&gt;pm_state = UART_PM_STATE_UNDEFINED;
+        uport-&gt;cons = drv-&gt;cons; uport-&gt;minor = drv-&gt;tty_driver-&gt;minor_start + uport-&gt;line;
+        uport-&gt;name = kasprintf(GFP_KERNEL, <span class="hljs-string">&quot;%s%d&quot;</span>, drv-&gt;dev_name,
+                                drv-&gt;tty_driver-&gt;name_base + uport-&gt;line);
+        <span class="hljs-keyword">if</span> (!uport-&gt;name) {
+                ret = -ENOMEM; <span class="hljs-keyword">goto</span> out;
+        }
+        <span class="hljs-comment">/* 若是已启用的 console，spinlock 已经初始化过 */</span>
+        <span class="hljs-keyword">if</span> (!(uart_console(uport) &amp;&amp; (uport-&gt;cons-&gt;flags &amp; CON_ENABLED))) {
+                spin_lock_init(&amp;uport-&gt;lock);
+                lockdep_set_class(&amp;uport-&gt;lock, &amp;port_lock_key);
+        }
+        <span class="hljs-keyword">if</span> (uport-&gt;cons &amp;&amp; uport-&gt;dev)
+                of_console_check(uport-&gt;dev-&gt;of_node, uport-&gt;cons-&gt;name, uport-&gt;line);
+        uart_configure_port(drv, state, uport);
+        port-&gt;console = uart_console(uport);
+        num_groups = <span class="hljs-number">2</span>;
+        <span class="hljs-keyword">if</span> (uport-&gt;attr_group)
+                num_groups++;
+        uport-&gt;tty_groups = kcalloc(num_groups, <span class="hljs-keyword">sizeof</span>(*uport-&gt;tty_groups),
+                                    GFP_KERNEL);
+        <span class="hljs-keyword">if</span> (!uport-&gt;tty_groups) {
+                ret = -ENOMEM; <span class="hljs-keyword">goto</span> out;
+        }
+        uport-&gt;tty_groups[<span class="hljs-number">0</span>] = &amp;tty_dev_attr_group;
+        <span class="hljs-keyword">if</span> (uport-&gt;attr_group)
+                uport-&gt;tty_groups[<span class="hljs-number">1</span>] = uport-&gt;attr_group;
+        tty_dev = tty_port_register_device_attr_serdev(port, drv-&gt;tty_driver,
+                        uport-&gt;line, uport-&gt;dev, port, uport-&gt;tty_groups);
+        <span class="hljs-keyword">if</span> (!IS_ERR(tty_dev))
+                device_set_wakeup_capable(tty_dev, <span class="hljs-number">1</span>);
+        <span class="hljs-keyword">else</span>
+                dev_err(uport-&gt;dev, <span class="hljs-string">&quot;Cannot register tty device on line %d\n&quot;</span>,
+                       uport-&gt;line);
+        <span class="hljs-comment">/* Ensure UPF_DEAD is not set. */</span>
+        uport-&gt;flags &amp;= ~UPF_DEAD;
+ out:
+        mutex_unlock(&amp;port-&gt;mutex);
+        mutex_unlock(&amp;port_mutex);
+        <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<p>按顺序的要点：</p>
+<ol>
+<li><code>BUG_ON(in_interrupt())</code>，不能在中断上下文调；<code>uport-&gt;line &gt;= drv-&gt;nr</code> 直接 <code>-EINVAL</code>。</li>
+<li><code>state = drv-&gt;state + uport-&gt;line</code> 定位 <code>uart_state</code>，<code>port = &amp;state-&gt;port</code>；<code>state-&gt;uart_port</code> 已非空说明重复挂载，<code>-EINVAL</code>。</li>
+<li><strong><code>state-&gt;uart_port = uport; uport-&gt;state = state;</code> 双向绑定，全函数的重点</strong>。</li>
+<li><code>uport-&gt;cons = drv-&gt;cons</code>、<code>minor = minor_start + line</code>、<code>name = &quot;&lt;dev_name&gt;&lt;name_base+line&gt;&quot;</code>。</li>
+<li>该 port 若是已启用 console，spinlock 已初始化过，跳过，否则 <code>spin_lock_init</code>。</li>
+<li><code>uart_configure_port</code> 走 <code>config_port</code>/<code>request_port</code>/<code>set_termios</code>/<code>pm</code>，内部还 <code>of_console_check</code> 匹配命令行 <code>console=ttyS5</code>——<strong>console 能在 probe 阶段启用的原因</strong>。</li>
+<li><code>port-&gt;console = uart_console(uport)</code>；备 <code>tty_groups</code> 属性组。</li>
+<li><code>tty_port_register_device_attr_serdev</code> 注册 tty 设备（走 <code>tty_register_device_attr</code> 动态路径）；最后 <code>uport-&gt;flags &amp;= ~UPF_DEAD</code>。</li>
+</ol>
+<h3 id="4.3-一次完整的-probe" tabindex="-1">4.3 一次完整的 probe <a class="header-anchor" href="#4.3-一次完整的-probe"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>三星是 ARM ATAGS 时代的老式 board file，不是 DTS：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">s3c2410_uartcfg</span> <span class="hljs-title">smdk2440_uartcfgs</span>[] __<span class="hljs-title">initdata</span> =</span> {
+        [<span class="hljs-number">0</span>] = { .hwport = <span class="hljs-number">0</span>, .flags = <span class="hljs-number">0</span>, .ucon = <span class="hljs-number">0x3c5</span>, .ulcon = <span class="hljs-number">0x03</span>, .ufcon = <span class="hljs-number">0x51</span>, },
+        [<span class="hljs-number">1</span>] = { .hwport = <span class="hljs-number">1</span>, .flags = <span class="hljs-number">0</span>, .ucon = <span class="hljs-number">0x3c5</span>, .ulcon = <span class="hljs-number">0x03</span>, .ufcon = <span class="hljs-number">0x51</span>, },
+        [<span class="hljs-number">2</span>] = { .hwport = <span class="hljs-number">2</span>, .flags = <span class="hljs-number">0</span>, .ucon = <span class="hljs-number">0x3c5</span>, .ulcon = <span class="hljs-number">0x43</span>, .ufcon = <span class="hljs-number">0x51</span>, }
+};
+</code></pre></div></code></pre>
+<p>寄存器值解读（串口 0）：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>寄存器</th>
+<th>值</th>
+<th>位域含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>UCON</code></td>
+<td><code>0x3c5</code></td>
+<td><code>[1:0]</code> 接收=中断请求；<code>[3:2]</code> 发送=中断请求；<code>[6]</code> 使能接收错误状态中断；<code>[7]</code> 使能 Rx 超时；<code>[8]</code> Rx 中断=脉冲；<code>[9]</code> Tx 中断=脉冲；<code>[11:10]</code> 时钟选 PCLK（50MHz）</td>
+</tr>
+<tr>
+<td><code>ULCON</code></td>
+<td><code>0x03</code></td>
+<td><code>[1:0]</code> 8 位字长；<code>[2]</code> 1 个停止位；<code>[5:3]</code> 无校验；<code>[6]</code> 普通模式</td>
+</tr>
+<tr>
+<td><code>UFCON</code></td>
+<td><code>0x51</code></td>
+<td><code>[0]</code> 使能 FIFO；<code>[1]</code>/<code>[2]</code> Rx/Tx FIFO 复位正常；<code>[5:4]</code> Rx 触发深度 16 字节；<code>[7:6]</code> Tx 触发深度 16 字节</td>
+</tr>
+<tr>
+<td>第 2 个串口（IR port）的 <code>ulcon = 0x43</code>，<code>[6]</code> 位为 1 是红外模式，这是板级配置继承下来的。设备创建链分两段：</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div><pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>启动早期：
+setup_arch() -&gt; paging_init() -&gt; devicemaps_init() -&gt; mdesc-&gt;map_io()
+  = smdk2440_map_io()
+     -&gt; s3c24xx_init_io() -&gt; s3c_init_cpu(cpu_ids)
+        cpu = &amp;{s3c2440, .init_uarts = s3c244x_init_uarts}
+     -&gt; s3c24xx_init_uarts(smdk2440_uartcfgs, 3)
+        -&gt; cpu-&gt;init_uarts() = s3c244x_init_uarts()
+           -&gt; s3c24xx_init_uartdevs(&quot;s3c2440-uart&quot;, s3c2410_uart_resources, cfg, 3)
+arch_initcall(s3c_arch_init)
+  -&gt; cpu-&gt;init()
+  -&gt; platform_add_devices(s3c24xx_uart_devs, nr_uarts)
+</code></pre></div></code></pre>
+<p><code>s3c24xx_init_uartdevs</code> 填 platform_device 的 name/resource/platform_data：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        <span class="hljs-built_in">memcpy</span>(cfgptr, cfg, <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> s3c2410_uartcfg) * no);
+        <span class="hljs-keyword">for</span> (uart = <span class="hljs-number">0</span>; uart &lt; no; uart++, cfg++, cfgptr++) {
+                platdev = s3c24xx_uart_src[cfgptr-&gt;hwport]; resp = res + cfgptr-&gt;hwport; s3c24xx_uart_devs[uart] = platdev;
+                platdev-&gt;name = name; platdev-&gt;resource = resp-&gt;resources; platdev-&gt;num_resources = resp-&gt;nr_resources;
+                platdev-&gt;dev.platform_data = cfgptr;
+        }
+        nr_uarts = no;
+</code></pre></div></code></pre>
+<p>资源形态，每个 UART 两条——一条 MEM（4KB 寄存器区）、一条 IRQ：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">resource</span> <span class="hljs-title">s3c2410_uart0_resource</span>[] =</span> {
+    [<span class="hljs-number">0</span>] = { .start = S3C2410_PA_UART0, .end = S3C2410_PA_UART0 + <span class="hljs-number">0x3fff</span>,
+            .flags = IORESOURCE_MEM, },
+    [<span class="hljs-number">1</span>] = { .start = IRQ_S3CUART_RX0, .end = IRQ_S3CUART_ERR0,
+            .flags = IORESOURCE_IRQ, }
+};
+</code></pre></div></code></pre>
+<p>驱动侧匹配表与 probe：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">of_device_id</span> <span class="hljs-title">s3c24xx_uart_dt_match</span>[] =</span> {
+        { .compatible = <span class="hljs-string">&quot;samsung,s3c2410-uart&quot;</span>, .data = (<span class="hljs-type">void</span> *)S3C2410_SERIAL_DRV_DATA },
+        { .compatible = <span class="hljs-string">&quot;samsung,s3c2440-uart&quot;</span>, .data = (<span class="hljs-type">void</span> *)S3C2440_SERIAL_DRV_DATA },
+        { .compatible = <span class="hljs-string">&quot;samsung,s5pv210-uart&quot;</span>, .data = (<span class="hljs-type">void</span> *)S5PV210_SERIAL_DRV_DATA },
+        { .compatible = <span class="hljs-string">&quot;samsung,exynos4210-uart&quot;</span>, .data = (<span class="hljs-type">void</span> *)EXYNOS4210_SERIAL_DRV_DATA },
+        { .compatible = <span class="hljs-string">&quot;samsung,exynos5433-uart&quot;</span>, .data = (<span class="hljs-type">void</span> *)EXYNOS5433_SERIAL_DRV_DATA },
+        {},
+};
+MODULE_DEVICE_TABLE(of, s3c24xx_uart_dt_match);
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">platform_driver</span> <span class="hljs-title">samsung_serial_driver</span> =</span> {
+        .probe          = s3c24xx_serial_probe,
+        .remove         = s3c24xx_serial_remove,
+        .id_table       = s3c24xx_serial_driver_ids,
+        .driver         = {
+                .name   = <span class="hljs-string">&quot;samsung-uart&quot;</span>,
+                .pm     = SERIAL_SAMSUNG_PM_OPS,
+                .of_match_table = of_match_ptr(s3c24xx_uart_dt_match),
+        },
+};
+module_platform_driver(samsung_serial_driver);
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">s3c24xx_serial_probe</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> platform_device *pdev)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device_node</span> *<span class="hljs-title">np</span> =</span> pdev-&gt;dev.of_node; <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">s3c24xx_uart_port</span> *<span class="hljs-title">ourport</span>;</span>
+        <span class="hljs-type">int</span> index = probe_index;     <span class="hljs-comment">/* 全局变量 0 */</span>
+        <span class="hljs-type">int</span> ret;
+        <span class="hljs-keyword">if</span> (np) {
+                ret = of_alias_get_id(np, <span class="hljs-string">&quot;serial&quot;</span>);
+                <span class="hljs-keyword">if</span> (ret &gt;= <span class="hljs-number">0</span>)
+                        index = ret;
+        }
+        <span class="hljs-keyword">if</span> (index &gt;= ARRAY_SIZE(s3c24xx_serial_ports)) {
+                dev_err(&amp;pdev-&gt;dev, <span class="hljs-string">&quot;serial%d out of range\n&quot;</span>, index);
+                <span class="hljs-keyword">return</span> -EINVAL;
+        }
+        ourport = &amp;s3c24xx_serial_ports[index];
+        ourport-&gt;drv_data = s3c24xx_get_driver_data(pdev);  <span class="hljs-comment">/* S3C2440_SERIAL_DRV_DATA */</span>
+        <span class="hljs-keyword">if</span> (!ourport-&gt;drv_data) {
+                dev_err(&amp;pdev-&gt;dev, <span class="hljs-string">&quot;could not find driver data\n&quot;</span>);
+                <span class="hljs-keyword">return</span> -ENODEV;
+        }
+        ourport-&gt;baudclk = ERR_PTR(-EINVAL);
+        ourport-&gt;info = ourport-&gt;drv_data-&gt;info;
+        ourport-&gt;cfg = (dev_get_platdata(&amp;pdev-&gt;dev)) ?
+                        dev_get_platdata(&amp;pdev-&gt;dev) :
+                        ourport-&gt;drv_data-&gt;def_cfg;
+        <span class="hljs-keyword">if</span> (np)
+                of_property_read_u32(np,
+                        <span class="hljs-string">&quot;samsung,uart-fifosize&quot;</span>, &amp;ourport-&gt;port.fifosize);
+        <span class="hljs-keyword">if</span> (ourport-&gt;drv_data-&gt;fifosize[index])
+                ourport-&gt;port.fifosize = ourport-&gt;drv_data-&gt;fifosize[index];
+        <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (ourport-&gt;info-&gt;fifosize)
+                ourport-&gt;port.fifosize = ourport-&gt;info-&gt;fifosize;
+        ourport-&gt;min_dma_size = <span class="hljs-type">max_t</span>(<span class="hljs-type">int</span>, ourport-&gt;port.fifosize,
+                                    dma_get_cache_alignment());
+        ret = s3c24xx_serial_init_port(ourport, pdev);
+        <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>)
+                <span class="hljs-keyword">return</span> ret;
+        <span class="hljs-keyword">if</span> (!s3c24xx_uart_drv.state) {   <span class="hljs-comment">/* 未注册过才注册 */</span>
+                ret = uart_register_driver(&amp;s3c24xx_uart_drv);
+                <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) {
+                        pr_err(<span class="hljs-string">&quot;Failed to register Samsung UART driver\n&quot;</span>);
+                        <span class="hljs-keyword">return</span> ret;
+                }
+        }
+        uart_add_one_port(&amp;s3c24xx_uart_drv, &amp;ourport-&gt;port);
+        platform_set_drvdata(pdev, &amp;ourport-&gt;port);
+        clk_disable_unprepare(ourport-&gt;clk);
+        <span class="hljs-keyword">if</span> (!IS_ERR(ourport-&gt;baudclk))
+                clk_disable_unprepare(ourport-&gt;baudclk);
+        ret = s3c24xx_serial_cpufreq_register(ourport);
+        <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>)
+                dev_err(&amp;pdev-&gt;dev, <span class="hljs-string">&quot;failed to add cpufreq notifier\n&quot;</span>);
+        probe_index++; <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>三个必须记住的点：<strong><code>index</code> 怎么定</strong>——有 DTS 用 <code>of_alias_get_id(np, &quot;serial&quot;)</code>，没有就用全局递增的 <code>probe_index</code>，前者稳定可配，后者依赖 probe 顺序；<strong><code>uart_register_driver</code> 只调一次</strong>——靠 <code>if (!s3c24xx_uart_drv.state)</code> 挡住，<code>uart_register_driver</code> 里有 <code>BUG_ON(drv-&gt;state)</code>，第二次调直接 panic，多端口共享同一 <code>uart_driver</code> 就靠这个判断；<strong><code>clk_disable_unprepare</code> 放在末尾</strong>——<code>init_port</code> 里使能的时钟到这里关掉，等 <code>startup</code> 再开，留着会和 PM 回调里的重新使能重叠。<code>cpufreq</code> notifier 监听 CPU 频率变化，一变就调 <code>s3c24xx_serial_set_termios</code> 重算 UBRDIV。这是「换个 CPU 频率串口就乱码」的根源之一。<code>s3c24xx_serial_init_port</code> 按序取 MEM → <code>devm_ioremap</code> → <code>mapbase</code> → 中断号 → DMA 属性 → clock → 波特率时钟 → <code>resetport</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        res = platform_get_resource(platdev, IORESOURCE_MEM, <span class="hljs-number">0</span>);
+        port-&gt;membase = devm_ioremap(port-&gt;dev, res-&gt;start, resource_size(res));
+        port-&gt;mapbase = res-&gt;start;
+        ret = platform_get_irq(platdev, <span class="hljs-number">0</span>);   <span class="hljs-comment">/* 第 0 个中断资源 */</span>
+        <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>)
+                port-&gt;irq = <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">else</span> {
+                port-&gt;irq = ret;
+                ourport-&gt;rx_irq = ret;        <span class="hljs-comment">/* IRQ_S3CUART_RX0 */</span>
+                ourport-&gt;tx_irq = ret + <span class="hljs-number">1</span>;    <span class="hljs-comment">/* IRQ_S3CUART_TX0 */</span>
+        }
+        ret = platform_get_irq(platdev, <span class="hljs-number">1</span>);   <span class="hljs-comment">/* 第 1 个中断资源，有就覆盖 tx_irq */</span>
+        <span class="hljs-keyword">if</span> (ret &gt; <span class="hljs-number">0</span>)
+                ourport-&gt;tx_irq = ret;
+        <span class="hljs-keyword">if</span> (platdev-&gt;dev.of_node &amp;&amp; of_find_property(platdev-&gt;dev.of_node, <span class="hljs-string">&quot;dmas&quot;</span>, <span class="hljs-literal">NULL</span>))
+                ourport-&gt;dma = devm_kzalloc(port-&gt;dev, <span class="hljs-keyword">sizeof</span>(*ourport-&gt;dma), GFP_KERNEL);
+        ourport-&gt;clk = clk_get(&amp;platdev-&gt;dev, <span class="hljs-string">&quot;uart&quot;</span>);
+        ret = clk_prepare_enable(ourport-&gt;clk);
+        ret = s3c24xx_serial_enable_baudclk(ourport);
+        s3c24xx_serial_resetport(port, cfg);
+</code></pre></div></code></pre>
+<p><code>tx_irq = ret + 1</code> 因为三星子中断连续排列：串口 0 主中断源 <code>IRQ_UART0</code>（44），子中断 <code>IRQ_S3CUART_RX0</code>（74）、<code>IRQ_S3CUART_TX0</code>（75）、<code>IRQ_S3CUART_ERR0</code>（77）。<code>s3c24xx_serial_enable_baudclk</code> 选波特率时钟，牵扯 <code>clk_sel</code> 位图：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        clk_sel = ourport-&gt;cfg-&gt;clk_sel ? : info-&gt;def_clk_sel;
+        <span class="hljs-keyword">for</span> (clk_num = <span class="hljs-number">0</span>; clk_num &lt; info-&gt;num_clks; clk_num++) {
+                <span class="hljs-keyword">if</span> (!(clk_sel &amp; (<span class="hljs-number">1</span> &lt;&lt; clk_num)))
+                        <span class="hljs-keyword">continue</span>;
+                <span class="hljs-built_in">sprintf</span>(clk_name, <span class="hljs-string">&quot;clk_uart_baud%d&quot;</span>, clk_num);
+                clk = clk_get(dev, clk_name);
+                <span class="hljs-keyword">if</span> (IS_ERR(clk))
+                        <span class="hljs-keyword">continue</span>;
+                ret = clk_prepare_enable(clk);
+                <span class="hljs-keyword">if</span> (ret) { clk_put(clk); <span class="hljs-keyword">continue</span>; }
+                ourport-&gt;baudclk = clk;
+                ourport-&gt;baudclk_rate = clk_get_rate(clk);   <span class="hljs-comment">/* PCLK 50MHz */</span>
+                s3c24xx_serial_setsource(&amp;ourport-&gt;port, clk_num);
+                <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+        }
+        <span class="hljs-keyword">return</span> -EINVAL;
+</code></pre></div></code></pre>
+<p><code>clk_sel</code> 置位的那一位决定用哪个时钟源，名字是 <code>clk_uart_baud&lt;N&gt;</code>。S3C2440 的 <code>def_clk_sel = S3C2410_UCON_CLKSEL2</code>（<code>1 &lt;&lt; 2</code>），走 <code>clk_uart_baud2</code>。别名在 <code>drivers/clk/samsung/clk-s3c2410.c</code>，同一个 <code>PCLK_UART0</code> 有两个别名——<code>uart</code> 给控制器、<code>clk_uart_baud2</code> 给波特率分频：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">samsung_clock_alias</span> <span class="hljs-title">s3c244x_common_aliases</span>[] __<span class="hljs-title">initdata</span> =</span> {
+        ALIAS(PCLK_UART0, <span class="hljs-string">&quot;s3c2440-uart.0&quot;</span>, <span class="hljs-string">&quot;uart&quot;</span>),
+        ALIAS(PCLK_UART1, <span class="hljs-string">&quot;s3c2440-uart.1&quot;</span>, <span class="hljs-string">&quot;uart&quot;</span>),
+        ALIAS(PCLK_UART2, <span class="hljs-string">&quot;s3c2440-uart.2&quot;</span>, <span class="hljs-string">&quot;uart&quot;</span>),
+        ALIAS(PCLK_UART0, <span class="hljs-string">&quot;s3c2440-uart.0&quot;</span>, <span class="hljs-string">&quot;clk_uart_baud2&quot;</span>),
+        ALIAS(PCLK_UART1, <span class="hljs-string">&quot;s3c2440-uart.1&quot;</span>, <span class="hljs-string">&quot;clk_uart_baud2&quot;</span>),
+        ALIAS(PCLK_UART2, <span class="hljs-string">&quot;s3c2440-uart.2&quot;</span>, <span class="hljs-string">&quot;clk_uart_baud2&quot;</span>),
+        ALIAS(HCLK_CAM, <span class="hljs-literal">NULL</span>, <span class="hljs-string">&quot;camif&quot;</span>),
+        ALIAS(CAMIF, <span class="hljs-literal">NULL</span>, <span class="hljs-string">&quot;camif-upll&quot;</span>),
+};
+</code></pre></div></code></pre>
+<p><code>ALIAS(时钟 id, device 设备名称, 时钟别名)</code>。gate 定义 <code>GATE(PCLK_UART0, &quot;uart0&quot;, &quot;pclk&quot;, CLKCON, 10, 0, 0)</code> 的字段：id=<code>PCLK_UART0</code>、name=<code>uart0</code>、parent=<code>pclk</code>、offset=<code>CLKCON</code>、bit_idx=10（CLKCON 第 10 位控制进入 UART0 的 PCLK，写 1 使能）。DTS 平台上是另一条路：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    resource = platform_get_resource(pdev, IORESOURCE_MEM, <span class="hljs-number">0</span>);
+    port-&gt;mapbase = resource-&gt;start;
+    port-&gt;membase = devm_ioremap_resource(&amp;pdev-&gt;dev, resource);
+    port-&gt;iotype = UPIO_MEM32;
+    port-&gt;irq = platform_get_irq(pdev, <span class="hljs-number">0</span>);
+    port-&gt;line = of_alias_get_id(pdev-&gt;dev.of_node, <span class="hljs-string">&quot;serial&quot;</span>);
+serial5: serial@e012a000 {
+     compatible = <span class="hljs-string">&quot;actions,s900-serial&quot;</span>;
+     reg = &lt;<span class="hljs-number">0</span> <span class="hljs-number">0xe012a000</span> <span class="hljs-number">0</span> <span class="hljs-number">0x2000</span>&gt;;    <span class="hljs-comment">/* UART5_BASE */</span>
+};
+aliases {
+     serial5 = &amp;serial5;
+};
+</code></pre></div></code></pre>
+<p><code>reg</code> 的字段个数由 <code>#address-cells</code> / <code>#size-cells</code> 决定，都是 2 时表示从 <code>0x00000000e012a000</code> 开始、长度 <code>0x2000</code>。</p>
+<h2 id="五数据的收发路径" tabindex="-1">五、数据的收发路径 <a class="header-anchor" href="#五数据的收发路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="5.1-发送路径" tabindex="-1">5.1 发送路径 <a class="header-anchor" href="#5.1-发送路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>write(fd, buf, n) -&gt; tty_write -&gt; ld = tty_ldisc_ref_wait(tty)
+  -&gt; do_tty_write(ld-&gt;ops-&gt;write, ...)   分片，chunk = 2048
+     -&gt; n_tty_write -&gt; tty-&gt;ops-&gt;write(tty, b, nr)   uart_write
+        -&gt; memcpy 进 state-&gt;xmit 环形缓冲 -&gt; __uart_start(tty)
+           -&gt; port-&gt;ops-&gt;start_tx     s3c24xx_serial_start_tx
+</code></pre></div></code></pre>
+<p>上游那几层属于 TTY 抽象层，实现见 <a href="/C.%E9%A9%B1%E5%8A%A8/10-%E6%98%BE%E7%A4%BA%E4%B8%8E%E7%BB%88%E7%AB%AF/TTY-%E5%AD%90%E7%B3%BB%E7%BB%9F%EF%BC%9A%E4%BB%8E%E5%8D%8F%E8%AE%AE%E5%88%B0%E6%A1%86%E6%9E%B6/" class="wikilink">TTY 子系统：从协议到框架</a>；<code>uart_write</code> 往下才是本篇。它是环形缓冲入队：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">uart_write</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> tty_struct *tty, <span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *buf, <span class="hljs-type">int</span> count)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_state</span> *<span class="hljs-title">state</span> =</span> tty-&gt;driver_data;
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_port</span> *<span class="hljs-title">port</span>;</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">circ_buf</span> *<span class="hljs-title">circ</span>;</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags; <span class="hljs-type">int</span> c, ret = <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">if</span> (!state) {           <span class="hljs-comment">/* 端口已关闭还来写 */</span>
+                WARN_ON(<span class="hljs-number">1</span>);
+                <span class="hljs-keyword">return</span> -EL3HLT;
+        }
+        port = uart_port_lock(state, flags);
+        circ = &amp;state-&gt;xmit;
+        <span class="hljs-keyword">if</span> (!circ-&gt;buf) {
+                uart_port_unlock(port, flags);
+                <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+        }
+        <span class="hljs-keyword">while</span> (port) {
+                c = CIRC_SPACE_TO_END(circ-&gt;head, circ-&gt;tail, UART_XMIT_SIZE);
+                <span class="hljs-keyword">if</span> (count &lt; c)
+                        c = count;
+                <span class="hljs-keyword">if</span> (c &lt;= <span class="hljs-number">0</span>)
+                        <span class="hljs-keyword">break</span>;
+                <span class="hljs-built_in">memcpy</span>(circ-&gt;buf + circ-&gt;head, buf, c);
+                circ-&gt;head = (circ-&gt;head + c) &amp; (UART_XMIT_SIZE - <span class="hljs-number">1</span>);
+                buf += c; count -= c; ret += c;
+        }
+        __uart_start(tty);
+        uart_port_unlock(port, flags);
+        <span class="hljs-keyword">return</span> ret;
+}
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> __uart_start(<span class="hljs-keyword">struct</span> tty_struct *tty)
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_state</span> *<span class="hljs-title">state</span> =</span> tty-&gt;driver_data; <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_port</span> *<span class="hljs-title">port</span> =</span> state-&gt;uart_port;
+        <span class="hljs-keyword">if</span> (port &amp;&amp; !uart_tx_stopped(port))
+                port-&gt;ops-&gt;start_tx(port);
+}
+</code></pre></div></code></pre>
+<p>四步：拿 <code>uart_state</code>、拿 <code>state-&gt;xmit</code>、按 <code>CIRC_SPACE_TO_END</code> 逐段拷入并更新 <code>head</code>（按 4096 掩码回绕）、<code>__uart_start</code>。<code>-EL3HLT</code> 是历史遗留错误码（OS/2 的「设备已暂停」），见到它就知道端口关闭后还调了 write。<code>s3c24xx_serial_start_tx</code> 里 PIO 与 DMA 平级分叉：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">s3c24xx_serial_start_tx</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *port)</span>
+{
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">s3c24xx_uart_port</span> *<span class="hljs-title">ourport</span> =</span> to_ourport(port);
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">circ_buf</span> *<span class="hljs-title">xmit</span> =</span> &amp;port-&gt;state-&gt;xmit;
+        <span class="hljs-keyword">if</span> (!tx_enabled(port)) {
+                <span class="hljs-keyword">if</span> (port-&gt;flags &amp; UPF_CONS_FLOW)
+                        s3c24xx_serial_rx_disable(port);
+                tx_enabled(port) = <span class="hljs-number">1</span>;
+                <span class="hljs-keyword">if</span> (!ourport-&gt;dma || !ourport-&gt;dma-&gt;tx_chan)
+                        s3c24xx_serial_start_tx_pio(ourport);
+        }
+        <span class="hljs-keyword">if</span> (ourport-&gt;dma &amp;&amp; ourport-&gt;dma-&gt;tx_chan) {
+                <span class="hljs-keyword">if</span> (!uart_circ_empty(xmit) &amp;&amp; !ourport-&gt;tx_in_progress)
+                        s3c24xx_serial_start_next_tx(ourport);
+        }
+}
+</code></pre></div></code></pre>
+<p>看 <code>UPF_CONS_FLOW</code> 那段：端口既是 console 又开了流控时，<strong>发送前先把接收关掉</strong>。一块板子既当 console 又当数据口时出现「只能看不能敲」，根子就在这里。</p>
+<h3 id="5.2-接收路径" tabindex="-1">5.2 接收路径 <a class="header-anchor" href="#5.2-接收路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>UART 收到数据 -&gt; RX 中断 -&gt; s3c24xx_serial_rx_chars(irq, dev_id)
+  -&gt; s3c24xx_serial_rx_chars_pio / _dma -&gt; 读 UART 数据寄存器
+     -&gt; uart_insert_char(port, status, overrun, ch, flag)
+        -&gt; tty_insert_flip_char(&amp;port-&gt;state-&gt;port, ch, flag)
+     -&gt; tty_flip_buffer_push / tty_schedule_flip
+        -&gt; ldisc-&gt;ops-&gt;receive_buf = n_tty_receive_buf
+           -&gt; 数据进 ldata-&gt;read_buf[]，更新 read_head
+           -&gt; wake_up_interruptible(&amp;tty-&gt;read_wait)
+static irqreturn_t s3c24xx_serial_rx_chars(int irq, void *dev_id)
+{
+        struct s3c24xx_uart_port *ourport = dev_id;
+        if (ourport-&gt;dma &amp;&amp; ourport-&gt;dma-&gt;rx_chan)
+                return s3c24xx_serial_rx_chars_dma(dev_id);
+        return s3c24xx_serial_rx_chars_pio(dev_id);
+}
+</code></pre></div></code></pre>
+<p>用 <code>uart_insert_char</code> 而不是直接 <code>tty_insert_flip_char</code>，是因为前者能处理 overrun：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">extern</span> <span class="hljs-type">void</span> <span class="hljs-title function_">uart_insert_char</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *port, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> status,
+                 <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> overrun, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> ch, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> flag)</span>;
+</code></pre></div></code></pre>
+<p><code>status</code> 来自控制器状态寄存器（帧错、校验错、溢出、break），<code>overrun</code> 是这一位对应的控制器掩码。serial core 按 <code>port-&gt;ignore_status_mask</code> 决定丢弃还是上报，按 <code>port-&gt;read_status_mask</code> 决定带什么 flag 交给 ldisc。<strong>这两个 mask 就是 <code>set_termios</code> 里要更新的东西。</strong> 接收侧 FIFO 触发深度是个坑：Bubblegum-96 的 UART5，TX FIFO 32 字节空闲 ≥16 字节触发，RX FIFO 也是 32 字节、<strong>收满 ≥16 字节才触发</strong>。收 3 个字节靠 RX 超时中断兜底（三星 UCON 的 bit7）。移植时「短数据收不到、长数据正常」，先查这一项。</p>
+<h2 id="六中断处理" tabindex="-1">六、中断处理 <a class="header-anchor" href="#六中断处理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="6.1-中断用之前的四项功课" tabindex="-1">6.1 中断用之前的四项功课 <a class="header-anchor" href="#6.1-中断用之前的四项功课"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>以 Bubblegum-96 的 UART5 为例：</p>
+<ol>
+<li><strong>外设和中断控制器之间用哪几条中断线</strong>。UART5 是 SPI 35。</li>
+<li><strong>每条中断线的触发方式</strong>。UART5 是高电平触发。外部 GPIO 中断比较关心触发方式，其它外设中断基本是电平触发。</li>
+<li><strong>设备内部哪些行为能产生中断、条件为何、怎么使能、怎么清 pending</strong>：有 TX 和 RX 两种中断；TX FIFO 32 字节、空闲空间 ≥16 字节触发；RX FIFO 32 字节、收到 ≥16 字节触发；TX/RX 中断使能由 <code>UARTx_CTL</code>（offset 0x0000）的 bit19、bit18 控制；中断原因由 <code>UARTx_STAT</code>（offset 0x000c）的 bit1（TX IRQ Pending）、bit0（RX IRQ Pending）给出，两个 bit 写 1 清除。</li>
+<li><strong>中断里要做哪些事、是否耗时、能否线程化</strong>：TX 中断意味着可以往 TX FIFO 写入，RX 中断意味着 FIFO 里有数据。这两个动作在 serial framework 下都不耗时，不需要线程化。</li>
+</ol>
+<p>第 3 条藏着那个经典问题：<strong>只有 RX 收到 ≥16 字节才中断，收少于 16 字节怎么办？</strong> 靠 RX 超时中断（控制器支持时）或把触发深度调小。调试时小包丢，先回来查这里。</p>
+<h3 id="6.2-中断的申请三步" tabindex="-1">6.2 中断的申请，三步 <a class="header-anchor" href="#6.2-中断的申请三步"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>第一步，DTS 里指定中断号：</strong></p>
+<pre><code class="language-dts"><div class="code-block" data-lang="dts"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">dts</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-symbol">	serial5:</span> <span class="hljs-title class_">serial@e012a000</span> <span class="hljs-punctuation">{</span>
+		<span class="hljs-attr">compatible</span> <span class="hljs-operator">=</span> <span class="hljs-string">&quot;actions,s900-serial&quot;</span><span class="hljs-punctuation">;</span>
+		<span class="hljs-attr">reg</span> <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-number">0</span> <span class="hljs-number">0xe012a000</span> <span class="hljs-number">0x2000</span>&gt;</span><span class="hljs-punctuation">;</span>  <span class="hljs-comment">/* UART5_BASE */</span>
+		<span class="hljs-attr">interrupts</span> <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-number">0</span> <span class="hljs-number">35</span> <span class="hljs-number">4</span>&gt;</span><span class="hljs-punctuation">;</span>
+	<span class="hljs-punctuation">};</span>
+</code></pre></div></code></pre>
+<p>原素材 patch 片段里 <code>interrupts</code> 内容是空的（<code>interrupts = ;</code>），抓取时丢了。按「SPI 35、高电平触发」的描述，<code>&lt;0 35 4&gt;</code> 是合理形式（<code>4</code> = <code>IRQ_TYPE_LEVEL_HIGH</code>），实际值以原平台 DTS 为准。<strong>第二步，probe 里取出中断号：</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>	port-&gt;iotype = UPIO_MEM32;
+	port-&gt;irq = platform_get_irq(pdev, <span class="hljs-number">0</span>);
+	<span class="hljs-keyword">if</span> (port-&gt;irq &lt; <span class="hljs-number">0</span>) {
+		dev_err(&amp;pdev-&gt;dev, <span class="hljs-string">&quot;Failed to get irq\n&quot;</span>);
+		<span class="hljs-keyword">return</span> port-&gt;irq;
+	port-&gt;line = of_alias_get_id(pdev-&gt;dev.of_node, <span class="hljs-string">&quot;serial&quot;</span>);
+};
+</code></pre></div></code></pre>
+<p><code>platform_get_irq</code> 第二个参数是 DTS <code>interrupts</code> 里的编号，只用一条就填 0。<strong>第三步，<code>.startup</code> 里申请并使能：</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">irqreturn_t</span> <span class="hljs-title function_">owl_serial_irq_handle</span><span class="hljs-params">(<span class="hljs-type">int</span> irq, <span class="hljs-type">void</span> *data)</span>
+	<span class="hljs-keyword">struct</span> uart_port *port = data;
+	<span class="hljs-keyword">return</span> IRQ_HANDLED;
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">owl_serial_startup</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *port)</span>
+	<span class="hljs-type">int</span> ret = <span class="hljs-number">0</span>;
+	dev_dbg(port-&gt;dev, <span class="hljs-string">&quot;%s\n&quot;</span>, __func__);
+	ret = devm_request_irq(port-&gt;dev, port-&gt;irq, owl_serial_irq_handle,
+			       <span class="hljs-number">0</span>, <span class="hljs-string">&quot;owl_serial&quot;</span>, port);
+	<span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) {
+		dev_err(port-&gt;dev, <span class="hljs-string">&quot;request irq(%d) failed(%d)\n&quot;</span>,
+			port-&gt;irq, ret);
+		<span class="hljs-keyword">return</span> ret;
+	<span class="hljs-keyword">return</span> ret;
+};
+</code></pre></div></code></pre>
+<p><code>devm_request_irq</code> 的参数：设备、中断号、handler、flags（这里是 0）、名字（无关紧要）、私有数据。私有数据 <code>port</code> 会在中断触发时原样传回 handler。<strong>这里的使能是指 UART 控制器和 GIC 之间的使能。</strong> RX 中断在 <code>.startup</code> 里使能，因为启动后就要能收；TX 中断等到 <code>.start_tx</code> 里再使能：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>	<span class="hljs-comment">/* RX irq enable */</span>
+	__PORT_SET_BIT(port, UART_CTL, UART_CTL_RXIE);
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">owl_serial_start_tx</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *port)</span>
+	<span class="hljs-title function_">dev_dbg</span><span class="hljs-params">(port-&gt;dev, <span class="hljs-string">&quot;%s\n&quot;</span>, __func__)</span>;
+	<span class="hljs-comment">/* TX irq enable */</span>
+	__PORT_SET_BIT(port, UART_CTL, UART_CTL_TXIE);
+</code></pre></div></code></pre>
+<p>一边「启动就收」、一边「有货才发」，这个不对称是对的：发送没数据时开着 TX 中断只会空转。</p>
+<h3 id="6.3-中断处理与收发相关回调" tabindex="-1">6.3 中断处理与收发相关回调 <a class="header-anchor" href="#6.3-中断处理与收发相关回调"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>中断处理三步：读 <code>UARTx_STAT</code> 判类型；RX 中断从 <code>UARTx_RXDAT</code> 读数据并 <code>tty_insert_flip_char</code> 存进 port 的 RX buffer；TX 中断查 TX buffer 还有没有未发数据，有就写进 <code>UARTx_TXDAT</code>。<code>uart_ops</code> 里和数据收发直接相关的几个：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>回调</th>
+<th>实现要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.startup</code></td>
+<td>申请中断、使能 RX 中断、<code>UART_CTL_EN</code> 使能串口控制器</td>
+</tr>
+<tr>
+<td><code>.shutdown</code></td>
+<td>反动作：禁控制器、禁 RX 中断、注销中断</td>
+</tr>
+<tr>
+<td><code>.stop_tx</code></td>
+<td>禁 TX 中断及发送相关内容</td>
+</tr>
+<tr>
+<td><code>.stop_rx</code></td>
+<td>禁 RX 中断及接收相关内容</td>
+</tr>
+<tr>
+<td><code>.tx_empty</code></td>
+<td><code>UART_STAT_TFES</code> 置位返回 <code>TIOCSER_TEMT</code>，否则 0</td>
+</tr>
+</tbody>
+</table></div><pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> <span class="hljs-title function_">owl_serial_tx_empty</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *port)</span>
+	<span class="hljs-title function_">dev_dbg</span><span class="hljs-params">(port-&gt;dev, <span class="hljs-string">&quot;%s\n&quot;</span>, __func__)</span>;
+	<span class="hljs-keyword">if</span> (__PORT_TEST_BIT(port, UART_STAT, UART_STAT_TFES))
+		<span class="hljs-keyword">return</span> TIOCSER_TEMT;
+	<span class="hljs-keyword">else</span>
+		<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+</code></pre></div></code></pre>
+<p>发送流程图（原图抓取时丢了）的逻辑：上层把数据暂存在 <code>port-&gt;state-&gt;xmit</code>，然后调 <code>.start_tx</code>；<code>.start_tx</code> 从环形缓冲取数据写进 TX FIFO；FIFO 很小要多次传，所以在 TX 中断里再取再写，直到发完。两条要记住：<code>.start_tx</code> 是在关中断的情况下被调的，不用考虑同步；受 TX FIFO 限制，多数时候发送由 TX 中断推动，但存在特殊情况——TX buffer 已发完、控制器里没有数据在传、TX 中断不会产生，这时必须在 <code>.start_tx</code> 里重新写 FIFO，流程图里的循环覆盖了这个场景。</p>
+<h2 id="七dma-传输" tabindex="-1">七、DMA 传输 <a class="header-anchor" href="#七dma-传输"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>串口 DMA 的收益场景很窄：波特率低于 1Mbps 时中断方式的开销完全可以接受，115200 下每字节一次中断，CPU 占用也就个位数百分比。真正需要 DMA 的是 3Mbps 以上或高波特率多路并发。三星驱动的 DMA 支持有条件——<strong>只在 DT 平台、且 DTS 写了 <code>dmas</code> 属性时才分配</strong>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        <span class="hljs-keyword">if</span> (platdev-&gt;dev.of_node &amp;&amp; of_find_property(platdev-&gt;dev.of_node,
+                                                     <span class="hljs-string">&quot;dmas&quot;</span>, <span class="hljs-literal">NULL</span>)) {
+                ourport-&gt;dma = devm_kzalloc(port-&gt;dev,
+                                            <span class="hljs-keyword">sizeof</span>(*ourport-&gt;dma),
+                                            GFP_KERNEL);
+                <span class="hljs-keyword">if</span> (!ourport-&gt;dma) {
+                        ret = -ENOMEM; <span class="hljs-keyword">goto</span> err;
+                }
+        }
+</code></pre></div></code></pre>
+<p><code>min_dma_size</code> 的计算：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        <span class="hljs-comment">/* DMA transfers must be aligned at least to cache line size,
+         * so find minimal transfer size suitable for DMA mode */</span>
+        ourport-&gt;min_dma_size = <span class="hljs-type">max_t</span>(<span class="hljs-type">int</span>, ourport-&gt;port.fifosize,
+                                    dma_get_cache_alignment());
+</code></pre></div></code></pre>
+<p>DMA 传输至少要按 cache line 对齐，所以最小长度取 <code>fifosize</code> 和 <code>dma_get_cache_alignment()</code> 的较大值。小于这个长度还走 DMA，要么被 cache 一致性搞坏，要么效率不如 PIO。<code>start_tx</code> 里的分叉再贴一次，PIO 和 DMA 是平级的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        <span class="hljs-keyword">if</span> (!ourport-&gt;dma || !ourport-&gt;dma-&gt;tx_chan)
+                s3c24xx_serial_start_tx_pio(ourport);
+        <span class="hljs-keyword">if</span> (ourport-&gt;dma &amp;&amp; ourport-&gt;dma-&gt;tx_chan) {
+                <span class="hljs-keyword">if</span> (!uart_circ_empty(xmit) &amp;&amp; !ourport-&gt;tx_in_progress)
+                        s3c24xx_serial_start_next_tx(ourport);
+};
+</code></pre></div></code></pre>
+<p>RX 侧同理，<code>s3c24xx_serial_rx_chars</code> 开头按 <code>ourport-&gt;dma-&gt;rx_chan</code> 分流到 <code>_dma</code> 或 <code>_pio</code>。</p>
+<h2 id="八console内核的控制台" tabindex="-1">八、console：内核的控制台 <a class="header-anchor" href="#八console内核的控制台"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="8.1-为什么有了-tty-还要-console" tabindex="-1">8.1 为什么有了 TTY 还要 console <a class="header-anchor" href="#8.1-为什么有了-tty-还要-console"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>TTY 框架管 TTY 设备、提供访问 API。console 的两个需求——日志输出、基于控制台的人机交互——一个就是「向 TTY 设备发数据」，一个就是标准 TTY 功能，看起来直接复用 TTY API 就够了。内核另起一套，有四层理由。一是内核有一条隐性强规则：内核代码不该直接用用户空间接口访问资源，就像内核代码不该用文件系统接口读文件；TTY 框架是通过字符设备（也就是文件系统）向用户态提供接口的，所以 <code>printk</code> 不能走 TTY 接口访问 TTY 设备，于是从内核里另拉一套 console 框架。二是 console 框架构建在 TTY 框架之上，实现尤其访问硬件的部分大量复用。三是系统里可以有多个 TTY 设备，只有附加了 console 驱动的才能成为日志输出目的地、成为控制台终端，console 框架因此变相成了管理 TTY 设备的框架。四是驱动工程师评估该设备是否能成为控制台，顺手写个 system console driver 让它成为候选，系统工程师启动时用命令行参数决定 <code>printk</code> 输出到哪些候选、哪个最终成为控制台。对串口驱动来说，这个「顺手写一个」工作量极小：定义 <code>struct console</code>、填几个字段、把指针塞进 <code>uart_driver.cons</code>，剩下的 serial core 全包。</p>
+<h3 id="8.2-struct-console-全字段" tabindex="-1">8.2 struct console 全字段 <a class="header-anchor" href="#8.2-struct-console-全字段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/linux/console.h */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">console</span> {</span>
+    <span class="hljs-type">char</span>    name[<span class="hljs-number">16</span>];
+    <span class="hljs-type">void</span>    (*write)(<span class="hljs-keyword">struct</span> console *, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *, <span class="hljs-type">unsigned</span>);
+    <span class="hljs-type">int</span>     (*read)(<span class="hljs-keyword">struct</span> console *, <span class="hljs-type">char</span> *, <span class="hljs-type">unsigned</span>);
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">tty_driver</span> *(*<span class="hljs-title">device</span>)(<span class="hljs-keyword">struct</span> <span class="hljs-title">console</span> *, <span class="hljs-title">int</span> *);</span>
+    <span class="hljs-type">void</span>    (*unblank)(<span class="hljs-type">void</span>);
+    <span class="hljs-type">int</span>     (*setup)(<span class="hljs-keyword">struct</span> console *, <span class="hljs-type">char</span> *);
+    <span class="hljs-type">int</span>     (*match)(<span class="hljs-keyword">struct</span> console *, <span class="hljs-type">char</span> *name, <span class="hljs-type">int</span> idx, <span class="hljs-type">char</span> *options);
+    <span class="hljs-type">short</span>   flags; <span class="hljs-type">short</span>   index; <span class="hljs-type">int</span>     cflag; <span class="hljs-type">void</span>    *data; <span class="hljs-class"><span class="hljs-keyword">struct</span>   <span class="hljs-title">console</span> *<span class="hljs-title">next</span>;</span>
+};
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>控制台名称，配合 <code>index</code> 匹配命令行 <code>console=xxx</code></td>
+</tr>
+<tr>
+<td><code>write</code></td>
+<td>写函数，<code>printk</code> 最终走这里</td>
+</tr>
+<tr>
+<td><code>read</code></td>
+<td>读函数，基本不用</td>
+</tr>
+<tr>
+<td><code>device</code></td>
+<td>返回该 console 对应的 <code>tty_driver</code>，把 console 和 TTY 设备绑起来，让控制台终端与 console 共用同一个 TTY 设备</td>
+</tr>
+<tr>
+<td><code>unblank</code></td>
+<td>唤醒屏幕（VT 用）</td>
+</tr>
+<tr>
+<td><code>setup</code></td>
+<td>初始化回调，配波特率/收发送。可不实现；实现了<strong>必须返回 0</strong>，否则该 console 不可用</td>
+</tr>
+<tr>
+<td><code>match</code></td>
+<td>早期 console 匹配，按名字和 index 判定</td>
+</tr>
+<tr>
+<td><code>flags</code></td>
+<td>见下表</td>
+</tr>
+<tr>
+<td><code>index</code></td>
+<td>索引。≥0 精确匹配 <code>console=ttyXS2</code>；&lt;0 匹配 <code>console=ttySXn</code> 任意 n</td>
+</tr>
+<tr>
+<td><code>cflag</code></td>
+<td>控制台 cflag（早期字段，串口 console 一般不用）</td>
+</tr>
+<tr>
+<td><code>data</code></td>
+<td>私有数据，串口 console 存 <code>struct uart_driver *</code></td>
+</tr>
+<tr>
+<td><code>next</code></td>
+<td>全局 console 链表指针</td>
+</tr>
+<tr>
+<td><code>flags</code> 四个常用位：</td>
+<td></td>
+</tr>
+<tr>
+<td>flag</td>
+<td>含义</td>
+</tr>
+<tr>
+<td>---</td>
+<td>---</td>
+</tr>
+<tr>
+<td><code>CON_BOOT</code></td>
+<td>临时 console，只在启动期用，真 console 注册后会被注销</td>
+</tr>
+<tr>
+<td><code>CON_CONSDEV</code></td>
+<td>该 console 用作控制台终端（对应 <code>/dev/console</code>），是命令行里最后一个</td>
+</tr>
+<tr>
+<td><code>CON_PRINTBUFFER</code></td>
+<td>注册时把之前缓存在 buffer 里的日志全部输出一遍。串口 console 都设它</td>
+</tr>
+<tr>
+<td><code>CON_ENABLED</code></td>
+<td>该 console 正在被使用</td>
+</tr>
+</tbody>
+</table></div><h3 id="8.3-注册与注销" tabindex="-1">8.3 注册与注销 <a class="header-anchor" href="#8.3-注册与注销"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* include/linux/console.h */</span>
+<span class="hljs-keyword">extern</span> <span class="hljs-type">void</span> <span class="hljs-title function_">register_console</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> console *)</span>;
+<span class="hljs-keyword">extern</span> <span class="hljs-type">int</span> <span class="hljs-title function_">unregister_console</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> console *)</span>;
+</code></pre></div></code></pre>
+<p><code>register_console</code> 做的事：检查 <code>name</code> 和 <code>index</code>，确认之前没注册过，否则失败；若是 boot console（<code>CON_BOOT</code>），确认是第一个注册的 boot console，否则失败；系统里从没注册过 console 时，把第一个注册成功、能 setup 通过（<code>.setup</code> 为 NULL 或返回 0）的 console 作为当前 console 并使能（置 <code>CON_ENABLED</code>）；和命令行 <code>console=xxx</code> 对比，使能命令行指定的那些；找到命令行里最后一个 console，给它置 <code>CON_CONSDEV</code>。使用控制全靠命令行参数：只在启动期用的 console 注册时置 <code>CON_BOOT</code>（early console 就是这一类）；注册多个时命令行指定哪些，日志就输出到哪些；命令行里最后一个成为控制台 console，应用打开 <code>/dev/console</code> 打开的就是它对应的 TTY 设备（由 <code>.device</code> 回调返回的 tty driver 决定）。</p>
+<h2 id="九serial-console-的实现" tabindex="-1">九、serial console 的实现 <a class="header-anchor" href="#九serial-console-的实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="9.1-三步搞定" tabindex="-1">9.1 三步搞定 <a class="header-anchor" href="#9.1-三步搞定"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>第一步，定义 <code>struct console</code> 变量：</strong></p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">console</span> <span class="hljs-title">AAA_console</span> =</span> {
+	.name   = <span class="hljs-string">&quot;ttyS&quot;</span>,
+	.write  = AAA_console_write,
+	.device = uart_console_device,
+	.setup  = AAA_console_setup,
+	.flags  = CON_PRINTBUFFER,
+	.index  = <span class="hljs-number">-1</span>,
+	.data   = &amp;AAA_BBB_driver,
+};
+</code></pre></div></code></pre>
+<p><code>.name</code> 决定 console 名称，命令行传入时要和它匹配，如 <code>console=ttyS0</code>；<code>.index</code> 指定用哪个 uart port（对应 <code>port-&gt;line</code>），<code>-1</code> 让内核自动选第一个；<code>.data</code> 存 <code>struct uart_driver</code> 指针；<code>.setup</code> 和 <code>.write</code> 必须实现，起步可先留空。<code>.device = uart_console_device</code> 是 serial core 提供的帮助函数，通过 console 指针拿 <code>tty_driver</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">struct</span> tty_driver *<span class="hljs-title function_">uart_console_device</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> console *co, <span class="hljs-type">int</span> *index)</span>;
+```**第二步，把 console 指针塞进 `uart_driver.cons`：**
+```c
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">console</span> <span class="hljs-title">AAA_console</span>;</span>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_driver</span> <span class="hljs-title">AAA_BBB_driver</span> =</span> {
+	…
+	.cons           = &amp;AAA_console,
+	…
+};
+</code></pre></div></code></pre>
+<p><strong>第三步，没有第三步。</strong> <code>uart_add_one_port</code> 会自动比较 <code>uart_driver-&gt;cons-&gt;index</code> 和 <code>uart_port-&gt;line</code>，匹配就调 <code>register_console</code> 帮忙注册。这就是 4.2 里 <code>uart_configure_port</code> → <code>of_console_check</code> 那段的作用。</p>
+<h3 id="9.2-console-write-的实现与冲突" tabindex="-1">9.2 console write 的实现与冲突 <a class="header-anchor" href="#9.2-console-write-的实现与冲突"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>console 的 <code>write</code> 接口特殊：<strong>操作对象是 <code>struct console *</code>，不是 <code>struct uart_port *</code></strong>。驱动里到处用 <code>uart_port</code>，这里得转一道：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">owl_console_write</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> console *con, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *s, <span class="hljs-type">unsigned</span> n)</span>
+	<span class="hljs-keyword">struct</span> uart_driver *driver = con-&gt;data;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_port</span> *<span class="hljs-title">port</span> =</span> driver-&gt;state[con-&gt;index].uart_port;
+	uart_console_write(port, s, n, owl_console_putchar);
+</code></pre></div></code></pre>
+<p><code>con-&gt;data</code> 是 <code>uart_driver</code>，<code>driver-&gt;state[con-&gt;index].uart_port</code> 是端口。<code>uart_console_write</code> 的签名：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">uart_console_write</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> uart_port *port, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *s,
+                        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> count,
+                        <span class="hljs-type">void</span> (*<span class="hljs-built_in">putchar</span>)(<span class="hljs-keyword">struct</span> uart_port *, <span class="hljs-type">int</span>))</span>;
+```第四个参数是你实现的「往 FIFO 塞一个字节」的函数。**版本注意**：`console.write` 的签名 `<span class="hljs-type">void</span> (*)(<span class="hljs-keyword">struct</span> console *, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *, <span class="hljs-type">unsigned</span>)` 从 <span class="hljs-number">2.6</span> 到 <span class="hljs-number">5.</span>x 没变。<span class="hljs-number">5.15</span> 起 console 代码加了 `console_srcu` 保护，回调签名不变（未验证）。真正的坑是 **console write 与普通数据发送的冲突**：两者都操作同一个 TX FIFO，会交叉。解决办法是保证一次 console write 的完整性，避免内核日志被打乱。三步：备份当前 TX 中断状态并禁止 TX 中断；照原样调 `uart_console_write` 把字符串发出去；恢复 TX 中断状态。
+
+```c
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">owl_console_write</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> console *con, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *s, <span class="hljs-type">unsigned</span> n)</span>
+	<span class="hljs-type">bool</span> tx_irq_enabled; <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_driver</span> *<span class="hljs-title">driver</span> =</span> con-&gt;data;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">uart_port</span> *<span class="hljs-title">port</span> =</span> driver-&gt;state[con-&gt;index].uart_port;
+	<span class="hljs-comment">/* save TX IRQ status */</span>
+	tx_irq_enabled = __PORT_TEST_BIT(port, UART_CTL, UART_CTL_TXIE);
+	<span class="hljs-comment">/* TX irq disable */</span>
+	__PORT_CLEAR_BIT(port, UART_CTL, UART_CTL_TXIE);
+	uart_console_write(port, s, n, owl_console_putchar);
+	<span class="hljs-comment">/* restore TX IRQ status */</span>
+	<span class="hljs-keyword">if</span> (tx_irq_enabled)
+		__PORT_SET_BIT(port, UART_CTL, UART_CTL_TXIE);
+</code></pre></div></code></pre>
+<p>不这么做的后果：<code>printk</code> 输出到一半被 TX 中断插进来发了数据，串口终端上看到的是半行日志加半行业务数据。</p>
+<h3 id="9.3-现成的两个例子" tabindex="-1">9.3 现成的两个例子 <a class="header-anchor" href="#9.3-现成的两个例子"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>三星的 console 定义，<code>.index = -1</code> 让内核自动选第一个 port：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">console</span> <span class="hljs-title">s3c24xx_serial_console</span> =</span> {
+        .name           = S3C24XX_SERIAL_NAME,          <span class="hljs-comment">/* &quot;ttySAC&quot; */</span>
+        .device         = uart_console_device,
+        .flags          = CON_PRINTBUFFER,
+        .index          = <span class="hljs-number">-1</span>,
+        .write          = s3c24xx_serial_console_write,
+        .setup          = s3c24xx_serial_console_setup,
+        .data           = &amp;s3c24xx_uart_drv,
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> S3C24XX_SERIAL_CONSOLE &amp;s3c24xx_serial_console</span>
+};
+</code></pre></div></code></pre>
+<p>Bubblegum-96 那次移植显式指定 <code>.index = 5</code> 配 <code>console=ttyS5</code>，因为 UART5 是板上引出来的那个：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>     .flags    = CON_PRINTBUFFER,
+-    .index    = <span class="hljs-number">-1</span>,
++    .index    = <span class="hljs-number">5</span>,
+     .data    = &amp;owl_serial_driver,
+</code></pre></div></code></pre>
+<p>配好之后命令行改动：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>-CONFIG_CMDLINE=&quot;earlycon=owl_serial loglevel=8&quot;
++CONFIG_CMDLINE=&quot;earlycon=owl_serial console=ttyS5 loglevel=8&quot;
+</code></pre></div></code></pre>
+<p>启动日志里 <code>console [ttyS5] enabled</code> 和 <code>bootconsole [owl_serial0] disabled</code> 同时出现，说明 transition 完成：early console 让位给真 console。</p>
+<h3 id="9.4-early-console" tabindex="-1">9.4 early console <a class="header-anchor" href="#9.4-early-console"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>early console 是 serial framework 里可在内核启动早期使用的 console，最早在 <code>start_kernel → setup_arch → parse_early_param</code> 之后就能用，对早期 debug 很有价值。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> EARLYCON_DECLARE(_name, fn)     OF_EARLYCON_DECLARE(_name, <span class="hljs-string">&quot;&quot;</span>, fn)</span>
+</code></pre></div></code></pre>
+<p>两个参数：<code>_name</code> 是 early console 名称，要和命令行参数一致；<code>fn</code> 是原型为 <code>int (*setup)(struct earlycon_device *, const char *options)</code> 的回调。<code>setup</code> 回调里做两件事：初始化 early console 相关硬件（<code>ioremap</code>、初始化串口控制器等）；实现一个 <code>console-&gt;write</code> 接口，把函数指针存进 setup 第一个参数的相应指针里（<code>device-&gt;con-&gt;write</code>）。完成后传入命令行参数 <code>earlycon=xxx</code> 激活。serial framework 在启动时调用 setup 初始化，然后调 system console core 的 <code>register_console</code> 帮忙注册。<code>bootconsole</code> 是挂了 <code>CON_BOOT</code> 的临时 console，真 console 注册后就被注销。名字 <code>owl_serial0</code> 来自 <code>EARLYCON_DECLARE</code> 的 <code>_name</code>，不是 <code>uart_driver.dev_name</code>，两者别混。</p>
+<h2 id="十调试手段与常见故障" tabindex="-1">十、调试手段与常见故障 <a class="header-anchor" href="#十调试手段与常见故障"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="10.1-五个必看的调试入口" tabindex="-1">10.1 五个必看的调试入口 <a class="header-anchor" href="#10.1-五个必看的调试入口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong><code>/sys/class/tty/</code></strong> —— 设备注册成功的证据。Mini2440 上电后：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>[root@zy:/]# ls /sys/class/tty/ttySAC* -l
+lrwxrwxrwx 1 0 0 0 Jan  1 00:00 /sys/class/tty/ttySAC0 -&gt; ../../devices/platform/s3c2440-uart.0/tty/ttySAC0
+lrwxrwxrwx 1 0 0 0 Jan  1 00:00 /sys/class/tty/ttySAC1 -&gt; ../../devices/platform/s3c2440-uart.1/tty/ttySAC1
+lrwxrwxrwx 1 0 0 0 Jan  1 00:00 /sys/class/tty/ttySAC2 -&gt; ../../devices/platform/s3c2440-uart.2/tty/ttySAC2
+```符号链接的 `..` 路径能看出 platform device 名字：`s3c2440-uart.0`、`.1`、`.2`。名字对不上或数量不对，问题在 probe 阶段。**`/dev/ttySACn`** —— 主次设备号：
+
+```text
+[root@zy:/]# ls -l /dev/ttySAC0
+crw-rw----    1 0        0         204,  64 Jan  1 00:00 /dev/ttySAC0
+[root@zy:/]# ls -l /dev/ttySAC1
+crw-rw----    1 0        0         204,  65 Jan  1 00:00 /dev/ttySAC1
+[root@zy:/]# ls -l /dev/ttySAC2
+crw-rw----    1 0        0         204,  66 Jan  1 00:00 /dev/ttySAC2
+</code></pre></div></code></pre>
+<p>主设备号 204 来自 <code>S3C24XX_SERIAL_MAJOR</code>，起始次设备号 64 来自 <code>S3C24XX_SERIAL_MINOR</code>，逐个 +1。204 是三星的私有分配，别和 <code>/dev/ttyS0</code> 的 4 混。<strong><code>/proc/tty/driver/&lt;driver_name&gt;</code></strong> —— serial core 的 <code>uart_proc_show</code> 输出每个端口的类型、时钟、中断、计数，前提是 <code>tty_operations</code> 实现了 <code>proc_show</code>，见 <a href="/C.%E9%A9%B1%E5%8A%A8/10-%E6%98%BE%E7%A4%BA%E4%B8%8E%E7%BB%88%E7%AB%AF/TTY-%E5%AD%90%E7%B3%BB%E7%BB%9F%EF%BC%9A%E4%BB%8E%E5%8D%8F%E8%AE%AE%E5%88%B0%E6%A1%86%E6%9E%B6/" class="wikilink">TTY 子系统：从协议到框架</a> 的注册一节。<strong><code>stty -a -F /dev/ttySAC0</code></strong> —— 当前 termios 全貌，比对 TTY 篇的 termios 字段表。<strong>dmesg 的三行</strong> —— <code>probe</code>、<code>ttyS5 at MMIO</code>、<code>console [ttyX] enabled</code>，见本篇第一章末尾。</p>
+<h3 id="10.2-console-生效验证" tabindex="-1">10.2 console 生效验证 <a class="header-anchor" href="#10.2-console-生效验证"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>启动参数 <code>console=ttySAC0,115200</code> 意味着控制台设在 ttySAC0 上，往 <code>/dev/ttySAC0</code> 写就等于往控制台写：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>[root@zy:/]# echo &quot;ls -l /dev&quot; &gt; /dev/ttySAC0
+ls -l /dev
+</code></pre></div></code></pre>
+<p>能回显到自己屏幕上，说明 tty 链路通、console 也通。</p>
+<h3 id="10.3-故障表" tabindex="-1">10.3 故障表 <a class="header-anchor" href="#10.3-故障表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>最常见的原因</th>
+<th>查什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/dev/ttySn</code> 不存在</td>
+<td>probe 没跑、<code>uart_add_one_port</code> 没调、<code>line &gt;= nr</code></td>
+<td>dmesg 过滤 uart、<code>/sys/class/tty</code></td>
+</tr>
+<tr>
+<td>节点存在，open 返回 <code>-ENODEV</code></td>
+<td><code>tty-&gt;port</code> 没设；<code>driver-&gt;ports[idx]</code> 为空</td>
+<td><code>does not set tty-&gt;port</code> WARN</td>
+</tr>
+<tr>
+<td>open 返回 <code>-EBUSY</code></td>
+<td><code>tty_port_kopened</code>，端口被独占</td>
+<td><code>TIOCEXCL</code>、同端口另一个进程</td>
+</tr>
+<tr>
+<td>能收不能发</td>
+<td>缺 RTS/CTS 但开了 <code>crtscts</code>；<code>UPF_CONS_FLOW</code> 把 RX 关了</td>
+<td><code>stty -a</code> 看 <code>crtscts</code>、<code>start_tx</code> 的 <code>UPF_CONS_FLOW</code> 分支</td>
+</tr>
+<tr>
+<td>能发不能收</td>
+<td>RX FIFO 触发深度太大；RX 中断没使能</td>
+<td><code>UARTx_CTL</code> 的 RXIE 位、FIFO 触发深度</td>
+</tr>
+<tr>
+<td>短包丢，长包正常</td>
+<td>RX 触发深度 &gt; 包长，且无 RX 超时中断</td>
+<td>6.1 第 3 项</td>
+</tr>
+<tr>
+<td>输出乱码</td>
+<td>分频算错、<code>uartclk</code> 来源不对、cpufreq 变化后没重算</td>
+<td><code>set_termios</code> 里的除法和 <code>clk_get_rate</code> 结果</td>
+</tr>
+<tr>
+<td>每行多个空行或回车丢失</td>
+<td>termios 的 <code>ONLCR</code> / <code>ICRNL</code> 被关掉</td>
+<td><code>stty -a</code> 的 <code>opost onlcr icrnl</code></td>
+</tr>
+<tr>
+<td>内核日志被截断/串行混杂</td>
+<td>console write 没做 TX 中断保护</td>
+<td>9.2 的三步</td>
+</tr>
+<tr>
+<td>console 没启用</td>
+<td><code>.setup</code> 返回非 0；命令行名字不匹配</td>
+<td>dmesg 过滤 console、<code>con-&gt;name</code> + <code>con-&gt;index</code></td>
+</tr>
+<tr>
+<td>启动日志早段没有</td>
+<td>没有 early console 或 <code>earlycon=xxx</code> 名字对不上</td>
+<td>命令行 <code>earlycon=</code></td>
+</tr>
+<tr>
+<td>panic 在第二个 probe</td>
+<td><code>uart_register_driver</code> 被调了两次</td>
+<td>4.3 的 <code>if (!drv-&gt;state)</code> 判断</td>
+</tr>
+<tr>
+<td>二进制数据被吃掉 <code>0x11</code>/<code>0x13</code></td>
+<td>termios 开了 <code>IXON</code>/<code>IXOFF</code></td>
+<td><code>stty raw -ixon -ixoff</code></td>
+</tr>
+</tbody>
+</table></div><h2 id="十一易错点速查" tabindex="-1">十一、易错点速查 <a class="header-anchor" href="#十一易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>易错点</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>把 <code>struct tty_operations uart_ops</code>（serial_core 里的）和 <code>struct uart_ops xxx_ops</code>（驱动要实现的那个）搞混</td>
+<td>串口驱动只填 <code>struct uart_ops</code>；<code>struct tty_operations</code> 由 serial_core 提供</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>uart_driver.state</code> / <code>uart_driver.tty_driver</code> 自己填了值</td>
+<td>两个字段必须初始化为 NULL，<code>BUG_ON(drv-&gt;state)</code> 会拦住</td>
+</tr>
+<tr>
+<td>3</td>
+<td>每个端口都调一次 <code>uart_register_driver</code></td>
+<td>只用 <code>if (!drv-&gt;state)</code> 调一次；第二次会 panic</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>nr</code> 填了芯片手册最大值而非实际端口数</td>
+<td>多出来的端口节点存在但永远 open 失败</td>
+</tr>
+<tr>
+<td>5</td>
+<td>在 <code>uart_ops</code> 里加 <code>.rs485_config</code></td>
+<td>那是 <code>uart_port</code> 的成员，不是 <code>uart_ops</code> 的</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>console.write</code> 里直接用 <code>struct uart_port *</code></td>
+<td>入参是 <code>struct console *</code>，用 <code>con-&gt;data</code> 转</td>
+</tr>
+<tr>
+<td>7</td>
+<td>console write 不加 TX 中断保护</td>
+<td>备份 → 禁 TX 中断 → 写 → 恢复</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>.setup</code> 返回非 0 觉得无所谓</td>
+<td>返回非 0 该 console 直接不可用</td>
+</tr>
+<tr>
+<td>9</td>
+<td>在中断上下文调 <code>uart_add_one_port</code></td>
+<td><code>BUG_ON(in_interrupt())</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td>RX 只认 FIFO 触发深度，不管超时</td>
+<td>短包会丢，要开 RX 超时中断或调低触发深度</td>
+</tr>
+<tr>
+<td>11</td>
+<td>以为 <code>UPF_BOOT_AUTOCONF</code> 没用</td>
+<td>它决定 <code>uart_configure_port</code> 会不会自动探测端口类型</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>set_termios</code> 里只写分频不更新 mask</td>
+<td><code>read_status_mask</code> / <code>ignore_status_mask</code> 不更新，错误状态行为错乱</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>.start_tx</code> 假设数据一定是 TX 中断推的</td>
+<td>TX buffer 已发完时不会再有中断，得在 <code>start_tx</code> 里重写 FIFO</td>
+</tr>
+<tr>
+<td>14</td>
+<td>DMA 用在很小的传输上</td>
+<td>最小长度取 <code>max(fifosize, dma_get_cache_alignment())</code></td>
+</tr>
+<tr>
+<td>15</td>
+<td>改 CPU 频率后串口乱码</td>
+<td>要注册 cpufreq notifier 重算分频</td>
+</tr>
+<tr>
+<td>16</td>
+<td>在 <code>.startup</code> 里就开 TX 中断</td>
+<td>没数据时空转，TX 中断应该在 <code>.start_tx</code> 里开</td>
+</tr>
+<tr>
+<td>17</td>
+<td>以为 tty 节点是 <code>uart_register_driver</code> 建的</td>
+<td>串口设了 <code>TTY_DRIVER_DYNAMIC_DEV</code>，节点由 <code>uart_add_one_port</code> 建</td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>uart_state</code> 里手工算 <code>circ_buf</code> 的 head/tail</td>
+<td>用 <code>uart_circ_empty</code>/<code>uart_circ_chars_free</code> 那组宏</td>
+</tr>
+<tr>
+<td>19</td>
+<td>以为 <code>uart_insert_char</code> 和 <code>tty_insert_flip_char</code> 可以互换</td>
+<td>前者多做 overrun 处理，串口侧用前者</td>
+</tr>
+<tr>
+<td>20</td>
+<td>移植时把静态 <code>fifosize = 16</code> 当真值</td>
+<td>probe 里会被 <code>drv_data</code>/<code>info</code> 覆盖，S3C2440 实际 64</td>
+</tr>
+</tbody>
+</table></div><h2 id="附素材来源与勘误" tabindex="-1">附：素材来源与勘误 <a class="header-anchor" href="#附素材来源与勘误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="章节出处" tabindex="-1">章节出处 <a class="header-anchor" href="#章节出处"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>章节</th>
+<th>主要素材</th>
+<th>补充素材</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开篇</td>
+<td>综合</td>
+<td>—</td>
+</tr>
+<tr>
+<td>一、分层：serial_core 与具体驱动</td>
+<td><code>Linux serial framework_概述.md</code> 二、四章</td>
+<td><code>linux驱动移植-uart设备驱动.md</code> 一、三章</td>
+</tr>
+<tr>
+<td>二、uart_driver 与 uart_port</td>
+<td><code>linux驱动移植-uart设备驱动.md</code> 二、三章；<code>Linux serial framework_概述.md</code> 3.2.1~3.2.4</td>
+<td><code>串口驱动开发之驱动框架.md</code>、<code>串口驱动开发之 uart driver 框架.md</code></td>
+</tr>
+<tr>
+<td>三、uart_ops</td>
+<td><code>linux驱动移植-uart设备驱动.md</code> 二、三章</td>
+<td><code>串口驱动开发之数据收发.md</code> 六章</td>
+</tr>
+<tr>
+<td>四、注册与 probe</td>
+<td><code>linux驱动移植-uart设备驱动.md</code> 三~六章；<code>linux驱动移植-tty架构.md</code> 四、五章</td>
+<td><code>串口驱动开发之 serial console.md</code></td>
+</tr>
+<tr>
+<td>五、收发路径</td>
+<td><code>linux驱动移植-uart设备驱动.md</code> 六章；<code>linux驱动移植-tty架构.md</code> 五~七章</td>
+<td><code>串口驱动开发之数据收发.md</code> 七、八章</td>
+</tr>
+<tr>
+<td>六、中断处理</td>
+<td><code>串口驱动开发之数据收发.md</code> 二~五章</td>
+<td><code>linux驱动移植-uart设备驱动.md</code> 五章</td>
+</tr>
+<tr>
+<td>七、DMA</td>
+<td><code>串口驱动开发之数据收发.md</code> 二~五章</td>
+<td><code>linux驱动移植-uart设备驱动.md</code> 五章（DMA 条件、<code>min_dma_size</code>）</td>
+</tr>
+<tr>
+<td>八、console</td>
+<td><code>Linux TTY framework_System console driver.md</code></td>
+<td><code>linux驱动移植-uart设备驱动.md</code>（<code>struct console</code> 注释）</td>
+</tr>
+<tr>
+<td>九、serial console</td>
+<td><code>串口驱动开发之 uart driver 框架.md</code> 四章；<code>串口驱动开发之 serial console.md</code>；<code>串口驱动开发之数据收发.md</code> 九章</td>
+<td><code>Linux serial framework_概述.md</code> 四、五章（<code>uart_console_*</code>、earlycon）</td>
+</tr>
+<tr>
+<td>十、调试与故障</td>
+<td><code>linux驱动移植-uart设备驱动.md</code> 七章</td>
+<td>故障表按本篇各章内容汇总</td>
+</tr>
+<tr>
+<td>十一、易错点</td>
+<td>综合</td>
+<td>只保留控制器侧条目，TTY 抽象层条目见《TTY 子系统》篇</td>
+</tr>
+<tr>
+<td>附</td>
+<td>综合</td>
+<td><code>Linux TTY framework_System console driver.md</code> 并入第八章</td>
+</tr>
+<tr>
+<td>原稿里属于 TTY 抽象层（<code>tty_driver</code>/<code>tty_struct</code>/<code>tty_port</code>/line discipline/termios/注册与注销）的素材，出处表迁到 <a href="/C.%E9%A9%B1%E5%8A%A8/10-%E6%98%BE%E7%A4%BA%E4%B8%8E%E7%BB%88%E7%AB%AF/TTY-%E5%AD%90%E7%B3%BB%E7%BB%9F%EF%BC%9A%E4%BB%8E%E5%8D%8F%E8%AE%AE%E5%88%B0%E6%A1%86%E6%9E%B6/" class="wikilink">TTY 子系统：从协议到框架</a> 的附录，两边不重复列。</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div><h3 id="修正的错误" tabindex="-1">修正的错误 <a class="header-anchor" href="#修正的错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ol>
+<li><strong><code>uart_ops</code> 里不存在 <code>rs485_config</code> / <code>iso7816_config</code></strong>：原素材把这两个函数指针混在 <code>uart_port</code> 的字段解释里，容易让人误以为要填进 <code>uart_ops</code>。已在第三章末与第十一章明确。</li>
+<li><strong><code>struct uart_port</code> 的 <code>UPF_*</code> 宏位置</strong>：原文把几十行宏夹在结构体内，照抄会让结构体看起来含大量宏定义。本篇把宏移到结构体外的独立列表，字段清单保持完整。</li>
+<li><strong><code>struct console</code> 的 <code>pflag</code></strong>：素材注释里出现 <code>pflag</code>，实际字段名是 <code>cflag</code>，已统一。</li>
+<li><strong><code>nr</code> 与实际端口数</strong>：<code>s3c24xx_uart_drv.nr</code> 配成 4 而 S3C2440 只有 3 个 UART。素材有注释说明但没指后果——会多注册一个永远 open 失败的 <code>/dev/ttySAC3</code>。已在 2.1 与第十一章补上。</li>
+<li><strong><code>UFCON</code> 的 bit1/bit2</strong>：<code>0x51</code> 的这两位是「复位正常」状态位，不是「复位使能」。已按手册语义明确。</li>
+<li><strong><code>s3c24xx_init_uartdevs</code> 里的数组索引</strong>：素材的 platform_device 注释写「取 <code>smdk2440_uartcfgs</code> 数组第 N 个元素」，实际是 <code>uart_cfgs</code> 地址加偏移（<code>cfgptr</code> 递增）。结构体内容相同、指针不同，已按 <code>cfgptr</code> 递增描述。</li>
+<li><strong>DTS 的 <code>interrupts</code> 字段被截断</strong>：<code>串口驱动开发之数据收发.md</code> 的 patch 片段里 <code>interrupts = ;</code> 内容为空，是抓取损坏。按「SPI 35、高电平触发」补了合理形式并注明以原平台 DTS 为准。</li>
+<li><strong>破损代码块</strong>：素材里标成 <code>```makefile</code> 的 C 源码（<code>tty_register_device</code>、<code>tty_init_dev</code>、<code>__tty_alloc_driver</code>、<code>s3c24xx_init_io</code> 等）已统一改为 <code>```c</code>；纯编译输出改 <code>```text</code>；DTS 片段改 <code>```dts</code>。</li>
+</ol>
+<h3 id="未验证项" tabindex="-1">未验证项 <a class="header-anchor" href="#未验证项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>以下内容素材未覆盖、无法从源码确证，照抄前请核对内核版本的头文件和源码：</p>
+<ol>
+<li><strong><code>uart_ops.set_termios</code> 返回值语义</strong>：2.6 是 <code>int</code>、3.x 之后是 <code>void</code>；5.14 前后是否有返回值检查相关变动未验证。</li>
+<li><strong><code>console.write</code> 在 5.15 起的 <code>console_srcu</code> 保护</strong>：未验证，回调签名本身未变。</li>
+<li><strong>三星 <code>UBRDIV</code> 计算公式与 <code>UFRACVAL</code> 位宽</strong>：正文的 <code>PCLK / (baud * 16) - 1</code> 是常规算法推算，带小数分频的具体公式和位宽素材未给，未验证。以芯片手册为准。</li>
+<li><strong>Bubblegum-96 UART5 的 <code>interrupts</code> 具体值</strong>：<code>&lt;0 35 4&gt;</code> 是按文字描述推的合理形式，原始 DTS 值未验证。</li>
+<li><strong><code>uart_ops.pm</code> 的 <code>state</code>/<code>oldstate</code> 语义澄清</strong>：5.10 前后有变动，未验证。</li>
+<li><strong>各 SoC 串口寄存器位定义</strong>：三星 UCON/ULCON/UFCON 的位含义来自素材原文（板级文件注释），Bubblegum-96 的 <code>UARTx_CTL</code>/<code>UARTx_STAT</code> 位定义来自 SoC 手册转述，两者都未与原手册逐位核对。</li>
+<li><strong><code>uart_insert_char</code> 的 overrun 判定细节</strong>：素材只说明它比 <code>tty_insert_flip_char</code> 多处理 overrun，具体分支未逐行核对。</li>
+<li><strong>4.6-rc5 下 <code>port-&gt;ops</code> 挂 <code>activate</code> 的形态</strong>：本篇以 5.2.8 为准写出 <code>port-&gt;ops = &amp;uart_port_ops</code>，4.6-rc5 是否同形态未逐行核对。</li>
+</ol>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+                <div class="rail-card rail-backlinks-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                      </svg>
+                      反向链接
+                    </span>
+                    <span class="rail-badge">1</span>
+                  </div>
+                  <ul class="backlinks-list">
+                    
+                    <li><a class="backlink-item" href="/C.驱动/10-显示与终端/TTY-子系统：从协议到框架/">TTY 子系统：从协议到框架</a></li>
+                    
+                  </ul>
+                </div>
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一uart-驱动的分层serial_core-与具体驱动" data-toc-target="一uart-驱动的分层serial_core-与具体驱动">一、UART 驱动的分层：serial_core 与具体驱动</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二uart_driver-与-uart_port" data-toc-target="二uart_driver-与-uart_port">二、uart_driver 与 uart_port</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.1-struct-uart_driver" data-toc-target="2.1-struct-uart_driver">2.1 struct uart_driver</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.2-struct-uart_state" data-toc-target="2.2-struct-uart_state">2.2 struct uart_state</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.3-struct-uart_port" data-toc-target="2.3-struct-uart_port">2.3 struct uart_port</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.4-三者的关系" data-toc-target="2.4-三者的关系">2.4 三者的关系</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三uart_ops驱动要实现什么" data-toc-target="三uart_ops驱动要实现什么">三、uart_ops：驱动要实现什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四uart-的注册与-probe" data-toc-target="四uart-的注册与-probe">四、UART 的注册与 probe</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.1-uart_register_driver" data-toc-target="4.1-uart_register_driver">4.1 uart_register_driver</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.2-uart_add_one_port" data-toc-target="4.2-uart_add_one_port">4.2 uart_add_one_port</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.3-一次完整的-probe" data-toc-target="4.3-一次完整的-probe">4.3 一次完整的 probe</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五数据的收发路径" data-toc-target="五数据的收发路径">五、数据的收发路径</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.1-发送路径" data-toc-target="5.1-发送路径">5.1 发送路径</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.2-接收路径" data-toc-target="5.2-接收路径">5.2 接收路径</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六中断处理" data-toc-target="六中断处理">六、中断处理</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.1-中断用之前的四项功课" data-toc-target="6.1-中断用之前的四项功课">6.1 中断用之前的四项功课</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.2-中断的申请三步" data-toc-target="6.2-中断的申请三步">6.2 中断的申请，三步</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.3-中断处理与收发相关回调" data-toc-target="6.3-中断处理与收发相关回调">6.3 中断处理与收发相关回调</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七dma-传输" data-toc-target="七dma-传输">七、DMA 传输</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八console内核的控制台" data-toc-target="八console内核的控制台">八、console：内核的控制台</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.1-为什么有了-tty-还要-console" data-toc-target="8.1-为什么有了-tty-还要-console">8.1 为什么有了 TTY 还要 console</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.2-struct-console-全字段" data-toc-target="8.2-struct-console-全字段">8.2 struct console 全字段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.3-注册与注销" data-toc-target="8.3-注册与注销">8.3 注册与注销</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九serial-console-的实现" data-toc-target="九serial-console-的实现">九、serial console 的实现</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.1-三步搞定" data-toc-target="9.1-三步搞定">9.1 三步搞定</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.2-console-write-的实现与冲突" data-toc-target="9.2-console-write-的实现与冲突">9.2 console write 的实现与冲突</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.3-现成的两个例子" data-toc-target="9.3-现成的两个例子">9.3 现成的两个例子</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.4-early-console" data-toc-target="9.4-early-console">9.4 early console</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十调试手段与常见故障" data-toc-target="十调试手段与常见故障">十、调试手段与常见故障</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.1-五个必看的调试入口" data-toc-target="10.1-五个必看的调试入口">10.1 五个必看的调试入口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.2-console-生效验证" data-toc-target="10.2-console-生效验证">10.2 console 生效验证</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.3-故障表" data-toc-target="10.3-故障表">10.3 故障表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一易错点速查" data-toc-target="十一易错点速查">十一、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#附素材来源与勘误" data-toc-target="附素材来源与勘误">附：素材来源与勘误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#章节出处" data-toc-target="章节出处">章节出处</a>
+                    
+                    <a class="toc-item toc-lv3" href="#修正的错误" data-toc-target="修正的错误">修正的错误</a>
+                    
+                    <a class="toc-item toc-lv3" href="#未验证项" data-toc-target="未验证项">未验证项</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 1156 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 1156 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/C.驱动/10-显示与终端/UART-驱动：serial_core-与具体实现/","title":"UART 驱动：serial_core 与具体实现","url":"/C.驱动/10-显示与终端/UART-驱动：serial_core-与具体实现/","type":"current"},{"id":"/C.驱动/10-显示与终端/TTY-子系统：从协议到框架/","title":"TTY 子系统：从协议到框架","url":"/C.驱动/10-显示与终端/TTY-子系统：从协议到框架/","type":"outgoing"},{"id":"/C.驱动/10-显示与终端/Linux-图形栈与-DRM-架构/","title":"Linux 图形栈与 DRM 架构","url":"/C.驱动/10-显示与终端/Linux-图形栈与-DRM-架构/","type":"outgoing"},{"id":"/C.驱动/10-显示与终端/Linux-input-框架：input_dev-与-handler/","title":"Linux input 框架：input_dev 与 handler","url":"/C.驱动/10-显示与终端/Linux-input-框架：input_dev-与-handler/","type":"outgoing"}],"links":[{"source":"/C.驱动/10-显示与终端/UART-驱动：serial_core-与具体实现/","target":"/C.驱动/10-显示与终端/TTY-子系统：从协议到框架/","type":"direct"},{"source":"/C.驱动/10-显示与终端/UART-驱动：serial_core-与具体实现/","target":"/C.驱动/10-显示与终端/Linux-图形栈与-DRM-架构/","type":"direct"},{"source":"/C.驱动/10-显示与终端/UART-驱动：serial_core-与具体实现/","target":"/C.驱动/10-显示与终端/Linux-input-框架：input_dev-与-handler/","type":"direct"},{"source":"/C.驱动/10-显示与终端/TTY-子系统：从协议到框架/","target":"/C.驱动/10-显示与终端/UART-驱动：serial_core-与具体实现/","type":"direct"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>
