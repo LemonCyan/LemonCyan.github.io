@@ -1,0 +1,1442 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>信号量与条件变量：等待与唤醒 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">信号量与条件变量：等待与唤醒</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">信号量与条件变量：等待与唤醒</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">信号量与条件变量：等待与唤醒</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <h2 id="一互斥锁解决不了的问题" tabindex="-1">一、互斥锁解决不了的问题 <a class="header-anchor" href="#一互斥锁解决不了的问题"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>互斥锁回答的是「同一时刻谁可以进」，它不回答「我该等到什么时候」。</p>
+<p>把一个消费者放到空队列上，只给 mutex，你只能这么写：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+    pthread_mutex_lock(&amp;mtx);
+    <span class="hljs-keyword">if</span> (queue_empty()) {
+        pthread_mutex_unlock(&amp;mtx);
+        <span class="hljs-keyword">continue</span>;              <span class="hljs-comment">/* 队列还是空的，转头再问一遍 */</span>
+    }
+    item = queue_pop();
+    pthread_mutex_unlock(&amp;mtx);
+    handle(item);
+}
+</code></pre></div></code></pre>
+<p>这段代码没有数据竞争，但它在一个核上空转。队列空多久，它就烧多久 CPU。补一句 <code>sleep(1)</code> 能压住占用，代价是延迟抬到最多一秒，数据密集时又在白等。</p>
+<p>形状不对的地方在这：线程想知道的是「数据来了吗」，而 mutex 只能回答「现在轮到你了吗」。真正缺的是两样东西，一个能数「现在有几个资源可用」的计数器，一个能表达「我在等某个条件成立」的等待队列。前者是信号量，后者是条件变量。两者都落在内核的等待队列上，都用睡眠代替轮询。</p>
+<p>还有第三种情况更难缠：条件本身不是资源数量，而是一个组合判断，比如「队列不满而且没收到退出信号」。这种条件连计数器都表达不了，只能靠条件变量加一个自己维护的谓词。</p>
+<p>下面按「计数器 → 等待队列」的顺序走。信号量先讲，因为它的语义最简单：一个数字，加和减。</p>
+<h2 id="二信号量是什么资源计数器" tabindex="-1">二、信号量是什么：资源计数器 <a class="header-anchor" href="#二信号量是什么资源计数器"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>信号量就是带原子加减的整型计数器，加上一条等待队列。<code>sem_t</code> 里装的是当前可用资源的份数。</p>
+<p>Dijkstra 给它定义了两个操作，字母来自荷兰语：P 是 proberen（尝试），V 是 verhogen（增加）。教材里也写成 wait/signal、down/up、acquire/release，指的都是同一对动作。</p>
+<p>在教科书模型里，信号量结构长这样：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-type">int</span> value;           <span class="hljs-comment">/* 剩余可用资源计数 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">process</span> *<span class="hljs-title">L</span>;</span>   <span class="hljs-comment">/* 挂在该信号量上的等待队列 */</span>
+} semaphore;
+</code></pre></div></code></pre>
+<p>P 操作先减再判，减成负数就阻塞：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">wait</span><span class="hljs-params">(semaphore S)</span> {
+    S.value--;                 <span class="hljs-comment">/* 先记账，申请一份资源 */</span>
+    <span class="hljs-keyword">if</span> (S.value &lt; <span class="hljs-number">0</span>) {
+        <span class="hljs-comment">/* 资源不够，把自己挂到 S.L 上，让出 CPU */</span>
+        block(S.L);
+    }
+}
+</code></pre></div></code></pre>
+<p>V 操作先加再判，值不大于零说明队列里还有人等着：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">signal</span><span class="hljs-params">(semaphore S)</span> {
+    S.value++;                 <span class="hljs-comment">/* 归还一份资源 */</span>
+    <span class="hljs-keyword">if</span> (S.value &lt;= <span class="hljs-number">0</span>) {
+        <span class="hljs-comment">/* 还有被挂起的等待者，从 S.L 里放一个进就绪队列 */</span>
+        wakeup(S.L);
+    }
+}
+</code></pre></div></code></pre>
+<p>注意这个模型里 <code>value</code> 会变成负数，负数的绝对值等于等待者数量。POSIX 的 <code>sem_t</code> 不这么做：它对外暴露的计数永远不小于 0，排队的线程藏在实现内部，你查不到有几个。写代码时按 POSIX 理解就行。</p>
+<p>按取值分成两种：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>取值</th>
+<th>表达的意思</th>
+<th>常见用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>二进制信号量</td>
+<td>只有 0 和 1</td>
+<td>资源空闲 / 已被占用</td>
+<td>当锁用，或当「就绪」的标志位</td>
+</tr>
+<tr>
+<td>计数信号量</td>
+<td>0 到 <code>SEM_VALUE_MAX</code></td>
+<td>当前还有几份可用</td>
+<td>限并发数、数缓冲区空位、数已完成的任务</td>
+</tr>
+</tbody>
+</table></div><p>二进制信号量是计数信号量的特例。工程上把它单独拎出来讲，是因为它最容易被误当成互斥锁用，而这两者的所有权语义完全不同，第八章展开。<code>SEM_VALUE_MAX</code> 是上限，具体数值由实现给定，别在代码里写死。计数到上限还继续 <code>sem_post</code>，会拿到 <code>EOVERFLOW</code>。</p>
+<h2 id="三匿名信号量与命名信号量" tabindex="-1">三、匿名信号量与命名信号量 <a class="header-anchor" href="#三匿名信号量与命名信号量"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>POSIX 信号量有两个来源，区别只在「这个 <code>sem_t</code> 对象活在哪」。</p>
+<p>匿名信号量（也叫未命名信号量）就是一坨内存，你负责分配，<code>sem_init</code> 负责初始化：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">sem_t</span> sem;                 <span class="hljs-comment">/* 全局变量、栈变量、堆上的一块，都行 */</span>
+sem_init(&amp;sem, <span class="hljs-number">0</span>, <span class="hljs-number">1</span>);      <span class="hljs-comment">/* 第 2 个参数 0：只在同进程的线程间共享 */</span>
+<span class="hljs-comment">/* ... 用 ... */</span>
+sem_destroy(&amp;sem);
+</code></pre></div></code></pre>
+<p>它的生命周期跟内存一样：内存没了，信号量就没了。内核不登记它，不占 <code>/dev/shm</code>，也不怕进程崩掉留垃圾。</p>
+<p>把 <code>pshared</code> 传非 0 时，它就能跨进程用，但前提是这块 <code>sem_t</code> 必须落在共享内存里（<code>mmap</code> 的 <code>MAP_SHARED</code> 区、POSIX 共享内存对象、System V 共享内存段）。放在普通全局变量上再传非 0，父子进程各改各的副本，同步立刻失效。POSIX 允许实现对非 0 的 <code>pshared</code> 返回 <code>ENOSYS</code>，Linux 上是支持的。</p>
+<p>命名信号量由内核保管，靠一个名字找：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;fcntl.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;semaphore.h&gt;</span></span>
+
+<span class="hljs-type">sem_t</span> *sem = sem_open(<span class="hljs-string">&quot;/my_sem&quot;</span>, O_CREAT, <span class="hljs-number">0644</span>, <span class="hljs-number">1</span>);   <span class="hljs-comment">/* 名字必以 / 开头，且只有一层 */</span>
+<span class="hljs-keyword">if</span> (sem == SEM_FAILED) {
+    <span class="hljs-comment">/* 处理错误 */</span>
+}
+
+sem_wait(sem);
+
+sem_close(sem);            <span class="hljs-comment">/* 关掉本进程的引用 */</span>
+sem_unlink(<span class="hljs-string">&quot;/my_sem&quot;</span>);     <span class="hljs-comment">/* 名字从系统里摘掉，最后一个引用关掉后对象才消失 */</span>
+</code></pre></div></code></pre>
+<p>命名信号量在 Linux 上表现为 <code>/dev/shm/sem.&lt;name&gt;</code> 文件。它的特点是：进程退出不会自动清掉，名字一直挂着，计数停在最后的值。所以谁 <code>sem_open</code> 加上 <code>O_CREAT</code>，谁就该在退出路径上 <code>sem_unlink</code>，否则下次启动会拿到上次残留的计数。</p>
+<p>两个容易踩的点：</p>
+<ul>
+<li><code>sem_close</code> 只减引用，不等于删除。删名字只能靠 <code>sem_unlink</code>。</li>
+<li><code>sem_unlink</code> 之后已经打开的 <code>sem_t *</code> 仍然可用，只是新进程再 <code>sem_open</code> 同名会拿到新对象。想在进程间「继承」一个信号量，必须在 unlink 之前 fork。</li>
+</ul>
+<p>对照一张表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>匿名信号量</th>
+<th>命名信号量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>声明与初始化</td>
+<td><code>sem_t</code> 变量 + <code>sem_init</code></td>
+<td><code>sem_open</code> 返回 <code>sem_t *</code></td>
+</tr>
+<tr>
+<td>存储位置</td>
+<td>你的进程内存</td>
+<td>内核管理的 IPC 对象，Linux 落 <code>/dev/shm/sem.*</code></td>
+</tr>
+<tr>
+<td>跨进程共享</td>
+<td>需要放在共享内存里</td>
+<td>天然支持，靠名字</td>
+</tr>
+<tr>
+<td>生命周期</td>
+<td>跟随内存</td>
+<td>跟随名字，进程退出不消失</td>
+</tr>
+<tr>
+<td>结束方式</td>
+<td><code>sem_destroy</code></td>
+<td><code>sem_close</code> + <code>sem_unlink</code></td>
+</tr>
+<tr>
+<td>命名冲突</td>
+<td>不存在</td>
+<td>存在，全局可见</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>进程内线程同步，用得最多</td>
+<td>无关进程之间协作</td>
+</tr>
+</tbody>
+</table></div><p>还有第三套接口在系统里活着：System V 信号量。它用 <code>semget</code> 建信号量集，<code>semop</code> 做加减，<code>semctl</code> 设初值和读状态。一次能建一组，操作是「加减一个整数」而不是零一，语义比 POSIX 粗，参数也费劲。新代码不用碰它，只用知道名字里带 sem 但它不是本篇讲的 <code>sem_t</code>。</p>
+<p>标准版本：<code>sem_init</code> / <code>sem_destroy</code> / <code>sem_wait</code> / <code>sem_post</code> / <code>sem_trywait</code> / <code>sem_getvalue</code> / <code>sem_open</code> / <code>sem_close</code> / <code>sem_unlink</code> / <code>sem_timedwait</code> 全部由 POSIX.1-2001 定义。Linux 上 glibc 早期把这些放在 <code>librt</code>，编译要加 <code>-lrt</code>；glibc 2.34 起并入 libc，不再需要单独链接。</p>
+<h2 id="四sem_init-与-sem_destroy" tabindex="-1">四、sem_init 与 sem_destroy <a class="header-anchor" href="#四sem_init-与-sem_destroy"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>原型就两行：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;semaphore.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">sem_init</span><span class="hljs-params">(<span class="hljs-type">sem_t</span> *sem, <span class="hljs-type">int</span> pshared, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> value)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">sem_destroy</span><span class="hljs-params">(<span class="hljs-type">sem_t</span> *sem)</span>;
+</code></pre></div></code></pre>
+<p>两个函数成功返回 0，失败返回 -1 并设置 <code>errno</code>。</p>
+<p><code>sem_init</code> 的三个参数：</p>
+<ul>
+<li><code>sem</code>：指向一块 <code>sizeof(sem_t)</code> 大小的内存，必须是你的变量或你申请的内存，不能是空指针。</li>
+<li><code>pshared</code>：0 表示只在当前进程的线程之间共享；非 0 表示跨进程共享，此时这块内存必须落在共享内存里。</li>
+<li><code>value</code>：初始计数，也就是「一开始有几份资源」。大于 <code>SEM_VALUE_MAX</code> 会返回 <code>EINVAL</code>。</li>
+</ul>
+<p><code>sem_destroy</code> 只有一个参数，作用是把这个信号量作废。</p>
+<p>用法骨架，注意初始化必须发生在创建线程之前：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;semaphore.h&gt;</span></span>
+
+<span class="hljs-type">sem_t</span> slots;                    <span class="hljs-comment">/* 限并发：最多 3 个同时在跑 */</span>
+<span class="hljs-type">sem_t</span> done_flag;                <span class="hljs-comment">/* 完成通知：初始 0，等的人先睡 */</span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">worker</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    sem_wait(&amp;slots);           <span class="hljs-comment">/* 占一个并发位，占不到就睡 */</span>
+    do_work(arg);
+    sem_post(&amp;slots);           <span class="hljs-comment">/* 让出并发位 */</span>
+    sem_post(&amp;done_flag);       <span class="hljs-comment">/* 报一次完成 */</span>
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">pthread_t</span> tid[<span class="hljs-number">3</span>];
+
+    <span class="hljs-keyword">if</span> (sem_init(&amp;slots, <span class="hljs-number">0</span>, <span class="hljs-number">3</span>) != <span class="hljs-number">0</span> || sem_init(&amp;done_flag, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>) != <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;sem_init&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+    }
+
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">long</span> i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-number">3</span>; i++) {
+        pthread_create(&amp;tid[i], <span class="hljs-literal">NULL</span>, worker, (<span class="hljs-type">void</span> *)i);
+    }
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-number">3</span>; i++) {
+        sem_wait(&amp;done_flag);   <span class="hljs-comment">/* 收满 3 次完成才往下走 */</span>
+    }
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-number">3</span>; i++) {
+        pthread_join(tid[i], <span class="hljs-literal">NULL</span>);
+    }
+
+    sem_destroy(&amp;slots);
+    sem_destroy(&amp;done_flag);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>编译要带线程库：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -Wall -O2 sem_demo.c -o sem_demo -pthread
+</code></pre></div></code></pre>
+<p><code>sem_init</code> 和 <code>sem_destroy</code> 的约束不多，但每一条踩了都很难查：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>约束</th>
+<th>违反后会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>不能对已经初始化的信号量再 <code>sem_init</code></td>
+<td>未定义行为，内部状态被覆盖，等待者失踪</td>
+</tr>
+<tr>
+<td>要重新初始化，先 <code>sem_destroy</code> 再 <code>sem_init</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>sem_destroy</code> 时不能有线程阻塞在它上面</td>
+<td>未定义行为。安全做法是让使用方全部 <code>join</code> 完再销毁</td>
+</tr>
+<tr>
+<td><code>pshared</code> 非 0 时内存必须真共享</td>
+<td>各进程操作各自的副本，同步形同不存在</td>
+</tr>
+<tr>
+<td>匿名信号量不能跨进程用栈变量</td>
+<td>同上，栈地址在 fork 后是各自私有拷贝</td>
+</tr>
+</tbody>
+</table></div><p>最常见的错法是在 worker 还在跑的时候销毁。程序往往不报错，直到某次调度把它撞成段错误。把销毁放在所有 <code>pthread_join</code> 之后，这条纪律能省掉一整类深夜排查。</p>
+<h2 id="五sem_wait-与-sem_post" tabindex="-1">五、sem_wait 与 sem_post <a class="header-anchor" href="#五sem_wait-与-sem_post"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这对函数是信号量的全部日常：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">sem_wait</span><span class="hljs-params">(<span class="hljs-type">sem_t</span> *sem)</span>;   <span class="hljs-comment">/* P 操作：取一份资源，取不到就阻塞 */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">sem_post</span><span class="hljs-params">(<span class="hljs-type">sem_t</span> *sem)</span>;   <span class="hljs-comment">/* V 操作：还一份资源，并唤醒一个等待者 */</span>
+</code></pre></div></code></pre>
+<p>成功返回 0，失败返回 -1 并设 <code>errno</code>。两者都是 POSIX.1-2001。</p>
+<p><code>sem_wait</code> 的行为拆开看：</p>
+<ol>
+<li>计数大于 0，原子地减一，立刻返回。</li>
+<li>计数等于 0，线程进入该信号量的等待队列睡眠，不占 CPU。</li>
+<li>被 <code>sem_post</code> 唤醒后重新竞争，减一并返回。</li>
+<li>睡眠期间被信号打断，返回 -1，<code>errno</code> 为 <code>EINTR</code>。</li>
+</ol>
+<p>第 4 条要写进代码里。信号驱动的程序如果没有屏蔽信号，<code>sem_wait</code> 会带着 <code>EINTR</code> 回来，循环里判一下就重试，别把 <code>EINTR</code> 当成业务失败。</p>
+<p><code>sem_post</code> 的行为：</p>
+<ol>
+<li>计数原子加一。</li>
+<li>如果有线程阻塞在这个信号量上，唤醒其中一个。</li>
+<li>计数已到 <code>SEM_VALUE_MAX</code> 再加，返回 -1，<code>errno</code> 为 <code>EOVERFLOW</code>。</li>
+</ol>
+<p>这里有一条别的同步原语给不了的性质：<code>sem_post</code> 是异步信号安全的（async-signal-safe）。它可以在信号处理函数里直接调用，用来把「信号到了」这件事转交给普通线程处理。<code>pthread_mutex_lock</code>、<code>pthread_cond_signal</code> 都不在这个名单里，信号处理函数里调它们是等着出问题。</p>
+<p>唤醒顺序没有承诺。POSIX 不保证先睡的先醒，也不保证按优先级醒。业务逻辑依赖「谁先等谁先得」就是埋雷，那个顺序在换机器、换负载之后会变。<code>sem_post</code> 也不在乎是谁在等，它只是把计数加一，这带出了信号量最大的特点：没有所有权。</p>
+<p>刚提到的「完成通知」模式值得单独看一眼，它比轮询干净得多：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;semaphore.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">sem_t</span> ready;             <span class="hljs-comment">/* 初始 0：谁先到谁睡 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> config_value;        <span class="hljs-comment">/* 只由 worker 写，主线程等通知后读 */</span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">loader</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    (<span class="hljs-type">void</span>)arg;
+    sleep(<span class="hljs-number">1</span>);                   <span class="hljs-comment">/* 模拟耗时初始化 */</span>
+    config_value = <span class="hljs-number">42</span>;          <span class="hljs-comment">/* 先写好数据 */</span>
+    sem_post(&amp;ready);           <span class="hljs-comment">/* 再发通知，顺序不能反 */</span>
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">pthread_t</span> tid;
+
+    sem_init(&amp;ready, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);
+    pthread_create(&amp;tid, <span class="hljs-literal">NULL</span>, loader, <span class="hljs-literal">NULL</span>);
+
+    sem_wait(&amp;ready);           <span class="hljs-comment">/* 睡到有人 post 为止，全程不占 CPU */</span>
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;config = %d\n&quot;</span>, config_value);
+
+    pthread_join(tid, <span class="hljs-literal">NULL</span>);
+    sem_destroy(&amp;ready);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>顺序是这套模式的关键：先写数据，再 <code>sem_post</code>。反过来写，等待方会读到还没写完的数据，而信号量本身的加减是完全正确的，你连从返回值上都看不出问题。可见性靠的是 <code>sem_post</code> 与 <code>sem_wait</code> 之间的同步关系，前提是你确实在 post 之前写完了数据。</p>
+<h2 id="六sem_trywait-与-sem_timedwait" tabindex="-1">六、sem_trywait 与 sem_timedwait <a class="header-anchor" href="#六sem_trywait-与-sem_timedwait"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>sem_wait</code> 只有「等到底」一种态度。另两个函数把等待方式变成可控的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">sem_trywait</span><span class="hljs-params">(<span class="hljs-type">sem_t</span> *sem)</span>;                                        <span class="hljs-comment">/* POSIX.1-2001 */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">sem_timedwait</span><span class="hljs-params">(<span class="hljs-type">sem_t</span> *sem, <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> timespec *abs_timeout)</span>;  <span class="hljs-comment">/* POSIX.1-2001 */</span>
+</code></pre></div></code></pre>
+<p><code>sem_trywait</code> 是非阻塞版。计数大于 0 就减一并返回 0；计数为 0 立刻返回 -1，<code>errno</code> 为 <code>EAGAIN</code>。它一次也不睡。</p>
+<p><code>sem_timedwait</code> 等一个绝对时间点。注意 <code>abs_timeout</code> 是绝对时间，不是相对时长：</p>
+<ul>
+<li><code>struct timespec</code> 的两个成员是 <code>tv_sec</code>（秒）和 <code>tv_nsec</code>（纳秒）。</li>
+<li>时间基准默认是 <code>CLOCK_REALTIME</code>，也就是墙上时钟。系统时间被人改一下，你的超时会提前或者延后。</li>
+<li>想按单调时钟算超时，改用 <code>pthread_cond_timedwait</code> 加 <code>pthread_condattr_setclock</code> 设成 <code>CLOCK_MONOTONIC</code>。</li>
+<li>超时返回 -1，<code>errno</code> 为 <code>ETIMEDOUT</code>。</li>
+</ul>
+<p>绝对时间的写法，跳过相对时长的换算错误：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;time.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;errno.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;semaphore.h&gt;</span></span>
+
+<span class="hljs-comment">/* 最多等 ms 毫秒去拿一个资源 */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">acquire_timeout</span><span class="hljs-params">(<span class="hljs-type">sem_t</span> *sem, <span class="hljs-type">long</span> ms)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timespec</span> <span class="hljs-title">ts</span>;</span>
+
+    <span class="hljs-keyword">if</span> (clock_gettime(CLOCK_REALTIME, &amp;ts) != <span class="hljs-number">0</span>) {
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    ts.tv_sec  += ms / <span class="hljs-number">1000</span>;
+    ts.tv_nsec += (ms % <span class="hljs-number">1000</span>) * <span class="hljs-number">1000000L</span>;
+    <span class="hljs-keyword">if</span> (ts.tv_nsec &gt;= <span class="hljs-number">1000000000L</span>) {     <span class="hljs-comment">/* 纳秒进位，漏了这步会 EINVAL */</span>
+        ts.tv_sec  += <span class="hljs-number">1</span>;
+        ts.tv_nsec -= <span class="hljs-number">1000000000L</span>;
+    }
+
+    <span class="hljs-keyword">while</span> (sem_timedwait(sem, &amp;ts) == <span class="hljs-number">-1</span>) {
+        <span class="hljs-keyword">if</span> (errno == EINTR) {
+            <span class="hljs-keyword">continue</span>;                     <span class="hljs-comment">/* 被信号打断，按同一个截止时间重试 */</span>
+        }
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;                        <span class="hljs-comment">/* ETIMEDOUT 或其他错误 */</span>
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>那个纳秒进位是最常见的错。<code>tv_nsec</code> 合法范围是 0 到 999999999，随手加出来的 <code>1200000000</code> 会让 <code>sem_timedwait</code> 返回 <code>EINVAL</code>，看起来像是超时设置没生效。</p>
+<p><code>sem_getvalue</code> 顺手也放这里：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">sem_getvalue</span><span class="hljs-params">(<span class="hljs-type">sem_t</span> *sem, <span class="hljs-type">int</span> *sval)</span>;   <span class="hljs-comment">/* POSIX.1-2001 */</span>
+</code></pre></div></code></pre>
+<p>它把当前计数写进 <code>*sval</code>。Linux 上，如果此时有线程阻塞在 <code>sem_wait</code>，返回的值是 0，而不是教科书的负数。所以它不能用来数「有几个线程在等」。更重要的限制：这个值在你读到的下一刻就会过期，拿它做「先看一眼再决定要不要 wait」的决策，本质上还是把原子操作拆成了两个非原子步骤。它适合打日志、做监控指标，不适合做控制流。</p>
+<p>三个函数的选择：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>需求</th>
+<th>用哪个</th>
+<th>计数为 0 时的行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>必须拿到，等多久都行</td>
+<td><code>sem_wait</code></td>
+<td>阻塞睡眠，直到有人 post</td>
+</tr>
+<tr>
+<td>拿不到就走别的路</td>
+<td><code>sem_trywait</code></td>
+<td>立即返回 <code>EAGAIN</code></td>
+</tr>
+<tr>
+<td>等一会儿，等不到就放弃</td>
+<td><code>sem_timedwait</code></td>
+<td>睡到截止时间，返回 <code>ETIMEDOUT</code></td>
+</tr>
+</tbody>
+</table></div><p>超时之后接着 <code>sem_post</code> 补一次是不可行的，因为你根本没拿到资源，多 post 一次会把计数虚高。想清楚超时的意图：降级、返回忙、还是丢弃任务。</p>
+<h2 id="七信号量的典型用法生产者消费者" tabindex="-1">七、信号量的典型用法：生产者消费者 <a class="header-anchor" href="#七信号量的典型用法生产者消费者"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>有限缓冲区的生产者消费者是信号量的教科书场景，两个信号量一人管一头：</p>
+<ul>
+<li><code>empty</code>：还能塞几个，初始等于缓冲区容量。</li>
+<li><code>full</code>：已经存了几个，初始 0。</li>
+</ul>
+<p>生产者先 <code>sem_wait(&amp;empty)</code> 占一个空位，写完 <code>sem_post(&amp;full)</code>。消费者反过来。两个方向都不碰对方的计数器，天然分工。</p>
+<p>下面是环形缓冲区的完整实现，配一把互斥锁保护读写指针：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;semaphore.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> BUFFER_SIZE 5</span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> buffer[BUFFER_SIZE];
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> in = <span class="hljs-number">0</span>;
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> out = <span class="hljs-number">0</span>;
+
+<span class="hljs-type">static</span> <span class="hljs-type">sem_t</span> empty;                   <span class="hljs-comment">/* 空位数，初始 BUFFER_SIZE */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">sem_t</span> full;                    <span class="hljs-comment">/* 已填数，初始 0 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">pthread_mutex_t</span> mtx;           <span class="hljs-comment">/* 保护缓冲区指针与数组 */</span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">producer</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    <span class="hljs-type">int</span> item = <span class="hljs-number">1</span>;
+    <span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+        sleep(<span class="hljs-number">1</span>);                     <span class="hljs-comment">/* 1 秒生产一个 */</span>
+        sem_wait(&amp;empty);             <span class="hljs-comment">/* P(empty)：等一个空位 */</span>
+        pthread_mutex_lock(&amp;mtx);
+        buffer[in] = item;
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;[Producer] put %d at %d\n&quot;</span>, item, in);
+        in = (in + <span class="hljs-number">1</span>) % BUFFER_SIZE;
+        item++;
+        pthread_mutex_unlock(&amp;mtx);
+        sem_post(&amp;full);              <span class="hljs-comment">/* V(full)：满位加一 */</span>
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">consumer</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    <span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+        sleep(<span class="hljs-number">2</span>);                     <span class="hljs-comment">/* 2 秒消费一个 */</span>
+        sem_wait(&amp;full);              <span class="hljs-comment">/* P(full)：等一个有数据的槽 */</span>
+        pthread_mutex_lock(&amp;mtx);
+        <span class="hljs-type">int</span> item = buffer[out];
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;[Consumer] get %d from %d\n&quot;</span>, item, out);
+        out = (out + <span class="hljs-number">1</span>) % BUFFER_SIZE;
+        pthread_mutex_unlock(&amp;mtx);
+        sem_post(&amp;empty);             <span class="hljs-comment">/* V(empty)：空位加一 */</span>
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">pthread_t</span> p_tid, c_tid;
+
+    sem_init(&amp;empty, <span class="hljs-number">0</span>, BUFFER_SIZE);
+    sem_init(&amp;full, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>);
+    pthread_mutex_init(&amp;mtx, <span class="hljs-literal">NULL</span>);
+
+    pthread_create(&amp;p_tid, <span class="hljs-literal">NULL</span>, producer, <span class="hljs-literal">NULL</span>);
+    pthread_create(&amp;c_tid, <span class="hljs-literal">NULL</span>, consumer, <span class="hljs-literal">NULL</span>);
+
+    pthread_join(p_tid, <span class="hljs-literal">NULL</span>);
+    pthread_join(c_tid, <span class="hljs-literal">NULL</span>);
+
+    sem_destroy(&amp;empty);
+    sem_destroy(&amp;full);
+    pthread_mutex_destroy(&amp;mtx);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>这段代码看着对称，里面有三处顺序不能换。</p>
+<p>第一处，<code>sem_wait(&amp;empty)</code> 必须在 <code>pthread_mutex_lock(&amp;mtx)</code> 之前。反过来的话，生产者拿着锁在 <code>sem_wait</code> 上睡过去，消费者要消费必须拿到锁，而锁被一个等空位的生产者占着。缓冲区满的时候这个生产者永远等不到空位，拿到锁的消费者也永远来不了。这叫在临界区里阻塞，是标准的死锁配方。</p>
+<p>第二处，<code>sem_post(&amp;full)</code> 放在 <code>pthread_mutex_unlock(&amp;mtx)</code> 之后。代价是消费者被唤醒后会在锁上多等一小会儿，收益是不会出现「计数已经加了，数据还没写完」的窗口。</p>
+<p>第三处，两个信号量的初值方向相反：<code>empty</code> 从满容量起，<code>full</code> 从 0 起。写反了程序不一定立刻崩，但语义整个颠倒，表现是缓冲区越用越乱。</p>
+<p>同一套东西也可以只当一个「限并发阀门」用，不需要缓冲区：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">sem_t</span> gate;
+
+sem_init(&amp;gate, <span class="hljs-number">0</span>, <span class="hljs-number">4</span>);        <span class="hljs-comment">/* 最多 4 个任务同时访问某个外部资源 */</span>
+
+<span class="hljs-type">void</span> *<span class="hljs-title function_">task</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    sem_wait(&amp;gate);          <span class="hljs-comment">/* 拿不到就在这里睡，不去抢 CPU */</span>
+    do_work(arg);
+    sem_post(&amp;gate);
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p>这种用法里 <code>gate</code> 不是数据的前后关系，它就是一个数数器：数的是「现在有几个人在里面」。用 mutex 干这件事只能限成 1 个。</p>
+<h2 id="八信号量与互斥锁的差别" tabindex="-1">八、信号量与互斥锁的差别 <a class="header-anchor" href="#八信号量与互斥锁的差别"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>初学者最容易把二进制信号量当互斥锁用，因为「初值为 1，减到 0 就等」看起来完全一样。差别在所有权。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>互斥锁 <code>pthread_mutex_t</code></th>
+<th>信号量 <code>sem_t</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语义</td>
+<td>所有权：谁加锁谁解锁</td>
+<td>计数：谁都能 post，不认人</td>
+</tr>
+<tr>
+<td>初始状态</td>
+<td>未锁定</td>
+<td>任意值，可以是 0、1、N</td>
+</tr>
+<tr>
+<td>并发度</td>
+<td>只能是 1</td>
+<td>1 到 <code>SEM_VALUE_MAX</code></td>
+</tr>
+<tr>
+<td>归还操作</td>
+<td><code>pthread_mutex_unlock</code>，必须由持有者调</td>
+<td><code>sem_post</code>，任何线程都能调</td>
+</tr>
+<tr>
+<td>谁在等</td>
+<td>实现内部排队，可配优先级继承</td>
+<td>实现内部排队，能查到的只有计数</td>
+</tr>
+<tr>
+<td>能否用于多进程</td>
+<td>需要 <code>PTHREAD_PROCESS_SHARED</code> 加共享内存</td>
+<td><code>pshared</code> 非 0 加共享内存</td>
+</tr>
+<tr>
+<td>能否在信号处理函数里用</td>
+<td>不能</td>
+<td><code>sem_post</code> 可以</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>保护共享数据</td>
+<td>限并发、数资源、跨线程/跨进程通知</td>
+</tr>
+</tbody>
+</table></div><p>所有权带来的差异比看上去大。互斥锁能检测出一类用错：释放一把别人持有的锁，配置了 <code>PTHREAD_MUTEX_ERRORCHECK</code> 时返回 <code>EPERM</code>。信号量没有这个概念，多 post 一次没有任何报错，只是计数虚高，然后某个线程永远等不到。</p>
+<p>反过来说，信号量的「无主」也是它有用的地方。三个人要拆掉同一个任务，谁先干完谁 post 一次表示「我这边完事了」，用 mutex 根本表达不了，因为干活的不持有任何锁。</p>
+<p>一句话的选择标准：保护一块共享数据就是 mutex；表达「现在还有几份资源」「已经完成了几件事」就是 semaphore；当锁用的二进制信号量不是不能用，是拿不到错误检查、拿不到优先级继承、也拿不到 robust 属性，没有理由这么干。</p>
+<p>POSIX 也给互斥锁留了跨进程的路径，但要显式设属性：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">pthread_mutexattr_t</span> attr;
+pthread_mutexattr_init(&amp;attr);
+pthread_mutexattr_setpshared(&amp;attr, PTHREAD_PROCESS_SHARED);
+<span class="hljs-comment">/* 之后把 mutex 放进共享内存再用 pthread_mutex_init 初始化 */</span>
+</code></pre></div></code></pre>
+<p>信号量做这件事只要 <code>sem_init(&amp;sem, 1, n)</code>，少一层配置，这是它在多进程场景里更顺手的原因。</p>
+<h2 id="九条件变量是什么等一个条件成立" tabindex="-1">九、条件变量是什么：等一个条件成立 <a class="header-anchor" href="#九条件变量是什么等一个条件成立"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>信号量能数「几份」，数不了「什么状态」。条件变量专门补这块。</p>
+<p><code>pthread_cond_t</code> 本身不存任何值。它就是一个等待队列的把手：线程挂上去，别人把它叫醒。条件成立与否，存在你的普通变量里，不存在条件变量里。</p>
+<p><code>pthread_cond_t</code> 提供六个操作，返回 0 表示成功，失败返回错误码而不是设 <code>errno</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">pthread_cond_init</span><span class="hljs-params">(<span class="hljs-type">pthread_cond_t</span> *cond, <span class="hljs-type">const</span> <span class="hljs-type">pthread_condattr_t</span> *attr)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_cond_destroy</span><span class="hljs-params">(<span class="hljs-type">pthread_cond_t</span> *cond)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_cond_wait</span><span class="hljs-params">(<span class="hljs-type">pthread_cond_t</span> *cond, <span class="hljs-type">pthread_mutex_t</span> *mutex)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_cond_timedwait</span><span class="hljs-params">(<span class="hljs-type">pthread_cond_t</span> *cond, <span class="hljs-type">pthread_mutex_t</span> *mutex,
+                           <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> timespec *abs_timeout)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_cond_signal</span><span class="hljs-params">(<span class="hljs-type">pthread_cond_t</span> *cond)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_cond_broadcast</span><span class="hljs-params">(<span class="hljs-type">pthread_cond_t</span> *cond)</span>;
+</code></pre></div></code></pre>
+<p><code>wait</code> 类函数失败返回时锁仍在手上，失败路径也要解锁。</p>
+<p>静态初始化省掉一次 init：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">pthread_cond_t</span>  cond = PTHREAD_COND_INITIALIZER;
+<span class="hljs-type">pthread_mutex_t</span> mtx  = PTHREAD_MUTEX_INITIALIZER;
+</code></pre></div></code></pre>
+<p>核心模式围绕同一个谓词，等待侧和通知侧各一半：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 等待侧：谓词不成立就睡，醒来重新判断 */</span>
+pthread_mutex_lock(&amp;mtx);
+<span class="hljs-keyword">while</span> (!condition_true()) {
+    pthread_cond_wait(&amp;cond, &amp;mtx);
+}
+take_action();                         <span class="hljs-comment">/* 此处谓词成立，且锁在手 */</span>
+pthread_mutex_unlock(&amp;mtx);
+
+<span class="hljs-comment">/* 通知侧：先改状态，再叫醒 */</span>
+pthread_mutex_lock(&amp;mtx);
+make_condition_true();
+pthread_cond_signal(&amp;cond);
+pthread_mutex_unlock(&amp;mtx);
+</code></pre></div></code></pre>
+<p>这套模式里有三条纪律，每条都对应一类真实故障：</p>
+<ol>
+<li>条件必须是真的由你维护的共享变量，不是「信号量里的计数」。条件变量不知道你的谓词是什么。</li>
+<li>检查条件时必须在持有互斥锁的状态下。裸读共享变量，读到的是正在被写的中间值。</li>
+<li>改状态的那个线程，改完要发通知，而且通知可以在持锁时发，也可以在解锁后发。持锁时发更稳妥，代价是被唤醒的线程醒来先卡在锁上。</li>
+</ol>
+<p>条件变量的语义边界值得说清楚：<code>pthread_cond_signal</code> 只是「把至少一个等待者标记成可继续执行」，它不保存。如果此刻没人在等，这次 signal 直接蒸发，不会留下一个「欠着一次唤醒」的记账。信号量不一样，<code>sem_post</code> 在没人等的时候把计数加了 1，后来的线程立刻能取到。这就是条件变量必须配一个自己的谓词变量的根本原因：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 错：signal 早于 wait，唤醒丢失，等待方永远睡下去 */</span>
+<span class="hljs-type">void</span> *<span class="hljs-title function_">waiter</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span> {
+    pthread_mutex_lock(&amp;m);
+    pthread_cond_wait(&amp;c, &amp;m);       <span class="hljs-comment">/* 永远等不到 */</span>
+    pthread_mutex_unlock(&amp;m);
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-comment">/* 对：用一个标志位记住「事情已经发生过」 */</span>
+<span class="hljs-type">int</span> happened = <span class="hljs-number">0</span>;
+
+<span class="hljs-type">void</span> *<span class="hljs-title function_">producer2</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span> {
+    pthread_mutex_lock(&amp;m);
+    happened = <span class="hljs-number">1</span>;                    <span class="hljs-comment">/* 状态记在变量里，不指望条件变量记账 */</span>
+    pthread_cond_signal(&amp;c);
+    pthread_mutex_unlock(&amp;m);
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-type">void</span> *<span class="hljs-title function_">consumer2</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span> {
+    pthread_mutex_lock(&amp;m);
+    <span class="hljs-keyword">while</span> (!happened) {
+        pthread_cond_wait(&amp;c, &amp;m);   <span class="hljs-comment">/* signal 先到也没事，happened 已经是 1 */</span>
+    }
+    pthread_mutex_unlock(&amp;m);
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p><code>happened</code> 这个变量就是状态本身，<code>cond</code> 只是让等待者能睡着的工具。所有的正确性都压在 <code>happened</code> 上，这个认识建立起来之后，条件变量剩下的坑都好绕。</p>
+<h2 id="十pthread_cond_wait-为什么必须配互斥锁" tabindex="-1">十、pthread_cond_wait 为什么必须配互斥锁 <a class="header-anchor" href="#十pthread_cond_wait-为什么必须配互斥锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这个问题经常被反问：既然 <code>pthread_cond_wait</code> 会解锁，我为什么不能不加锁直接等？</p>
+<p>因为解锁和睡眠必须是同一个原子动作，而这只有 mutex 能提供。</p>
+<p><code>pthread_cond_wait(&amp;cond, &amp;mutex)</code> 内部的四个动作：</p>
+<ol>
+<li>把当前线程挂到 <code>cond</code> 的等待队列上。</li>
+<li>原子地释放 <code>mutex</code>。</li>
+<li>睡眠，让出 CPU。</li>
+<li>被唤醒后，先把 <code>mutex</code> 重新加回来，再从函数返回。</li>
+</ol>
+<p>第 1 步和第 2 步之间不能有窗口。假定没有互斥锁，线程自己先判断 <code>if (empty) sleep()</code>，然后才挂到等待队列上，中间这一段时间里生产者正好跑完「填数据 + signal」。signal 发出时等待队列还是空的，事件丢了，随后这个线程才挂上去，一直睡到程序结束。这就是丢失唤醒（lost wakeup）。</p>
+<p>拿互斥锁之后，这个窗口被堵住了。生产者要发 signal，它必须先在同一个 mutex 上加锁，而消费者在挂入队列并释锁之前一直持有这把锁。于是两种顺序都安全：</p>
+<ul>
+<li>消费者先挂上队列并释放锁，生产者随后拿锁、改状态、signal，唤醒送达。</li>
+<li>生产者先拿锁、改状态、signal、解锁；消费者随后拿锁，一检查谓词发现已经成立，压根不进等待循环。</li>
+</ul>
+<p>第 4 步同样重要。醒来时线程重新持有 mutex，所以 <code>pthread_cond_wait</code> 返回之后，它看到的共享状态是一致的，可以放心地再判断一次谓词。没有这把锁，返回那一刻的状态也许正在被别人改。</p>
+<p>从调用者的角度看，有两件事必须记住：</p>
+<ul>
+<li>传进去的 mutex 必须是当前线程已经持有的，否则行为未定义。</li>
+<li>函数返回时，mutex 又回到持有状态，你欠它一次 <code>unlock</code>。醒来那一刻也会出现没有任何业务原因的情况（下一章的虚假唤醒），所以判断必须用 <code>while</code> 而不是 <code>if</code>。</li>
+</ul>
+<p>最后一个常被忽略的点：条件变量与 mutex 是一对多的关系。多个条件变量共用一把 mutex 完全正常，同一个锁保护的几个不同谓词，各自挂一个 cond。反过来，一个条件变量配多把不同的 mutex，是错的。<code>pthread_cond_wait</code> 只认你这次传进来的那把，别的等待者传了另一把，唤醒逻辑就跟锁脱钩了。</p>
+<h2 id="十一signal-与-broadcast-的区别" tabindex="-1">十一、signal 与 broadcast 的区别 <a class="header-anchor" href="#十一signal-与-broadcast-的区别"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>两个唤醒函数，一个叫一个或多个，一个叫全部：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">pthread_cond_signal</span><span class="hljs-params">(<span class="hljs-type">pthread_cond_t</span> *cond)</span>;      <span class="hljs-comment">/* 至少唤醒一个等待者 */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_cond_broadcast</span><span class="hljs-params">(<span class="hljs-type">pthread_cond_t</span> *cond)</span>;   <span class="hljs-comment">/* 唤醒全部等待者 */</span>
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th><code>pthread_cond_signal</code></th>
+<th><code>pthread_cond_broadcast</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>唤醒范围</td>
+<td>至少一个等待线程</td>
+<td>该 cond 上全部等待线程</td>
+</tr>
+<tr>
+<td>无等待者时</td>
+<td>空操作，事件不记账</td>
+<td>空操作，事件不记账</td>
+</tr>
+<tr>
+<td>CPU 开销</td>
+<td>小，只有一个线程参与调度</td>
+<td>大，全部线程醒来抢同一把锁</td>
+</tr>
+<tr>
+<td>适用条件</td>
+<td>一次事件能满足其中一个等待者</td>
+<td>一次事件能满足多个，或无法判断满足谁</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>队列放进一个元素</td>
+<td>状态整体翻转、多个等待者的条件同时成立</td>
+</tr>
+</tbody>
+</table></div><p>分界线在这里：一次状态改变，能让几个等待者通过谓词检查？</p>
+<p>典型的生产者消费者：放进一个元素，最多让一个消费者拿到。用 <code>signal</code> 就够了。用 <code>broadcast</code> 也不会错，只是会出现「一堆消费者被叫醒，抢锁，第一个拿走，其余发现又空了，回去接着睡」，白跑一趟。这叫惊群（thundering herd）。线程少的时候感觉不出来，线程多、事件密的时候，这些空转的唤醒是实打实的开销。</p>
+<p>反过来看另一种情况：多个等待者在等「初始化完成」这个条件。初始化一完成，所有等待者都能往下走。这时用 <code>signal</code> 就是 bug，因为只放行一个，其余的继续睡着，而这个事件再也不会发生第二次。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> inited = <span class="hljs-number">0</span>;
+
+<span class="hljs-comment">/* 一次完成、多人受益：必须 broadcast */</span>
+<span class="hljs-type">void</span> *<span class="hljs-title function_">init_once</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    pthread_mutex_lock(&amp;m);
+    do_init();
+    inited = <span class="hljs-number">1</span>;
+    pthread_cond_broadcast(&amp;c);      <span class="hljs-comment">/* 用 signal 会让其余等待者永久睡死 */</span>
+    pthread_mutex_unlock(&amp;m);
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p>还有一类场景要注意：等的是不同谓词，却挂在同一个 cond 上。比如「队列非空」和「收到退出请求」共用一个 cond，<code>signal</code> 只是随机叫一个，叫到那个等退出请求的线程，写入方那边的事件就没人处理。被叫醒的线程检查谓词不成立，回去继续睡，这一次唤醒就此消耗掉。可以换两个 cond 分开放，也可以一律 <code>broadcast</code> 加谓词判断，后者简单但更耗。标准做法是给每个谓词配自己的 cond，让唤醒精度对上谓词。</p>
+<p><code>signal</code> 在实现上允许一次唤醒多于一个线程，POSIX 的措辞是「至少一个」。所以哪怕你只想要一个，也不能指望「只醒一个」这件事成立。<code>while</code> 循环在这里再次兜底。</p>
+<p>这两个函数在调用时不要求持有 mutex。持锁发和释锁后发都合法，只是持锁发更可预测，唤醒方和等待方不会出现「通知已经发出，但状态还没提交」的错觉。</p>
+<h2 id="十二虚假唤醒与循环判断" tabindex="-1">十二、虚假唤醒与循环判断 <a class="header-anchor" href="#十二虚假唤醒与循环判断"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>pthread_cond_wait</code> 返回，不等于「我要等的事情发生了」。它有三种返回方式：</p>
+<ol>
+<li>别的线程调了 <code>signal</code> 或 <code>broadcast</code>。</li>
+<li>硬件信号打断了睡眠，实现选择直接返回。</li>
+<li>内核或库内部唤醒，没有任何业务原因。</li>
+</ol>
+<p>第 2、3 条合称虚假唤醒（spurious wakeup）。规范允许它出现，所以代码必须假设它会出现。</p>
+<p>防它的办法就是把 <code>if</code> 换成 <code>while</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 错：假醒来一次，直接往下走，读到的是空队列 */</span>
+pthread_mutex_lock(&amp;mtx);
+<span class="hljs-keyword">if</span> (queue_empty()) {
+    pthread_cond_wait(&amp;cond, &amp;mtx);
+}
+item = queue_pop();              <span class="hljs-comment">/* 队列仍然空，读到垃圾 */</span>
+pthread_mutex_unlock(&amp;mtx);
+
+<span class="hljs-comment">/* 对：醒来之后重新验证谓词 */</span>
+pthread_mutex_lock(&amp;mtx);
+<span class="hljs-keyword">while</span> (queue_empty()) {
+    pthread_cond_wait(&amp;cond, &amp;mtx);
+}
+item = queue_pop();
+pthread_mutex_unlock(&amp;mtx);
+</code></pre></div></code></pre>
+<p><code>while</code> 做的是「醒来后重新检查条件」，假醒来的线程发现条件不成立，重新挂回等待队列，代价是一次多余的循环。用 <code>if</code> 就少了这一次检查，直接把判断权交给了不知情的唤醒。第二个理由在多个线程抢同一把锁时出现：第一个抢到的人拿走资源，后面的人进临界区时条件已经变了，<code>while</code> 让它们退回去接着等，<code>if</code> 让它们误以为拿到了。使用 <code>broadcast</code> 时这种情形是必然的。</p>
+<p>写成循环时，谓词要自己再读一遍共享变量。别把上次判断的结果缓存进局部变量，那个值在睡着期间会过期，醒来后必须重新算。</p>
+<p>条件本身可以复杂，但必须是在持有锁时能算出来的判断：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>pthread_mutex_lock(&amp;mtx);
+<span class="hljs-keyword">while</span> (queue_count == <span class="hljs-number">0</span> &amp;&amp; !quit_requested) {
+    pthread_cond_wait(&amp;cond, &amp;mtx);
+}
+<span class="hljs-keyword">if</span> (queue_count == <span class="hljs-number">0</span> &amp;&amp; quit_requested) {
+    pthread_mutex_unlock(&amp;mtx);
+    <span class="hljs-keyword">break</span>;                        <span class="hljs-comment">/* 退出路径一样要清锁 */</span>
+}
+item = queue_pop();
+pthread_mutex_unlock(&amp;mtx);
+</code></pre></div></code></pre>
+<p>谓词里包了退出标志，这是服务端线程最常用的写法：一个 cond 管两种事件，醒来先看退出，再看数据。</p>
+<h2 id="十三条件变量的典型用法" tabindex="-1">十三、条件变量的典型用法 <a class="header-anchor" href="#十三条件变量的典型用法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>最基本的形态是单生产者单消费者：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">pthread_mutex_t</span> mtx  = PTHREAD_MUTEX_INITIALIZER;
+<span class="hljs-type">static</span> <span class="hljs-type">pthread_cond_t</span>  cond = PTHREAD_COND_INITIALIZER;
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> storage = <span class="hljs-number">0</span>;                 <span class="hljs-comment">/* 仓库里现有的件数 */</span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">consumer</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    <span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+        pthread_mutex_lock(&amp;mtx);
+        <span class="hljs-keyword">while</span> (storage == <span class="hljs-number">0</span>) {          <span class="hljs-comment">/* 用 while 不用 if，防虚假唤醒 */</span>
+            pthread_cond_wait(&amp;cond, &amp;mtx);   <span class="hljs-comment">/* 解锁挂起，醒来自动重锁 */</span>
+        }
+        storage--;
+        pthread_mutex_unlock(&amp;mtx);
+        sleep(<span class="hljs-number">2</span>);                       <span class="hljs-comment">/* 消费慢一点 */</span>
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">producer</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    <span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+        sleep(<span class="hljs-number">1</span>);                       <span class="hljs-comment">/* 生产快一点 */</span>
+        pthread_mutex_lock(&amp;mtx);
+        storage++;
+        pthread_cond_signal(&amp;cond);     <span class="hljs-comment">/* 叫醒一个消费者 */</span>
+        pthread_mutex_unlock(&amp;mtx);
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">pthread_t</span> t1, t2;
+    pthread_create(&amp;t1, <span class="hljs-literal">NULL</span>, consumer, <span class="hljs-literal">NULL</span>);
+    pthread_create(&amp;t2, <span class="hljs-literal">NULL</span>, producer, <span class="hljs-literal">NULL</span>);
+    pthread_join(t1, <span class="hljs-literal">NULL</span>);
+    pthread_join(t2, <span class="hljs-literal">NULL</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>两个 <code>while(1)</code> 里没有退出路径，<code>pthread_join</code> 永远不会返回。示例为了把骨架压短省掉了退出条件，真实代码里必须有。</p>
+<p>带上限的版本，两个谓词分两个 cond：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> CAP 8</span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> q_count = <span class="hljs-number">0</span>;
+<span class="hljs-type">static</span> <span class="hljs-type">pthread_cond_t</span> not_empty = PTHREAD_COND_INITIALIZER;
+<span class="hljs-type">static</span> <span class="hljs-type">pthread_cond_t</span> not_full  = PTHREAD_COND_INITIALIZER;
+
+<span class="hljs-type">void</span> *<span class="hljs-title function_">bounded_producer</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    pthread_mutex_lock(&amp;mtx);
+    <span class="hljs-keyword">while</span> (q_count == CAP) {
+        pthread_cond_wait(&amp;not_full, &amp;mtx);    <span class="hljs-comment">/* 满就等空位 */</span>
+    }
+    q_count++;
+    pthread_cond_signal(&amp;not_empty);           <span class="hljs-comment">/* 只有「非空」这件事变了 */</span>
+    pthread_mutex_unlock(&amp;mtx);
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-type">void</span> *<span class="hljs-title function_">bounded_consumer</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    pthread_mutex_lock(&amp;mtx);
+    <span class="hljs-keyword">while</span> (q_count == <span class="hljs-number">0</span>) {
+        pthread_cond_wait(&amp;not_empty, &amp;mtx);   <span class="hljs-comment">/* 空就等数据 */</span>
+    }
+    q_count--;
+    pthread_cond_signal(&amp;not_full);            <span class="hljs-comment">/* 只有「不满」这件事变了 */</span>
+    pthread_mutex_unlock(&amp;mtx);
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p>两侧各 <code>signal</code> 一个对应谓词的线程，唤醒精度最高。第三种形态是一次广播放行全部等待者，等的是「可以开工了」：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> started = <span class="hljs-number">0</span>;
+
+<span class="hljs-type">void</span> *<span class="hljs-title function_">wait_start</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    pthread_mutex_lock(&amp;mtx);
+    <span class="hljs-keyword">while</span> (!started) {
+        pthread_cond_wait(&amp;cond, &amp;mtx);
+    }
+    pthread_mutex_unlock(&amp;mtx);
+    do_work(arg);
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-type">void</span> *<span class="hljs-title function_">controller</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    sleep(<span class="hljs-number">1</span>);
+    pthread_mutex_lock(&amp;mtx);
+    started = <span class="hljs-number">1</span>;
+    pthread_cond_broadcast(&amp;cond);      <span class="hljs-comment">/* 所有等开工的线程都放行 */</span>
+    pthread_mutex_unlock(&amp;mtx);
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p>第四种：带超时的等待，超时就退出去检查别的状态。<code>pthread_cond_timedwait</code> 的 <code>abs_timeout</code> 同样是绝对时间，纳秒进位照样要处理，<code>ETIMEDOUT</code> 是预计内的返回而不是错误。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timespec</span> <span class="hljs-title">ts</span>;</span>
+clock_gettime(CLOCK_REALTIME, &amp;ts);
+ts.tv_sec += <span class="hljs-number">2</span>;                          <span class="hljs-comment">/* 最多等 2 秒 */</span>
+
+pthread_mutex_lock(&amp;mtx);
+<span class="hljs-keyword">while</span> (q_count == <span class="hljs-number">0</span>) {
+    <span class="hljs-keyword">if</span> (pthread_cond_timedwait(&amp;cond, &amp;mtx, &amp;ts) == ETIMEDOUT) {
+        <span class="hljs-keyword">break</span>;                           <span class="hljs-comment">/* 超时，跳出等待去处理超时逻辑 */</span>
+    }
+}
+</code></pre></div></code></pre>
+<h2 id="十四三种机制怎么选" tabindex="-1">十四、三种机制怎么选 <a class="header-anchor" href="#十四三种机制怎么选"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>到这里手上有三件工具：互斥锁、信号量、条件变量。选错不难发现，症状是 CPU 占用或者挂死；选对也不难，看一句话：这次同步要表达的是什么。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>判断项</th>
+<th>互斥锁</th>
+<th>信号量</th>
+<th>条件变量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>解决的问题</td>
+<td>同一时刻只能一个人进</td>
+<td>还有几份资源可用</td>
+<td>等一个条件成立</td>
+</tr>
+<tr>
+<td>有状态吗</td>
+<td>有，锁/未锁</td>
+<td>有，整数计数</td>
+<td>没有，条件在你自己的变量里</td>
+</tr>
+<tr>
+<td>有所有权吗</td>
+<td>有</td>
+<td>无</td>
+<td>无</td>
+</tr>
+<tr>
+<td>能限并发数吗</td>
+<td>只能限成 1</td>
+<td>任意 N</td>
+<td>不能</td>
+</tr>
+<tr>
+<td>唤醒落空会怎样</td>
+<td>不适用</td>
+<td>计数留着，后来者受益</td>
+<td>通知蒸发，等待方会一直睡下去</td>
+</tr>
+<tr>
+<td>需要配别的机制吗</td>
+<td>单独用</td>
+<td>单独用，常再配一把锁</td>
+<td>必须配互斥锁</td>
+</tr>
+<tr>
+<td>阻塞时占 CPU 吗</td>
+<td>不占</td>
+<td>不占</td>
+<td>不占</td>
+</tr>
+</tbody>
+</table></div><p>再按场景对一遍：</p>
+<ul>
+<li>保护一个全局链表、一个计数器、一段共享内存区域的读改写。要互斥锁。信号量能替，但没好处。</li>
+<li>限制同时访问某个外部服务的并发数，比如最多 4 个连接。要信号量，初始值 4。mutex 做不到 N。</li>
+<li>线程池里「手上有多少个待处理任务」，主线程投递、worker 取走。要信号量，<code>sem_post</code> 投递、<code>sem_wait</code> 取走，顺带把任务数当长度用。</li>
+<li>等待「队列非空」这种复合条件，尤其是还要同时判断退出标志。要条件变量，因为谓词可以是任意布尔表达式。</li>
+<li>等待「某件事发生过一次」，之后所有线程都该放行。要条件变量加 <code>broadcast</code>，或者把信号量初值设成 0、让 N 个线程各 <code>sem_wait</code> 一次。</li>
+<li>跨进程同步。信号量最省事（<code>pshared</code> 非 0 或命名信号量），互斥锁要配 <code>PTHREAD_PROCESS_SHARED</code>，条件变量同样要这个属性。</li>
+<li>信号处理函数里通知线程。只有 <code>sem_post</code> 能用。</li>
+</ul>
+<p>两个实现层面的补充，能解释一些「看起来同等」的选择为什么有差别：</p>
+<ul>
+<li>条件变量的唤醒是「把线程从等待队列移到就绪队列」，不记账。信号量的 <code>post</code> 是「计数加一」，记账。前者要求你自己维护状态，后者天然带状态。</li>
+<li>信号量配一把锁的组合，临界区里只有数据操作，等资源在临界区外。条件变量的组合，等条件本身就在临界区里（<code>pthread_cond_wait</code> 帮你临时放锁）。结构不一样，出错时的症状也不一样：前者容易在锁内 <code>sem_wait</code> 把自己锁死，后者容易把 <code>while</code> 写成 <code>if</code>。</li>
+</ul>
+<p>最后一条经验：能用条件变量表达的东西，不用「信号量 + 轮询」凑。用信号量表达不了的条件，硬凑出来的一定带着一个定时器和一段 <code>usleep</code>。</p>
+<h2 id="十五易错点速查" tabindex="-1">十五、易错点速查 <a class="header-anchor" href="#十五易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>编号</th>
+<th>症状</th>
+<th>原因</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>程序空转，CPU 打满</td>
+<td>用 mutex 加轮询等条件</td>
+<td>换条件变量，或信号量</td>
+</tr>
+<tr>
+<td>2</td>
+<td>等待线程永久睡死</td>
+<td><code>signal</code> 早于 <code>wait</code>，通知丢了</td>
+<td>用共享变量记住状态，<code>while</code> 检查谓词</td>
+</tr>
+<tr>
+<td>3</td>
+<td>醒来后读到空数据</td>
+<td><code>if</code> 代替了 <code>while</code>，遇上假唤醒</td>
+<td>判断条件一律用 <code>while</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>偶发读到旧值、脏数据</td>
+<td>改状态的顺序写在 <code>post</code> / <code>signal</code> 之后</td>
+<td>先改数据，再通知</td>
+</tr>
+<tr>
+<td>5</td>
+<td>死锁，且都卡在 sem_wait</td>
+<td>在持有互斥锁时调用 <code>sem_wait</code></td>
+<td>把等资源的操作挪到加锁之前</td>
+</tr>
+<tr>
+<td>6</td>
+<td>计数越用越虚高</td>
+<td>超时或失败路径也 <code>sem_post</code> 了</td>
+<td>只有真拿到资源才 <code>post</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>段错误，位置飘忽</td>
+<td><code>sem_destroy</code> 时还有线程阻塞在它上面</td>
+<td>销毁放到所有 <code>join</code> 之后</td>
+</tr>
+<tr>
+<td>8</td>
+<td>父子进程同步失效</td>
+<td><code>pshared</code> 设了非 0，但内存不是共享的</td>
+<td><code>sem_t</code> 放进 <code>MAP_SHARED</code> 共享内存</td>
+</tr>
+<tr>
+<td>9</td>
+<td>命名信号量初值不对</td>
+<td>上次进程退出没清理，残留了旧计数</td>
+<td><code>sem_open</code> 后 <code>sem_unlink</code>，或先处理残留</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>sem_timedwait</code> 返回 <code>EINVAL</code></td>
+<td><code>tv_nsec</code> 加出界没进位</td>
+<td>满 <code>1000000000</code> 就进位到 <code>tv_sec</code></td>
+</tr>
+<tr>
+<td>11</td>
+<td>超时时间不准，忽长忽短</td>
+<td><code>CLOCK_REALTIME</code> 被系统时间调整影响</td>
+<td>换单调时钟，或用 <code>pthread_cond_timedwait</code> 配 <code>CLOCK_MONOTONIC</code></td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>sem_wait</code> 莫名返回 -1</td>
+<td>被信号打断，<code>errno</code> 是 <code>EINTR</code></td>
+<td>循环里判 <code>EINTR</code> 就重试</td>
+</tr>
+<tr>
+<td>13</td>
+<td>该醒的线程没醒</td>
+<td>多个谓词共用一个 cond，<code>signal</code> 叫错了人</td>
+<td>每个谓词配自己的 cond，或改 <code>broadcast</code></td>
+</tr>
+<tr>
+<td>14</td>
+<td>唤醒后卡在锁上很久</td>
+<td>持锁期间发了通知</td>
+<td>通知移到 <code>unlock</code> 之后，或压缩临界区</td>
+</tr>
+<tr>
+<td>15</td>
+<td>信号处理函数里崩溃</td>
+<td>在里面用了 <code>pthread_mutex_lock</code> / <code>pthread_cond_signal</code></td>
+<td>只用 <code>sem_post</code>，其余交给普通线程</td>
+</tr>
+<tr>
+<td>16</td>
+<td>显式初始化后行为异常</td>
+<td>对已初始化的对象又 <code>sem_init</code> 一次</td>
+<td>先 <code>destroy</code> 再 <code>init</code>，或改用静态初始化</td>
+</tr>
+<tr>
+<td>17</td>
+<td>程序在退出时崩溃</td>
+<td>主线程已退出，后台线程还在用锁</td>
+<td><code>join</code> 全部线程，再销毁同步对象</td>
+</tr>
+</tbody>
+</table></div><p>配套的一组检查动作，写完之后自己过一遍：</p>
+<ul>
+<li>每一个 <code>pthread_cond_wait</code> 外面是不是 <code>while</code>，不是 <code>if</code>。</li>
+<li>每一个 <code>pthread_cond_wait</code> 传的 mutex，是不是在上一步 <code>lock</code> 过的。</li>
+<li>每一次 <code>post</code> / <code>signal</code> 之前，对应的数据是不是已经写好。</li>
+<li>每一个 <code>sem_wait</code> 是不是都在互斥锁外面。</li>
+<li>每一个 <code>sem_init</code> 都有一个配对的 <code>sem_destroy</code>，且位置在所有 <code>join</code> 之后。</li>
+<li>每一条失败路径，是不是都解锁了。</li>
+</ul>
+<p>这六条过完，绝大多数坑就避开了，剩下的问题基本都在性能层面。三件工具的分工很干净：互斥锁管「谁能进」，信号量管「还有几份」，条件变量管「等到什么时候」。把每处等待归到这三类里，代码会变得好读，也会变得难写错。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一互斥锁解决不了的问题" data-toc-target="一互斥锁解决不了的问题">一、互斥锁解决不了的问题</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二信号量是什么资源计数器" data-toc-target="二信号量是什么资源计数器">二、信号量是什么：资源计数器</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三匿名信号量与命名信号量" data-toc-target="三匿名信号量与命名信号量">三、匿名信号量与命名信号量</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四sem_init-与-sem_destroy" data-toc-target="四sem_init-与-sem_destroy">四、sem_init 与 sem_destroy</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五sem_wait-与-sem_post" data-toc-target="五sem_wait-与-sem_post">五、sem_wait 与 sem_post</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六sem_trywait-与-sem_timedwait" data-toc-target="六sem_trywait-与-sem_timedwait">六、sem_trywait 与 sem_timedwait</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七信号量的典型用法生产者消费者" data-toc-target="七信号量的典型用法生产者消费者">七、信号量的典型用法：生产者消费者</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八信号量与互斥锁的差别" data-toc-target="八信号量与互斥锁的差别">八、信号量与互斥锁的差别</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九条件变量是什么等一个条件成立" data-toc-target="九条件变量是什么等一个条件成立">九、条件变量是什么：等一个条件成立</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十pthread_cond_wait-为什么必须配互斥锁" data-toc-target="十pthread_cond_wait-为什么必须配互斥锁">十、pthread_cond_wait 为什么必须配互斥锁</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一signal-与-broadcast-的区别" data-toc-target="十一signal-与-broadcast-的区别">十一、signal 与 broadcast 的区别</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二虚假唤醒与循环判断" data-toc-target="十二虚假唤醒与循环判断">十二、虚假唤醒与循环判断</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三条件变量的典型用法" data-toc-target="十三条件变量的典型用法">十三、条件变量的典型用法</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四三种机制怎么选" data-toc-target="十四三种机制怎么选">十四、三种机制怎么选</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五易错点速查" data-toc-target="十五易错点速查">十五、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","title":"信号量与条件变量：等待与唤醒","url":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","type":"current"},{"id":"/D.操作系统/03-线程与同步/Pthread-线程生命周期：创建、取消与清理/","title":"Pthread 线程生命周期：创建、取消与清理","url":"/D.操作系统/03-线程与同步/Pthread-线程生命周期：创建、取消与清理/","type":"neighbor"},{"id":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","title":"futex：用户态同步原语","url":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","type":"neighbor"},{"id":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","title":"互斥锁：从 API 到优先级继承","url":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","type":"neighbor"},{"id":"/D.操作系统/03-线程与同步/多线程并发服务器实战/","title":"多线程并发服务器实战","url":"/D.操作系统/03-线程与同步/多线程并发服务器实战/","type":"neighbor"}],"links":[{"source":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","target":"/D.操作系统/03-线程与同步/Pthread-线程生命周期：创建、取消与清理/","type":"neighbor"},{"source":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","target":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","type":"neighbor"},{"source":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","target":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","type":"neighbor"},{"source":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","target":"/D.操作系统/03-线程与同步/多线程并发服务器实战/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

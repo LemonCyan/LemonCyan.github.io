@@ -1,0 +1,1550 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ZeroMQ：消息队列库的架构与模式 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">ZeroMQ：消息队列库的架构与模式</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/F.通信与协议/05-应用层与中间件/ZeroMQ：消息队列库的架构与模式/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">ZeroMQ：消息队列库的架构与模式</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">ZeroMQ：消息队列库的架构与模式</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>本篇讲 ZeroMQ 这个库：它把 socket 编程抽象成几种固定的通信模式，以及这些模式在内部怎么跑起来。</p>
+<p>讲什么：五种核心模式（REQ/REP、PUB/SUB、PUSH/PULL、DEALER/ROUTER、PAIR）、四种传输方式（<code>inproc</code> / <code>ipc</code> / <code>tcp</code> / <code>pgm</code>）、I/O 线程与 Poller 的内部结构、无 Broker 带来的好处与代价。</p>
+<p>不讲什么：libzmq 的编译期裁剪、各语言绑定的安装细节、建在 ZMQ 之上的扩展协议（Majordomo、Zyre 这类）的设计取舍。构建步骤只在讲传输方式时顺带提一句，不展开。</p>
+<p>跨篇指路：MQTT 那篇讲<strong>协议</strong>——报文格式固定，必须有 Broker 中转，Topic 是协议的一部分。通讯概念辨析那篇讲 socket、RPC、消息队列这些词的边界。本篇讲<strong>库</strong>——没有标准报文，没有中心节点，对端必须是 ZeroMQ。</p>
+<p>一句话分清：MQTT 是大家共同遵守的规矩，ZeroMQ 是两个程序之间私下的约定。</p>
+</blockquote>
+<h2 id="一zeromq-是什么" tabindex="-1">一、ZeroMQ 是什么 <a class="header-anchor" href="#一zeromq-是什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>ZeroMQ 是一个基于消息的多线程网络库。它把底层套接字类型、连接处理、数据帧、路由这些细节全部包起来，让你用同一套 API 跨多种传输协议发消息。</p>
+<p>它的位置很有意思：夹在应用层和传输层之间。下面的 TCP/UDP 它照用，上面的消息语义它自己造。拿 TCP/IP 的四层划分去看，它既不属于传输层，也不是完整的应用层协议，更像是「应用层的一部分，只是被做成了库」。</p>
+<h3 id="它到底抽象掉了什么" tabindex="-1">它到底抽象掉了什么 <a class="header-anchor" href="#它到底抽象掉了什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>裸写 socket 的时候，每一件事都要你自己做：</p>
+<ul>
+<li>连接管理：谁 listen，谁 connect，accept 之后 fd 怎么存</li>
+<li>重连：对端挂了，退避多久重试，重试几次放弃</li>
+<li>消息边界：TCP 是字节流，你发两个 100 字节的包，对端收到一次 200 字节，得自己定长度前缀</li>
+<li>多对多路由：三个生产者对五个消费者，谁分给谁</li>
+<li>线程安全：socket 能不能跨线程用</li>
+</ul>
+<p>ZeroMQ 把这些全部收进库内部。你剩下的工作只有两件：选一个模式，收发消息。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 裸 socket 的服务器：listen / accept / 自己拆包 / 自己管连接 */</span>
+<span class="hljs-type">int</span> fd = socket(AF_INET, SOCK_STREAM, <span class="hljs-number">0</span>);
+bind(fd, ...);
+listen(fd, <span class="hljs-number">128</span>);
+<span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+    <span class="hljs-type">int</span> c = accept(fd, ...);        <span class="hljs-comment">/* 每个客户端一个 fd，自己存 */</span>
+    <span class="hljs-comment">/* 读到的是一串字节，在哪断开？自己定协议 */</span>
+}
+</code></pre></div></code></pre>
+<p>同样的东西，用 ZeroMQ 写：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> *ctx  = zmq_ctx_new();
+<span class="hljs-type">void</span> *sock = zmq_socket(ctx, ZMQ_REP);
+zmq_bind(sock, <span class="hljs-string">&quot;tcp://*:5555&quot;</span>);
+
+<span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+    <span class="hljs-type">char</span> buf[<span class="hljs-number">256</span>];
+    zmq_recv(sock, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);   <span class="hljs-comment">/* 一次调用就是一条完整消息 */</span>
+    zmq_send(sock, <span class="hljs-string">&quot;ok&quot;</span>, <span class="hljs-number">2</span>, <span class="hljs-number">0</span>);
+}
+</code></pre></div></code></pre>
+<p>没有 accept，没有 fd 数组，没有拆包。<code>zmq_recv</code> 一次返回的就是一条完整消息——边界由库保证，不用你拼。</p>
+<h3 id="选模式是这个库的全部设计" tabindex="-1">「选模式」是这个库的全部设计 <a class="header-anchor" href="#选模式是这个库的全部设计"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>别的网络库给你一堆函数，你自己组合成架构。ZeroMQ 反过来：它先替你把架构定成几种，你从中挑一个。</p>
+<p>这个选择带来两件事。一件是省事——模式的坑有人替你踩过了，PUB/SUB 的扇出、PUSH/PULL 的负载均衡都是现成的。另一件是束手——模式之外的东西它不管，你要做模式没覆盖的事，就得自己加一层。</p>
+<p>所以判断一个需求适不适合 ZeroMQ，问题不是「能不能连上」，而是「能不能塞进这五种模式之一」。塞得进去，代码很短；塞不进去，硬凑会比裸写 socket 更难受。</p>
+<h3 id="名字的来历" tabindex="-1">名字的来历 <a class="header-anchor" href="#名字的来历"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>ZeroMQ 最早脱胎于 AMQP 相关的实现工作，后来走成了独立的一条线：不做 Broker，不做报文规范，只做库。名字里的 MQ 是那个阶段留下来的，跟今天的功能已经对不上。</p>
+<p>这就是下一章要说的事：它不是消息队列。</p>
+<h2 id="二它不是消息队列" tabindex="-1">二、它不是消息队列 <a class="header-anchor" href="#二它不是消息队列"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>第一次看到这个名字的人，脑子里多半浮出 RabbitMQ、Kafka 那种图：一堆客户端连到中间一个服务器，服务器存消息、转发消息、管队列。</p>
+<p>ZeroMQ 没有那个中间服务器。</p>
+<h3 id="没有-broker-进程" tabindex="-1">没有 Broker 进程 <a class="header-anchor" href="#没有-broker-进程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这是最硬的一条差别。ZeroMQ 的部署里，不存在一个需要单独启动、单独监控、单独扩容的中心进程。你的进程调 <code>zmq_bind</code>，另一个进程调 <code>zmq_connect</code>，消息就从内核直接过去。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>RabbitMQ / Kafka：
+  producer ──→ [ Broker 进程 ] ──→ consumer
+                 ↑ 要部署、要监控、挂了全断
+
+ZeroMQ：
+  peer A ←──────── 直连 ────────→ peer B
+       （tcp / ipc / inproc，中间没有第三者）
+</code></pre></div></code></pre>
+<p>没有 Broker 意味着几件事：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>有 Broker（RabbitMQ / Kafka）</th>
+<th>无 Broker（ZeroMQ）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>部署</td>
+<td>多一个必须运行的进程</td>
+<td>只有你的程序本身</td>
+</tr>
+<tr>
+<td>消息落盘</td>
+<td>Broker 负责持久化</td>
+<td>库不管，要自己做</td>
+</tr>
+<tr>
+<td>服务发现</td>
+<td>连 Broker 的地址就行</td>
+<td>得自己知道对端在哪</td>
+</tr>
+<tr>
+<td>单点故障</td>
+<td>Broker 挂了全断</td>
+<td>没有中心点可挂</td>
+</tr>
+<tr>
+<td>跨语言互通</td>
+<td>各语言连同一个 Broker 即可</td>
+<td>对端也得是 ZeroMQ</td>
+</tr>
+<tr>
+<td>运维</td>
+<td>要盯队列深度、堆积、磁盘</td>
+<td>没得盯，出事只看自己的日志</td>
+</tr>
+</tbody>
+</table></div><h3 id="mq在这里指什么" tabindex="-1">「MQ」在这里指什么 <a class="header-anchor" href="#mq在这里指什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>不指队列，指消息。ZeroMQ 处理的是消息（message）这个单位——一次发送就是一条消息，有明确边界，要么整条到，要么不到。它不负责替你决定收完之后放哪、满了丢不丢。</p>
+<p>队列在 ZeroMQ 里只发生在内部：每个连接两端各有一对管道（inbound / outbound pipe），带高水位限制。水位满了，发送端要么阻塞要么丢弃——这取决于套接字类型，也取决于你设的选项。它不是给你当存储用的。</p>
+<h3 id="那它到底解决了什么问题" tabindex="-1">那它到底解决了什么问题 <a class="header-anchor" href="#那它到底解决了什么问题"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>问题不在「消息存哪」，在「消息怎么走」。</p>
+<p>分布式程序要并行，最直接的做法是共享状态加锁。锁一多，死锁、优先级反转、调试困难全来。换成消息传递，每个线程或进程只管自己那份状态，之间靠消息沟通，耦合度立刻降下来。</p>
+<p>ZeroMQ 干的就是把「消息传递」这件事做成几行代码。你不必先架一个 Broker 才能让两个进程通上消息——这是它被大量采用的真实原因。</p>
+<h3 id="什么时候它不适用" tabindex="-1">什么时候它不适用 <a class="header-anchor" href="#什么时候它不适用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li>需要消息不丢、重启后还能重放：去找 Kafka 这类带日志的</li>
+<li>需要 Topic 订阅、通配符、QoS 分级：去找 MQTT Broker</li>
+<li>需要跨语言、跨团队、对端技术栈不受你控制：去找有标准协议的东西</li>
+<li>需要中心化的服务发现与鉴权：ZeroMQ 这块是空的</li>
+</ul>
+<p>反过来，进程内多线程解耦、低延迟的进程间管道、内部服务的 N:M 扇出——这些场景里，ZeroMQ 的代码量和延迟都比架一套 Broker 低。</p>
+<h2 id="三五种通信模式" tabindex="-1">三、五种通信模式 <a class="header-anchor" href="#三五种通信模式"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>模式是 ZeroMQ 的骨架。选错模式，后面写多少代码都别扭。</p>
+<p>先把五种摊开看：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>模式</th>
+<th>方向</th>
+<th>拓扑</th>
+<th>有应答</th>
+<th>谁 bind</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>REQ/REP</td>
+<td>双向，一问一答</td>
+<td>1:N 或 N:1</td>
+<td>有，严格配对</td>
+<td>两侧都行</td>
+<td>同步 RPC</td>
+</tr>
+<tr>
+<td>PUB/SUB</td>
+<td>单向，发布→订阅</td>
+<td>1:N</td>
+<td>无</td>
+<td>PUB 端</td>
+<td>广播、行情推送</td>
+</tr>
+<tr>
+<td>PUSH/PULL</td>
+<td>单向，推→拉</td>
+<td>1:N 或 N:1</td>
+<td>无</td>
+<td>两侧都行</td>
+<td>任务分发、流水线</td>
+</tr>
+<tr>
+<td>DEALER/ROUTER</td>
+<td>双向，异步</td>
+<td>N:M</td>
+<td>有，自己管</td>
+<td>两侧都行</td>
+<td>异步 RPC、代理</td>
+</tr>
+<tr>
+<td>PAIR</td>
+<td>双向，独占</td>
+<td>1:1</td>
+<td>无</td>
+<td>两侧都行</td>
+<td>线程或进程间的私线</td>
+</tr>
+</tbody>
+</table></div><p>看这张表的时候盯四个自由度：<strong>方向</strong>（单向还是双向）、<strong>扇出</strong>（能不能一对多、多对一、多对多）、<strong>应答</strong>（有没有请求回应这层语义）、<strong>独占</strong>（是不是只能有一个对端）。</p>
+<p>这四件事决定了一切。模式一旦定了，连接管理、重连、消息边界、多对多路由这些活就全归库管，你只管收发。</p>
+<h3 id="谁-bind-谁-connect" tabindex="-1">谁 bind 谁 connect <a class="header-anchor" href="#谁-bind-谁-connect"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>ZeroMQ 里 bind 和 connect 的语义跟 TCP 不完全一样：</p>
+<ul>
+<li>两侧都可以 bind，也都可以 connect，没有「服务器必须 listen」这条</li>
+<li>connect 端可以在 bind 端还没起来的时候就 connect，库内部会自动重试，直到对面出现</li>
+<li>一个套接字可以 bind 多个端点，也可以 connect 多个端点</li>
+</ul>
+<p>第二条尤其反直觉。你不用再操心启动顺序——先起的连后起的，照样能通。这条特性在容器编排里很实用，因为副本的启动顺序本来就没保证。</p>
+<h3 id="pair一对一独占" tabindex="-1">PAIR：一对一独占 <a class="header-anchor" href="#pair一对一独占"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>PAIR 是五种模式里最不起眼的一个，规则也最简单：一个 PAIR 套接字只跟一个对端说话，双向，谁都能发。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> *a = zmq_socket(ctx, ZMQ_PAIR);
+zmq_bind(a, <span class="hljs-string">&quot;inproc://pair&quot;</span>);       <span class="hljs-comment">/* 或者 tcp / ipc */</span>
+
+<span class="hljs-type">void</span> *b = zmq_socket(ctx, ZMQ_PAIR);
+zmq_connect(b, <span class="hljs-string">&quot;inproc://pair&quot;</span>);
+
+zmq_send(a, <span class="hljs-string">&quot;ping&quot;</span>, <span class="hljs-number">4</span>, <span class="hljs-number">0</span>);          <span class="hljs-comment">/* 两边都能主动发 */</span>
+</code></pre></div></code></pre>
+<p>它没有应答语义，没有扇出，也没有身份路由。连第二个对端会失败——这是它的定义，不是缺陷。</p>
+<p>用途很窄但很实在：</p>
+<ul>
+<li>两个线程之间的一条私线，比共享内存加锁干净</li>
+<li>父进程与刚 <code>fork</code> 出来的子进程之间的控制通道</li>
+<li>临时加一条旁路，不干扰主拓扑的模式</li>
+</ul>
+<p>有一点要留意：PAIR 不做任何消息重排或去重，发多少收多少。如果一端比另一端快太多，高水位到了照样阻塞。它简单，但不「自动」帮你平衡。</p>
+<h3 id="关于-device" tabindex="-1">关于 Device <a class="header-anchor" href="#关于-device"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>素材里提到的 Device（也叫 proxy），是 ZoneMQ 里把一种模式转成另一种的中间件。最经典的用法是 <code>ROUTER</code> 接 <code>DEALER</code>，把一个 1:N 的请求应答扩展成 N:M：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 一个极简的转发器：前端收请求，后端分发给 worker */</span>
+zmq_proxy(frontend, backend, <span class="hljs-literal">NULL</span>);   <span class="hljs-comment">/* frontend: ROUTER, backend: DEALER */</span>
+</code></pre></div></code></pre>
+<p>一行 <code>zmq_proxy</code> 就能撑起一个 brokerless 的中间层。它不是独立进程，还是你的程序，只是套接字类型选得对。</p>
+<h3 id="选模式的顺序" tabindex="-1">选模式的顺序 <a class="header-anchor" href="#选模式的顺序"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>拿到需求，按这个顺序问自己：</p>
+<ol>
+<li>需要应答吗？不需要就往下走，需要就看是不是一问一答的同步语义</li>
+<li>消息是一对多广播，还是分给某一个消费者？</li>
+<li>生产者会不会有多个？消费者会不会有多个？</li>
+<li>一个请求的往返能不能接受串行等待？</li>
+</ol>
+<p>四个问题答完，模式基本就锁定了。答案对不上的时候，别硬套，先想清楚业务到底要什么。</p>
+<h2 id="四reqrep-与它的限制" tabindex="-1">四、REQ/REP 与它的限制 <a class="header-anchor" href="#四reqrep-与它的限制"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>REQ/REP 是最容易上手的模式，也是最多人第一个撞墙的地方。</p>
+<h3 id="最小实现" tabindex="-1">最小实现 <a class="header-anchor" href="#最小实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>请求端：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> *ctx  = zmq_ctx_new();
+<span class="hljs-type">void</span> *req  = zmq_socket(ctx, ZMQ_REQ);
+zmq_connect(req, <span class="hljs-string">&quot;tcp://127.0.0.1:5555&quot;</span>);
+
+zmq_send(req, <span class="hljs-string">&quot;hello&quot;</span>, <span class="hljs-number">5</span>, <span class="hljs-number">0</span>);
+<span class="hljs-type">char</span> buf[<span class="hljs-number">64</span>];
+zmq_recv(req, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);    <span class="hljs-comment">/* 阻塞，直到对面答话 */</span>
+</code></pre></div></code></pre>
+<p>应答端：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> *rep = zmq_socket(ctx, ZMQ_REP);
+zmq_bind(rep, <span class="hljs-string">&quot;tcp://*:5555&quot;</span>);
+
+<span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+    <span class="hljs-type">char</span> buf[<span class="hljs-number">64</span>];
+    zmq_recv(rep, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);
+    zmq_send(rep, <span class="hljs-string">&quot;world&quot;</span>, <span class="hljs-number">5</span>, <span class="hljs-number">0</span>);      <span class="hljs-comment">/* 必须回，不回就卡死 */</span>
+}
+</code></pre></div></code></pre>
+<p>代码只有十来行，但里面有两条强制性的规矩：REQ 端发完必须收，REP 端收完必须发。这两条不是建议，是库强制的状态机。</p>
+<h3 id="严格同步的真相" tabindex="-1">严格同步的真相 <a class="header-anchor" href="#严格同步的真相"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>REQ 和 REP 各有一个内部状态机，只认两种状态：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>REQ 套接字：
+  [可发送] --send--&gt; [等待回应] --recv--&gt; [可发送]
+
+REP 套接字：
+  [可接收] --recv--&gt; [必须回应] --send--&gt; [可接收]
+</code></pre></div></code></pre>
+<p>在「等待回应」状态里再调 <code>zmq_send</code>，库会返回 <code>-1</code>，<code>errno</code> 是 <code>EFSM</code>（Operation cannot be accomplished in current state）。在「必须回应」状态里再调 <code>zmq_recv</code>，同样报 <code>EFSM</code>。</p>
+<p>这条规矩的含义：<strong>一个 REQ 套接字在同一时刻只能有一个未完成的请求</strong>。发了第一个请求，没等到回应之前，你发不出第二个。</p>
+<h3 id="这个限制为什么让人难受" tabindex="-1">这个限制为什么让人难受 <a class="header-anchor" href="#这个限制为什么让人难受"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>想一下真实场景：客户端要向同一台服务器发两个独立的查询，两个查询之间没有依赖关系，理论上可以并行。</p>
+<p>用 REQ/REP，你只能写成串行：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>zmq_send(req, q1, ...);   <span class="hljs-comment">/* 发查询一 */</span>
+zmq_recv(req, buf, ...);  <span class="hljs-comment">/* 等结果一 —— 这段时间空转 */</span>
+zmq_send(req, q2, ...);   <span class="hljs-comment">/* 才能发查询二 */</span>
+zmq_recv(req, buf, ...);
+</code></pre></div></code></pre>
+<p>两次往返时间相加。第一个请求飞出去、服务器处理、结果回来的这整段时间，客户端什么也干不了。还有更糟的：REP 端只要有一次忘了调 <code>zmq_send</code>，或者处理中途崩了，REQ 端就永久阻塞。ZeroMQ 不会给你超时报错，<code>zmq_recv</code> 就那么等着。想加超时，得自己设 <code>ZMQ_RCVTIMEO</code> 或者用 poller 轮询。</p>
+<h3 id="超时怎么写" tabindex="-1">超时怎么写 <a class="header-anchor" href="#超时怎么写"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> timeout = <span class="hljs-number">3000</span>;   <span class="hljs-comment">/* 毫秒 */</span>
+zmq_setsockopt(req, ZMQ_RCVTIMEO, &amp;timeout, <span class="hljs-keyword">sizeof</span>(timeout));
+
+<span class="hljs-type">int</span> rc = zmq_recv(req, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);
+<span class="hljs-keyword">if</span> (rc == <span class="hljs-number">-1</span> &amp;&amp; errno == EAGAIN) {
+    <span class="hljs-comment">/* 超时了。注意：此刻套接字状态还是「等待回应」，
+       REQ 套接字没法靠 close 之外的手段复位 */</span>
+}
+</code></pre></div></code></pre>
+<p>这里有个坑：REQ 套接字超时之后状态机没有复位，它仍然认为自己在等回应。想继续用这个套接字，常规做法是销毁重建，或者干脆换 DEALER。</p>
+<h3 id="1n-怎么来的" tabindex="-1">1:N 怎么来的 <a class="header-anchor" href="#1n-怎么来的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>REQ 端 connect 多个 REP 端点，或者 REP 端 bind 多个端点、多个 REQ 连上来——这两种都成立。REQ 侧的多个连接之间，请求是轮询分发的；REP 侧的多个客户端，回应会回到正确的那一个。</p>
+<p>也就是说，REP 端天然处理「多个客户端各发各的」，但每个客户端自己仍然是串行的。1:N 说的是服务端能同时接多个客户端，不是说单个客户端能并行发多个请求。</p>
+<h3 id="什么时候该用它" tabindex="-1">什么时候该用它 <a class="header-anchor" href="#什么时候该用它"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li>请求少、延迟不敏感的内部调用</li>
+<li>一次交互能解决的事，比如取一个配置、查一次状态</li>
+<li>学习或验证原型，代码最短</li>
+</ul>
+<p>需要并发、需要流水线、需要超时后继续用同一套接字——换成 DEALER/ROUTER，这是第六章的内容。</p>
+<h2 id="五pubsub-与-pushpull" tabindex="-1">五、PUB/SUB 与 PUSH/PULL <a class="header-anchor" href="#五pubsub-与-pushpull"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这两个模式都是单向的，但用途差得很远。</p>
+<h3 id="pubsub广播" tabindex="-1">PUB/SUB：广播 <a class="header-anchor" href="#pubsub广播"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>PUB 端只管发，不管有没有人听。SUB 端只管收，而且要先声明自己收什么。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 发布端 */</span>
+<span class="hljs-type">void</span> *pub = zmq_socket(ctx, ZMQ_PUB);
+zmq_bind(pub, <span class="hljs-string">&quot;tcp://*:5556&quot;</span>);
+<span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+    zmq_send(pub, <span class="hljs-string">&quot;tick 42&quot;</span>, <span class="hljs-number">7</span>, <span class="hljs-number">0</span>);   <span class="hljs-comment">/* 发完就不管了 */</span>
+}
+
+<span class="hljs-comment">/* 订阅端 */</span>
+<span class="hljs-type">void</span> *sub = zmq_socket(ctx, ZMQ_SUB);
+zmq_connect(sub, <span class="hljs-string">&quot;tcp://127.0.0.1:5556&quot;</span>);
+zmq_setsockopt(sub, ZMQ_SUBSCRIBE, <span class="hljs-string">&quot;&quot;</span>, <span class="hljs-number">0</span>);   <span class="hljs-comment">/* 空串 = 订阅全部 */</span>
+<span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+    <span class="hljs-type">char</span> buf[<span class="hljs-number">64</span>];
+    zmq_recv(sub, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);
+}
+</code></pre></div></code></pre>
+<h3 id="订阅过滤的机制" tabindex="-1">订阅过滤的机制 <a class="header-anchor" href="#订阅过滤的机制"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>ZMQ_SUBSCRIBE</code> 传的是一个<strong>前缀</strong>，不是正则，也不是通配符。<code>&quot;tick&quot;</code> 会匹配 <code>tick 42</code>、<code>ticker</code>，不会匹配 <code>a tick</code>。传空串匹配一切，不设任何订阅则一条也收不到——这个默认值坑过不少人。</p>
+<p>过滤发生在<strong>订阅端</strong>，不在发布端。发布端把所有消息发给所有连上的订阅者，每条消息都要完整走一遍网络，订阅端在自己的进程里丢掉不匹配的。想靠 SUB 的过滤省带宽，做不到。</p>
+<h3 id="慢订阅者会被丢" tabindex="-1">慢订阅者会被丢 <a class="header-anchor" href="#慢订阅者会被丢"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>PUB 端有一个高水位（<code>ZMQ_SNDHWM</code>，默认值在千条量级）。某个订阅者处理太慢，发往它的队列堆到水位，PUB 端就开始丢消息——丢给这个订阅者，不影响别人。这是设计选择：宁可丢，也不让一个慢节点拖垮整个发布端。</p>
+<p>所以 PUB/SUB 适合「最新值有意义、旧值没意义」的场景：实时行情、传感器当前读数、状态广播。不适合「每条都不能丢」的场景，那种要么降速，要么自己加确认层。</p>
+<h3 id="连接时序也是坑" tabindex="-1">连接时序也是坑 <a class="header-anchor" href="#连接时序也是坑"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>订阅端在发布端启动之前就连上，可以。但如果订阅端连上之后、发布端开始发之前，中间有消息过去了，订阅端收不到——因为订阅关系要经过一段时间的握手才生效。等待订阅者全部就位再开始发，常见做法是让 SUB 端反向发个「我准备好了」，或者干脆先睡一会儿。这类握手 ZeroMQ 不管，得你加。</p>
+<h3 id="pushpull管道" tabindex="-1">PUSH/PULL：管道 <a class="header-anchor" href="#pushpull管道"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>PUSH 端往下游推，PULL 端从上游拉。方向固定，PUSH 只能发，PULL 只能收。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 上游：产生任务 */</span>
+<span class="hljs-type">void</span> *push = zmq_socket(ctx, ZMQ_PUSH);
+zmq_bind(push, <span class="hljs-string">&quot;tcp://*:5557&quot;</span>);
+<span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-number">1000</span>; i++) {
+    zmq_send(push, &amp;i, <span class="hljs-keyword">sizeof</span>(i), <span class="hljs-number">0</span>);
+}
+
+<span class="hljs-comment">/* 下游：消费任务，可以起很多个 */</span>
+<span class="hljs-type">void</span> *pull = zmq_socket(ctx, ZMQ_PULL);
+zmq_connect(pull, <span class="hljs-string">&quot;tcp://127.0.0.1:5557&quot;</span>);
+<span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+    <span class="hljs-type">int</span> task;
+    zmq_recv(pull, &amp;task, <span class="hljs-keyword">sizeof</span>(task), <span class="hljs-number">0</span>);
+    <span class="hljs-comment">/* 干活 */</span>
+}
+</code></pre></div></code></pre>
+<h3 id="它自带负载均衡" tabindex="-1">它自带负载均衡 <a class="header-anchor" href="#它自带负载均衡"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>多个 PULL 端连到同一个 PUSH 端，任务会被<strong>均分</strong>给各个消费者。ZeroMQ 内部做的是轮询式分发，不是「谁空闲给谁」。所以下游每个任务耗时不一样的时候，分到手的活就不均匀。</p>
+<p>这个特性让 PUSH/PULL 成了最常用的并行骨架：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>              ┌──→ PULL worker 1
+producer ──→ PUSH ├──→ PULL worker 2
+              └──→ PULL worker 3
+</code></pre></div></code></pre>
+<p>上游只管产生，下游想加就加。没有中心调度器，扩容就是多起一个 worker 进程。</p>
+<h3 id="反过来也能用" tabindex="-1">反过来也能用 <a class="header-anchor" href="#反过来也能用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>PULL 端 bind、PUSH 端 connect 同样成立。想要「worker 主动来找活干」，就让 worker 的 PULL 去 connect 一个固定的 PUSH 地址；想要「worker 在固定端口等」，就反过来。</p>
+<p>多级管道也能串：PUSH → PULL 收下、处理、再 PUSH → 下一级 PULL。这就是流水线。</p>
+<h3 id="两者对比" tabindex="-1">两者对比 <a class="header-anchor" href="#两者对比"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>PUB/SUB</th>
+<th>PUSH/PULL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>消息去向</td>
+<td>广播给所有订阅者</td>
+<td>分给其中一个消费者</td>
+</tr>
+<tr>
+<td>是否丢消息</td>
+<td>慢订阅者会被丢</td>
+<td>水位满时阻塞或丢</td>
+</tr>
+<tr>
+<td>过滤</td>
+<td>订阅端按前缀过滤</td>
+<td>无过滤</td>
+</tr>
+<tr>
+<td>方向</td>
+<td>PUB → SUB</td>
+<td>PUSH → PULL</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>行情、状态广播</td>
+<td>任务分发、流水线</td>
+</tr>
+<tr>
+<td>扩容方式</td>
+<td>多加订阅者（不减少发布端压力）</td>
+<td>多加 worker（真分担）</td>
+</tr>
+</tbody>
+</table></div><p>记一条：<strong>要复制消息用 PUB/SUB，要分掉消息用 PUSH/PULL</strong>。这两个需求搞混，架构从一开始就是错的。</p>
+<h2 id="六dealerrouter异步应答" tabindex="-1">六、DEALER/ROUTER：异步应答 <a class="header-anchor" href="#六dealerrouter异步应答"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>REQ/REP 的同步限制不是缺陷，是设计取舍。真要异步，ZeroMQ 给的答案是 DEALER 和 ROUTER。</p>
+<h3 id="这两个套接字做了什么" tabindex="-1">这两个套接字做了什么 <a class="header-anchor" href="#这两个套接字做了什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>DEALER 和 ROUTER 是 REQ 和 REP 的「脱掉状态机」版本：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>套接字</th>
+<th>相当于</th>
+<th>限制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DEALER</td>
+<td>去掉收发配对的 REQ</td>
+<td>可任意次收发，无 EFSM</td>
+</tr>
+<tr>
+<td>ROUTER</td>
+<td>去掉收发配对的 REP，且带身份路由</td>
+<td>可任意次收发，知道对端身份</td>
+</tr>
+</tbody>
+</table></div><p>DEALER 想发几次发几次，想什么时候收什么时候收。这就是异步的入口。</p>
+<h3 id="router-的身份信封" tabindex="-1">ROUTER 的身份信封 <a class="header-anchor" href="#router-的身份信封"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>ROUTER 最特别的地方：每条收到的消息前面，库会自动塞一个<strong>身份帧（identity frame）</strong>，标识这条消息来自哪个连接。回消息的时候，把这个身份帧原样带上，ROUTER 就把它送回对应那一条连接。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* ROUTER 端：收两条帧，第一条是身份，第二条才是内容 */</span>
+<span class="hljs-type">char</span> ident[<span class="hljs-number">64</span>]; <span class="hljs-type">char</span> body[<span class="hljs-number">256</span>];
+zmq_recv(router, ident, <span class="hljs-keyword">sizeof</span>(ident), <span class="hljs-number">0</span>);
+zmq_recv(router, body, <span class="hljs-keyword">sizeof</span>(body), <span class="hljs-number">0</span>);
+
+<span class="hljs-comment">/* 回应：先发身份，再发内容，顺序不能反 */</span>
+zmq_send(router, ident, <span class="hljs-built_in">strlen</span>(ident), ZMQ_SNDMORE);
+zmq_send(router, reply, <span class="hljs-built_in">strlen</span>(reply), <span class="hljs-number">0</span>);
+</code></pre></div></code></pre>
+<p><code>ZMQ_SNDMORE</code> 是这里的关键：一条逻辑消息可以由多个帧组成，库里保证它们要么整组到、要么整组不到，不会被别的连接的消息插进中间。多帧消息是 ZeroMQ 里唯一可靠的「打包」手段。</p>
+<h3 id="一个异步客户端的骨架" tabindex="-1">一个异步客户端的骨架 <a class="header-anchor" href="#一个异步客户端的骨架"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> *dealer = zmq_socket(ctx, ZMQ_DEALER);
+zmq_connect(dealer, <span class="hljs-string">&quot;tcp://127.0.0.1:5555&quot;</span>);
+
+<span class="hljs-comment">/* 一口气发三个请求，不等回应 */</span>
+<span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-number">3</span>; i++) {
+    zmq_send(dealer, &amp;reqs[i], <span class="hljs-keyword">sizeof</span>(reqs[i]), <span class="hljs-number">0</span>);
+}
+
+<span class="hljs-comment">/* 然后按到达顺序收，收到几个算几个 */</span>
+<span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-number">3</span>; i++) {
+    <span class="hljs-type">int</span> r;
+    zmq_recv(dealer, &amp;r, <span class="hljs-keyword">sizeof</span>(r), <span class="hljs-number">0</span>);
+    <span class="hljs-comment">/* 处理，注意这里不保证和发送顺序一一对应 */</span>
+}
+</code></pre></div></code></pre>
+<p>注意最后那句：回应到达的顺序跟请求发出的顺序<strong>不保证一致</strong>，除非对端是严格串行处理的。要在乱序回应里对上号，得自己在消息体里带请求 ID。</p>
+<h3 id="router--dealer-撑起-nm" tabindex="-1">ROUTER + DEALER 撑起 N:M <a class="header-anchor" href="#router--dealer-撑起-nm"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这是最经典的一段组合拳。ROUTER 面对客户端（每个客户端一个身份），DEALER 面对 worker 池（无状态，随便分），中间由 <code>zmq_proxy</code> 打通：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> *frontend = zmq_socket(ctx, ZMQ_ROUTER);
+<span class="hljs-type">void</span> *backend  = zmq_socket(ctx, ZMQ_DEALER);
+zmq_bind(frontend, <span class="hljs-string">&quot;tcp://*:5555&quot;</span>);
+zmq_bind(backend,  <span class="hljs-string">&quot;tcp://*:5556&quot;</span>);
+
+zmq_proxy(frontend, backend, <span class="hljs-literal">NULL</span>);   <span class="hljs-comment">/* 一直跑，直到进程结束 */</span>
+</code></pre></div></code></pre>
+<p>客户端看到的是一个普通的请求应答接口，背后是一个能横向扩缩的 worker 池。这就是素材里说的「把 1:N 扩展成 N:M」，用一行函数实现。</p>
+<h3 id="状态机没了责任就回来了" tabindex="-1">状态机没了，责任就回来了 <a class="header-anchor" href="#状态机没了责任就回来了"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>DEALER/ROUTER 给你自由，代价是几件事得自己管：</p>
+<ul>
+<li><strong>超时</strong>：没有内建超时，<code>ZMQ_RCVTIMEO</code> 或 poller 自己上</li>
+<li><strong>请求与回应的配对</strong>：消息体里带 ID，自己维护一张待回表</li>
+<li><strong>对端存活检测</strong>：ZeroMQ 有心跳选项，但断线后的业务语义（重发还是放弃）得你定</li>
+<li><strong>背压</strong>：高水位到了是阻塞还是丢，看你怎么设</li>
+</ul>
+<p>一句话：REQ/REP 把复杂度藏在状态机里，DEALER/ROUTER 把它还给你。中小规模用 REQ/REP 更省心，规模上去或者要异步，就得接受这份复杂度。</p>
+<h2 id="七四种传输方式" tabindex="-1">七、四种传输方式 <a class="header-anchor" href="#七四种传输方式"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>ZeroMQ 的端点用类似 URL 的字符串写，格式是 <code>协议://地址</code>。库自己解析出协议、地址、端口，你不用碰 <code>sockaddr</code>。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>inproc://name        进程内，线程之间
+ipc:///tmp/name      进程间，走本机文件系统
+tcp://host:port      机器间，走 TCP
+pgm://iface;addr     组播，一对多
+</code></pre></div></code></pre>
+<h3 id="四种传输的定位" tabindex="-1">四种传输的定位 <a class="header-anchor" href="#四种传输的定位"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>传输</th>
+<th>作用域</th>
+<th>底层</th>
+<th>速度</th>
+<th>跨越主机</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>inproc</code></td>
+<td>同一进程内的线程</td>
+<td>内存拷贝</td>
+<td>最快</td>
+<td>否</td>
+</tr>
+<tr>
+<td><code>ipc</code></td>
+<td>同一台机器的进程</td>
+<td>UNIX 域套接字</td>
+<td>快</td>
+<td>否</td>
+</tr>
+<tr>
+<td><code>tcp</code></td>
+<td>任意可达主机</td>
+<td>TCP</td>
+<td>受网络限制</td>
+<td>是</td>
+</tr>
+<tr>
+<td><code>pgm</code></td>
+<td>局域网组播</td>
+<td>PGM / UDP 封装</td>
+<td>取决于网络</td>
+<td>是（限组播域）</td>
+</tr>
+</tbody>
+</table></div><h3 id="inproc-为什么最快" tabindex="-1">inproc 为什么最快 <a class="header-anchor" href="#inproc-为什么最快"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>inproc://</code> 不经过内核。发消息时，库把消息的所有权从发送线程的队列转移到接收线程的队列，没有系统调用，没有上下文切换，没有序列化。</p>
+<p>有一条硬限制：<strong><code>inproc</code> 的 bind 必须先于 connect</strong>。因为它本质上是在同一进程的套接字注册表里查名字，名字还没注册，连接就失败了，而且不会重试成功。这点跟 <code>tcp</code> 完全相反——<code>tcp</code> 的 connect 可以先于 bind，库会一直重试。这个差异踩过一次就记住了。</p>
+<p><code>inproc</code> 适合的场景：把本来要跨线程共享状态的代码，改成消息传递。多线程写锁的痛苦，换成一对 PUSH/PULL 就没了。</p>
+<h3 id="ipc-的路径写法" tabindex="-1">ipc 的路径写法 <a class="header-anchor" href="#ipc-的路径写法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>UNIX 域套接字，端点后面接绝对路径：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>zmq_bind(sock, <span class="hljs-string">&quot;ipc:///tmp/worker.ipc&quot;</span>);
+</code></pre></div></code></pre>
+<p>注意是三个斜杠：<code>ipc://</code> 加上绝对路径 <code>/tmp/...</code>。少写一个斜杠，路径就变成相对的了。这条在 Linux 上表现为「连不上」，在 Windows 上 <code>ipc</code> 支持有限，跨平台代码里最好别依赖它。</p>
+<p><code>ipc</code> 比 <code>tcp</code> 快，因为绕过了整个 TCP/IP 协议栈和回环接口，但它只能在同一台机器上，而且权限走文件系统那一套。</p>
+<h3 id="tcp-的两个细节" tabindex="-1">tcp 的两个细节 <a class="header-anchor" href="#tcp-的两个细节"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>zmq_bind(sock, <span class="hljs-string">&quot;tcp://*:5555&quot;</span>);        <span class="hljs-comment">/* 绑所有网卡 */</span>
+zmq_bind(sock, <span class="hljs-string">&quot;tcp://127.0.0.1:5555&quot;</span>);<span class="hljs-comment">/* 只绑回环 */</span>
+zmq_connect(sock, <span class="hljs-string">&quot;tcp://10.0.0.5:5555&quot;</span>);
+</code></pre></div></code></pre>
+<p><code>*</code> 表示所有网卡。想只让本机访问就绑 <code>127.0.0.1</code>，这一点跟普通 socket 一致。</p>
+<p><code>tcp</code> 上 ZeroMQ 会自己处理重连，默认的间隔是指数退避，上限在秒级。对端重启的这段时间里，<code>zmq_send</code> 不会失败，消息进了本地队列等着。这意味着——对端不在的时候你照样「发成功了」，别拿 <code>zmq_send</code> 的返回值当送达确认。</p>
+<h3 id="pgm-的适用面" tabindex="-1">pgm 的适用面 <a class="header-anchor" href="#pgm-的适用面"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>PGM 是可靠组播协议，用在「一个发布者、很多订阅者、都在同一个局域网」的场景，比如机房里的行情分发。它的可靠性靠 NAK 重传实现，不是 TCP 那种逐连接确认。</p>
+<p><code>pgm</code> 需要网络设备配合（交换机要开组播），跨公网基本不可用。实际项目里用得少，知道有这个东西就行。</p>
+<h3 id="一份代码换端点" tabindex="-1">一份代码换端点 <a class="header-anchor" href="#一份代码换端点"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>传输方式的最大好处：换传输不用改代码。开发时用 <code>inproc</code>，测试用 <code>ipc</code>，上线用 <code>tcp</code>，改的只是一个字符串。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">const</span> <span class="hljs-type">char</span> *ep = getenv(<span class="hljs-string">&quot;ZMQ_EP&quot;</span>);     <span class="hljs-comment">/* inproc://x / ipc:///tmp/x / tcp://*:5555 */</span>
+zmq_bind(sock, ep);
+</code></pre></div></code></pre>
+<p>把端点做成配置项，本地调试和部署就能用同一套二进制。</p>
+<h3 id="顺带说构建" tabindex="-1">顺带说构建 <a class="header-anchor" href="#顺带说构建"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>要用这些传输，先得有库。</p>
+<p>UNIX 类系统上的流程：确认 <code>libtool</code>、<code>pkg-config</code>、<code>build-essential</code>、<code>autoconf</code>、<code>automake</code> 都在；检查 <code>uuid-dev</code> 包或等效的 RPM 是否已装（缺它 <code>make</code> 会在链接阶段报错）；解压 <code>.tar.gz</code>；跑 <code>./configure</code> 再 <code>make</code>；要装到系统里就 <code>sudo make install</code>；Linux 上装完跑一次 <code>sudo ldconfig</code>，否则动态链接器找不到新库。</p>
+<p>Windows 上：需要 Visual Studio 2008 或更高版本；解压 <code>.zip</code>；在 Visual C++ 里打开 <code>builds\msvc\msvc.sln</code>；编译解决方案；产物在 <code>lib</code> 子目录下。</p>
+<p>多数语言有现成的绑定包，能跳过这一步。自己编译主要为了控制版本和编译选项。</p>
+<h2 id="八内部架构io-线程与-poller" tabindex="-1">八、内部架构：I/O 线程与 Poller <a class="header-anchor" href="#八内部架构io-线程与-poller"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一章是素材里最硬的部分，也是最容易被略过的部分。不理解内部结构，前面那些模式的行为就只能靠背。</p>
+<h3 id="一切从-zmq_init-开始" tabindex="-1">一切从 zmq_init 开始 <a class="header-anchor" href="#一切从-zmq_init-开始"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>调 <code>zmq_ctx_new()</code> 的时候，ZeroMQ 创建一个上下文（context）。上下文里可以带参数，其中一个就是 I/O 线程的数量：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> *ctx = zmq_ctx_new();
+zmq_ctx_set(ctx, ZMQ_IO_THREADS, <span class="hljs-number">4</span>);   <span class="hljs-comment">/* 4 个 I/O 线程 */</span>
+</code></pre></div></code></pre>
+<p>素材里说的「调用 <code>zmq_init</code> 时根据传入参数创建对应数量的 I/O 线程」，讲的就是这件事。默认值是 1 个 I/O 线程，这个数字对吞吐影响很大——单线程的 I/O 在跑满一个核之后就成了瓶颈，加线程能上去。</p>
+<p>但也不是越多越好。每个 I/O 线程有自己的 Poller、自己的事件循环，线程间的消息传递要跨队列。线程数超过实际并发连接数能带来的收益，只会增加调度开销。经验上按核数走，别超过连接数。</p>
+<h3 id="主线程与-io-线程分工" tabindex="-1">主线程与 I/O 线程分工 <a class="header-anchor" href="#主线程与-io-线程分工"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>┌─────────────────────────────────────────────┐
+│ 你的线程（主线程 / 应用线程）                  │
+│   zmq_send / zmq_recv  ← 只碰队列，不碰网络    │
+└──────────────┬──────────────────────────────┘
+               │  Mail Box（进程内的消息队列）
+┌──────────────┴──────────────────────────────┐
+│ I/O 线程（可多个）                            │
+│   Poller ── Reactor 循环 ── 读写内核 socket   │
+└─────────────────────────────────────────────┘
+</code></pre></div></code></pre>
+<p>关键在于：<strong>应用线程从来不直接做网络 I/O</strong>。你调 <code>zmq_send</code>，消息被塞进队列就返回了；真正的 <code>send()</code> 由 I/O 线程完成。你调 <code>zmq_recv</code>，如果没有消息就阻塞在条件变量上，等 I/O 线程收完放进队列再唤醒。</p>
+<p>这就是素材里那句「几乎所有的 I/O 操作都是异步的，从而确保主线程不会被阻塞」的实际含义。</p>
+<h3 id="poller-与-reactor" tabindex="-1">Poller 与 Reactor <a class="header-anchor" href="#poller-与-reactor"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>每个 I/O 线程配一个 Poller。Poller 是经典的 Reactor 模式实现：</p>
+<ol>
+<li>把所有关心的文件描述符注册进去</li>
+<li>调用 <code>poll</code>/<code>epoll_wait</code>/<code>kqueue</code> 之类的系统调用，阻塞等待</li>
+<li>有事件就绪，返回事件列表</li>
+<li>逐个分发到对应的处理器（读、写、连接建立、连接关闭）</li>
+</ol>
+<p>选哪套系统调用，取决于平台和编译时的探测结果：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>平台 / 条件</th>
+<th>使用的机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linux</td>
+<td><code>epoll</code></td>
+</tr>
+<tr>
+<td>macOS / BSD</td>
+<td><code>kqueue</code></td>
+</tr>
+<tr>
+<td>Solaris</td>
+<td><code>devpoll</code> / <code>poll</code></td>
+</tr>
+<tr>
+<td>Windows</td>
+<td>IOCP（完成端口）</td>
+</tr>
+<tr>
+<td>兜底</td>
+<td><code>select</code></td>
+</tr>
+</tbody>
+</table></div><p><code>select</code> 是最后的选择，因为它有文件描述符数量上限且有 O(n) 的扫描开销。能用 <code>epoll</code> 的地方不会退到 <code>select</code>。</p>
+<p>Reactor 的价值在于「一个线程管很多连接」。事件循环不阻塞在任何单个连接上，谁有事就处理谁。这也是为什么 1 个 I/O 线程能撑住成百上千条连接。</p>
+<h3 id="连接是怎么建立起来的" tabindex="-1">连接是怎么建立起来的 <a class="header-anchor" href="#连接是怎么建立起来的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>素材里这段流程讲得很清楚，展开成时序：</p>
+<ol>
+<li>你调 <code>zmq_bind</code> 或 <code>zmq_connect</code></li>
+<li>主线程创建 <code>zmq_listener</code>（bind 时）或 <code>zmq_connecter</code>（connect 时）对象</li>
+<li>通过 Mail Box 把这个对象交给某个 I/O 线程</li>
+<li>I/O 线程把它加入自己的 Poller，开始监听可读/可写事件</li>
+<li>连接建立后，双方做一次握手，交换身份标识</li>
+<li>握手成功，为这条连接创建一个 Session</li>
+<li>Session 关联一对管道（inbound pipe / outbound pipe）</li>
+</ol>
+<p>之后的收发，主线程只需要读写管道，完全不关心底下是 <code>tcp</code> 还是 <code>ipc</code>。</p>
+<h3 id="sessionengine管道" tabindex="-1">Session、Engine、管道 <a class="header-anchor" href="#sessionengine管道"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>素材里还提到一层很多人忽略的结构：<strong>Session 不直接跟内核交换数据，中间隔着一个 Engine</strong>。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>应用线程
+   │  zmq_send / zmq_recv
+   ▼
+ 管道（pipe，无锁队列）
+   │
+   ▼
+ Session  ←── 协议语义层（消息边界、多帧组装、身份）
+   │
+   ▼
+ Engine  ←── 传输适配层（读写 tcp / ipc / inproc）
+   │
+   ▼
+内核 socket
+</code></pre></div></code></pre>
+<p>分层的好处是：<code>tcp</code> 和 <code>ipc</code> 的差异被压在 Engine 里，Session 以上的逻辑不用改。想加一种新传输，主要工作就是写一个 Engine。</p>
+<h3 id="为什么线程数能调" tabindex="-1">为什么线程数能调 <a class="header-anchor" href="#为什么线程数能调"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>因为 I/O 线程之间是独立的：各有一组 Poller、各管一批连接，共享的只有上下文里的少量全局状态。所以加线程能线性扩 I/O 能力，代价是应用线程与 I/O 线程之间的队列竞争会变多。</p>
+<p>这也解释了一个常见现象：单 I/O 线程的程序跑满一个 CPU 核就上不去了，而 <code>top</code> 里看你的应用线程几乎空闲。瓶颈在 I/O 线程，不在你的业务代码。</p>
+<h2 id="九消息在内部怎么流转" tabindex="-1">九、消息在内部怎么流转 <a class="header-anchor" href="#九消息在内部怎么流转"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>从一次 <code>zmq_send</code> 到对端 <code>zmq_recv</code> 返回，中间发生了这些事。</p>
+<h3 id="发送路径" tabindex="-1">发送路径 <a class="header-anchor" href="#发送路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>1. 应用线程调 zmq_send
+2. 库把数据拷进一个 zmq_msg_t（或直接引用，视 API 而定）
+3. 检查目标连接的高水位：满了就阻塞或丢弃（看套接字类型和选项）
+4. 消息挂到对应连接的 outbound pipe（无锁队列）
+5. 唤醒 I/O 线程（或者 I/O 线程本来就在轮询，直接就看到）
+6. I/O 线程从 pipe 取出消息
+7. 加帧头（长度等），写进内核 socket
+8. 内核发送
+</code></pre></div></code></pre>
+<p>第 3 步的水位很关键。<code>ZMQ_SNDHWM</code> 控制的是「每个连接上允许积压多少条」。设太小，突发流量立刻触发阻塞或丢弃；设太大，内存吃不住。默认值在千条量级，够用但不算宽裕。</p>
+<h3 id="接收路径" tabindex="-1">接收路径 <a class="header-anchor" href="#接收路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>1. I/O 线程被 Poller 唤醒，发现 socket 可读
+2. 从内核读出字节，交给 Engine 还原成消息
+3. Engine 把消息交给 Session（处理多帧、身份等语义）
+4. Session 写进 inbound pipe
+5. 唤醒阻塞在 zmq_recv 上的应用线程
+6. 应用线程从 pipe 取出消息，返回
+</code></pre></div></code></pre>
+<p>第 2 步是「消息边界」真正被实现的地方。TCP 给你的是一段字节流，Engine 靠帧头把字节流重新切成一条条消息。这就是你不用自己拆包的原因。</p>
+<h3 id="无锁队列在这里的角色" tabindex="-1">无锁队列在这里的角色 <a class="header-anchor" href="#无锁队列在这里的角色"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>pipe 是无锁队列（lock-free queue），典型实现是单生产者单消费者（SPSC）的环形缓冲。</p>
+<p>为什么能无锁：这条 pipe 的两端是固定的——一头只有应用线程在写，另一头只有某个 I/O 线程在读。既然生产者只有一个、消费者只有一个，就不需要互斥锁，靠原子操作加内存序就能保证正确。</p>
+<p>代价是每条连接要一对 pipe（一个方向一个）。连接数上万的时候，这些队列本身的内存开销也要算进去。</p>
+<h3 id="多帧消息怎么走" tabindex="-1">多帧消息怎么走 <a class="header-anchor" href="#多帧消息怎么走"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>带 <code>ZMQ_SNDMORE</code> 的消息，内部是一个消息组。库里保证这组消息连续地进入 pipe、连续地被写出，不会被其他连接的消息插进来。</p>
+<p>接收端拿到第一个帧之后，可以用 <code>zmq_msg_more()</code> 判断后面还有没有。多帧的意义在于：<strong>它给了你一个原子的打包单位</strong>，而不用自己在消息体里拼长度前缀。</p>
+<h3 id="身份标识在哪一层" tabindex="-1">身份标识在哪一层 <a class="header-anchor" href="#身份标识在哪一层"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>第六章讲 ROUTER 会自动加身份帧。这个身份是握手阶段协商出来的——素材里说的「第一次通信时用 <code>zmq_init</code> 发送身份标识进行认证」，就是这段。</p>
+<p>身份默认是自动生成的随机串，也可以自己设：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>zmq_setsockopt(sock, ZMQ_IDENTITY, <span class="hljs-string">&quot;worker-7&quot;</span>, <span class="hljs-number">8</span>);
+</code></pre></div></code></pre>
+<p>给 worker 设固定身份，ROUTER 端就能认出「这条消息来自 worker-7」。这套机制只做标识，不做鉴权——它不验证身份的真假，别拿它当安全措施。</p>
+<h2 id="十没有-broker-的代价" tabindex="-1">十、没有 Broker 的代价 <a class="header-anchor" href="#十没有-broker-的代价"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>第二章讲了没有 Broker 能省什么。这一章讲它要收什么账。</p>
+<h3 id="收获延迟与部署" tabindex="-1">收获：延迟与部署 <a class="header-anchor" href="#收获延迟与部署"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>直连的路径是最短的：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>有 Broker：A → Broker → B     两次网络往返（或一次入队+一次出队）
+无 Broker：A → B              一次网络往返
+</code></pre></div></code></pre>
+<p>一次中转听起来不多，但在高频调用的链路上会累加。Broker 还要做反序列化、路由查表，有时候还要落盘，这些开销 ZeroMQ 直接没有。单点的问题也没有了——Broker 是集群里最容易变成单点的一环，它挂的时候所有依赖它的服务一起哑。部署上也简单：不用先起中间件，不用配集群，不用管磁盘配额。</p>
+<h3 id="代价一拓扑是静态的" tabindex="-1">代价一：拓扑是静态的 <a class="header-anchor" href="#代价一拓扑是静态的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这是最实在的代价。ZeroMQ 的端点必须在代码或配置里写死——<code>tcp://10.0.0.5:5555</code> 这串东西在编译或者启动时就得存在。对端换了 IP，你得改配置重启；对端扩了一台，新的那台得让所有人知道它在哪。想「按名字找服务」，ZeroMQ 不提供这套东西。</p>
+<p>对比一下有 Broker 的世界：客户端只连一个固定地址，具体有几个后端、后端在哪，全由 Broker 决定。客户端完全不需要知道后端的存在。</p>
+<p>要在 ZeroMQ 上补这块，常见做法是外挂：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>做法</th>
+<th>思路</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>配置文件</td>
+<td>端点列表写进文件，启动时读</td>
+<td>改配置要重启或热加载</td>
+</tr>
+<tr>
+<td>环境变量</td>
+<td>容器编排注入端点</td>
+<td>编排系统成了事实上的注册中心</td>
+</tr>
+<tr>
+<td>自己写注册服务</td>
+<td>一个 REQ/REP 或 PUB/SUB 的注册端点</td>
+<td>又造了一个中心点</td>
+</tr>
+<tr>
+<td>服务网格 / DNS</td>
+<td>用外部设施解析</td>
+<td>引入了新的复杂度</td>
+</tr>
+<tr>
+<td>随机接入点 + 发现协议</td>
+<td>扩展协议（如 Zyre）解决</td>
+<td>非标准，团队要一起学</td>
+</tr>
+</tbody>
+</table></div><p>没有哪一条是「标准答案」。这就是无中心化架构的真实成本：自由换来了责任。</p>
+<h3 id="代价二协议是你的私有约定" tabindex="-1">代价二：协议是你的私有约定 <a class="header-anchor" href="#代价二协议是你的私有约定"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>ZeroMQ 只保证「一条消息完整送达某个端点」，消息体里是什么，它不管。</p>
+<p>要传一个结构体，序列化你自己做。要区分消息类型，自己在消息体里加类型字段。要有版本兼容，自己设计版本号。要做请求超时重发，自己实现重发逻辑。</p>
+<p>有 Broker 的世界里，很多这类事由协议或者 Broker 的插件兜了：MQTT 有 Topic 和 QoS，AMQP 有 exchange 和 routing key，Kafka 有 partition 和 offset。ZeroMQ 一个都不给。</p>
+<p>所以用它的时候，团队里得有人负责「消息格式规范」这件事。规范没定清楚，两个服务对接就会在各种边界上打架。</p>
+<h3 id="代价三对端必须是-zeromq" tabindex="-1">代价三：对端必须是 ZeroMQ <a class="header-anchor" href="#代价三对端必须是-zeromq"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这条最容易被低估。ZeroMQ 的握手、帧格式、订阅机制都是库自己的，不是公开标准。浏览器连不上它，<code>curl</code> 连不上它，一个用了别的库的服务也连不上它。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ZeroMQ 能连：任何链接了 libzmq 的程序
+ZeroMQ 不能连：HTTP 客户端、MQTT 客户端、gRPC 客户端、裸 socket
+</code></pre></div></code></pre>
+<p>要跟外部系统对接，中间得加一层转换——把 ZeroMQ 消息转成 HTTP 或者消息队列协议。这一层一旦加上，Broker 的那份复杂度又请回来了。</p>
+<p>判断标准很直白：<strong>通信两端都是你能控制的程序，才适合用 ZeroMQ</strong>。</p>
+<h3 id="代价四可观测性靠自己" tabindex="-1">代价四：可观测性靠自己 <a class="header-anchor" href="#代价四可观测性靠自己"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>没有 Broker，也就没有一个可以统看的中间层。想知道「现在积压了多少消息」「哪个消费者慢了」，ZeroMQ 不提供这类指标端点。</p>
+<p>能拿到的是套接字级别的统计：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">uint64_t</span> msgs;
+<span class="hljs-type">size_t</span> len = <span class="hljs-keyword">sizeof</span>(msgs);
+zmq_getsockopt(sock, ZMQ_EVENTS, &amp;msgs, &amp;len);   <span class="hljs-comment">/* 只看得到事件位 */</span>
+</code></pre></div></code></pre>
+<p>管道深度、每个对端的状况，得自己埋点。生产环境常见的做法是加一条 PUB 通道，专门发内部指标，再找个地方聚合。</p>
+<h3 id="怎么权衡" tabindex="-1">怎么权衡 <a class="header-anchor" href="#怎么权衡"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>给一张判断表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>你的情况</th>
+<th>倾向</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>通信两端都是自己写的，追求低延迟</td>
+<td>ZeroMQ</td>
+</tr>
+<tr>
+<td>需要跨团队、跨语言、对端不可控</td>
+<td>上标准协议</td>
+</tr>
+<tr>
+<td>需要消息持久化、重放、审计</td>
+<td>上 Kafka 这类</td>
+</tr>
+<tr>
+<td>拓扑会频繁变化、要动态扩缩</td>
+<td>上 Broker 或外挂发现</td>
+</tr>
+<tr>
+<td>进程内多线程解耦</td>
+<td>ZeroMQ 的 <code>inproc</code></td>
+</tr>
+<tr>
+<td>设备侧低带宽、要 QoS 分级</td>
+<td>MQTT</td>
+</tr>
+</tbody>
+</table></div><p>这个表不是二选一，很多系统两种都用：对外用 MQTT 或 HTTP，对内用 ZeroMQ 打通自己的服务。</p>
+<h2 id="十一与-mqtt-的对比" tabindex="-1">十一、与 MQTT 的对比 <a class="header-anchor" href="#十一与-mqtt-的对比"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这两个名字里都带 MQ，功能上也有重叠（都能做发布订阅），但它们的性质完全不同。混淆它们的代价是选错技术栈。</p>
+<h3 id="最根本的差别" tabindex="-1">最根本的差别 <a class="header-anchor" href="#最根本的差别"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>MQTT 是协议，ZeroMQ 是库。</strong></p>
+<p>协议的意思是：报文格式写在规范里，任何实现只要照做就能互通。你可以用 C 写的客户端连 Java 写的 Broker，因为双方都遵守同一份文档。</p>
+<p>库的意思是：行为由这个库的实现决定，另一端必须也用这个库。它没有公开的线格式规范，跨实现互通不是目标。</p>
+<p>这决定了后面所有差异。</p>
+<h3 id="逐项对比" tabindex="-1">逐项对比 <a class="header-anchor" href="#逐项对比"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>MQTT</th>
+<th>ZeroMQ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>性质</td>
+<td>应用层协议（有规范文档）</td>
+<td>编程库（无标准线格式）</td>
+</tr>
+<tr>
+<td>中心节点</td>
+<td>必须有 Broker</td>
+<td>没有，节点直连</td>
+</tr>
+<tr>
+<td>报文格式</td>
+<td>固定，头部 2 字节起</td>
+<td>自定义，消息体你说了算</td>
+</tr>
+<tr>
+<td>通信模式</td>
+<td>本质只有发布订阅一种</td>
+<td>五种（REQ/REP、PUB/SUB、PUSH/PULL、DEALER/ROUTER、PAIR）</td>
+</tr>
+<tr>
+<td>消息质量</td>
+<td>QoS 0/1/2 三档</td>
+<td>无内建语义，自己实现</td>
+</tr>
+<tr>
+<td>跨语言</td>
+<td>任何语言都有标准客户端</td>
+<td>需链接 libzmq（多数语言有绑定，但对端也得是它）</td>
+</tr>
+<tr>
+<td>会话保持</td>
+<td>有 Session、遗嘱消息、保留消息</td>
+<td>无，重连后状态要自己恢复</td>
+</tr>
+<tr>
+<td>传输</td>
+<td>TCP（及 WebSocket 等变体）</td>
+<td><code>inproc</code> / <code>ipc</code> / <code>tcp</code> / <code>pgm</code></td>
+</tr>
+<tr>
+<td>设备侧适配</td>
+<td>专为低带宽、不稳定网络设计</td>
+<td>未针对弱网优化</td>
+</tr>
+<tr>
+<td>发现机制</td>
+<td>连 Broker 地址即可</td>
+<td>端点需预先配置</td>
+</tr>
+<tr>
+<td>部署成本</td>
+<td>要架 Broker 并运维</td>
+<td>只要你的程序</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>物联网设备、传感器上报</td>
+<td>内部服务通信、并行计算</td>
+</tr>
+</tbody>
+</table></div><h3 id="关于模式数量的误解" tabindex="-1">关于「模式数量」的误解 <a class="header-anchor" href="#关于模式数量的误解"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>有人看到 ZeroMQ 有五种模式，觉得它比 MQTT 灵活得多。这个判断只对一半。</p>
+<p>MQTT 的发布订阅确实只有一种形态，但它把大量语义做进去了：Topic 层级和通配符、QoS 分级重传、保留消息、遗嘱消息、会话恢复。这些在 ZeroMQ 里全都没有，得自己写。</p>
+<p>ZeroMQ 的模式多，是因为它把「怎么连」这件事拆得细；MQTT 的模式少，是因为它把「怎么保证送达」这件事做进了协议。前者给你结构自由度，后者给你语义保障。</p>
+<h3 id="名字里的-mq-都是历史" tabindex="-1">名字里的 MQ 都是历史 <a class="header-anchor" href="#名字里的-mq-都是历史"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>两个名字都带 Message Queue，两个都不是传统意义上「存消息的队列」。MQTT 的 Broker 转发完就不留（保留消息是特例），ZeroMQ 连 Broker 都没有。</p>
+<p>真正像消息队列的，是 Kafka、RabbitMQ 那些——消息能存、能堆、能重放。判断标准是：<strong>关掉消费者，消息还在不在？</strong> 在，那是消息队列；不在，那只是消息传输。</p>
+<h3 id="选哪个" tabindex="-1">选哪个 <a class="header-anchor" href="#选哪个"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>问题不是「哪个更好」，是「你的约束是什么」。</p>
+<ul>
+<li>对端有单片机、有电池、有弱网 → MQTT</li>
+<li>对端是自己写的一批服务，追求低延迟 → ZeroMQ</li>
+<li>需要跨组织对接、对方技术栈不明 → MQTT（或者 HTTP）</li>
+<li>需要动态扩缩、要中心化的可观测性 → MQTT 的 Broker 帮你想了一半</li>
+<li>进程内多线程要解耦 → ZeroMQ 的 <code>inproc</code>，没有第二个选择</li>
+</ul>
+<p>一个系统里同时用两种是正常的。设备侧接 MQTT，服务内部用 ZeroMQ，交界处放一个桥接进程。</p>
+<h2 id="十二易错点速查" tabindex="-1">十二、易错点速查 <a class="header-anchor" href="#十二易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>都是实际会撞上的，按出现频率排。</p>
+<h3 id="模式相关" tabindex="-1">模式相关 <a class="header-anchor" href="#模式相关"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>zmq_send</code> 返回 <code>-1</code>，errno 是 <code>EFSM</code></td>
+<td>REQ 端在等回应时又发了请求</td>
+<td>换 DEALER，或者拆成两个套接字</td>
+</tr>
+<tr>
+<td>REP 端 <code>zmq_recv</code> 报 <code>EFSM</code></td>
+<td>上一个请求没收完就收下一个</td>
+<td>每个请求必须配一次 <code>zmq_send</code></td>
+</tr>
+<tr>
+<td>SUB 端一条消息都收不到</td>
+<td>忘了设 <code>ZMQ_SUBSCRIBE</code></td>
+<td>至少设一次，空串收全部</td>
+</tr>
+<tr>
+<td>SUB 端收不到匹配的消息</td>
+<td>订阅是<strong>前缀</strong>匹配，不是通配符</td>
+<td>用 <code>&quot;tick&quot;</code> 而不是 <code>&quot;tick*&quot;</code></td>
+</tr>
+<tr>
+<td>PAIR 连第三个对端失败</td>
+<td>PAIR 是独占的 1:1</td>
+<td>想多对多用别的模式</td>
+</tr>
+<tr>
+<td>客户端一直阻塞</td>
+<td>REP 端没回或者崩了</td>
+<td>设 <code>ZMQ_RCVTIMEO</code></td>
+</tr>
+</tbody>
+</table></div><h3 id="连接与端点" tabindex="-1">连接与端点 <a class="header-anchor" href="#连接与端点"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>inproc</code> 连不上</td>
+<td>bind 晚于 connect</td>
+<td>先 bind，再 connect</td>
+</tr>
+<tr>
+<td><code>ipc</code> 连不上</td>
+<td>路径少写斜杠，变成相对路径</td>
+<td>写 <code>ipc:///tmp/x</code> 三个斜杠</td>
+</tr>
+<tr>
+<td><code>zmq_send</code> 成功但对端没收到</td>
+<td>消息还在本地队列，对端未连上</td>
+<td>别把返回值当送达确认</td>
+</tr>
+<tr>
+<td>换机器后连不上</td>
+<td>端点写死在配置里</td>
+<td>把端点做成可配置项</td>
+</tr>
+<tr>
+<td>Windows 上 <code>ipc</code> 报错</td>
+<td>平台支持有限</td>
+<td>跨平台代码别依赖 <code>ipc</code></td>
+</tr>
+</tbody>
+</table></div><h3 id="消息与流控" tabindex="-1">消息与流控 <a class="header-anchor" href="#消息与流控"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>慢订阅者丢消息</td>
+<td>PUB 端高水位触发丢弃</td>
+<td>调 <code>ZMQ_SNDHWM</code>，或者接受丢</td>
+</tr>
+<tr>
+<td>内存一路涨</td>
+<td>对端不在，消息堆在本地队列</td>
+<td>设高水位上限，加对端存活检测</td>
+</tr>
+<tr>
+<td>消息被拆成两半收到</td>
+<td>用了 DEALER/ROUTER 却按单帧处理</td>
+<td>多帧消息用 <code>ZMQ_SNDMORE</code> + 收全</td>
+</tr>
+<tr>
+<td>回错了客户端</td>
+<td>ROUTER 忘了把身份帧带回去</td>
+<td>先发身份再发内容，顺序不能反</td>
+</tr>
+<tr>
+<td>回应和请求对不上号</td>
+<td>异步模式不保证顺序</td>
+<td>消息体里带请求 ID</td>
+</tr>
+</tbody>
+</table></div><h3 id="线程与生命周期" tabindex="-1">线程与生命周期 <a class="header-anchor" href="#线程与生命周期"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>程序卡在 <code>zmq_ctx_term</code></td>
+<td>还有套接字没关</td>
+<td>先 <code>zmq_close</code> 所有套接字</td>
+</tr>
+<tr>
+<td>跨线程用同一个套接字崩了</td>
+<td>ZeroMQ 的套接字不是线程安全的</td>
+<td>一个线程一个套接字</td>
+</tr>
+<tr>
+<td>吞吐上不去，应用线程却空闲</td>
+<td>I/O 线程数太少</td>
+<td><code>zmq_ctx_set(ctx, ZMQ_IO_THREADS, n)</code></td>
+</tr>
+<tr>
+<td><code>fork</code> 之后行为异常</td>
+<td>继承了父进程的上下文</td>
+<td>子进程里重新建上下文</td>
+</tr>
+</tbody>
+</table></div><h3 id="三条记牢" tabindex="-1">三条记牢 <a class="header-anchor" href="#三条记牢"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>第一章说的那句话，值得在结尾再说一次：<strong>ZeroMQ 的价值是把 socket 编程抽象成通信模式</strong>。连接管理、重连、消息边界、多对多路由，这些活它都收了，你只要选一个模式、调 <code>zmq_socket</code>、收发消息。</p>
+<p>顺带记住三条：</p>
+<ol>
+<li>它不是消息队列，没有 Broker，不替你存消息</li>
+<li>五种模式选错，后面怎么写都别扭</li>
+<li>没有 Broker 意味着省了部署，也意味着拓扑、发现、序列化、可观测这些事全归你自己</li>
+</ol>
+<p>把这三条想清楚，再回头看那些 API，就没什么难懂的了。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一zeromq-是什么" data-toc-target="一zeromq-是什么">一、ZeroMQ 是什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#它到底抽象掉了什么" data-toc-target="它到底抽象掉了什么">它到底抽象掉了什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#选模式是这个库的全部设计" data-toc-target="选模式是这个库的全部设计">「选模式」是这个库的全部设计</a>
+                    
+                    <a class="toc-item toc-lv3" href="#名字的来历" data-toc-target="名字的来历">名字的来历</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二它不是消息队列" data-toc-target="二它不是消息队列">二、它不是消息队列</a>
+                    
+                    <a class="toc-item toc-lv3" href="#没有-broker-进程" data-toc-target="没有-broker-进程">没有 Broker 进程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#mq在这里指什么" data-toc-target="mq在这里指什么">「MQ」在这里指什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#那它到底解决了什么问题" data-toc-target="那它到底解决了什么问题">那它到底解决了什么问题</a>
+                    
+                    <a class="toc-item toc-lv3" href="#什么时候它不适用" data-toc-target="什么时候它不适用">什么时候它不适用</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三五种通信模式" data-toc-target="三五种通信模式">三、五种通信模式</a>
+                    
+                    <a class="toc-item toc-lv3" href="#谁-bind-谁-connect" data-toc-target="谁-bind-谁-connect">谁 bind 谁 connect</a>
+                    
+                    <a class="toc-item toc-lv3" href="#pair一对一独占" data-toc-target="pair一对一独占">PAIR：一对一独占</a>
+                    
+                    <a class="toc-item toc-lv3" href="#关于-device" data-toc-target="关于-device">关于 Device</a>
+                    
+                    <a class="toc-item toc-lv3" href="#选模式的顺序" data-toc-target="选模式的顺序">选模式的顺序</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四reqrep-与它的限制" data-toc-target="四reqrep-与它的限制">四、REQ/REP 与它的限制</a>
+                    
+                    <a class="toc-item toc-lv3" href="#最小实现" data-toc-target="最小实现">最小实现</a>
+                    
+                    <a class="toc-item toc-lv3" href="#严格同步的真相" data-toc-target="严格同步的真相">严格同步的真相</a>
+                    
+                    <a class="toc-item toc-lv3" href="#这个限制为什么让人难受" data-toc-target="这个限制为什么让人难受">这个限制为什么让人难受</a>
+                    
+                    <a class="toc-item toc-lv3" href="#超时怎么写" data-toc-target="超时怎么写">超时怎么写</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1n-怎么来的" data-toc-target="1n-怎么来的">1:N 怎么来的</a>
+                    
+                    <a class="toc-item toc-lv3" href="#什么时候该用它" data-toc-target="什么时候该用它">什么时候该用它</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五pubsub-与-pushpull" data-toc-target="五pubsub-与-pushpull">五、PUB/SUB 与 PUSH/PULL</a>
+                    
+                    <a class="toc-item toc-lv3" href="#pubsub广播" data-toc-target="pubsub广播">PUB/SUB：广播</a>
+                    
+                    <a class="toc-item toc-lv3" href="#订阅过滤的机制" data-toc-target="订阅过滤的机制">订阅过滤的机制</a>
+                    
+                    <a class="toc-item toc-lv3" href="#慢订阅者会被丢" data-toc-target="慢订阅者会被丢">慢订阅者会被丢</a>
+                    
+                    <a class="toc-item toc-lv3" href="#连接时序也是坑" data-toc-target="连接时序也是坑">连接时序也是坑</a>
+                    
+                    <a class="toc-item toc-lv3" href="#pushpull管道" data-toc-target="pushpull管道">PUSH/PULL：管道</a>
+                    
+                    <a class="toc-item toc-lv3" href="#它自带负载均衡" data-toc-target="它自带负载均衡">它自带负载均衡</a>
+                    
+                    <a class="toc-item toc-lv3" href="#反过来也能用" data-toc-target="反过来也能用">反过来也能用</a>
+                    
+                    <a class="toc-item toc-lv3" href="#两者对比" data-toc-target="两者对比">两者对比</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六dealerrouter异步应答" data-toc-target="六dealerrouter异步应答">六、DEALER/ROUTER：异步应答</a>
+                    
+                    <a class="toc-item toc-lv3" href="#这两个套接字做了什么" data-toc-target="这两个套接字做了什么">这两个套接字做了什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#router-的身份信封" data-toc-target="router-的身份信封">ROUTER 的身份信封</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一个异步客户端的骨架" data-toc-target="一个异步客户端的骨架">一个异步客户端的骨架</a>
+                    
+                    <a class="toc-item toc-lv3" href="#router--dealer-撑起-nm" data-toc-target="router--dealer-撑起-nm">ROUTER + DEALER 撑起 N:M</a>
+                    
+                    <a class="toc-item toc-lv3" href="#状态机没了责任就回来了" data-toc-target="状态机没了责任就回来了">状态机没了，责任就回来了</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七四种传输方式" data-toc-target="七四种传输方式">七、四种传输方式</a>
+                    
+                    <a class="toc-item toc-lv3" href="#四种传输的定位" data-toc-target="四种传输的定位">四种传输的定位</a>
+                    
+                    <a class="toc-item toc-lv3" href="#inproc-为什么最快" data-toc-target="inproc-为什么最快">inproc 为什么最快</a>
+                    
+                    <a class="toc-item toc-lv3" href="#ipc-的路径写法" data-toc-target="ipc-的路径写法">ipc 的路径写法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#tcp-的两个细节" data-toc-target="tcp-的两个细节">tcp 的两个细节</a>
+                    
+                    <a class="toc-item toc-lv3" href="#pgm-的适用面" data-toc-target="pgm-的适用面">pgm 的适用面</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一份代码换端点" data-toc-target="一份代码换端点">一份代码换端点</a>
+                    
+                    <a class="toc-item toc-lv3" href="#顺带说构建" data-toc-target="顺带说构建">顺带说构建</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八内部架构io-线程与-poller" data-toc-target="八内部架构io-线程与-poller">八、内部架构：I/O 线程与 Poller</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一切从-zmq_init-开始" data-toc-target="一切从-zmq_init-开始">一切从 zmq_init 开始</a>
+                    
+                    <a class="toc-item toc-lv3" href="#主线程与-io-线程分工" data-toc-target="主线程与-io-线程分工">主线程与 I/O 线程分工</a>
+                    
+                    <a class="toc-item toc-lv3" href="#poller-与-reactor" data-toc-target="poller-与-reactor">Poller 与 Reactor</a>
+                    
+                    <a class="toc-item toc-lv3" href="#连接是怎么建立起来的" data-toc-target="连接是怎么建立起来的">连接是怎么建立起来的</a>
+                    
+                    <a class="toc-item toc-lv3" href="#sessionengine管道" data-toc-target="sessionengine管道">Session、Engine、管道</a>
+                    
+                    <a class="toc-item toc-lv3" href="#为什么线程数能调" data-toc-target="为什么线程数能调">为什么线程数能调</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九消息在内部怎么流转" data-toc-target="九消息在内部怎么流转">九、消息在内部怎么流转</a>
+                    
+                    <a class="toc-item toc-lv3" href="#发送路径" data-toc-target="发送路径">发送路径</a>
+                    
+                    <a class="toc-item toc-lv3" href="#接收路径" data-toc-target="接收路径">接收路径</a>
+                    
+                    <a class="toc-item toc-lv3" href="#无锁队列在这里的角色" data-toc-target="无锁队列在这里的角色">无锁队列在这里的角色</a>
+                    
+                    <a class="toc-item toc-lv3" href="#多帧消息怎么走" data-toc-target="多帧消息怎么走">多帧消息怎么走</a>
+                    
+                    <a class="toc-item toc-lv3" href="#身份标识在哪一层" data-toc-target="身份标识在哪一层">身份标识在哪一层</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十没有-broker-的代价" data-toc-target="十没有-broker-的代价">十、没有 Broker 的代价</a>
+                    
+                    <a class="toc-item toc-lv3" href="#收获延迟与部署" data-toc-target="收获延迟与部署">收获：延迟与部署</a>
+                    
+                    <a class="toc-item toc-lv3" href="#代价一拓扑是静态的" data-toc-target="代价一拓扑是静态的">代价一：拓扑是静态的</a>
+                    
+                    <a class="toc-item toc-lv3" href="#代价二协议是你的私有约定" data-toc-target="代价二协议是你的私有约定">代价二：协议是你的私有约定</a>
+                    
+                    <a class="toc-item toc-lv3" href="#代价三对端必须是-zeromq" data-toc-target="代价三对端必须是-zeromq">代价三：对端必须是 ZeroMQ</a>
+                    
+                    <a class="toc-item toc-lv3" href="#代价四可观测性靠自己" data-toc-target="代价四可观测性靠自己">代价四：可观测性靠自己</a>
+                    
+                    <a class="toc-item toc-lv3" href="#怎么权衡" data-toc-target="怎么权衡">怎么权衡</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一与-mqtt-的对比" data-toc-target="十一与-mqtt-的对比">十一、与 MQTT 的对比</a>
+                    
+                    <a class="toc-item toc-lv3" href="#最根本的差别" data-toc-target="最根本的差别">最根本的差别</a>
+                    
+                    <a class="toc-item toc-lv3" href="#逐项对比" data-toc-target="逐项对比">逐项对比</a>
+                    
+                    <a class="toc-item toc-lv3" href="#关于模式数量的误解" data-toc-target="关于模式数量的误解">关于「模式数量」的误解</a>
+                    
+                    <a class="toc-item toc-lv3" href="#名字里的-mq-都是历史" data-toc-target="名字里的-mq-都是历史">名字里的 MQ 都是历史</a>
+                    
+                    <a class="toc-item toc-lv3" href="#选哪个" data-toc-target="选哪个">选哪个</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二易错点速查" data-toc-target="十二易错点速查">十二、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv3" href="#模式相关" data-toc-target="模式相关">模式相关</a>
+                    
+                    <a class="toc-item toc-lv3" href="#连接与端点" data-toc-target="连接与端点">连接与端点</a>
+                    
+                    <a class="toc-item toc-lv3" href="#消息与流控" data-toc-target="消息与流控">消息与流控</a>
+                    
+                    <a class="toc-item toc-lv3" href="#线程与生命周期" data-toc-target="线程与生命周期">线程与生命周期</a>
+                    
+                    <a class="toc-item toc-lv3" href="#三条记牢" data-toc-target="三条记牢">三条记牢</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/F.通信与协议/05-应用层与中间件/ZeroMQ：消息队列库的架构与模式/","title":"ZeroMQ：消息队列库的架构与模式","url":"/F.通信与协议/05-应用层与中间件/ZeroMQ：消息队列库的架构与模式/","type":"current"},{"id":"/F.通信与协议/05-应用层与中间件/MQTT：发布订阅与物联网通信/","title":"MQTT：发布订阅与物联网通信","url":"/F.通信与协议/05-应用层与中间件/MQTT：发布订阅与物联网通信/","type":"neighbor"},{"id":"/F.通信与协议/05-应用层与中间件/通讯概念辨析：传输方式、协议与总线/","title":"通讯概念辨析：传输方式、协议与总线","url":"/F.通信与协议/05-应用层与中间件/通讯概念辨析：传输方式、协议与总线/","type":"neighbor"}],"links":[{"source":"/F.通信与协议/05-应用层与中间件/ZeroMQ：消息队列库的架构与模式/","target":"/F.通信与协议/05-应用层与中间件/MQTT：发布订阅与物联网通信/","type":"neighbor"},{"source":"/F.通信与协议/05-应用层与中间件/ZeroMQ：消息队列库的架构与模式/","target":"/F.通信与协议/05-应用层与中间件/通讯概念辨析：传输方式、协议与总线/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

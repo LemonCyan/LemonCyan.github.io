@@ -1,0 +1,1161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>rfkill 子系统：软硬阻塞、核心数据结构与 API · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">rfkill 子系统：软硬阻塞、核心数据结构与 API</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/C.驱动/13-杂项/rfkill-子系统：软硬阻塞、核心数据结构与-API/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">rfkill 子系统：软硬阻塞、核心数据结构与 API</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">rfkill 子系统：软硬阻塞、核心数据结构与 API</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <p>笔记本上那个&quot;飞行模式&quot;按钮按下之后，Wi-Fi、蓝牙、WWAN 会一起断掉，而且有些机器上软件怎么都打不开。这套开关逻辑在内核里由 rfkill 子系统统一管，代码在 <code>net/rfkill/</code>。</p>
+<p>驱动作者要做的只有一件事：<strong>把芯片的上电和断电动作挂到 rfkill 的回调上</strong>。剩下的状态记账、用户态通知、<code>/dev/rfkill</code> 事件流，框架全包了。</p>
+<h2 id="一soft-block-与-hard-block" tabindex="-1">一、soft block 与 hard block <a class="header-anchor" href="#一soft-block-与-hard-block"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>rfkill 把&quot;发射器关闭&quot;分成两种，区别在于<strong>谁能解除</strong>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th></th>
+<th>hard block</th>
+<th>soft block</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>谁触发</td>
+<td>物理开关、机身拨杆、固件</td>
+<td>软件：<code>rfkill block</code>、sysfs 写属性</td>
+</tr>
+<tr>
+<td>谁能否解除</td>
+<td><strong>只有硬件</strong></td>
+<td>软件随时可以</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>笔记本侧面的无线开关、SIM 卡槽检测</td>
+<td>飞行模式、用户主动关 Wi-Fi</td>
+</tr>
+<tr>
+<td>硬件电源状态</td>
+<td>可能仍上电</td>
+<td>可能仍上电，也可能被驱动断掉</td>
+</tr>
+</tbody>
+</table></div><p>关键规则：<strong>hard block 优先</strong>。设备处于 hard block 时，软件层写任何东西都不会让发射器工作起来，<code>set_block</code> 回调也不会被调用（框架拦住了）。要让设备重新工作，只能去动那个物理开关。</p>
+<p>两者是独立的两条线，最终状态是逻辑或：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>发射器被阻塞  ⟺  hard blocked  ‖  soft blocked
+</code></pre></div></code></pre>
+<p>所以一个设备可以同时处于两种 block，也可以只处于其中一种。</p>
+<h3 id="1.1-分清阻塞状态和硬件电源" tabindex="-1">1.1 分清&quot;阻塞状态&quot;和&quot;硬件电源&quot; <a class="header-anchor" href="#1.1-分清阻塞状态和硬件电源"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这里有个容易混的点：<strong>rfkill 的 blocked 不等于芯片断电</strong>。</p>
+<p>soft block 的语义是&quot;发射器不许工作&quot;，具体怎么做由驱动决定：</p>
+<ul>
+<li>有的驱动真的去拉低电源使能引脚，芯片彻底断电；</li>
+<li>有的驱动只把射频前端关掉，数字部分仍在上电；</li>
+<li>有的驱动什么硬件都不动，只在软件层记账（比如 Wi-Fi 的 <code>rfkill</code> 通过通知 <code>cfg80211</code> 让协议栈停止发射）。</li>
+</ul>
+<p>这也解释了一个常见困惑：<code>rfkill block 1</code> 之后 <code>ifconfig</code> 里 <code>wlan0</code> 消失了，但模块还在、设备节点还在。消失的是网络接口的注册，不是物理设备。</p>
+<h2 id="二三个组成部分" tabindex="-1">二、三个组成部分 <a class="header-anchor" href="#二三个组成部分"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>组件</th>
+<th>位置</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rfkill core</td>
+<td><code>net/rfkill/core.c</code></td>
+<td>注册/注销、状态记账、sysfs、<code>/dev/rfkill</code> 事件、LED</td>
+</tr>
+<tr>
+<td>rfkill input</td>
+<td><code>net/rfkill/input.c</code></td>
+<td>把 input 子系统里的按键事件映射成全局开关。<strong>已弃用</strong>，由用户态策略取代</td>
+</tr>
+<tr>
+<td>rfkill 驱动</td>
+<td><code>net/rfkill/rfkill-gpio.c</code> 或厂商自定义</td>
+<td>实现 <code>set_block</code>，真正去操作硬件</td>
+</tr>
+</tbody>
+</table></div><p><code>core.c</code> 底下还有 <code>rfkill-gpio.c</code>，一个通用驱动：只要设备树里给它一组 GPIO 和复位时序，它就能直接工作，不用自己写驱动。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>net/rfkill/
+├── core.c          核心：注册、状态、sysfs、/dev/rfkill
+├── input.c         input 按键映射（弃用）
+├── rfkill-gpio.c   通用 GPIO 驱动
+├── Kconfig
+└── Makefile
+</code></pre></div></code></pre>
+<p>设备树里 <code>compatible = &quot;rfkill-gpio&quot;</code> 就能直接挂上这个通用驱动。厂商（比如 Rockchip）会自己写一份，因为需要处理时钟、regulator、SDIO 上电时序这些 <code>rfkill-gpio</code> 覆盖不了的东西。</p>
+<h2 id="三用户态看到的两个入口" tabindex="-1">三、用户态看到的两个入口 <a class="header-anchor" href="#三用户态看到的两个入口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="3.1-命令行工具" tabindex="-1">3.1 命令行工具 <a class="header-anchor" href="#3.1-命令行工具"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ rfkill list
+0: bt_default: Bluetooth
+	Soft blocked: <span class="hljs-built_in">yes</span>
+	Hard blocked: no
+1: phy0: Wireless LAN
+	Soft blocked: no
+	Hard blocked: no
+
+$ rfkill
+ID TYPE      DEVICE      SOFT      HARD
+ 0 bluetooth bt_default blocked unblocked
+ 1 wlan      phy0       unblocked unblocked
+</code></pre></div></code></pre>
+<p>ID 就是内核分配的 <code>idx</code>，后续 <code>rfkill block &lt;ID&gt;</code> / <code>rfkill unblock &lt;ID&gt;</code> 都用它。</p>
+<p>有两个设备：蓝牙默认被软阻塞，Wi-Fi 正常。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 打开蓝牙</span>
+$ rfkill unblock 0
+
+<span class="hljs-comment"># 关掉 Wi-Fi</span>
+$ rfkill block 1
+
+<span class="hljs-comment"># 此时想手动启用会被内核拒绝</span>
+$ ifconfig wlan0 up
+SIOCSIFFLAGS: Operation not possible due to RF-<span class="hljs-built_in">kill</span>
+</code></pre></div></code></pre>
+<p>最后那条报错很有辨识度：<code>Operation not possible due to RF-kill</code>。看到它就别去查驱动 probe 了，先 <code>rfkill list</code> 看是不是被阻塞。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 全部打开 / 全部关掉</span>
+rfkill unblock all
+rfkill block all
+</code></pre></div></code></pre>
+<h3 id="3.2-sysfs-属性" tabindex="-1">3.2 sysfs 属性 <a class="header-anchor" href="#3.2-sysfs-属性"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>每个已注册的 rfkill 设备在 <code>/sys/class/rfkill/rfkillN/</code> 下有一组属性：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>属性</th>
+<th>权限</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>只读</td>
+<td>驱动给的名字</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td>只读</td>
+<td><code>wlan</code> / <code>bluetooth</code> / <code>wwan</code> …</td>
+</tr>
+<tr>
+<td><code>index</code></td>
+<td>只读</td>
+<td>就是 <code>idx</code></td>
+</tr>
+<tr>
+<td><code>hard</code></td>
+<td><strong>只读</strong></td>
+<td>1 表示被硬件阻塞</td>
+</tr>
+<tr>
+<td><code>soft</code></td>
+<td><strong>可读写</strong>（0644）</td>
+<td>1 表示被软件阻塞</td>
+</tr>
+<tr>
+<td><code>persistent</code></td>
+<td>只读</td>
+<td>soft 状态是否有持久化初值</td>
+</tr>
+</tbody>
+</table></div><p><strong>只有 <code>soft</code> 可写。</strong> 写它需要 <code>CAP_NET_ADMIN</code>：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">echo</span> 1 &gt; /sys/class/rfkill/rfkill0/soft   <span class="hljs-comment"># 软阻塞（关）</span>
+<span class="hljs-built_in">echo</span> 0 &gt; /sys/class/rfkill/rfkill0/soft   <span class="hljs-comment"># 解除（开）</span>
+</code></pre></div></code></pre>
+<p>注意语义方向：<strong><code>soft = 1</code> 才是&quot;关&quot;</strong>，跟很多人的直觉相反。</p>
+<h3 id="3.3-老接口-state-已经删了" tabindex="-1">3.3 老接口 state 已经删了 <a class="header-anchor" href="#3.3-老接口-state-已经删了"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>老资料里常写：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">echo</span> 0 &gt; /sys/class/rfkill/rfkill0/state   <span class="hljs-comment"># 关</span>
+<span class="hljs-built_in">echo</span> 1 &gt; /sys/class/rfkill/rfkill0/state   <span class="hljs-comment"># 开</span>
+</code></pre></div></code></pre>
+<p>这个 <code>state</code> 接口是 v2.6.22 时代的产物，ABI 文档里明确写着「计划 2014 年移除，因为它无法表达 soft 和 hard 同时阻塞的状态，但用户太多先留着」。现在内核里它已经不存在，只剩 <code>soft</code> 和 <code>hard</code>。</p>
+<p>两套接口的语义是<strong>相反的</strong>：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th></th>
+<th>关</th>
+<th>开</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>老 <code>state</code></td>
+<td>0</td>
+<td>1</td>
+</tr>
+<tr>
+<td>新 <code>soft</code></td>
+<td><strong>1</strong></td>
+<td><strong>0</strong></td>
+</tr>
+</tbody>
+</table></div><p><code>state</code> 的三个取值来自 <code>RFKILL_STATE_*</code>：0 = 软阻塞，1 = 未阻塞，2 = 硬阻塞。而 <code>soft</code> 只有 0/1 二值。所以要判断&quot;到底能不能用&quot;，<code>soft</code> 和 <code>hard</code> 两个都得看。</p>
+<p>在过渡期的内核（比如 5.2）上，先 <code>ls /sys/class/rfkill/rfkill0/</code> 确认存在哪个，别照抄老脚本。</p>
+<h3 id="3.4-devrfkill-是单个-misc-设备" tabindex="-1">3.4 /dev/rfkill 是单个 misc 设备 <a class="header-anchor" href="#3.4-devrfkill-是单个-misc-设备"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>/dev/rfkill</code> 只有一个，由 rfkill core 在模块初始化时用 <code>misc_register()</code> 注册，<strong>不是每个 rfkillN 一个</strong>。</p>
+<p>用户态（udev、NetworkManager、bluetoothd）打开它，读到的是一串 <code>struct rfkill_event</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_event</span> {</span>
+	__u32 idx;      <span class="hljs-comment">/* rfkillN 的 N */</span>
+	__u8  type;     <span class="hljs-comment">/* RFKILL_TYPE_* */</span>
+	__u8  op;       <span class="hljs-comment">/* ADD / DEL / CHANGE / CHANGE_ALL */</span>
+	__u8  soft;
+	__u8  hard;
+} __attribute__((packed));
+</code></pre></div></code></pre>
+<p>写这个文件可以改 soft 状态，和写 sysfs 的 <code>soft</code> 等价。<strong>现代用户态都走这条路</strong>，因为一次 <code>read()</code> 就能拿到全部事件的流，比轮询一堆 sysfs 文件高效。</p>
+<p><code>rfkill_register()</code> 内部只做 <code>device_add()</code>，不碰设备号，所以确实不会为每个设备创建 <code>/dev/rfkillN</code>。这两件事（单 misc 设备 + per-device sysfs 目录）要分开看。</p>
+<h2 id="四struct-rfkill" tabindex="-1">四、struct rfkill <a class="header-anchor" href="#四struct-rfkill"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill</span> {</span>
+	<span class="hljs-type">spinlock_t</span>              lock;
+
+	<span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">rfkill_type</span>        <span class="hljs-title">type</span>;</span>
+
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>           state;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>           hard_block_reasons;
+
+	u32                     idx;
+
+	<span class="hljs-type">bool</span>                    registered;
+	<span class="hljs-type">bool</span>                    persistent;
+	<span class="hljs-type">bool</span>                    polling_paused;
+	<span class="hljs-type">bool</span>                    suspended;
+	<span class="hljs-type">bool</span>                    need_sync;
+
+	<span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_ops</span> *<span class="hljs-title">ops</span>;</span>
+	<span class="hljs-type">void</span>                    *data;
+
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_RFKILL_LEDS</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">led_trigger</span>      <span class="hljs-title">led_trigger</span>;</span>
+	<span class="hljs-type">const</span> <span class="hljs-type">char</span>              *ledtrigname;
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device</span>           <span class="hljs-title">dev</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span>        <span class="hljs-title">node</span>;</span>
+
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">delayed_work</span>     <span class="hljs-title">poll_work</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">work_struct</span>      <span class="hljs-title">uevent_work</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">work_struct</span>      <span class="hljs-title">sync_work</span>;</span>
+	<span class="hljs-type">char</span>                    name[];
+};
+</code></pre></div></code></pre>
+<p>重点字段：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>state</code></td>
+<td><strong>阻塞状态位图</strong>，见下</td>
+</tr>
+<tr>
+<td><code>hard_block_reasons</code></td>
+<td>硬阻塞的多个来源计数（不同来源各占一位）</td>
+</tr>
+<tr>
+<td><code>idx</code></td>
+<td>就是 <code>rfkillN</code> 里的 N，注册时分配</td>
+</tr>
+<tr>
+<td><code>registered</code></td>
+<td>是否已注册，防止重复注册</td>
+</tr>
+<tr>
+<td><code>persistent</code></td>
+<td>soft 状态是否有初值，影响恢复时的行为</td>
+</tr>
+<tr>
+<td><code>ops</code> / <code>data</code></td>
+<td>回调表和驱动私有数据</td>
+</tr>
+<tr>
+<td><code>dev</code></td>
+<td>内嵌的 device，sysfs 目录靠它</td>
+</tr>
+<tr>
+<td><code>name[]</code></td>
+<td>柔性数组，名字直接跟在结构体后面</td>
+</tr>
+</tbody>
+</table></div><h3 id="4.1-state-是位图不是枚举" tabindex="-1">4.1 state 是位图，不是枚举 <a class="header-anchor" href="#4.1-state-是位图不是枚举"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>老资料里写「state 表示 rfkill 设备的状态，取值与 type 相关」，<strong>这是错的</strong>。<code>state</code> 和 type 没有关系，它是一组独立的位标志：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> RFKILL_BLOCK_HW        BIT(0)   <span class="hljs-comment">/* 硬阻塞 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> RFKILL_BLOCK_SW        BIT(1)   <span class="hljs-comment">/* 软阻塞 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> RFKILL_BLOCK_SW_PREV   BIT(2)   <span class="hljs-comment">/* 上一次的软状态，用于 uevent 通知 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> RFKILL_BLOCK_ANY       (HW | SW | SW_PREV)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> RFKILL_BLOCK_SW_SETCALL BIT(31) <span class="hljs-comment">/* 标记 set_block 已被调用过 */</span></span>
+</code></pre></div></code></pre>
+<p>所以一个设备的状态可以同时有 <code>HW</code> 和 <code>SW</code> 两位。判断&quot;能不能用&quot;要看 <code>state &amp; RFKILL_BLOCK_ANY</code> 是否为 0。</p>
+<p><code>SW_PREV</code> 的存在是为了 uevent：驱动改状态时，框架需要知道&quot;变了没有&quot;，才能决定要不要通知用户态。</p>
+<p><code>hard_block_reasons</code> 是后来加的，支持多个独立的硬阻塞源各自占一位。比如一个开关加一个固件标志，任意一个生效就算阻塞，但想知道具体是哪个就得看这个字段。</p>
+<h3 id="4.2-enum-rfkill_type" tabindex="-1">4.2 enum rfkill_type <a class="header-anchor" href="#4.2-enum-rfkill_type"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">rfkill_type</span> {</span>
+	RFKILL_TYPE_ALL = <span class="hljs-number">0</span>,
+	RFKILL_TYPE_WLAN,
+	RFKILL_TYPE_BLUETOOTH,
+	RFKILL_TYPE_UWB,
+	RFKILL_TYPE_WIMAX,
+	RFKILL_TYPE_WWAN,
+	RFKILL_TYPE_GPS,
+	RFKILL_TYPE_FM,
+	RFKILL_TYPE_NFC,
+	NUM_RFKILL_TYPES,
+};
+</code></pre></div></code></pre>
+<p>九种类型。<code>RFKILL_TYPE_ALL</code> 只用于&quot;请求作用于全部设备&quot;，<strong>不能</strong>用它注册单个设备，<code>rfkill_alloc()</code> 会检查这一点，传 <code>ALL</code> 或超过 <code>NUM_RFKILL_TYPES</code> 的值直接返回 NULL。</p>
+<h2 id="五struct-rfkill_ops三个回调" tabindex="-1">五、struct rfkill_ops：三个回调 <a class="header-anchor" href="#五struct-rfkill_ops三个回调"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_ops</span> {</span>
+	<span class="hljs-type">void</span>	(*poll)(<span class="hljs-keyword">struct</span> rfkill *rfkill, <span class="hljs-type">void</span> *data);
+	<span class="hljs-type">void</span>	(*query)(<span class="hljs-keyword">struct</span> rfkill *rfkill, <span class="hljs-type">void</span> *data);
+	<span class="hljs-type">int</span>	(*set_block)(<span class="hljs-type">void</span> *data, <span class="hljs-type">bool</span> blocked);
+};
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>回调</th>
+<th>什么时候实现</th>
+<th>做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>set_block</code></td>
+<td><strong>必须</strong></td>
+<td>按 <code>blocked</code> 开关发射器</td>
+</tr>
+<tr>
+<td><code>poll</code></td>
+<td>需要轮询时</td>
+<td>定期查硬件状态，然后调 <code>rfkill_set_*_state()</code> 上报</td>
+</tr>
+<tr>
+<td><code>query</code></td>
+<td>硬件状态可能被 input 事件改变时</td>
+<td>同上，但在框架设置 block 之前被调用</td>
+</tr>
+</tbody>
+</table></div><h3 id="5.1-set_block-的两条纪律" tabindex="-1">5.1 set_block 的两条纪律 <a class="header-anchor" href="#5.1-set_block-的两条纪律"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">my_set_block</span><span class="hljs-params">(<span class="hljs-type">void</span> *data, <span class="hljs-type">bool</span> blocked)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_dev</span> *<span class="hljs-title">dev</span> =</span> data;
+
+	<span class="hljs-keyword">if</span> (blocked)
+		disable_transmitter(dev);
+	<span class="hljs-keyword">else</span>
+		enable_transmitter(dev);
+
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><strong>一、<code>blocked == true</code> 表示&quot;关&quot;。</strong> 参数名是&quot;被阻塞&quot;，不是&quot;被启用&quot;。这个方向搞反，设备的行为就是反的。</p>
+<p><strong>二、硬阻塞时应当忽略并返回 0。</strong> 框架在硬阻塞生效期间根本不会调 <code>set_block</code>，但驱动如果自己维护了一份状态，要保证硬阻塞解除后能恢复到正确的软件状态。返回非 0 表示&quot;这个操作失败了&quot;，框架会把它记进日志，但不能回滚，因为硬件已经动过了。</p>
+<h3 id="5.2-poll-与-query-的区别" tabindex="-1">5.2 poll 与 query 的区别 <a class="header-anchor" href="#5.2-poll-与-query-的区别"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>poll</code> 是定时的：框架每隔 <code>POLL_INTERVAL</code>（5 秒）调一次，用来发现&quot;硬件状态被外部改了&quot;。</p>
+<p><code>query</code> 是按需的：用户在写 <code>soft</code> 之前，框架先问一次驱动&quot;现在硬件是什么状态&quot;，避免基于过期的信息做决定。</p>
+<p>两者都<strong>不能直接改 <code>state</code></strong>，必须通过 <code>rfkill_set_hw_state()</code> / <code>rfkill_set_sw_state()</code> 上报，让框架统一处理锁和通知。</p>
+<h2 id="六注册链路" tabindex="-1">六、注册链路 <a class="header-anchor" href="#六注册链路"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="6.1-四步走" tabindex="-1">6.1 四步走 <a class="header-anchor" href="#6.1-四步走"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>rfkill_alloc()       分配并初始化 struct rfkill
+   ↓
+rfkill_init_sw_state()  （可选）设置 soft 初值
+   ↓
+rfkill_register()    注册到设备模型，分配 idx，创建 sysfs
+   ↓
+rfkill_unregister()  注销
+   ↓
+rfkill_destroy()     释放
+</code></pre></div></code></pre>
+<p>顺序不能乱：<code>rfkill_init_sw_state()</code> 必须在 <code>rfkill_register()</code> <strong>之前</strong>调用，否则无效（注册时已经确定初值了）。<code>rfkill_set_led_trigger_name()</code> 同理。</p>
+<h3 id="6.2-rfkill_alloc" tabindex="-1">6.2 rfkill_alloc <a class="header-anchor" href="#6.2-rfkill_alloc"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">struct</span> rfkill *<span class="hljs-title function_">rfkill_alloc</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span> *name,
+                            <span class="hljs-keyword">struct</span> device *parent,
+                            <span class="hljs-type">const</span> <span class="hljs-keyword">enum</span> rfkill_type type,
+                            <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> rfkill_ops *ops,
+                            <span class="hljs-type">void</span> *ops_data)</span>;
+</code></pre></div></code></pre>
+<p>参数：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>填什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>设备名，会出现在 <code>rfkill list</code> 里。<strong>内核不拷贝这个字符串</strong>，所以不能传栈上的临时缓冲</td>
+</tr>
+<tr>
+<td><code>parent</code></td>
+<td>父设备，一般是平台设备的 <code>&amp;pdev-&gt;dev</code>，决定 sysfs 里的层级</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td>九种类型之一，不能是 <code>RFKILL_TYPE_ALL</code></td>
+</tr>
+<tr>
+<td><code>ops</code></td>
+<td>回调表，<code>set_block</code> 必须非空</td>
+</tr>
+<tr>
+<td><code>ops_data</code></td>
+<td>驱动私有数据，会原样传给每个回调</td>
+</tr>
+</tbody>
+</table></div><p>内部做了三件事：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 省略参数检查 */</span>
+rfkill = kzalloc(<span class="hljs-keyword">sizeof</span>(*rfkill) + <span class="hljs-built_in">strlen</span>(name) + <span class="hljs-number">1</span>, GFP_KERNEL);
+
+spin_lock_init(&amp;rfkill-&gt;lock);
+INIT_LIST_HEAD(&amp;rfkill-&gt;node);
+rfkill-&gt;type = type;
+<span class="hljs-built_in">strcpy</span>(rfkill-&gt;name, name);
+rfkill-&gt;ops  = ops;
+rfkill-&gt;data = ops_data;
+
+dev = &amp;rfkill-&gt;dev;
+dev-&gt;<span class="hljs-class"><span class="hljs-keyword">class</span>  =</span> &amp;rfkill_class;
+dev-&gt;parent = parent;
+device_initialize(dev);
+
+<span class="hljs-keyword">return</span> rfkill;
+</code></pre></div></code></pre>
+<p>名字是<strong>内联分配</strong>在结构体尾部的（<code>sizeof(*rfkill) + strlen(name) + 1</code>），这就是 <code>char name[]</code> 柔性数组的用法，一次 <code>kzalloc</code> 搞定，省一次分配也省一个指针。</p>
+<p>四处参数检查用 <code>WARN_ON</code> 实现，任一条命中就返回 NULL：<code>ops</code> 为空、<code>ops-&gt;set_block</code> 为空、<code>name</code> 为空、<code>type</code> 非法。</p>
+<p><code>dev-&gt;class = &amp;rfkill_class</code> 决定了 sysfs 目录位置：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-keyword">class</span> <span class="hljs-title">rfkill_class</span> =</span> {
+	.name        = <span class="hljs-string">&quot;rfkill&quot;</span>,
+	.dev_release = rfkill_release,
+	.dev_groups  = rfkill_dev_groups,
+	.dev_uevent  = rfkill_dev_uevent,
+	.pm          = RFKILL_PM_OPS,
+};
+</code></pre></div></code></pre>
+<p>所以注册后设备出现在 <code>/sys/class/rfkill/rfkillN/</code>。</p>
+<h3 id="6.3-rfkill_register" tabindex="-1">6.3 rfkill_register <a class="header-anchor" href="#6.3-rfkill_register"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">rfkill_register</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> rfkill *rfkill)</span>
+{
+	<span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> rfkill_no;    <span class="hljs-comment">/* 静态，跨调用累加 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device</span> *<span class="hljs-title">dev</span> =</span> &amp;rfkill-&gt;dev;
+	<span class="hljs-type">int</span> error;
+
+	BUG_ON(!rfkill);
+
+	mutex_lock(&amp;rfkill_global_mutex);
+
+	<span class="hljs-keyword">if</span> (rfkill-&gt;registered) {
+		error = -EALREADY;
+		<span class="hljs-keyword">goto</span> unlock;
+	}
+
+	rfkill-&gt;idx = rfkill_no;
+	dev_set_name(dev, <span class="hljs-string">&quot;rfkill%lu&quot;</span>, rfkill_no);
+	rfkill_no++;
+
+	list_add_tail(&amp;rfkill-&gt;node, &amp;rfkill_list);
+
+	error = device_add(dev);           <span class="hljs-comment">/* 建 sysfs 目录 */</span>
+	<span class="hljs-keyword">if</span> (error)
+		<span class="hljs-keyword">goto</span> remove;
+
+	error = rfkill_led_trigger_register(rfkill);
+	<span class="hljs-keyword">if</span> (error)
+		<span class="hljs-keyword">goto</span> devdel;
+
+	rfkill-&gt;registered = <span class="hljs-literal">true</span>;
+
+	INIT_DELAYED_WORK(&amp;rfkill-&gt;poll_work, rfkill_poll);
+	INIT_WORK(&amp;rfkill-&gt;uevent_work, rfkill_uevent_work);
+	INIT_WORK(&amp;rfkill-&gt;sync_work, rfkill_sync_work);
+
+	<span class="hljs-comment">/* 驱动实现了 poll 才启用轮询 */</span>
+	<span class="hljs-keyword">if</span> (rfkill-&gt;ops-&gt;poll)
+		queue_delayed_work(system_power_efficient_wq,
+				   &amp;rfkill-&gt;poll_work,
+				   round_jiffies_relative(POLL_INTERVAL));
+
+	<span class="hljs-keyword">if</span> (!rfkill-&gt;persistent || rfkill_epo_lock_active)
+		schedule_work(&amp;rfkill-&gt;sync_work);
+	<span class="hljs-comment">/* ... CONFIG_RFKILL_INPUT 的全局同步 ... */</span>
+
+	rfkill_global_led_trigger_event();
+	rfkill_send_events(rfkill, RFKILL_OP_ADD);
+
+	mutex_unlock(&amp;rfkill_global_mutex);
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+devdel:
+	device_del(&amp;rfkill-&gt;dev);
+remove:
+	list_del_init(&amp;rfkill-&gt;node);
+unlock:
+	mutex_unlock(&amp;rfkill_global_mutex);
+	<span class="hljs-keyword">return</span> error;
+}
+</code></pre></div></code></pre>
+<p>几个细节：</p>
+<p><strong><code>rfkill_no</code> 是 <code>static</code>，只增不减。</strong> 卸载再加载驱动，新设备的 idx 会比上次大。所以 <code>rfkill0</code> 这个编号不保证稳定，脚本里别写死。</p>
+<p><strong><code>idx</code> 分配在所有检查通过之后、<code>device_add</code> 之前。</strong> 如果 <code>device_add</code> 失败，idx 已经消耗掉了。这就是为什么重试注册可能拿到不连续的编号。</p>
+<p><strong><code>round_jiffies_relative()</code> 把定时器对齐到整秒。</strong> 多个 rfkill 设备的轮询会聚在同一时刻醒，减少 CPU 唤醒次数。嵌入式省电场景下这个优化有实际意义。</p>
+<p><strong><code>rfkill_send_events(RFKILL_OP_ADD)</code> 是通知用户态的最后一环</strong>，写进 <code>/dev/rfkill</code> 的事件队列。</p>
+<h3 id="6.4-rfkill_unregister" tabindex="-1">6.4 rfkill_unregister <a class="header-anchor" href="#6.4-rfkill_unregister"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>清理顺序与注册严格相反：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">rfkill_unregister</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> rfkill *rfkill)</span>
+{
+	BUG_ON(!rfkill);
+
+	<span class="hljs-keyword">if</span> (rfkill-&gt;ops-&gt;poll)
+		cancel_delayed_work_sync(&amp;rfkill-&gt;poll_work);
+
+	cancel_work_sync(&amp;rfkill-&gt;uevent_work);
+	cancel_work_sync(&amp;rfkill-&gt;sync_work);
+
+	rfkill-&gt;registered = <span class="hljs-literal">false</span>;
+
+	device_del(&amp;rfkill-&gt;dev);
+
+	mutex_lock(&amp;rfkill_global_mutex);
+	rfkill_send_events(rfkill, RFKILL_OP_DEL);
+	list_del_init(&amp;rfkill-&gt;node);
+	rfkill_global_led_trigger_event();
+	mutex_unlock(&amp;rfkill_global_mutex);
+
+	rfkill_led_trigger_unregister(rfkill);
+}
+</code></pre></div></code></pre>
+<p><strong>先 <code>cancel_*_work_sync</code> 再 <code>device_del</code>。</strong> 反过来的话，已排队的工作可能在设备结构已经半销毁时执行，典型的 use-after-free。<code>_sync</code> 后缀表示&quot;等到确实取消了才返回&quot;。</p>
+<p><code>rfkill_unregister</code> <strong>不释放内存</strong>，只做注销。释放靠 <code>rfkill_destroy()</code>。这是标准的两段式，允许驱动在注销后还读一下状态。</p>
+<h2 id="七状态设置-api" tabindex="-1">七、状态设置 API <a class="header-anchor" href="#七状态设置-api"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一族是驱动上报信息的唯一正确途径，都返回&quot;组合后的阻塞状态&quot;（true = 应该被阻塞）。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>函数</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rfkill_set_hw_state(rfkill, blocked)</code></td>
+<td>硬件状态变了（物理开关拨动、固件上报）</td>
+</tr>
+<tr>
+<td><code>rfkill_set_sw_state(rfkill, blocked)</code></td>
+<td>软件状态变了（某些平台直接响应输入）</td>
+</tr>
+<tr>
+<td><code>rfkill_set_states(rfkill, sw, hw)</code></td>
+<td>两者一起设，省一次加锁</td>
+</tr>
+<tr>
+<td><code>rfkill_init_sw_state(rfkill, blocked)</code></td>
+<td>注册前设初值，同时置 <code>persistent</code></td>
+</tr>
+<tr>
+<td><code>rfkill_blocked(rfkill)</code></td>
+<td>查询当前是否被阻塞</td>
+</tr>
+</tbody>
+</table></div><h3 id="7.1-为什么返回组合状态" tabindex="-1">7.1 为什么返回组合状态 <a class="header-anchor" href="#7.1-为什么返回组合状态"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>看这个典型用法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 硬件刚被解除阻塞 */</span>
+<span class="hljs-type">bool</span> blocked = rfkill_set_hw_state(rfkill, <span class="hljs-literal">false</span>);
+
+<span class="hljs-comment">/*
+ * blocked 为 true 说明软件层还阻塞着。
+ * 驱动不需要自己记 soft 状态，直接用返回值决定要不要真的开硬件。
+ */</span>
+<span class="hljs-keyword">if</span> (!blocked)
+	enable_transmitter(dev);
+</code></pre></div></code></pre>
+<p>如果让驱动自己维护一份 soft 状态，就得处理&quot;用户态在另一个 CPU 上同时改状态&quot;的竞态。返回值把这件事收进了框架的锁里。</p>
+<h3 id="7.2-可以在任何上下文调用" tabindex="-1">7.2 可以在任何上下文调用 <a class="header-anchor" href="#7.2-可以在任何上下文调用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这几个函数的文档都明确写着「can be called in any context, even from within rfkill callbacks」。内部用 <code>spin_lock_irqsave(&amp;rfkill-&gt;lock)</code> 保护，所以从中断处理函数里调是安全的。</p>
+<p>这是硬件开关驱动最需要的性质：GPIO 中断里直接上报状态，不用绕到工作队列。</p>
+<h3 id="7.3-轮询的暂停与恢复" tabindex="-1">7.3 轮询的暂停与恢复 <a class="header-anchor" href="#7.3-轮询的暂停与恢复"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">rfkill_pause_polling</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> rfkill *rfkill)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">rfkill_resume_polling</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> rfkill *rfkill)</span>;
+</code></pre></div></code></pre>
+<p>用于&quot;发射器因为其他原因关闭了，别浪费 CPU 轮询&quot;的场景。</p>
+<p><strong>注意：挂起/恢复时不需要调这两个。</strong> 框架在 suspend 时会自动暂停轮询，resume 时自动恢复，并且能正确处理&quot;挂起前就已经手动暂停&quot;的情况。多此一举地调反而可能打乱状态。</p>
+<h2 id="八写一个最小-rfkill-驱动" tabindex="-1">八、写一个最小 rfkill 驱动 <a class="header-anchor" href="#八写一个最小-rfkill-驱动"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/module.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/platform_device.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/rfkill.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/gpio/consumer.h&gt;</span></span>
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_rfkill</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill</span> *<span class="hljs-title">rfkill</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">gpio_desc</span> *<span class="hljs-title">en_gpio</span>;</span>
+};
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">my_set_block</span><span class="hljs-params">(<span class="hljs-type">void</span> *data, <span class="hljs-type">bool</span> blocked)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_rfkill</span> *<span class="hljs-title">priv</span> =</span> data;
+
+	<span class="hljs-comment">/* blocked == true 表示关闭发射器 */</span>
+	gpiod_set_value_cansleep(priv-&gt;en_gpio, blocked ? <span class="hljs-number">0</span> : <span class="hljs-number">1</span>);
+
+	dev_info(&amp;priv-&gt;rfkill_parent-&gt;dev,
+		 <span class="hljs-string">&quot;transmitter %s\n&quot;</span>, blocked ? <span class="hljs-string">&quot;off&quot;</span> : <span class="hljs-string">&quot;on&quot;</span>);
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_ops</span> <span class="hljs-title">my_rfkill_ops</span> =</span> {
+	.set_block = my_set_block,
+};
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">my_probe</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> platform_device *pdev)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_rfkill</span> *<span class="hljs-title">priv</span>;</span>
+	<span class="hljs-type">int</span> ret;
+
+	priv = devm_kzalloc(&amp;pdev-&gt;dev, <span class="hljs-keyword">sizeof</span>(*priv), GFP_KERNEL);
+	<span class="hljs-keyword">if</span> (!priv)
+		<span class="hljs-keyword">return</span> -ENOMEM;
+
+	priv-&gt;en_gpio = devm_gpiod_get(&amp;pdev-&gt;dev, <span class="hljs-string">&quot;enable&quot;</span>, GPIOD_OUT_LOW);
+	<span class="hljs-keyword">if</span> (IS_ERR(priv-&gt;en_gpio))
+		<span class="hljs-keyword">return</span> PTR_ERR(priv-&gt;en_gpio);
+
+	priv-&gt;rfkill = rfkill_alloc(<span class="hljs-string">&quot;my-wifi&quot;</span>, &amp;pdev-&gt;dev,
+				    RFKILL_TYPE_WLAN,
+				    &amp;my_rfkill_ops, priv);
+	<span class="hljs-keyword">if</span> (!priv-&gt;rfkill)
+		<span class="hljs-keyword">return</span> -ENOMEM;
+
+	<span class="hljs-comment">/* 初值：默认不阻塞。必须在 register 之前设 */</span>
+	rfkill_init_sw_state(priv-&gt;rfkill, <span class="hljs-literal">false</span>);
+
+	ret = rfkill_register(priv-&gt;rfkill);
+	<span class="hljs-keyword">if</span> (ret) {
+		rfkill_destroy(priv-&gt;rfkill);
+		<span class="hljs-keyword">return</span> ret;
+	}
+
+	platform_set_drvdata(pdev, priv);
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">my_remove</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> platform_device *pdev)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_rfkill</span> *<span class="hljs-title">priv</span> =</span> platform_get_drvdata(pdev);
+
+	rfkill_unregister(priv-&gt;rfkill);
+	rfkill_destroy(priv-&gt;rfkill);
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>rfkill_destroy()</code> 必须调。<code>rfkill_unregister()</code> 只注销，不释放；漏了 <code>destroy</code> 就是内存泄漏，而且是那种 <code>insmod</code>/<code>rmmod</code> 循环几百次才被发现的那种。</p>
+<h2 id="九易错点" tabindex="-1">九、易错点 <a class="header-anchor" href="#九易错点"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>排查</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rfkill list</code> 里看不到自建设备</td>
+<td>没调 <code>rfkill_register</code>，或 <code>rfkill_alloc</code> 返回了 NULL</td>
+<td><code>dmesg</code> 看 <code>WARN_ON</code> 的栈</td>
+</tr>
+<tr>
+<td>软件控制不了设备</td>
+<td><code>set_block</code> 没实现</td>
+<td><code>rfkill_alloc</code> 会直接返回 NULL</td>
+</tr>
+<tr>
+<td>开关方向反了</td>
+<td><code>blocked</code> 的语义搞反</td>
+<td><code>true</code> 是&quot;关&quot;</td>
+</tr>
+<tr>
+<td><code>ifconfig up</code> 报 <code>RF-kill</code></td>
+<td>设备被 block 了</td>
+<td><code>rfkill list</code></td>
+</tr>
+<tr>
+<td>写 <code>soft</code> 报权限不足</td>
+<td>需要 <code>CAP_NET_ADMIN</code></td>
+<td>用 root</td>
+</tr>
+<tr>
+<td>写 <code>state</code> 报文件不存在</td>
+<td><code>state</code> 老接口已删除</td>
+<td>改用 <code>soft</code>，注意语义相反</td>
+</tr>
+<tr>
+<td>设备名是乱的</td>
+<td><code>name</code> 传了栈上临时缓冲</td>
+<td>内核不拷贝字符串</td>
+</tr>
+<tr>
+<td><code>rmmod</code> 后内存泄漏</td>
+<td>漏了 <code>rfkill_destroy</code></td>
+<td>kmemleak</td>
+</tr>
+<tr>
+<td>物理开关拨了软件不知道</td>
+<td>没实现 <code>poll</code> 或 <code>query</code></td>
+<td>补上回调并上报</td>
+</tr>
+<tr>
+<td>挂起后状态错乱</td>
+<td>自己调了 <code>pause_polling</code></td>
+<td>挂起恢复由框架管，别插手</td>
+</tr>
+</tbody>
+</table></div><h2 id="参考资料" tabindex="-1">参考资料 <a class="header-anchor" href="#参考资料"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<ul>
+<li>内核文档 <code>Documentation/driver-api/rfkill.rst</code></li>
+<li>ABI 文档 <code>Documentation/ABI/stable/sysfs-class-rfkill</code></li>
+<li><code>include/linux/rfkill.h</code>、<code>include/uapi/linux/rfkill.h</code></li>
+<li><code>net/rfkill/core.c</code></li>
+</ul>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一soft-block-与-hard-block" data-toc-target="一soft-block-与-hard-block">一、soft block 与 hard block</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.1-分清阻塞状态和硬件电源" data-toc-target="1.1-分清阻塞状态和硬件电源">1.1 分清"阻塞状态"和"硬件电源"</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二三个组成部分" data-toc-target="二三个组成部分">二、三个组成部分</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三用户态看到的两个入口" data-toc-target="三用户态看到的两个入口">三、用户态看到的两个入口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.1-命令行工具" data-toc-target="3.1-命令行工具">3.1 命令行工具</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.2-sysfs-属性" data-toc-target="3.2-sysfs-属性">3.2 sysfs 属性</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.3-老接口-state-已经删了" data-toc-target="3.3-老接口-state-已经删了">3.3 老接口 state 已经删了</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.4-devrfkill-是单个-misc-设备" data-toc-target="3.4-devrfkill-是单个-misc-设备">3.4 /dev/rfkill 是单个 misc 设备</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四struct-rfkill" data-toc-target="四struct-rfkill">四、struct rfkill</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.1-state-是位图不是枚举" data-toc-target="4.1-state-是位图不是枚举">4.1 state 是位图，不是枚举</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.2-enum-rfkill_type" data-toc-target="4.2-enum-rfkill_type">4.2 enum rfkill_type</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五struct-rfkill_ops三个回调" data-toc-target="五struct-rfkill_ops三个回调">五、struct rfkill_ops：三个回调</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.1-set_block-的两条纪律" data-toc-target="5.1-set_block-的两条纪律">5.1 set_block 的两条纪律</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.2-poll-与-query-的区别" data-toc-target="5.2-poll-与-query-的区别">5.2 poll 与 query 的区别</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六注册链路" data-toc-target="六注册链路">六、注册链路</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.1-四步走" data-toc-target="6.1-四步走">6.1 四步走</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.2-rfkill_alloc" data-toc-target="6.2-rfkill_alloc">6.2 rfkill_alloc</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.3-rfkill_register" data-toc-target="6.3-rfkill_register">6.3 rfkill_register</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.4-rfkill_unregister" data-toc-target="6.4-rfkill_unregister">6.4 rfkill_unregister</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七状态设置-api" data-toc-target="七状态设置-api">七、状态设置 API</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.1-为什么返回组合状态" data-toc-target="7.1-为什么返回组合状态">7.1 为什么返回组合状态</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.2-可以在任何上下文调用" data-toc-target="7.2-可以在任何上下文调用">7.2 可以在任何上下文调用</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.3-轮询的暂停与恢复" data-toc-target="7.3-轮询的暂停与恢复">7.3 轮询的暂停与恢复</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八写一个最小-rfkill-驱动" data-toc-target="八写一个最小-rfkill-驱动">八、写一个最小 rfkill 驱动</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九易错点" data-toc-target="九易错点">九、易错点</a>
+                    
+                    <a class="toc-item toc-lv2" href="#参考资料" data-toc-target="参考资料">参考资料</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/C.驱动/13-杂项/rfkill-子系统：软硬阻塞、核心数据结构与-API/","title":"rfkill 子系统：软硬阻塞、核心数据结构与 API","url":"/C.驱动/13-杂项/rfkill-子系统：软硬阻塞、核心数据结构与-API/","type":"current"},{"id":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","title":"ADC 与 DS18B20 传感器驱动","url":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","type":"neighbor"},{"id":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","title":"LED 与 PWM 字符设备驱动","url":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","type":"neighbor"},{"id":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","title":"Linux下用户空间修改设备寄存器或者物理内存的实现","url":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","type":"neighbor"},{"id":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","title":"RK3399 的 Wi-Fi 与蓝牙 rfkill 实现","url":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","type":"neighbor"}],"links":[{"source":"/C.驱动/13-杂项/rfkill-子系统：软硬阻塞、核心数据结构与-API/","target":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","type":"neighbor"},{"source":"/C.驱动/13-杂项/rfkill-子系统：软硬阻塞、核心数据结构与-API/","target":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","type":"neighbor"},{"source":"/C.驱动/13-杂项/rfkill-子系统：软硬阻塞、核心数据结构与-API/","target":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","type":"neighbor"},{"source":"/C.驱动/13-杂项/rfkill-子系统：软硬阻塞、核心数据结构与-API/","target":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

@@ -1,0 +1,1648 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>守护进程：从终端脱离的后台服务 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">守护进程：从终端脱离的后台服务</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/D.操作系统/01-OS概念与进程模型/守护进程：从终端脱离的后台服务/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">守护进程：从终端脱离的后台服务</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">守护进程：从终端脱离的后台服务</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <h2 id="一守护进程是什么" tabindex="-1">一、守护进程是什么 <a class="header-anchor" href="#一守护进程是什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先拿一次 QQ 聊天把几个容易混的概念对一下。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>概念</th>
+<th>QQ 里的对应</th>
+<th>技术含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>控制终端</td>
+<td>打开 QQ 并登录</td>
+<td>进程与某个 tty 设备的绑定关系</td>
+</tr>
+<tr>
+<td>进程</td>
+<td>发出的每一条消息</td>
+<td>独立调度、独占地址空间的执行单元</td>
+</tr>
+<tr>
+<td>作业</td>
+<td>聊天里围绕的一个话题</td>
+<td>shell 的 job control 单位，一个作业一般就是一个进程组</td>
+</tr>
+<tr>
+<td>会话</td>
+<td>从打开聊天到关掉</td>
+<td>一个或多个进程组的集合，最多绑一个控制终端</td>
+</tr>
+</tbody>
+</table></div><p>类比到这里就够了。守护进程（daemon）的定义只有三条：跑在后台、没有控制终端、不向终端输出。它的生命周期由系统决定——开机起来，关机停掉，中间不依赖任何一次登录。</p>
+<p><code>sshd</code>、<code>crond</code>、<code>systemd-journald</code>、<code>php-fpm</code> 都是这个模型。你在终端里敲的 <code>ls</code> 不是。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>普通前台进程</th>
+<th>守护进程</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>启动者</td>
+<td>用户的 shell</td>
+<td>init / systemd，或 shell 但已脱离</td>
+</tr>
+<tr>
+<td>控制终端</td>
+<td>有，形如 <code>/dev/pts/3</code></td>
+<td>无</td>
+</tr>
+<tr>
+<td>父进程</td>
+<td>启动它的 shell</td>
+<td>PID 1，或最近的 subreaper</td>
+</tr>
+<tr>
+<td>会话地位</td>
+<td>属于某次登录的会话</td>
+<td>自己是会话首进程</td>
+</tr>
+<tr>
+<td>标准流</td>
+<td>指向 tty</td>
+<td><code>/dev/null</code> 或 journal</td>
+</tr>
+<tr>
+<td>生命周期</td>
+<td>终端关掉就结束</td>
+<td>跨终端、跨登录</td>
+</tr>
+<tr>
+<td>收到 SIGHUP</td>
+<td>默认终止</td>
+<td>忽略，或用来重载配置</td>
+</tr>
+</tbody>
+</table></div><p>这张表是本篇的提纲。下面每一章都在填其中一行的细节。</p>
+<h2 id="二为什么需要脱离终端" tabindex="-1">二、为什么需要脱离终端 <a class="header-anchor" href="#二为什么需要脱离终端"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>在终端里敲一条命令，这个进程会占住终端直到结束。期间你没法在同一个终端里输入别的东西。更麻烦的是终端本身会消失：SSH 断线、窗口关掉、tmux 挂掉，内核就会给这个会话里的进程发 <code>SIGHUP</code>。程序没接管这个信号，就被杀掉了。</p>
+<p>所以「后台运行」包含两件独立的事，很多人只做了第一件：</p>
+<ol>
+<li>让进程让出前台终端，你还能继续敲命令。</li>
+<li>让进程不再受终端消失的影响。</li>
+</ol>
+<p><code>&amp;</code> 只做了第 1 件。<code>nohup</code> 只做了第 2 件。<code>setsid</code> 做的是第 2 件的更彻底版本。三个都不是完整答案。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>手段</th>
+<th>让出前台</th>
+<th>挡 SIGHUP</th>
+<th>脱离控制终端</th>
+<th>副作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cmd &amp;</code></td>
+<td>是</td>
+<td>否</td>
+<td>否</td>
+<td>终端一关就死</td>
+</tr>
+<tr>
+<td><code>nohup cmd</code></td>
+<td>否</td>
+<td>是</td>
+<td>否</td>
+<td>生成 <code>nohup.out</code></td>
+</tr>
+<tr>
+<td><code>nohup cmd &amp;</code></td>
+<td>是</td>
+<td>是</td>
+<td>否</td>
+<td>仍是原会话成员，<code>ps</code> 里还挂着 pts</td>
+</tr>
+<tr>
+<td><code>disown</code></td>
+<td>是</td>
+<td>是</td>
+<td>否</td>
+<td>只对当前 shell 生效，登录退出后失效</td>
+</tr>
+<tr>
+<td><code>setsid cmd</code></td>
+<td>是</td>
+<td>是</td>
+<td>是</td>
+<td>输出仍写到原终端</td>
+</tr>
+<tr>
+<td><code>tmux</code> / <code>screen</code></td>
+<td>是</td>
+<td>是</td>
+<td>是</td>
+<td>多一层进程，靠复用会话兜底</td>
+</tr>
+<tr>
+<td>守护进程</td>
+<td>是</td>
+<td>是</td>
+<td>是</td>
+<td>需要自己接管日志、pid、重载</td>
+</tr>
+</tbody>
+</table></div><p><code>nohup</code> 的重定向行为有个细节常被记错：它只在标准输出指向终端时才把它改到 <code>nohup.out</code>。你事先 <code>&gt; app.log 2&gt;&amp;1</code> 了，<code>nohup</code> 不会另建文件。</p>
+<p>不想留 <code>nohup.out</code>，就自己指走：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">nohup</span> ./worker &gt;/dev/null 2&gt;&amp;1 &amp;
+</code></pre></div></code></pre>
+<p><code>setsid</code> 的问题在另一头：它换了会话，但标准流还在原终端上。终端关掉之后再往 fd 1 写，会拿到 <code>EIO</code>。这个坑第八章会处理。</p>
+<h2 id="三终端控制终端与会话" tabindex="-1">三、终端、控制终端与会话 <a class="header-anchor" href="#三终端控制终端与会话"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>终端在 Linux 上是一个字符设备文件。真实的串口是 <code>/dev/ttyS0</code> 这种，伪终端是 <code>/dev/pts/N</code>。SSH 登录、<code>xterm</code>、<code>tmux</code> 里的每一个窗口，背后都是一个 pts。</p>
+<p><code>/dev/tty</code> 是个特殊节点，它永远指向当前进程的控制终端。所以判断「我有没有控制终端」，读 <code>/dev/tty</code> 就够了：没有控制终端的进程去 <code>open(&quot;/dev/tty&quot;)</code>，会返回 <code>ENXIO</code>。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ <span class="hljs-built_in">tty</span>
+/dev/pts/3
+$ ps -o pid,ppid,pgid,sid,<span class="hljs-built_in">tty</span>,cmd -p $$
+  PID  PPID  PGID   SID TT       CMD
+ 8812  8810  8812  8812 pts/3    -bash
+</code></pre></div></code></pre>
+<p>五个字段放在一起看，就是进程的层级身份：</p>
+<ul>
+<li><code>PID</code> 8812，这个 shell 自己。</li>
+<li><code>PPID</code> 8810，是 <code>sshd</code> 派生出来的登录 shell 的父进程。</li>
+<li><code>PGID</code> 8812，进程组 ID，等于自己的 PID，说明它是组长。</li>
+<li><code>SID</code> 8812，会话 ID，也等于自己的 PID，说明它还是会话首进程。</li>
+<li><code>TT</code> 是 <code>pts/3</code>，它绑定了这个控制终端。</li>
+</ul>
+<p>一个会话最多绑一个控制终端，一个控制终端也只属于一个会话。这个一对一关系是 <code>setsid</code> 能起作用的前提。</p>
+<p><code>ps -t pts/3</code> 可以按终端筛出所有相关进程：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ ps -t pts/3
+  PID TTY          TIME CMD
+ 8812 pts/3    00:00:00 bash
+ 8901 pts/3    00:00:00 vim
+</code></pre></div></code></pre>
+<p>控制终端的作用有两个。一是把键盘中断送到前台进程组：你按 Ctrl-C，内核发给的是「当前前台进程组」，不是某个 PID。二是终端消失时，内核给会话首进程发 <code>SIGHUP</code>，再由它扩散。</p>
+<p>守护进程要做的，就是把这两个能力都丢掉。</p>
+<h2 id="四进程组与会话的关系" tabindex="-1">四、进程组与会话的关系 <a class="header-anchor" href="#四进程组与会话的关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>层级是三层，从下往上：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>会话 session (SID)
+ ├── 进程组 pgrp (PGID)  ← 组长进程的 PID 就是 PGID
+ │    ├── 进程 PID
+ │    └── 进程 PID
+ └── 进程组 pgrp (PGID)
+      └── 进程 PID
+</code></pre></div></code></pre>
+<p>进程组是为了批量发信号存在的。<code>kill -TERM -8812</code> 里的负号表示「发给 PGID 为 8812 的整组」。没有这个机制，shell 想杀一条管道里的三个进程，就得逐个查 PID。</p>
+<p>组长进程创建进程组，但组的存活期不由它决定。只要组里还剩一个进程，组就在。组长退出后，这个 PGID 依然在，只是不再有进程能以「组长」的身份被指认。</p>
+<p>会话是进程组的集合，起点是一次登录：你 <code>ssh</code> 上来，登录程序调用 <code>setsid()</code> 建会话，<code>bash</code> 在这个会话里跑，你敲的每条命令在它自己的进程组里跑。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>操作</th>
+<th>接口</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>取自己的进程组</td>
+<td><code>getpgrp()</code></td>
+<td>返回 PGID</td>
+</tr>
+<tr>
+<td>取指定进程的进程组</td>
+<td><code>getpgid(pid)</code></td>
+<td><code>getpgid(0)</code> 查自己</td>
+</tr>
+<tr>
+<td>加入/新建进程组</td>
+<td><code>setpgid(pid, pgid)</code></td>
+<td><code>pgid == pid</code> 时新建组</td>
+</tr>
+<tr>
+<td>新建会话</td>
+<td><code>setsid()</code></td>
+<td>同时成为组长和会话首进程</td>
+</tr>
+<tr>
+<td>取会话 ID</td>
+<td><code>getsid(pid)</code></td>
+<td><code>getsid(0)</code> 查自己</td>
+</tr>
+</tbody>
+</table></div><p>shell 的前后台切换建立在这套东西上。<code>fg</code> 把某个进程组提到前台，本质是 <code>tcsetpgrp(控制终端fd, pgid)</code>。后台进程组如果去读终端，内核发 <code>SIGTTIN</code> 把它停住；去写终端则发 <code>SIGTTOU</code>，前提是终端设了 <code>TOSTOP</code>。</p>
+<p>这也解释了一个现象：守护进程如果还留着一个终端 fd，被后台读写就会莫名收到 <code>SIGTTIN</code> 停住。<code>ps</code> 里看到状态是 <code>T</code>，不占 CPU 也不干活。第八章的重定向就是在断这个根。</p>
+<h2 id="五创建守护进程的标准步骤" tabindex="-1">五、创建守护进程的标准步骤 <a class="header-anchor" href="#五创建守护进程的标准步骤"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>七步，顺序不能换。表里第 5、6 步的位置尤其关键。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>步</th>
+<th>动作</th>
+<th>接口</th>
+<th>为什么必须在这一步</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>第一次 fork，父进程退出</td>
+<td><code>fork()</code></td>
+<td>父进程退出后子进程变孤儿，被 PID 1 收养</td>
+</tr>
+<tr>
+<td>2</td>
+<td>子进程建新会话</td>
+<td><code>setsid()</code></td>
+<td>调用者不能是组长，第 1 步刚好保证了这点</td>
+</tr>
+<tr>
+<td>3</td>
+<td>第二次 fork，第一个子进程退出</td>
+<td><code>fork()</code></td>
+<td>让最终进程不是会话首进程，永远拿不到控制终端</td>
+</tr>
+<tr>
+<td>4</td>
+<td>改工作目录到根</td>
+<td><code>chdir(&quot;/&quot;)</code></td>
+<td>避免占用一个会被卸载的挂载点</td>
+</tr>
+<tr>
+<td>5</td>
+<td>重设文件权限掩码</td>
+<td><code>umask(0)</code></td>
+<td>不继承父进程的 umask</td>
+</tr>
+<tr>
+<td>6</td>
+<td>标准流重定向到 <code>/dev/null</code></td>
+<td><code>dup2()</code></td>
+<td>断掉与终端的最后一条通路</td>
+</tr>
+<tr>
+<td>7</td>
+<td>关闭多余 fd、装信号处理、写 pid 文件</td>
+<td><code>close()</code>/<code>sigaction()</code></td>
+<td>收尾</td>
+</tr>
+</tbody>
+</table></div><p>一个能跑的骨架：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> _GNU_SOURCE</span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdlib.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;fcntl.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;signal.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/stat.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/resource.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;syslog.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">volatile</span> <span class="hljs-type">sig_atomic_t</span> g_stop = <span class="hljs-number">0</span>;
+<span class="hljs-type">static</span> <span class="hljs-keyword">volatile</span> <span class="hljs-type">sig_atomic_t</span> g_reload = <span class="hljs-number">0</span>;
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">on_term</span><span class="hljs-params">(<span class="hljs-type">int</span> sig)</span> { (<span class="hljs-type">void</span>)sig; g_stop = <span class="hljs-number">1</span>; }
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">on_hup</span><span class="hljs-params">(<span class="hljs-type">int</span> sig)</span>  { (<span class="hljs-type">void</span>)sig; g_reload = <span class="hljs-number">1</span>; }
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">close_all_fds</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rlimit</span> <span class="hljs-title">rl</span>;</span>
+    <span class="hljs-type">long</span> maxfd;
+
+    <span class="hljs-keyword">if</span> (getrlimit(RLIMIT_NOFILE, &amp;rl) == <span class="hljs-number">0</span> &amp;&amp; rl.rlim_max != RLIM_INFINITY)
+        maxfd = (<span class="hljs-type">long</span>)rl.rlim_max;
+    <span class="hljs-keyword">else</span>
+        maxfd = <span class="hljs-number">1024</span>;
+
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">long</span> fd = <span class="hljs-number">3</span>; fd &lt; maxfd; fd++)
+        close((<span class="hljs-type">int</span>)fd);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">daemonize</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">pid_t</span> pid;
+
+    pid = fork();
+    <span class="hljs-keyword">if</span> (pid &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    <span class="hljs-keyword">if</span> (pid &gt; <span class="hljs-number">0</span>) _exit(<span class="hljs-number">0</span>);
+
+    <span class="hljs-keyword">if</span> (setsid() &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+
+    pid = fork();
+    <span class="hljs-keyword">if</span> (pid &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    <span class="hljs-keyword">if</span> (pid &gt; <span class="hljs-number">0</span>) _exit(<span class="hljs-number">0</span>);
+
+    <span class="hljs-keyword">if</span> (chdir(<span class="hljs-string">&quot;/&quot;</span>) &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    umask(<span class="hljs-number">0</span>);
+
+    close_all_fds();
+
+    <span class="hljs-type">int</span> fd = open(<span class="hljs-string">&quot;/dev/null&quot;</span>, O_RDWR);
+    <span class="hljs-keyword">if</span> (fd &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    dup2(fd, STDIN_FILENO);
+    dup2(fd, STDOUT_FILENO);
+    dup2(fd, STDERR_FILENO);
+    <span class="hljs-keyword">if</span> (fd &gt; STDERR_FILENO) close(fd);
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-keyword">if</span> (daemonize() &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sigaction</span> <span class="hljs-title">sa</span>;</span>
+    <span class="hljs-built_in">memset</span>(&amp;sa, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span> sa);
+    sa.sa_handler = on_term;
+    sigaction(SIGTERM, &amp;sa, <span class="hljs-literal">NULL</span>);
+    sa.sa_handler = on_hup;
+    sigaction(SIGHUP, &amp;sa, <span class="hljs-literal">NULL</span>);
+    signal(SIGPIPE, SIG_IGN);
+
+    openlog(<span class="hljs-string">&quot;mydaemon&quot;</span>, LOG_PID | LOG_NDELAY, LOG_DAEMON);
+    syslog(LOG_INFO, <span class="hljs-string">&quot;started, pid=%d&quot;</span>, (<span class="hljs-type">int</span>)getpid());
+
+    <span class="hljs-keyword">while</span> (!g_stop) {
+        <span class="hljs-keyword">if</span> (g_reload) {
+            g_reload = <span class="hljs-number">0</span>;
+            syslog(LOG_INFO, <span class="hljs-string">&quot;reload config&quot;</span>);
+        }
+        <span class="hljs-comment">/* 干活 */</span>
+        pause();
+    }
+
+    syslog(LOG_INFO, <span class="hljs-string">&quot;stopping&quot;</span>);
+    closelog();
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>这段代码里有几处容易被抄错。</p>
+<p><code>_exit(0)</code> 不是 <code>exit(0)</code>。<code>exit</code> 会刷 stdio 缓冲、跑 <code>atexit</code> 钩子，而此时缓冲区里还有父进程留下的半行日志，刷两遍就重复了。<code>_exit</code> 直接走系统调用。</p>
+<p><code>close_all_fds</code> 从 3 开始，不能碰 0、1、2。这两个数字后面要交给 <code>dup2</code> 重新占位。</p>
+<p><code>dup2</code> 之后必须 <code>close(fd)</code>，前提是 <code>fd &gt; 2</code>。否则 fd 3 也指向 <code>/dev/null</code>，白占一个。更麻烦的是如果先 <code>close(0)</code> 再 <code>open(&quot;/dev/null&quot;)</code>，新 fd 正好拿到 0，此时 <code>dup2(fd, 0)</code> 等于自己复制自己，<code>close(fd)</code> 就把唯一的标准输入也关了。</p>
+<p><code>SIGPIPE</code> 要忽略。守护进程往一个已关闭的 socket 写日志，默认动作是直接终止进程。</p>
+<p>七步里第 4 到 7 步可以按需裁剪。第 1 到 3 步不行，缺一步就留隐患，下一章讲为什么。</p>
+<h2 id="六fork-两次为什么必要" tabindex="-1">六、fork 两次为什么必要 <a class="header-anchor" href="#六fork-两次为什么必要"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一句话：只 fork 一次，进程是会话首进程；再 fork 一次，它就不是了。差别全在这。</p>
+<p>为什么会话首进程这个身份危险?因为在 System V 语义下（Linux 采用这套），一个没有控制终端的会话首进程去 <code>open()</code> 一个终端设备，这个终端会变成它的控制终端，除非 <code>open()</code> 时带上 <code>O_NOCTTY</code>。而守护进程的整个存在意义就是没有控制终端。</p>
+<p>再 fork 一次之后，最终进程既不是会话首进程，也不是组长，它去 <code>open</code> 终端只会得到一个普通 fd，拿不到控制终端。</p>
+<p><code>man 7 daemon</code> 里也这么写：第二次 fork 是为了保证守护进程再也不会重新获得终端，理由正是「程序及其所有依赖未必在每一次 <code>open()</code> 上都严谨地加了 <code>O_NOCTTY</code>」。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>对比项</th>
+<th>只 fork 一次</th>
+<th>fork 两次</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>最终进程身份</td>
+<td>会话首进程 + 组长</td>
+<td>普通成员进程</td>
+</tr>
+<tr>
+<td>控制终端</td>
+<td>特定条件下可被重新获得</td>
+<td>无法获得</td>
+</tr>
+<tr>
+<td><code>open(&quot;/dev/tty&quot;)</code></td>
+<td>在特定条件下能成功</td>
+<td><code>ENXIO</code></td>
+</tr>
+<tr>
+<td>孤儿收养</td>
+<td>被 PID 1 收养</td>
+<td>被 PID 1 收养</td>
+</tr>
+<tr>
+<td>失败风险</td>
+<td>依赖每个 <code>open</code> 都写 <code>O_NOCTTY</code></td>
+<td>不依赖调用方纪律</td>
+</tr>
+</tbody>
+</table></div><p>于是有个反直觉的结论：<strong><code>daemon(3)</code> 帮你省掉了第二次 fork，代价是留下了一个隐患</strong>。glibc 的实现里只有 <code>fork</code>、<code>setsid</code>、<code>chdir</code>、<code>dup2</code>，没有第二次 <code>fork</code>。<code>man 3 daemon</code> 的 BUGS 段原文承认了这点：实现取自 BSD，没有采用确保守护进程不是会话首进程的双 fork 手法，结果守护进程本身就是会话首进程。</p>
+<p>项目里能改就自己写七步，别调 <code>daemon(3)</code>。systemd 官方文档的态度更直接：<code>daemon()</code> 不该用，它只实现了 SysV 流程的一个子集。</p>
+<p>关于「<code>daemon(3)</code> 已被标记废弃」这个说法，我查了源码：glibc 的 <code>posix/unistd.h</code> 里它对 <code>daemon</code> 的声明是普通 <code>extern int</code>，没有挂 <code>__attribute_deprecated__</code>。所以准确表述是：<strong>接口层面未被标记废弃，但 man 手册和 systemd 文档都明确不推荐使用</strong>。这是本篇对素材和常见博客说法的一处修正。</p>
+<h2 id="七setsid-与-getsid" tabindex="-1">七、setsid 与 getsid <a class="header-anchor" href="#七setsid-与-getsid"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>setsid()</code> 做成三件事，一次做完：</p>
+<ol>
+<li>调用进程成为新进程组的组长，PGID 等于自己的 PID。</li>
+<li>调用进程成为新会话的首进程，SID 等于自己的 PID。</li>
+<li>切断与控制终端的关联。</li>
+</ol>
+<p>它会失败，唯一的错误是 <code>EPERM</code>：调用者已经是某个进程组的组长。组长不能改宗到新会话里去，否则原进程组的 PGID 会指向一个已经跑掉的进程。这正是七步流程里必须先 <code>fork</code> 一次的原因：fork 出来的子进程 PID 是新的，它继承了父进程的 PGID 但不等于自己的 PID，所以不是组长。</p>
+<p><code>getsid(pid)</code> 反过来查。<code>getsid(0)</code> 查自己，<code>getsid(1)</code> 查 PID 1。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ ps -o pid,ppid,pgid,sid,<span class="hljs-built_in">tty</span>,cmd -C mydaemon
+  PID  PPID  PGID   SID TT       CMD
+ 9127     1  9127  9126 ?        ./mydaemon
+</code></pre></div></code></pre>
+<p>注意 <code>SID</code> 是 9126 而不是 9127，<code>PGID</code> 是 9127。PID 等于 PGID，说明它是组长；PID 不等于 SID，说明它不是会话首进程。这就是双 fork 之后应有的样子。如果 <code>PID == SID</code>，说明你少 fork 了一次。<code>TT</code> 是 <code>?</code>，表示没有控制终端。</p>
+<p>命令行上还有个同名工具 <code>setsid(1)</code>，来自 util-linux:</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>setsid ./worker &amp;
+</code></pre></div></code></pre>
+<p>它内部就是 <code>fork</code> + <code>setsid</code> + <code>exec</code>，跑完立即返回。</p>
+<p>素材里记了一个真实的坑，保留在这里：在终端里直接敲 <code>setsid cmd</code>，<code>cmd</code> 会在后台默默跑，前台不受影响；但把它写进 shell 脚本，脚本会一直阻塞到 <code>cmd</code> 结束。素材给的解释是 <code>setsid</code> 作为组长时不 <code>wait()</code> 子进程而立即退出，脚本里 <code>setsid</code> 不是组长，<code>bash</code> 会 <code>fork</code> 并 <code>wait()</code> 它。这个解释与 util-linux 的实际实现是否在每个版本上都成立，我没有逐版本核对，按「素材解释，未验证」看待。</p>
+<p>绕开的办法是让它在后台跑：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>setsid ./worker &amp;
+</code></pre></div></code></pre>
+<p>或者干脆不用 <code>setsid(1)</code>，回到 C 代码里自己调 <code>setsid(2)</code>。</p>
+<p>终端消失时，内核给会话首进程发 <code>SIGHUP</code>，终端驱动再把它扩散到前台进程组。<code>setsid()</code> 让你不再是那个会话的成员，这条路就断了。</p>
+<h2 id="八重定向标准输入输出" tabindex="-1">八、重定向标准输入输出 <a class="header-anchor" href="#八重定向标准输入输出"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>close(0); close(1); close(2);</code> 是不够的。关掉之后这三个 fd 编号就空出来了，守护进程后面 <code>open()</code> 一个日志文件或者一个 socket，内核按「最小可用 fd」分配，正好拿到 0。于是标准输入变成了日志文件，接着某个库读 stdin 就读到了日志内容；或者标准输出变成了监听 socket，<code>printf</code> 就把数据写进了网络连接。</p>
+<p>正确的做法是把它们指到 <code>/dev/null</code>，占住编号不放：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> fd = open(<span class="hljs-string">&quot;/dev/null&quot;</span>, O_RDWR);
+<span class="hljs-keyword">if</span> (fd &lt; <span class="hljs-number">0</span>)
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+dup2(fd, STDIN_FILENO);
+dup2(fd, STDOUT_FILENO);
+dup2(fd, STDERR_FILENO);
+<span class="hljs-keyword">if</span> (fd &gt; STDERR_FILENO)
+    close(fd);
+</code></pre></div></code></pre>
+<p><code>dup2(oldfd, newfd)</code> 是原子的：先关 <code>newfd</code> 再复制，中间不会空出窗口。分成 <code>close</code> + <code>dup</code> 两步就有竞态。</p>
+<p><code>O_RDWR</code> 不能省。只开 <code>O_WRONLY</code> 的话，<code>dup2</code> 到 fd 0 之后，任何一次读标准输入都返回 <code>EBADF</code>。<code>/dev/null</code> 支持读写，开成读写最省事。</p>
+<p>fork 之前的 stdio 缓冲区得先刷掉。父进程 <code>_exit(0)</code> 不刷缓冲，缓冲区内容会留在子进程里被复制一份，等子进程退出时才刷出来，日志就重复了。</p>
+<p>systemd 管的服务是另一套逻辑。<code>StandardOutput=journal</code> 时，stdout 和 stderr 直接连到 journald 的 socket，<code>printf</code> 和 <code>fprintf(stderr, ...)</code> 都会变成 journal 记录，不需要自己 <code>dup2</code> 到 <code>/dev/null</code>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>stdin</th>
+<th>stdout / stderr</th>
+<th>推荐做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>自己 daemonize</td>
+<td><code>/dev/null</code></td>
+<td><code>/dev/null</code></td>
+<td>代码里 <code>dup2</code></td>
+</tr>
+<tr>
+<td>自己 daemonize，要留日志</td>
+<td><code>/dev/null</code></td>
+<td>日志文件</td>
+<td><code>open</code> + <code>dup2</code>，日志轮转交给 <code>logrotate</code></td>
+</tr>
+<tr>
+<td>systemd 的 <code>Type=simple</code></td>
+<td><code>/dev/null</code></td>
+<td>journal</td>
+<td>直接 <code>fprintf(stderr, ...)</code></td>
+</tr>
+<tr>
+<td>systemd 的 <code>Type=forking</code></td>
+<td>取决于你的代码</td>
+<td>取决于你的代码</td>
+<td>仍要自己 <code>dup2</code>，否则 systemd 也管不了</td>
+</tr>
+</tbody>
+</table></div><p>最后一行是个常见误解：用了 systemd 不等于可以不做重定向。<code>Type=forking</code> 的服务是程序自己 fork 出去的，systemd 拿不到那之后新开的 fd。</p>
+<h2 id="九改变工作目录与文件权限掩码" tabindex="-1">九、改变工作目录与文件权限掩码 <a class="header-anchor" href="#九改变工作目录与文件权限掩码"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>chdir(&quot;/&quot;)</code> 的理由是挂载点。进程的当前工作目录会持有那个目录所在文件系统的引用，<code>umount</code> 时会返回 <code>EBUSY</code>。守护进程如果 cwd 停在 <code>/home/user/usbdisk/work</code>，这块 U 盘永远卸不掉。更糟的是 cwd 停在某个被删掉的目录里，进程自己也会异常。</p>
+<p>根目录 <code>/</code> 一定存在，一定在根文件系统上，不会因为任何一次 <code>umount</code> 消失。所以 cwd 设到那里最安全。</p>
+<p>代价是相对路径全部失效。守护进程不能写 <code>./config.ini</code>，配置路径要么在启动参数里给绝对路径，要么写死在 <code>/etc/</code> 下。这一点在调试时最容易踩：前台跑能读到配置文件，一 daemonize 就报「找不到文件」。</p>
+<p><code>umask(0)</code> 的理由是继承。umask 是进程属性，<code>fork</code> 会原样继承。如果启动你的 shell umask 是 <code>077</code>，守护进程创建的文件就是 <code>0600</code>，别的用户读不到；换个 shell 启动，权限又变了。行为随启动环境漂移，这不是服务该有的样子。</p>
+<p><code>umask(0)</code> 的含义是「不额外剥任何权限位」，不是「创建出来的文件就是 0777」。文件权限由 <code>open()</code> 的 mode 参数决定，<code>mkdir()</code> 由它自己的 mode 决定。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>umask(<span class="hljs-number">0</span>);
+<span class="hljs-type">int</span> fd = open(<span class="hljs-string">&quot;/var/lib/mydaemon/state&quot;</span>, O_WRONLY | O_CREAT | O_TRUNC, <span class="hljs-number">0644</span>);
+</code></pre></div></code></pre>
+<p>素材里给的是 <code>umask(027)</code>。两者不冲突，取向不同：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>写法</th>
+<th>语义</th>
+<th>适合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>umask(0)</code></td>
+<td>权限完全由代码里的 mode 决定</td>
+<td>想精确控制每一个文件的权限</td>
+</tr>
+<tr>
+<td><code>umask(022)</code></td>
+<td>去掉 group 和 other 的写位</td>
+<td>通用服务的常见选择</td>
+</tr>
+<tr>
+<td><code>umask(027)</code></td>
+<td>再去掉 group 的读执行</td>
+<td>只给同组用户部分访问权</td>
+</tr>
+<tr>
+<td><code>umask(077)</code></td>
+<td>只留属主权限</td>
+<td>存密钥、会话数据</td>
+</tr>
+</tbody>
+</table></div><p>systemd 会在启动服务前把 umask 重置好，<code>UMask=</code> 指令可以直接声明。自己 daemonize 的程序享受不到这个待遇。</p>
+<h2 id="十信号处理sighup-与-sigterm" tabindex="-1">十、信号处理：SIGHUP 与 SIGTERM <a class="header-anchor" href="#十信号处理sighup-与-sigterm"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>守护进程必须接管两个信号，第三个视情况。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>信号</th>
+<th>默认动作</th>
+<th>守护进程约定</th>
+<th>典型实现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SIGHUP</code></td>
+<td>终止</td>
+<td>重新加载配置</td>
+<td>置 flag，主循环里读配置</td>
+</tr>
+<tr>
+<td><code>SIGTERM</code></td>
+<td>终止</td>
+<td>收尾后退出</td>
+<td>置 stop flag，收尾后 <code>return</code></td>
+</tr>
+<tr>
+<td><code>SIGCHLD</code></td>
+<td>忽略</td>
+<td>回收子进程</td>
+<td><code>waitpid(-1, &amp;st, WNOHANG)</code> 循环</td>
+</tr>
+<tr>
+<td><code>SIGPIPE</code></td>
+<td>终止</td>
+<td>忽略</td>
+<td><code>signal(SIGPIPE, SIG_IGN)</code></td>
+</tr>
+<tr>
+<td><code>SIGINT</code></td>
+<td>终止</td>
+<td>前台调试时退出</td>
+<td>与 <code>SIGTERM</code> 同一处理函数</td>
+</tr>
+</tbody>
+</table></div><p><code>SIGHUP</code> 的原始语义是「终端挂断」，是给终端会话用的。守护进程没有终端，这个信号在实用中被借来当「重载配置」：改完 <code>/etc/mydaemon.conf</code>，<code>kill -HUP &lt;pid&gt;</code> 让进程重读，不用重启。<code>systemctl reload</code> 发的也是 <code>SIGHUP</code>（systemd 的 <code>notify-reload</code> 类型把发信号这个动作标准化了）。</p>
+<p>用 <code>sigaction</code> 而不是 <code>signal</code>。<code>signal()</code> 在不同 libc、不同标准下的语义不一致，尤其老 System V 的行为是「处理一次就复位」，会漏掉后续信号。<code>sigaction</code> 的语义是明确的，还能控制 <code>SA_RESTART</code>。</p>
+<p>处理函数里只做一件事：改 flag。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">volatile</span> <span class="hljs-type">sig_atomic_t</span> g_stop = <span class="hljs-number">0</span>;
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">on_term</span><span class="hljs-params">(<span class="hljs-type">int</span> sig)</span>
+{
+    (<span class="hljs-type">void</span>)sig;
+    g_stop = <span class="hljs-number">1</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sigaction</span> <span class="hljs-title">sa</span>;</span>
+    <span class="hljs-built_in">memset</span>(&amp;sa, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span> sa);
+    sa.sa_handler = on_term;
+    sigemptyset(&amp;sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGTERM, &amp;sa, <span class="hljs-literal">NULL</span>);
+    <span class="hljs-comment">/* ... */</span>
+    <span class="hljs-keyword">while</span> (!g_stop) {
+        do_work();
+    }
+}
+</code></pre></div></code></pre>
+<p><code>printf</code>、<code>malloc</code>、<code>syslog</code> 都不是异步信号安全的。信号打断主循环时，这些函数的内部状态正处在半成品阶段，在 handler 里再调一次就会破坏它。<code>syslog</code> 尤其危险，它内部有锁和 socket 状态。所以 handler 只置 <code>volatile sig_atomic_t</code>，实际动作留给主循环。</p>
+<p><code>SA_RESTART</code> 让被信号打断的系统调用自动重启，省掉一堆 <code>EINTR</code> 判断。代价是 <code>pause()</code>、<code>sleep()</code> 这类调用不再被信号唤醒，得配 <code>sigsuspend()</code> 或者换 <code>signalfd()</code>。</p>
+<p>多线程进程里，信号递送给哪个线程是不确定的。要么在启动线程前统一屏蔽，要么用 <code>sigwait</code> 专门开一个线程收信号。单线程的守护进程不用管这个。</p>
+<h2 id="十一日志记录syslog-与-journald" tabindex="-1">十一、日志记录：syslog 与 journald <a class="header-anchor" href="#十一日志记录syslog-与-journald"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>守护进程没有终端可写，日志必须交给系统。传统答案是 <code>syslog(3)</code> 三件套。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;syslog.h&gt;</span></span>
+
+openlog(<span class="hljs-string">&quot;mydaemon&quot;</span>, LOG_PID | LOG_NDELAY, LOG_DAEMON);
+
+syslog(LOG_INFO,  <span class="hljs-string">&quot;worker started, pid=%d&quot;</span>, (<span class="hljs-type">int</span>)getpid());
+syslog(LOG_ERR,   <span class="hljs-string">&quot;connect failed: %m&quot;</span>);        <span class="hljs-comment">/* %m 展开成 strerror(errno) */</span>
+syslog(LOG_DEBUG, <span class="hljs-string">&quot;tick %llu&quot;</span>, (<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-type">long</span>)n);
+
+closelog();
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>取值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ident</code></td>
+<td>程序名</td>
+<td>每条日志的前缀，用字符串常量，别用栈上变量</td>
+</tr>
+<tr>
+<td><code>option</code></td>
+<td><code>LOG_PID</code></td>
+<td>每条带上 PID</td>
+</tr>
+<tr>
+<td></td>
+<td><code>LOG_NDELAY</code></td>
+<td>立刻连 socket，不做延迟连接</td>
+</tr>
+<tr>
+<td></td>
+<td><code>LOG_CONS</code></td>
+<td>syslog 不可用时写控制台</td>
+</tr>
+<tr>
+<td><code>facility</code></td>
+<td><code>LOG_DAEMON</code></td>
+<td>系统守护进程</td>
+</tr>
+<tr>
+<td></td>
+<td><code>LOG_LOCAL0</code>~<code>LOG_LOCAL7</code></td>
+<td>留给本地自定义</td>
+</tr>
+<tr>
+<td><code>priority</code></td>
+<td><code>LOG_ERR</code> <code>LOG_WARNING</code> <code>LOG_INFO</code> <code>LOG_DEBUG</code></td>
+<td>级别，可在 <code>syslog.conf</code> 里按级别过滤</td>
+</tr>
+</tbody>
+</table></div><p><code>%m</code> 是 <code>syslog</code> 的专有转换，等于 <code>strerror(errno)</code>，不用自己拼。</p>
+<p><code>openlog</code> 的 <code>ident</code> 指针会被原样保存，传栈上的缓冲区，函数返回后指针就悬空了。用字符串常量。</p>
+<p><code>closelog()</code> 是可选的。不加，进程退出时内核也会回收。加上是为了在 <code>fork</code> 前后不留连接的悬挂。</p>
+<p>日志文件不要自己写、自己轮转。手写轮转的守护进程一旦收到 <code>SIGHUP</code>，经常出现「日志文件被移走，fd 还指着老 inode」的情况，新日志全写到 <code>mydaemon.log.1</code> 里。交给 <code>logrotate</code> 并向进程发 <code>SIGHUP</code>，或者干脆交给 journald。</p>
+<p>journald 是 systemd 的一部分。它把 stdout、stderr、syslog 的 socket、内核的 <code>/dev/kmsg</code> 全都收进来，存成带结构化字段的二进制记录。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>journalctl -u mydaemon.service -f          <span class="hljs-comment"># 跟踪</span>
+journalctl -u mydaemon.service -n 100      <span class="hljs-comment"># 最近 100 条</span>
+journalctl -u mydaemon.service -o json-pretty
+</code></pre></div></code></pre>
+<p>日志里自带 <code>_PID</code>、<code>_UID</code>、<code>_SYSTEMD_UNIT</code> 这些字段，<code>journalctl -u</code> 就是靠它们筛的。自己 daemonize 的程序如果没走 journal，<code>_SYSTEMD_UNIT</code> 会是空，<code>-u</code> 就筛不出东西。</p>
+<p>systemd 版本差异（按 man 手册的「Added in version」标注）：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>项</th>
+<th>起始版本</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>journald.conf</code> 的 <code>LineMax=</code></td>
+<td>235</td>
+<td>之前行长度上限硬编码为 2048 字节，235 起默认 48K</td>
+</tr>
+<tr>
+<td><code>journald.conf</code> 的 <code>ReadKMsg=</code></td>
+<td>235</td>
+<td>之前不能单独关掉内核日志采集</td>
+</tr>
+<tr>
+<td>服务单元的 <code>LogsDirectory=</code></td>
+<td>235</td>
+<td>同一批还加了 <code>StateDirectory=</code>、<code>CacheDirectory=</code>、<code>ConfigurationDirectory=</code></td>
+</tr>
+<tr>
+<td><code>systemd.exec</code> 的 <code>LogRateLimitBurst=</code></td>
+<td>未验证</td>
+<td>单服务覆盖全局速率限制，具体版本没查到</td>
+</tr>
+<tr>
+<td>速率限制默认值</td>
+<td>现行默认</td>
+<td>30 秒内 10000 条，超出丢弃并记一条「丢弃了多少」</td>
+</tr>
+</tbody>
+</table></div><p>速率限制这一条要留意。守护进程如果在一个循环里刷 <code>LOG_DEBUG</code>，打满 10000 条之后，后面的日志全被丢掉，还只在 journal 里留一行「suppressed」。生产环境调试时经常以为日志没打出来，其实是这个限制。</p>
+<p><code>syslog()</code> 不是异步信号安全的。信号处理函数里写日志，就是上一章说的那个问题。要记信号相关的信息，在 handler 里置 flag，主循环里再 <code>syslog</code>。</p>
+<h2 id="十二systemd-服务单元" tabindex="-1">十二、systemd 服务单元 <a class="header-anchor" href="#十二systemd-服务单元"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>到这一章，前面十一步里有一大半可以不写了。systemd 会替你建会话、重置信号、清空环境、接好标准流、重设 umask。</p>
+<pre><code class="language-ini"><div class="code-block" data-lang="ini"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">ini</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-section">[Unit]</span>
+<span class="hljs-attr">Description</span>=My Worker Daemon
+<span class="hljs-attr">Documentation</span>=man:mydaemon(<span class="hljs-number">8</span>)
+<span class="hljs-attr">After</span>=network-<span class="hljs-literal">on</span>line.target
+<span class="hljs-attr">Wants</span>=network-<span class="hljs-literal">on</span>line.target
+
+<span class="hljs-section">[Service]</span>
+<span class="hljs-attr">Type</span>=simple
+<span class="hljs-attr">ExecStart</span>=/usr/local/bin/mydaemon --foreground
+<span class="hljs-attr">ExecReload</span>=/bin/kill -HUP <span class="hljs-variable">$MAINPID</span>
+<span class="hljs-attr">Restart</span>=<span class="hljs-literal">on</span>-failure
+<span class="hljs-attr">RestartSec</span>=<span class="hljs-number">5</span>s
+<span class="hljs-attr">User</span>=mydaemon
+<span class="hljs-attr">Group</span>=mydaemon
+<span class="hljs-attr">WorkingDirectory</span>=/var/lib/mydaemon
+<span class="hljs-attr">StateDirectory</span>=mydaemon
+<span class="hljs-attr">LogsDirectory</span>=mydaemon
+<span class="hljs-attr">UMask</span>=<span class="hljs-number">0027</span>
+<span class="hljs-attr">LimitNOFILE</span>=<span class="hljs-number">65536</span>
+<span class="hljs-attr">NoNewPrivileges</span>=<span class="hljs-literal">yes</span>
+<span class="hljs-attr">PrivateTmp</span>=<span class="hljs-literal">yes</span>
+
+<span class="hljs-section">[Install]</span>
+<span class="hljs-attr">WantedBy</span>=multi-user.target
+</code></pre></div></code></pre>
+<p>三段的分工：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>段</th>
+<th>管什么</th>
+<th>关键指令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>[Unit]</code></td>
+<td>元信息与依赖关系</td>
+<td><code>Description=</code> <code>After=</code> <code>Wants=</code> <code>Requires=</code></td>
+</tr>
+<tr>
+<td><code>[Service]</code></td>
+<td>进程本身怎么起、怎么停</td>
+<td><code>Type=</code> <code>ExecStart=</code> <code>Restart=</code> <code>User=</code></td>
+</tr>
+<tr>
+<td><code>[Install]</code></td>
+<td><code>systemctl enable</code> 时链接到哪个 target</td>
+<td><code>WantedBy=</code> <code>Alias=</code></td>
+</tr>
+</tbody>
+</table></div><p><code>After=</code> 和 <code>Wants=</code> 是两件事。<code>After=</code> 只管顺序，<code>Wants=</code> 才把对方拉起来。只写 <code>After=network-online.target</code> 而没写 <code>Wants=</code>，对方不启动，你也不会等它。两个一起写才对。</p>
+<p><code>Type=</code> 选错是最高频的问题：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>取值</th>
+<th>什么时候算「启动完成」</th>
+<th>适用</th>
+<th>起始版本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>simple</code></td>
+<td>主进程 fork 出来就算</td>
+<td>程序自己不再 fork</td>
+<td>初始版本</td>
+</tr>
+<tr>
+<td><code>exec</code></td>
+<td><code>execve()</code> 成功之后才算</td>
+<td>想捕获「二进制不存在」这类错误</td>
+<td>未验证</td>
+</tr>
+<tr>
+<td><code>forking</code></td>
+<td>父进程退出时算</td>
+<td>老式自己 daemonize 的程序，要配 <code>PIDFile=</code></td>
+<td>初始版本</td>
+</tr>
+<tr>
+<td><code>notify</code></td>
+<td>收到 <code>sd_notify(&quot;READY=1&quot;)</code> 才算</td>
+<td>程序集成了 libsystemd</td>
+<td>未验证</td>
+</tr>
+<tr>
+<td><code>notify-reload</code></td>
+<td>同上，reload 也走协议</td>
+<td>需要可靠的 <code>systemctl reload</code></td>
+<td>253</td>
+</tr>
+<tr>
+<td><code>dbus</code></td>
+<td>拿到 D-Bus 名字才算</td>
+<td>提供 D-Bus 接口的服务</td>
+<td>初始版本</td>
+</tr>
+<tr>
+<td><code>oneshot</code></td>
+<td>主进程退出才算</td>
+<td>一次性任务</td>
+<td>初始版本</td>
+</tr>
+</tbody>
+</table></div><p><code>Type=forking</code> 是给老程序兜底的。systemd 官方文档说这个类型不推荐，优先 <code>notify</code>、<code>notify-reload</code>、<code>dbus</code>。原因是父进程退出和子进程真正就绪之间没有可靠信号，只能靠猜。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 放好单元文件后</span>
+<span class="hljs-built_in">sudo</span> systemctl daemon-reload
+<span class="hljs-built_in">sudo</span> systemctl <span class="hljs-built_in">enable</span> --now mydaemon.service
+systemctl status mydaemon.service
+systemctl reload mydaemon.service
+journalctl -u mydaemon.service -f
+</code></pre></div></code></pre>
+<p><code>daemon-reload</code> 不能省。改了 <code>.service</code> 文件不 reload，systemd 用的还是内存里那份旧配置，<code>systemctl restart</code> 也不管用。</p>
+<p><code>ExecReload=/bin/kill -HUP $MAINPID</code> 能工作，但 man 手册明确说这不是好选择：发信号是异步动作，systemd 不知道重载什么时候结束，多个服务的重载没法排序。要可靠就用 <code>Type=notify-reload</code>，让程序在重载完成后回一个 <code>READY=1</code>。</p>
+<p>程序侧只需要一次 <code>sd_notify</code>:</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;systemd/sd-daemon.h&gt;</span></span>
+
+sd_notify(<span class="hljs-number">0</span>, <span class="hljs-string">&quot;READY=1&quot;</span>);      <span class="hljs-comment">/* 启动完成 */</span>
+sd_notify(<span class="hljs-number">0</span>, <span class="hljs-string">&quot;RELOADING=1&quot;</span>);  <span class="hljs-comment">/* 重载开始 */</span>
+sd_notify(<span class="hljs-number">0</span>, <span class="hljs-string">&quot;READY=1&quot;</span>);      <span class="hljs-comment">/* 重载结束 */</span>
+</code></pre></div></code></pre>
+<p>不带 libsystemd 也能做：协议就是一个 unix socket 加一行 <code>READY=1\n</code>，地址在 <code>$NOTIFY_SOCKET</code> 里。systemd 文档保证这个协议稳定。</p>
+<p>systemd 的版本差异（<code>Added in version</code> 取自 man 手册）：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>指令</th>
+<th>起始版本</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>KillMode=</code> <code>KillSignal=</code> <code>SendSIGKILL=</code></td>
+<td>187</td>
+<td>之前无法细控停止时的信号</td>
+</tr>
+<tr>
+<td><code>SendSIGHUP=</code></td>
+<td>207</td>
+<td>停止时顺手发 <code>SIGHUP</code>，默认 <code>no</code></td>
+</tr>
+<tr>
+<td><code>FinalKillSignal=</code> <code>WatchdogSignal=</code></td>
+<td>240</td>
+<td>之前超时后固定发 <code>SIGKILL</code></td>
+</tr>
+<tr>
+<td><code>ExitType=</code></td>
+<td>250</td>
+<td>之前停止判定只看主进程</td>
+</tr>
+<tr>
+<td><code>RestartKillSignal=</code></td>
+<td>244</td>
+<td>restart 场景可以用不同信号</td>
+</tr>
+<tr>
+<td><code>Type=notify-reload</code></td>
+<td>253</td>
+<td>之前只能用 <code>ExecReload=</code> 发信号</td>
+</tr>
+<tr>
+<td><code>StateDirectory=</code> <code>LogsDirectory=</code></td>
+<td>235</td>
+<td>之前要自己 <code>mkdir</code> 加 <code>chown</code></td>
+</tr>
+<tr>
+<td><code>OpenFile=</code></td>
+<td>253</td>
+<td>由 manager 打开文件再传 fd</td>
+</tr>
+</tbody>
+</table></div><p>老发行版上写这些指令要小心。CentOS 7 带的是 systemd 219，上表里 235 之后的东西全部不支持，写进去会被当成未知指令忽略，且只在 <code>systemd-analyze verify</code> 或启动日志里给一条警告。</p>
+<h2 id="十三传统-init-脚本" tabindex="-1">十三、传统 init 脚本 <a class="header-anchor" href="#十三传统-init-脚本"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>systemd 之前是 SysV init，靠 <code>/etc/init.d/</code> 下的 shell 脚本。今天还能见到，多在一些老系统和容器镜像里。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#!/bin/sh</span>
+<span class="hljs-comment">### BEGIN INIT INFO</span>
+<span class="hljs-comment"># Provides:          mydaemon</span>
+<span class="hljs-comment"># Required-Start:    $network $remote_fs</span>
+<span class="hljs-comment"># Required-Stop:     $network $remote_fs</span>
+<span class="hljs-comment"># Default-Start:     2 3 4 5</span>
+<span class="hljs-comment"># Default-Stop:      0 1 6</span>
+<span class="hljs-comment"># Short-Description: My worker daemon</span>
+<span class="hljs-comment">### END INIT INFO</span>
+
+DAEMON=/usr/local/bin/mydaemon
+PIDFILE=/run/mydaemon.pid
+
+<span class="hljs-keyword">case</span> <span class="hljs-string">&quot;<span class="hljs-variable">$1</span>&quot;</span> <span class="hljs-keyword">in</span>
+    start)
+        start-stop-daemon --start --quiet --background \
+            --make-pidfile --pidfile <span class="hljs-string">&quot;<span class="hljs-variable">$PIDFILE</span>&quot;</span> \
+            --<span class="hljs-built_in">exec</span> <span class="hljs-string">&quot;<span class="hljs-variable">$DAEMON</span>&quot;</span> -- --foreground
+        ;;
+    stop)
+        start-stop-daemon --stop --quiet --retry=TERM/30/KILL/5 \
+            --pidfile <span class="hljs-string">&quot;<span class="hljs-variable">$PIDFILE</span>&quot;</span> --remove-pidfile
+        ;;
+    reload)
+        start-stop-daemon --stop --signal HUP --quiet --pidfile <span class="hljs-string">&quot;<span class="hljs-variable">$PIDFILE</span>&quot;</span>
+        ;;
+    restart|force-reload)
+        <span class="hljs-string">&quot;<span class="hljs-variable">$0</span>&quot;</span> stop; <span class="hljs-built_in">sleep</span> 1; <span class="hljs-string">&quot;<span class="hljs-variable">$0</span>&quot;</span> start
+        ;;
+    status)
+        start-stop-daemon --status --pidfile <span class="hljs-string">&quot;<span class="hljs-variable">$PIDFILE</span>&quot;</span>
+        ;;
+    *)
+        <span class="hljs-built_in">echo</span> <span class="hljs-string">&quot;Usage: <span class="hljs-variable">$0</span> {start|stop|reload|restart|status}&quot;</span>
+        <span class="hljs-built_in">exit</span> 3
+        ;;
+<span class="hljs-keyword">esac</span>
+
+<span class="hljs-built_in">exit</span> 0
+</code></pre></div></code></pre>
+<p><code>--background</code> 让 <code>start-stop-daemon</code> 自己 fork，<code>--make-pidfile</code> 让它写 pid 文件。所以这里传的是 <code>--foreground</code>，让 <code>mydaemon</code> 保持前台，脱离的活由调用方做。<code>### BEGIN INIT INFO</code> 那段叫 LSB header，<code>insserv</code>、<code>chkconfig</code>、<code>update-rc.d</code> 靠它排启动顺序。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>任务</th>
+<th>Debian 系</th>
+<th>Red Hat 系</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>注册开机启动</td>
+<td><code>update-rc.d mydaemon defaults</code></td>
+<td><code>chkconfig --add mydaemon</code></td>
+</tr>
+<tr>
+<td>打开某运行级</td>
+<td><code>update-rc.d mydaemon enable</code></td>
+<td><code>chkconfig --level 35 mydaemon on</code></td>
+</tr>
+<tr>
+<td>手动起停</td>
+<td><code>/etc/init.d/mydaemon start</code></td>
+<td><code>service mydaemon start</code></td>
+</tr>
+</tbody>
+</table></div><p>和 systemd 的差别不只是「新旧」：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>SysV init 脚本</th>
+<th>systemd 服务单元</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>描述形式</td>
+<td>可执行 shell 脚本</td>
+<td>声明式 ini</td>
+</tr>
+<tr>
+<td>启动方式</td>
+<td>串行，按 <code>S01</code> <code>S02</code> 编号排序</td>
+<td>并行，按依赖图调度</td>
+</tr>
+<tr>
+<td>进程跟踪</td>
+<td>只认 pid 文件</td>
+<td>整个 cgroup</td>
+</tr>
+<tr>
+<td>重启策略</td>
+<td>脚本里自己写循环</td>
+<td><code>Restart=</code> 声明</td>
+</tr>
+<tr>
+<td>日志</td>
+<td>程序自己写文件或 <code>syslog</code></td>
+<td>自动收进 journal</td>
+</tr>
+<tr>
+<td>资源限制</td>
+<td>靠 <code>ulimit</code></td>
+<td><code>LimitNOFILE=</code> 等指令</td>
+</tr>
+<tr>
+<td>依赖表达</td>
+<td>只能表达启动顺序</td>
+<td>顺序与需求两个维度分开表达</td>
+</tr>
+</tbody>
+</table></div><p>进程跟踪那一行最关键。SysV 只认文件里的数字，进程被 OOM 杀掉、重新拉起后 PID 变了，脚本就会杀错进程。systemd 用 cgroup 记录整个进程树，子进程也跑不掉。</p>
+<p>systemd 文档现在的措辞是 SysV init 脚本对启动的支持「已被逐步淘汰，不应再依赖」。各发行版保留到什么程度不同，具体移除到哪一步我没查到统一版本号，按未验证对待。</p>
+<h2 id="十四守护进程的调试" tabindex="-1">十四、守护进程的调试 <a class="header-anchor" href="#十四守护进程的调试"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把 daemonize 写进代码，调试就变成折磨：程序在后台跑，<code>printf</code> 进了 <code>/dev/null</code>，崩了没输出。</p>
+<p>对策是<strong>留一个前台开关</strong>。这是最有价值的一条建议，几乎所有正经守护进程都有。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">int</span> argc, <span class="hljs-type">char</span> **argv)</span>
+{
+    <span class="hljs-type">int</span> foreground = <span class="hljs-number">0</span>;
+
+    <span class="hljs-keyword">if</span> (getenv(<span class="hljs-string">&quot;MYDAEMON_FOREGROUND&quot;</span>) != <span class="hljs-literal">NULL</span>)
+        foreground = <span class="hljs-number">1</span>;
+
+    <span class="hljs-keyword">if</span> (!foreground &amp;&amp; daemonize() &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+
+    run();
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>-f</code>/<code>--foreground</code> 参数和环境变量都行。systemd 单元里就写 <code>ExecStart=/usr/local/bin/mydaemon --foreground</code>，让 systemd 负责脱离，程序只管干活。这样同一份二进制在开发机和线上都能跑。</p>
+<p>其余排查手段：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 1. 进程身份对不对</span>
+ps -o pid,ppid,pgid,sid,<span class="hljs-built_in">tty</span>,<span class="hljs-built_in">stat</span>,cmd -C mydaemon
+<span class="hljs-comment"># 2. fd 重定向生效了没有</span>
+<span class="hljs-built_in">ls</span> -l /proc/$(pgrep -o mydaemon)/fd
+<span class="hljs-comment"># 3. 信号处理装上了没有（SigCgt 位掩码）</span>
+grep -E <span class="hljs-string">&#x27;SigIgn|SigCgt|SigBlk&#x27;</span> /proc/$(pgrep -o mydaemon)/status
+<span class="hljs-comment"># 4. 系统调用层面看在哪卡住</span>
+strace -f -p $(pgrep -o mydaemon) -e trace=openat,connect,<span class="hljs-built_in">read</span>
+<span class="hljs-comment"># 5. 从启动开始跟</span>
+strace -f -o /tmp/trace.txt ./mydaemon
+</code></pre></div></code></pre>
+<p><code>/proc/PID/fd</code> 下应该看到 0、1、2 全指向 <code>/dev/null</code>。如果 0 指向某个 <code>.log</code> 文件，说明第八章那个 fd 复用问题已经发生了。</p>
+<p><code>SigCgt</code> 是十六进制位掩码，第 N 位为 1 表示信号 N 装了处理函数。<code>SIGHUP</code> 是 1，最低位是 1 才说明它接管了 <code>SIGHUP</code>。<code>SigIgn</code> 里该有 <code>SIGPIPE</code> 的位。</p>
+<p>排查 systemd 侧：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>systemd-analyze verify /etc/systemd/system/mydaemon.service
+systemctl show -p MainPID -p NRestarts mydaemon.service
+journalctl -u mydaemon.service --since <span class="hljs-string">&quot;10 min ago&quot;</span>
+journalctl -k | grep -i <span class="hljs-string">&#x27;killed process&#x27;</span>      <span class="hljs-comment"># 查 OOM</span>
+systemd-run --user --pty --unit=my-test ./mydaemon --foreground
+</code></pre></div></code></pre>
+<p><code>NRestarts</code> 能看出服务是不是在反复崩溃重启。<code>Restart=on-failure</code> 配上 <code>RestartSec=5s</code>，一个启动即崩的程序会安静地每 5 秒重试一次，<code>systemctl status</code> 里看着像在跑。</p>
+<h2 id="十五常见故障与现象" tabindex="-1">十五、常见故障与现象 <a class="header-anchor" href="#十五常见故障与现象"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>故障排查的顺序是固定的：先看进程身份（<code>ps</code>），再看 fd（<code>/proc/PID/fd</code>），再看信号（<code>/proc/PID/status</code>），最后才看日志。身份不对，日志看不出问题。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>常见原因</th>
+<th>查什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>终端一关进程就没了</td>
+<td>只用了 <code>&amp;</code>，仍是原会话成员</td>
+<td><code>ps -o sid</code>，和自己的 SID 比</td>
+</tr>
+<tr>
+<td>前台能跑，后台启动即退</td>
+<td><code>chdir(&quot;/&quot;)</code> 后相对路径失效</td>
+<td>把所有路径改成绝对路径</td>
+</tr>
+<tr>
+<td>进程存在但 <code>ps</code> 状态是 <code>T</code></td>
+<td>后台读写终端触发 <code>SIGTTIN</code>/<code>SIGTTOU</code></td>
+<td><code>ls -l /proc/PID/fd</code></td>
+</tr>
+<tr>
+<td>日志每条重复两遍</td>
+<td>fork 前 stdio 缓冲没刷</td>
+<td>父进程改用 <code>_exit</code>，或 fork 前 <code>fflush</code></td>
+</tr>
+<tr>
+<td>日志写进了上一轮的文件</td>
+<td>用了 <code>logrotate</code> 但没发 <code>SIGHUP</code></td>
+<td>轮转配置的 <code>postrotate</code></td>
+</tr>
+<tr>
+<td><code>umount</code> 报 device is busy</td>
+<td>没做 <code>chdir(&quot;/&quot;)</code></td>
+<td><code>ls -l /proc/PID/cwd</code></td>
+</tr>
+<tr>
+<td>文件权限随机变化</td>
+<td>继承了启动者的 umask</td>
+<td>显式 <code>umask()</code> 或用 <code>UMask=</code></td>
+</tr>
+<tr>
+<td>子进程变僵尸，越积越多</td>
+<td>没回收 <code>SIGCHLD</code></td>
+<td><code>ps -eo stat,cmd | grep '^Z'</code></td>
+</tr>
+<tr>
+<td><code>journalctl -u</code> 查不到日志</td>
+<td>程序自己 daemonize，<code>_SYSTEMD_UNIT</code> 为空</td>
+<td>改用前台模式交给 systemd</td>
+</tr>
+<tr>
+<td><code>systemctl start</code> 成功但立刻退</td>
+<td><code>Type=forking</code> 但程序没有 fork</td>
+<td>改成 <code>Type=simple</code></td>
+</tr>
+<tr>
+<td>服务起来 90 秒后被 kill</td>
+<td><code>Type=notify</code> 但没发 <code>READY=1</code></td>
+<td><code>systemctl status</code> 里的 timeout 提示</td>
+</tr>
+<tr>
+<td>日志打到一半就没了</td>
+<td>journald 速率限制触发</td>
+<td><code>journalctl | grep -i suppress</code></td>
+</tr>
+<tr>
+<td>标准输入读出奇怪内容</td>
+<td>fd 0 被复用成了别的文件</td>
+<td><code>/proc/PID/fd/0</code> 的指向</td>
+</tr>
+<tr>
+<td>重启后 pid 文件里的进程对不上</td>
+<td>pid 文件没加锁，旧进程还在</td>
+<td><code>flock</code> 或交给 systemd</td>
+</tr>
+</tbody>
+</table></div><p>「进程状态 <code>T</code>」那一条最难查，因为进程在、端口在、就是不响应。触发条件是守护进程还留着一个终端 fd，并且被放到后台去读写。第八章那套重定向是唯一的解法。</p>
+<h2 id="十六易错点速查" tabindex="-1">十六、易错点速查 <a class="header-anchor" href="#十六易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>易错点</th>
+<th>正确做法</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只 fork 一次</td>
+<td>fork 两次</td>
+<td>会话首进程有机会重新拿到控制终端</td>
+</tr>
+<tr>
+<td>用 <code>exit()</code> 退出父进程</td>
+<td>用 <code>_exit()</code></td>
+<td>stdio 缓冲被刷两遍，日志重复</td>
+</tr>
+<tr>
+<td><code>close(0/1/2)</code> 了事</td>
+<td><code>dup2</code> 到 <code>/dev/null</code></td>
+<td>fd 编号被后续 <code>open</code> 复用</td>
+</tr>
+<tr>
+<td><code>dup2</code> 后不 <code>close(fd)</code></td>
+<td><code>fd &gt; 2</code> 时关掉</td>
+<td>白占一个 fd，泄漏</td>
+</tr>
+<tr>
+<td>先 <code>close(0)</code> 再 <code>open(&quot;/dev/null&quot;)</code></td>
+<td>先 <code>open</code> 再 <code>dup2</code></td>
+<td>新 fd 拿到 0，<code>dup2</code> 成空操作</td>
+</tr>
+<tr>
+<td><code>daemon(3)</code> 一把梭</td>
+<td>自己写七步</td>
+<td>少了第二次 fork，且无法控制细节</td>
+</tr>
+<tr>
+<td>不刷缓冲就 fork</td>
+<td>fork 前 <code>fflush(NULL)</code></td>
+<td>缓冲区被复制，输出翻倍</td>
+</tr>
+<tr>
+<td><code>chdir</code> 不做</td>
+<td><code>chdir(&quot;/&quot;)</code></td>
+<td>挂载点卸不掉</td>
+</tr>
+<tr>
+<td><code>chdir</code> 做了还用相对路径</td>
+<td>路径全用绝对路径</td>
+<td>后台启动就找不到配置</td>
+</tr>
+<tr>
+<td><code>umask</code> 不管</td>
+<td>显式 <code>umask()</code> 或 <code>UMask=</code></td>
+<td>文件权限随启动环境漂移</td>
+</tr>
+<tr>
+<td>用 <code>signal()</code> 装处理函数</td>
+<td>用 <code>sigaction()</code></td>
+<td>老语义下处理一次就复位</td>
+</tr>
+<tr>
+<td>信号处理函数里 <code>printf</code>/<code>syslog</code></td>
+<td>只置 <code>volatile sig_atomic_t</code></td>
+<td>破坏主流程的内部状态</td>
+</tr>
+<tr>
+<td>不忽略 <code>SIGPIPE</code></td>
+<td><code>signal(SIGPIPE, SIG_IGN)</code></td>
+<td>写已关闭的 socket 直接终止</td>
+</tr>
+<tr>
+<td>自己写日志轮转</td>
+<td>交给 <code>logrotate</code> 或 journald</td>
+<td>轮转后日志写进旧 inode</td>
+</tr>
+<tr>
+<td>服务自己 daemonize 又用 systemd 管</td>
+<td><code>--foreground</code> + <code>Type=simple</code></td>
+<td>systemd 跟踪不到真实进程</td>
+</tr>
+<tr>
+<td><code>ExecReload=kill -HUP</code> 当可靠</td>
+<td><code>Type=notify-reload</code></td>
+<td>重载是异步的，无完成信号</td>
+</tr>
+<tr>
+<td>改了 unit 不 <code>daemon-reload</code></td>
+<td>每次改完 reload</td>
+<td>跑的仍是旧配置</td>
+</tr>
+<tr>
+<td>在旧发行版用新指令</td>
+<td>先 <code>systemd-analyze verify</code></td>
+<td>指令被静默忽略</td>
+</tr>
+</tbody>
+</table></div><p>最后一行值得单独说。<code>StateDirectory=</code>、<code>Type=notify-reload</code> 这些在 systemd 219（CentOS 7）上不存在，写进去不会报错，只是不生效。你以为目录会自动建好，结果服务因为没有写权限而退出，查半天查不到原因。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一守护进程是什么" data-toc-target="一守护进程是什么">一、守护进程是什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二为什么需要脱离终端" data-toc-target="二为什么需要脱离终端">二、为什么需要脱离终端</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三终端控制终端与会话" data-toc-target="三终端控制终端与会话">三、终端、控制终端与会话</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四进程组与会话的关系" data-toc-target="四进程组与会话的关系">四、进程组与会话的关系</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五创建守护进程的标准步骤" data-toc-target="五创建守护进程的标准步骤">五、创建守护进程的标准步骤</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六fork-两次为什么必要" data-toc-target="六fork-两次为什么必要">六、fork 两次为什么必要</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七setsid-与-getsid" data-toc-target="七setsid-与-getsid">七、setsid 与 getsid</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八重定向标准输入输出" data-toc-target="八重定向标准输入输出">八、重定向标准输入输出</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九改变工作目录与文件权限掩码" data-toc-target="九改变工作目录与文件权限掩码">九、改变工作目录与文件权限掩码</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十信号处理sighup-与-sigterm" data-toc-target="十信号处理sighup-与-sigterm">十、信号处理：SIGHUP 与 SIGTERM</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一日志记录syslog-与-journald" data-toc-target="十一日志记录syslog-与-journald">十一、日志记录：syslog 与 journald</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二systemd-服务单元" data-toc-target="十二systemd-服务单元">十二、systemd 服务单元</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三传统-init-脚本" data-toc-target="十三传统-init-脚本">十三、传统 init 脚本</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四守护进程的调试" data-toc-target="十四守护进程的调试">十四、守护进程的调试</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五常见故障与现象" data-toc-target="十五常见故障与现象">十五、常见故障与现象</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十六易错点速查" data-toc-target="十六易错点速查">十六、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/D.操作系统/01-OS概念与进程模型/守护进程：从终端脱离的后台服务/","title":"守护进程：从终端脱离的后台服务","url":"/D.操作系统/01-OS概念与进程模型/守护进程：从终端脱离的后台服务/","type":"current"},{"id":"/D.操作系统/01-OS概念与进程模型/实时系统：RTOS、Xenomai-与实时性优化/","title":"实时系统：RTOS、Xenomai 与实时性优化","url":"/D.操作系统/01-OS概念与进程模型/实时系统：RTOS、Xenomai-与实时性优化/","type":"neighbor"},{"id":"/D.操作系统/01-OS概念与进程模型/进程与线程：从-fork-到多线程/","title":"进程与线程：从 fork 到多线程","url":"/D.操作系统/01-OS概念与进程模型/进程与线程：从-fork-到多线程/","type":"neighbor"}],"links":[{"source":"/D.操作系统/01-OS概念与进程模型/守护进程：从终端脱离的后台服务/","target":"/D.操作系统/01-OS概念与进程模型/实时系统：RTOS、Xenomai-与实时性优化/","type":"neighbor"},{"source":"/D.操作系统/01-OS概念与进程模型/守护进程：从终端脱离的后台服务/","target":"/D.操作系统/01-OS概念与进程模型/进程与线程：从-fork-到多线程/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

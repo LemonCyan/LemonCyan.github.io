@@ -1,0 +1,1728 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>编译优化与启动性能 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">编译优化与启动性能</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/E.编程语言与框架/05-编译与链接/编译优化与启动性能/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">编译优化与启动性能</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">编译优化与启动性能</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <h2 id="一性能问题从哪来" tabindex="-1">一、性能问题从哪来 <a class="header-anchor" href="#一性能问题从哪来"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先分类，再动手。程序慢，落到硬件上只有三种消耗：CPU 在跑指令、CPU 在等 I/O、CPU 在等锁或者被调度走。体积是第四种问题：代码大到装不进 cache，或者大到 Flash 读不完。</p>
+<p>同一个「启动慢 3 秒」，背后的账完全不同。先看这张归属表，把现象映射到层面：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>真实瓶颈</th>
+<th>归属层面</th>
+<th>在哪一章</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>上电到首帧 3 秒，串口日志刷满屏</td>
+<td>控制台打印 + 服务串行启动</td>
+<td>启动链路</td>
+<td>七</td>
+</tr>
+<tr>
+<td>上电到首帧 3 秒，但 CPU 有大段空转</td>
+<td>等设备就绪、等不存在的文件</td>
+<td>I/O 等待</td>
+<td>十二</td>
+</tr>
+<tr>
+<td>跑起来比预期慢一倍</td>
+<td>优化等级低、没开 LTO</td>
+<td>编译期</td>
+<td>二 ~ 五</td>
+</tr>
+<tr>
+<td>固件塞不进 32MB 分区</td>
+<td>调试符号、没裁剪的库、<code>-O0</code></td>
+<td>体积</td>
+<td>六、十一</td>
+</tr>
+<tr>
+<td>换成 <code>-O3</code> 反而更慢</td>
+<td>代码膨胀打爆 I-cache</td>
+<td>编译期</td>
+<td>三</td>
+</tr>
+</tbody>
+</table></div><p>优化的杠杆只有四处，记住位置比记选项有用：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>源代码
+ ├─ 编译期：-O?  -march  -mtune  -flto  -ffunction-sections
+ ├─ 链接期：--gc-sections  -Wl,--as-needed  自定义链接脚本
+ ├─ 装载期：动态链接器符号解析、重定位、构造函数
+ └─ 运行期：系统调用次数、内存分配、锁竞争、线程调度
+</code></pre></div></code></pre>
+<p>一句老话值得贴在显示器上：最快的代码是不执行的代码，最少的数据是不加载的数据。后面所有手段，无非是让某些指令不存在、让某些字节不被读。</p>
+<p>动手之前先立三条基线，缺一个你就是在凭感觉调：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>size ./app                      <span class="hljs-comment"># 体积基线：text / data / bss</span>
+/usr/bin/time -v ./app          <span class="hljs-comment"># 时间与峰值内存基线</span>
+strace -c ./app                 <span class="hljs-comment"># 系统调用次数与耗时基线</span>
+</code></pre></div></code></pre>
+<p>这三条数字每次改动都重测一遍。没有基线，你只能感觉到「好像快了」，而 <code>-O3</code> 让程序变慢 8% 这种事，肉眼永远感觉不到。</p>
+<p>还有三件事编译器帮不了你，别在编译选项里找答案：</p>
+<ul>
+<li>等 I/O：<code>open</code> 一个不存在的文件、<code>read</code> 一个慢设备、等硬件上电就绪。</li>
+<li>算法复杂度：O(n²) 的循环，<code>-O3</code> 也只能把它压常数倍。</li>
+<li>锁竞争与调度：线程数超过核数、临界区里做 I/O。</li>
+</ul>
+<h2 id="二优化等级编译器替你做什么" tabindex="-1">二、优化等级：编译器替你做什么 <a class="header-anchor" href="#二优化等级编译器替你做什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>-O</code> 后面的数字不是「好坏刻度」，是「允许编译器做多激进的变换」。先记住这张表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>等级</th>
+<th>干什么</th>
+<th>体积</th>
+<th>什么时候用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-O0</code></td>
+<td>不优化，语句与源码一一对应，变量全落栈</td>
+<td>最大</td>
+<td>单步调试、定位未定义行为</td>
+</tr>
+<tr>
+<td><code>-O1</code></td>
+<td>删死代码、合并常量、简单寄存器分配</td>
+<td>中</td>
+<td>编译太慢时的折中，调试还能看</td>
+</tr>
+<tr>
+<td><code>-O2</code></td>
+<td>在 O1 上加：小函数内联、循环优化、CSE、强度削弱、尾调用</td>
+<td>中偏大</td>
+<td>默认起点，绝大多数程序</td>
+</tr>
+<tr>
+<td><code>-O3</code></td>
+<td>在 O2 上打开向量化、循环展开、更激进的内联</td>
+<td>最大</td>
+<td>数值计算、热点在内层循环</td>
+</tr>
+<tr>
+<td><code>-Os</code></td>
+<td>O2 关掉会增大体积的项（对齐、展开），打开 <code>-fno-align-*</code> 一类</td>
+<td>小</td>
+<td>固件、I-cache 紧张</td>
+</tr>
+<tr>
+<td><code>-Oz</code></td>
+<td>GCC 12 起，比 <code>-Os</code> 压得更狠</td>
+<td>最小</td>
+<td>体积上不封顶地抠</td>
+</tr>
+<tr>
+<td><code>-Og</code></td>
+<td>O1 级别的优化 + 保留调试体验</td>
+<td>中大</td>
+<td>开发期想断点又不要太慢</td>
+</tr>
+<tr>
+<td><code>-Ofast</code></td>
+<td><code>-O3</code> 加 <code>-ffast-math</code>，放弃 IEEE 浮点语义</td>
+<td>最大</td>
+<td>数值容错的计算，别用在业务里</td>
+</tr>
+</tbody>
+</table></div><p><code>-O2</code> 到底做了什么，看一个函数就明白：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* sum.c */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">sum</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">int</span> *a, <span class="hljs-type">int</span> n)</span> {
+    <span class="hljs-type">int</span> s = <span class="hljs-number">0</span>;
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; n; i++)
+        s += a[i];
+    <span class="hljs-keyword">return</span> s;
+}
+</code></pre></div></code></pre>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -O0 -S sum.c -o sum_O0.s
+gcc -O2 -S sum.c -o sum_O2.s
+gcc -O2 -c sum.c -o sum.o &amp;&amp; objdump -d sum.o
+</code></pre></div></code></pre>
+<p><code>-O0</code> 的循环体每轮都从栈上重新读 <code>i</code>、<code>s</code>、<code>a</code>，一轮十几条指令；<code>-O2</code> 把三者全提到寄存器，循环体只剩一条 <code>add</code> 加一条 <code>cmp/jne</code>。这就是「优化」的本来面目：不是让 CPU 更快，是让指令更少。</p>
+<p>优化等级改的不只是速度，还有可见行为。<code>-fstrict-aliasing</code> 从 <code>-O2</code> 起生效，用不同类型指针访问同一块内存的写法会被优化器判为「不会发生」，于是出现「<code>-O0</code> 能跑，<code>-O2</code> 崩」的经典现象。先怀疑别名，一条命令就能验证：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -O2 -fno-strict-aliasing -o app main.c
+</code></pre></div></code></pre>
+<p>如果加上这行就正常，问题在你的代码，不在编译器。</p>
+<p>再补一句：生产固件不要用 <code>-O0</code>。<code>-O0</code> 的 bug 不复现，<code>-O2</code> 的 bug 才是真 bug；反过来，<code>-O0</code> 下测出来的耗时也没有参考价值。</p>
+<p>要用 <code>perf</code> 采样，给编译命令补两行，否则调用栈全是 <code>[unknown]</code>：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -O2 -g -fno-omit-frame-pointer -o app main.c
+</code></pre></div></code></pre>
+<h2 id="三-o2-与--o3-的取舍" tabindex="-1">三、-O2 与 -O3 的取舍 <a class="header-anchor" href="#三-o2-与--o3-的取舍"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先给结论：优化等级越高不一定越快。<code>-O3</code> 变慢是常态，尤其在 ARM 小核上，具体有四个原因。</p>
+<p>一是代码膨胀。循环展开和内联让 <code>.text</code> 变大，而 L1 I-cache 只有 32KB（Cortex-A7、Cortex-A53 都是这个数）。热代码一旦超过这个容量，每次取指都往 L2 走，延迟从 1~2 周期变成 10 周期以上。</p>
+<p>二是向量化带检查。<code>-O3</code> 生成 SIMD 循环时，前面会插一段别名与对齐检查，数据量小时这段检查比循环本身还贵。</p>
+<p>三是内联过度。热点函数被复制到十几个调用点，指令缓存里存着十份同样的代码，寄存器也被挤爆。</p>
+<p>四是构建成本。<code>-O3</code> 加 <code>-flto</code> 的编译时间能翻倍，迭代速度是隐性成本。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>项目</th>
+<th><code>-O2</code></th>
+<th><code>-O3</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内联阈值</td>
+<td>保守</td>
+<td>更激进</td>
+</tr>
+<tr>
+<td>自动向量化</td>
+<td>基本关闭</td>
+<td>打开</td>
+</tr>
+<tr>
+<td>循环展开</td>
+<td>少</td>
+<td>多</td>
+</tr>
+<tr>
+<td><code>.text</code> 体积</td>
+<td>基准</td>
+<td>+10% ~ +50%</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>通用业务、启动时间敏感、体积中等</td>
+<td>内层循环吃满 CPU 的算子</td>
+</tr>
+</tbody>
+</table></div><p>别猜，跑一版对照：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">cat</span> &gt; bench.sh &lt;&lt;<span class="hljs-string">&#x27;EOF&#x27;</span>
+<span class="hljs-comment">#!/bin/sh</span>
+<span class="hljs-keyword">for</span> opt <span class="hljs-keyword">in</span> O0 O1 O2 O3 Os; <span class="hljs-keyword">do</span>
+    gcc -<span class="hljs-variable">$opt</span> -o app_<span class="hljs-variable">$opt</span> main.c
+    <span class="hljs-built_in">printf</span> <span class="hljs-string">&#x27;%-4s text=%-8s &#x27;</span> <span class="hljs-string">&quot;-<span class="hljs-variable">$opt</span>&quot;</span> <span class="hljs-string">&quot;<span class="hljs-subst">$(size app_$opt | awk &#x27;NR==2{print $1}&#x27;)</span>&quot;</span>
+    /usr/bin/time -f <span class="hljs-string">&#x27;wall=%es maxrss=%MKB&#x27;</span> ./app_<span class="hljs-variable">$opt</span> &gt; /dev/null
+<span class="hljs-keyword">done</span>
+EOF
+<span class="hljs-built_in">chmod</span> +x bench.sh &amp;&amp; ./bench.sh
+</code></pre></div></code></pre>
+<p>典型输出长这样，注意 <code>-O3</code> 那行：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>-O0  text=4212     wall=1.83s maxrss=3120KB
+-O1  text=2861     wall=0.94s maxrss=2896KB
+-O2  text=3120     wall=0.61s maxrss=2872KB
+-O3  text=4408     wall=0.65s maxrss=2904KB
+-Os  text=2740     wall=0.72s maxrss=2880KB
+</code></pre></div></code></pre>
+<p><code>-O3</code> 的 <code>.text</code> 比 <code>-O2</code> 大了 41%，wall 时间反而长了。想确认是 cache 的锅，用 <code>perf stat</code> 看两个数：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>perf <span class="hljs-built_in">stat</span> -e instructions,cycles,L1-icache-load-misses ./app_O2
+perf <span class="hljs-built_in">stat</span> -e instructions,cycles,L1-icache-load-misses ./app_O3
+</code></pre></div></code></pre>
+<p>如果 <code>-O3</code> 的指令数没降、<code>L1-icache-load-misses</code> 翻倍，这就是膨胀的代价，切回 <code>-O2</code>。</p>
+<p>选法定下来三条：</p>
+<ul>
+<li>默认 <code>-O2</code>，全工程都吃这个等级。</li>
+<li>单个热点函数要 <code>-O3</code>，能拆文件就拆文件；拆不动再用函数属性，但要清楚它挡跨函数优化：</li>
+</ul>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>__attribute__((optimize(<span class="hljs-string">&quot;O3&quot;</span>)))
+<span class="hljs-type">static</span> <span class="hljs-type">float</span> <span class="hljs-title function_">dot</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">float</span> *a, <span class="hljs-type">const</span> <span class="hljs-type">float</span> *b, <span class="hljs-type">int</span> n)</span> {
+    <span class="hljs-type">float</span> s = <span class="hljs-number">0.0f</span>;
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; n; i++) s += a[i] * b[i];
+    <span class="hljs-keyword">return</span> s;
+}
+</code></pre></div></code></pre>
+<ul>
+<li>固件体积敏感、启动时间敏感，先试 <code>-Os</code>。启动阶段读的字节数下降，Flash 上省下来的时间比循环里多跑几条指令值钱。</li>
+</ul>
+<h2 id="四内联与-lto" tabindex="-1">四、内联与 LTO <a class="header-anchor" href="#四内联与-lto"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内联是 O2/O3 里收益最大、也最容易失控的变换。四个旋钮，先分清哪个是建议、哪个是命令：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>写法</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>inline</code> / <code>static inline</code></td>
+<td>只是建议，编译器可以拒绝</td>
+</tr>
+<tr>
+<td><code>__attribute__((always_inline))</code></td>
+<td>强制内联，编译不过就报错</td>
+</tr>
+<tr>
+<td><code>-fno-inline</code></td>
+<td>全局关掉内联，用于对比测试</td>
+</tr>
+<tr>
+<td><code>--param max-inline-insns-single=N</code></td>
+<td>调内联阈值</td>
+</tr>
+</tbody>
+</table></div><p>内联的边界在翻译单元（.c 文件）里。<code>a.c</code> 的函数想内联进 <code>b.c</code>，编译器看不到 <code>a.c</code> 的代码，只能留一个 <code>call</code>。这就是 LTO（Link Time Optimization）要解决的问题：编译期不生成最终机器码，只在 <code>.o</code> 里留 GIMPLE 中间表示，链接期把所有单元合起来整体优化，再落地成机器码。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 编译期与链接期都要给 -flto，缺一边就退化</span>
+gcc -O2 -flto -c a.c -o a.o
+gcc -O2 -flto -c b.c -o b.o
+gcc -O2 -flto a.o b.o -o app
+
+<span class="hljs-comment"># 并行 LTO，大工程必开</span>
+gcc -O2 -flto=auto a.o b.o -o app
+</code></pre></div></code></pre>
+<p>静态库要换归档工具，否则普通 <code>ar</code> 会丢掉 LTO 元数据：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -O2 -flto -c util.c -o util.o
+gcc-ar rcs libutil.a util.o
+</code></pre></div></code></pre>
+<p>LTO 与 <code>--gc-sections</code> 是一对：<code>-ffunction-sections</code> 在编译期把每个函数切到独立 section，<code>-Wl,--gc-sections</code> 在链接期按调用关系删掉没人引用的 section。开了 LTO，这个删除是跨文件的，比不开干净得多。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -O2 -flto -ffunction-sections -fdata-sections -Wl,--gc-sections -o app a.c b.c
+</code></pre></div></code></pre>
+<p>体积差多少，自己看：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>size app_nolto app_lto
+</code></pre></div></code></pre>
+<p>LTO 的代价要认：</p>
+<ul>
+<li>构建时间显著变长，全量重链接一次几分钟很常见。</li>
+<li><code>strip</code> 之后符号更少，coredump 回溯更难。</li>
+<li>老 binutils 遇到 LTO 对象会说 <code>plugin needed to handle lto object</code>，升级工具链即可。</li>
+<li>想让 <code>.o</code> 既能被 LTO 链接也能被普通链接器直接用，加 <code>-ffat-lto-objects</code>（体积翻倍）。</li>
+</ul>
+<h2 id="五针对具体-cpu-优化-march-与--mtune" tabindex="-1">五、针对具体 CPU 优化：-march 与 -mtune <a class="header-anchor" href="#五针对具体-cpu-优化-march-与--mtune"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这两个选项最常被混用，区别一句话：<code>-march</code> 决定「能用哪些指令」，<code>-mtune</code> 只决定「指令怎么排」。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>选项</th>
+<th>影响指令集</th>
+<th>影响调度</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-march=x86-64-v3</code></td>
+<td>是</td>
+<td>是</td>
+<td>允许 AVX2、BMI2，二进制只能在支持的机器上跑</td>
+</tr>
+<tr>
+<td><code>-mtune=cortex-a7</code></td>
+<td>否</td>
+<td>是</td>
+<td>只按目标核的流水线调顺序，二进制仍能跑老核</td>
+</tr>
+<tr>
+<td><code>-mcpu=cortex-a53</code>（ARM）</td>
+<td>是</td>
+<td>是</td>
+<td>ARM 上把 march 与 tune 合成一个</td>
+</tr>
+<tr>
+<td><code>-march=native</code></td>
+<td>是</td>
+<td>是</td>
+<td>本机编译本机跑，CI 里禁用</td>
+</tr>
+</tbody>
+</table></div><p>先看本机到底会生成什么：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -march=native -Q --<span class="hljs-built_in">help</span>=target | grep -E <span class="hljs-string">&#x27;^\s+-m(arch|tune)=&#x27;</span>
+gcc -march=native -E -v - &lt;/dev/null 2&gt;&amp;1 | grep cc1
+</code></pre></div></code></pre>
+<p>给具体目标：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -march=x86-64-v2 -O2 -o app main.c
+gcc -mtune=cortex-a7 -O2 -o app main.c        <span class="hljs-comment"># 只调调度，不改指令集</span>
+arm-linux-gnueabihf-gcc -march=armv7-a -mtune=cortex-a7 \
+    -mfpu=neon-vfpv4 -mfloat-abi=hard -O2 -o app main.c
+</code></pre></div></code></pre>
+<p>ARM 上还有一个独立维度：指令编码宽度。ARM 模式全是 32-bit 定长指令，执行效率高、代码密度低；Thumb-2 是 16-bit 与 32-bit 混合编码，体积能小 20%~30%。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>arm-linux-gnueabihf-gcc -marm   -O2 -o app_arm   main.c
+arm-linux-gnueabihf-gcc -mthumb -march=armv7-a -O2 -o app_thumb main.c
+size app_arm app_thumb
+</code></pre></div></code></pre>
+<p>实测数据（同一套 BusyBox + 业务程序打出来的 rootfs）：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>构建方式</th>
+<th>rootfs 总大小</th>
+<th>性能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ARM 模式</td>
+<td>3.79 MB</td>
+<td>基准</td>
+</tr>
+<tr>
+<td>Thumb-2 模式</td>
+<td>3.10 MB</td>
+<td>差距小于 5%，部分负载更好</td>
+</tr>
+</tbody>
+</table></div><p>体积降 18%。性能差不到 5% 的原因在现代核的分支预测与 cache：Thumb-2 指令占的 L1 I-cache 空间更少，命中率反而高，缓存敏感的负载里能反超。存储紧张、指令 cache 小的板子，直接选 Thumb-2。</p>
+<p><code>-march=native</code> 有两个坑，记住就不会踩：</p>
+<ul>
+<li>在 CI、容器或者别人的机器上编译，产物发到老机器上跑，第一条新指令就是 <code>SIGILL</code>。</li>
+<li>交叉编译时 <code>native</code> 指的是宿主机（x86），不是目标板，写了等于没写。</li>
+</ul>
+<h2 id="六减少体积-os-与-strip" tabindex="-1">六、减少体积：-Os 与 strip <a class="header-anchor" href="#六减少体积-os-与-strip"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>体积这件事在嵌入式里不是审美问题。Flash 读得越少，启动越快；代码越紧凑，I-cache 命中越高。先看体积都花在哪：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>体积来源</th>
+<th>占比（典型固件）</th>
+<th>手段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调试符号与符号表</td>
+<td>40% ~ 70%</td>
+<td><code>strip</code>、<code>--strip-debug</code></td>
+</tr>
+<tr>
+<td>未被调用的函数与数据</td>
+<td>5% ~ 30%</td>
+<td><code>-ffunction-sections</code> + <code>--gc-sections</code></td>
+</tr>
+<tr>
+<td>未被引用的库</td>
+<td>5% ~ 20%</td>
+<td><code>-Wl,--as-needed</code>、静态库分文件</td>
+</tr>
+<tr>
+<td>对齐填充与循环展开</td>
+<td>3% ~ 15%</td>
+<td><code>-Os</code>、<code>-fno-align-functions</code></td>
+</tr>
+<tr>
+<td>C 库本体</td>
+<td>差异巨大</td>
+<td>换 musl / uClibc-ng</td>
+</tr>
+</tbody>
+</table></div><p><code>-Os</code> 的规则很直白：在 <code>-O2</code> 的基础上，凡是会让代码变大的优化一律关掉。循环不展开、函数不对齐到 32 字节、不做激进内联。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -Os -o app main.c
+gcc -Os -fno-align-functions -fno-align-jumps -fno-align-loops -o app main.c
+gcc -Oz -o app main.c            <span class="hljs-comment"># GCC 12 起，比 -Os 更狠</span>
+</code></pre></div></code></pre>
+<p>死代码清理要用一对选项，编译期切段、链接期回收，缺一个都不生效：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 编译期：每个函数、每个全局变量切到独立 section（.text.func_name）</span>
+arm-linux-gnueabihf-g++ -Os -ffunction-sections -fdata-sections -c main.cpp -o main.o
+<span class="hljs-comment"># 链接期：按调用关系扫描，没人引用的 section 整段删掉</span>
+arm-linux-gnueabihf-g++ -Wl,--gc-sections main.o -o app
+</code></pre></div></code></pre>
+<p>默认情况下链接器把整个 <code>.o</code> 的 <code>.text</code> 当一块合并，一个没调用过的函数照样进最终二进制。切段之后，链接器才有粒度可删。链接时想看删了什么，加 <code>-Wl,--print-gc-sections</code>。</p>
+<p>剥离符号是投产前的最后一步，也是性价比最高的一步：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>strip --strip-unneeded ./app          <span class="hljs-comment"># 保留动态符号，删本地符号与调试信息</span>
+strip --strip-debug ./app             <span class="hljs-comment"># 只删调试信息</span>
+gcc -s -o app main.c                  <span class="hljs-comment"># 链接期直接不给符号表</span>
+</code></pre></div></code></pre>
+<p>符号删了，线上 coredump 就没法回溯。正解是把调试信息单独留一份：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>objcopy --only-keep-debug app app.debug
+strip --strip-debug app
+objcopy --add-gnu-debuglink=app.debug app
+</code></pre></div></code></pre>
+<p><code>app.debug</code> 收进制品库，跟版本号一起存。线上崩了拿它配 <code>addr2line</code> 或 <code>gdb</code> 还原行号。</p>
+<p>体积还有一个来源是链接顺序。从 Flash 顺序读代码时，如果启动阶段高频调用的函数在物理上散得极开，MTD 驱动就得反复随机寻址，大块预读白做，I/O 延迟全花在跳来跳去上。做法是采集启动期的调用序列，再按序列排段：</p>
+<ol>
+<li>编译时打开 <code>-finstrument-functions</code>（或者干脆用 <code>-ffunction-sections</code> 拿到每个函数的独立段）。</li>
+<li>跑一次应用，抓启动阶段触发的函数地址与调用流。</li>
+<li>生成链接脚本，把这段函数按调用时序连续摆放，再交给 <code>-Wl,-T</code> 使用。</li>
+</ol>
+<p>收益取决于函数分布有多散，Flash 越慢、启动路径越长，收益越大。</p>
+<p>C 库的选择对体积影响最大，一张表看清：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>特性</th>
+<th>Glibc</th>
+<th>uClibc-ng</th>
+<th>musl</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>设计目标</td>
+<td>功能最全、GNU 兼容</td>
+<td>面向嵌入式、高度可配置</td>
+<td>现代、规范、轻</td>
+</tr>
+<tr>
+<td>静态 hello 体积</td>
+<td>约 700KB+</td>
+<td>约 60KB</td>
+<td>约 7KB</td>
+</tr>
+<tr>
+<td>动态库体积</td>
+<td>约 2.0MB</td>
+<td>约 300KB</td>
+<td>约 600KB</td>
+</tr>
+<tr>
+<td>内存开销</td>
+<td>高（复杂分配器、线程缓存多）</td>
+<td>很低</td>
+<td>很低</td>
+</tr>
+<tr>
+<td>兼容性</td>
+<td>POSIX + GNU 扩展全支持</td>
+<td>部分 GNU 扩展未实现，要改代码</td>
+<td>POSIX 全支持，GNU 扩展较全</td>
+</tr>
+</tbody>
+</table></div><p>同一份 <code>hello.c</code>，GCC 6.3 + ARM，静态链接实测：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>库</th>
+<th>二进制大小</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Glibc</td>
+<td>492,792 字节（约 492KB）</td>
+</tr>
+<tr>
+<td>uClibc-ng</td>
+<td>67,204 字节（约 67KB）</td>
+</tr>
+<tr>
+<td>musl</td>
+<td>7,300 字节（约 7KB）</td>
+</tr>
+</tbody>
+</table></div><p>静态 BusyBox 1.26.2 的对照：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>库</th>
+<th>二进制大小</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Glibc</td>
+<td>755,088 字节</td>
+</tr>
+<tr>
+<td>uClibc-ng</td>
+<td>210,620 字节</td>
+</tr>
+<tr>
+<td>musl</td>
+<td>183,348 字节</td>
+</tr>
+</tbody>
+</table></div><p>Flash 只有 8MB / 16MB 的板子，工具链直接选 musl 或 uClibc-ng，rootfs 能省下 20%~30% 空间。省的不只是空间：引导时从 SPI Flash 读进 RAM 的字节数同比下降，这段 I/O 时间是等比例减少的。</p>
+<h2 id="七启动时间的构成" tabindex="-1">七、启动时间的构成 <a class="header-anchor" href="#七启动时间的构成"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>启动开销分四段，每段的责任人不同，砍法也不同：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>阶段</th>
+<th>干什么</th>
+<th>典型占比</th>
+<th>主要负责人</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bootloader</td>
+<td>硬件初始化，把内核映像搬进 RAM</td>
+<td>5% ~ 15%</td>
+<td>U-Boot / SPL</td>
+</tr>
+<tr>
+<td>Kernel</td>
+<td>驱动 probe、挂载 rootfs、拉起 init</td>
+<td>20% ~ 40%</td>
+<td>内核配置与驱动</td>
+</tr>
+<tr>
+<td>Init</td>
+<td>跑第一个用户空间进程，解析启动脚本</td>
+<td>30% ~ 50%</td>
+<td>systemd / 自研 init</td>
+</tr>
+<tr>
+<td>App</td>
+<td>启动业务程序，完成首帧或首个响应</td>
+<td>20% ~ 40%</td>
+<td>你自己的代码</td>
+</tr>
+</tbody>
+</table></div><p>某条车载倒车影像链路的拆分长这样（冷启动 2.4 秒）：U-Boot 0.35s、Kernel 0.9s、Init 0.8s、App 0.35s。占比最大的往往不是你以为的那个。</p>
+<p>测准了才有优化。两种拿到高精度时间的方法，都记下来。</p>
+<p>方案 A，硬件电平法，工业界最准。上电瞬间让一个 GPIO 拉高，应用画出第一帧或者网络连上之后再拉低，示波器量两个跳变之间的宽度。用户空间拨 GPIO 的代码如下（sysfs 接口，老内核可用；新内核换 libgpiod）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdlib.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;fcntl.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string.h&gt;</span></span>
+
+<span class="hljs-type">void</span> <span class="hljs-title function_">toggle_gpio</span><span class="hljs-params">(<span class="hljs-type">int</span> pin, <span class="hljs-type">int</span> value)</span> {
+    <span class="hljs-type">char</span> path[<span class="hljs-number">64</span>];
+
+    <span class="hljs-comment">/* 导出 GPIO，已经导出过会返回 EBUSY，忽略即可 */</span>
+    <span class="hljs-type">int</span> fd = open(<span class="hljs-string">&quot;/sys/class/gpio/export&quot;</span>, O_WRONLY);
+    <span class="hljs-keyword">if</span> (fd &gt;= <span class="hljs-number">0</span>) {
+        <span class="hljs-type">char</span> pin_str[<span class="hljs-number">10</span>];
+        <span class="hljs-built_in">snprintf</span>(pin_str, <span class="hljs-keyword">sizeof</span>(pin_str), <span class="hljs-string">&quot;%d&quot;</span>, pin);
+        write(fd, pin_str, <span class="hljs-built_in">strlen</span>(pin_str));
+        close(fd);
+    }
+
+    <span class="hljs-comment">/* 方向设为输出 */</span>
+    <span class="hljs-built_in">snprintf</span>(path, <span class="hljs-keyword">sizeof</span>(path), <span class="hljs-string">&quot;/sys/class/gpio/gpio%d/direction&quot;</span>, pin);
+    fd = open(path, O_WRONLY);
+    <span class="hljs-keyword">if</span> (fd &gt;= <span class="hljs-number">0</span>) {
+        write(fd, <span class="hljs-string">&quot;out&quot;</span>, <span class="hljs-number">3</span>);
+        close(fd);
+    }
+
+    <span class="hljs-comment">/* 写电平：0 或 1 */</span>
+    <span class="hljs-built_in">snprintf</span>(path, <span class="hljs-keyword">sizeof</span>(path), <span class="hljs-string">&quot;/sys/class/gpio/gpio%d/value&quot;</span>, pin);
+    fd = open(path, O_WRONLY);
+    <span class="hljs-keyword">if</span> (fd &gt;= <span class="hljs-number">0</span>) {
+        <span class="hljs-type">char</span> val_str[<span class="hljs-number">2</span>];
+        <span class="hljs-built_in">snprintf</span>(val_str, <span class="hljs-keyword">sizeof</span>(val_str), <span class="hljs-string">&quot;%d&quot;</span>, value);
+        write(fd, val_str, <span class="hljs-number">1</span>);
+        close(fd);
+    }
+}
+</code></pre></div></code></pre>
+<p>方案 B，串口时间戳法，没有示波器就用它。<code>grabserial</code> 给串口收到的每一行日志打相对时间戳：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>python grabserial -p /dev/ttyUSB0 -b 115200 -e <span class="hljs-string">&quot;Starting app finished&quot;</span> -t
+</code></pre></div></code></pre>
+<p>输出两列时间，第一列是从收到第一包数据算起的绝对相对时间，第二列是行间增量：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>[0.000 0.000] U-Boot 2020.04
+[0.120 0.120] Loading Kernel...
+[1.240 1.120] Starting Kernel...
+[1.850 0.610] Mounting Rootfs...
+[2.350 0.500] Starting app finished
+</code></pre></div></code></pre>
+<p>一眼就能看出 1.12 秒花在「Loading Kernel」到「Starting Kernel」之间。注意串口本身有带宽上限，115200 波特率下每秒只能吐约 11.5KB 字符，日志太多时测出来的时间是「打印时间」而不是「启动时间」，这类时间要在 <code>quiet</code> 之后再测一遍对比。</p>
+<p>内核侧三件事，按收益排序。</p>
+<p>一是关掉控制台打印。生产环境在内核命令行 <code>bootargs</code> 里加 <code>quiet</code>，立刻省 200ms ~ 800ms。原理在 UART：波特率固定，字符一个个排队发，内核 printk 把发送缓冲区写满之后，线程只能阻塞等串口吐完。少打印不只是省 CPU，是把整条阻塞链掐掉。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 命令行里加，或者写进 U-Boot 的 bootargs</span>
+quiet loglevel=3
+</code></pre></div></code></pre>
+<p><code>quiet</code> 不是把日志全扔掉，<code>dmesg</code> 里还在，需要时 <code>dmesg | tail</code> 照看。</p>
+<p>二是裁掉不用的驱动。网卡、显卡、声卡、用不到的文件系统（比如只需要只读 SQUASHFS，就把 EXT4 关掉），每个不用的驱动都带着 probe 时间、内存占用和 initcall 排队位置。</p>
+<p>三是选对内核压缩算法：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>算法</th>
+<th>解压速度</th>
+<th>压缩率</th>
+<th>适合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LZO / LZ4</td>
+<td>极快</td>
+<td>偏低</td>
+<td>CPU 慢、I/O 快的设备</td>
+</tr>
+<tr>
+<td>GZIP</td>
+<td>中</td>
+<td>中</td>
+<td>折中</td>
+</tr>
+<tr>
+<td>XZ</td>
+<td>慢</td>
+<td>最高</td>
+<td>存储小、CPU 强的设备</td>
+</tr>
+</tbody>
+</table></div><p>压缩率换的是「读 Flash 的字节数」，解压速度换的是「CPU 周期」。存储快、CPU 弱就选 LZ4；存储慢、CPU 强就选 XZ。这条取舍在十二节用 <code>perf</code> 定量。</p>
+<p>驱动 probe 串行是内核阶段最大的隐性开销。<code>bootargs</code> 里加 <code>initcall_debug</code>，每个 initcall 的进入与退出都会打时间戳：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 1. 采集</span>
+initcall_debug
+
+<span class="hljs-comment"># 2. 把 dmesg 转成甘特图</span>
+./scripts/bootgraph.pl /var/log/dmesg &gt; bootgraph.svg
+</code></pre></div></code></pre>
+<p>图上那条最长的横条就是罪魁。耗时长的非关键驱动改成异步 probe（驱动里返回 <code>-EPROBE_DEFER</code> 或者走 async probe 路径），别让一个等硬件的驱动把后面所有驱动卡住。</p>
+<h2 id="八动态链接的启动开销" tabindex="-1">八、动态链接的启动开销 <a class="header-anchor" href="#八动态链接的启动开销"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>动态链接的程序，<code>main</code> 之前还要跑一段你不写的代码：内核把 <code>ld-linux.so</code> 映射进来，<code>ld.so</code> 再去找 <code>DT_NEEDED</code> 里列的每个库、映射、解析符号、做重定位、调用各库的构造函数。这些都在你的第一行代码之前完成。</p>
+<p>先看它到底要加载什么：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>readelf -d ./app | grep NEEDED
+ldd ./app
+</code></pre></div></code></pre>
+<p>动态链接器自己会报账：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>LD_DEBUG=statistics ./app
+LD_DEBUG=libs ./app 2&gt;&amp;1 | <span class="hljs-built_in">head</span> -40
+</code></pre></div></code></pre>
+<p><code>statistics</code> 的输出里重点看三项：<code>total startup time in dynamic loader</code>、<code>number of relocations</code>、<code>time needed for relocation</code>。</p>
+<p>开销分四块：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>环节</th>
+<th>干什么</th>
+<th>量级</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>open</code> + <code>mmap</code> 每个库</td>
+<td>找文件、建映射</td>
+<td>每个库 0.1ms ~ 1ms（冷缓存更贵）</td>
+</tr>
+<tr>
+<td>符号解析</td>
+<td>在动态符号表里查名字</td>
+<td>与重定位条数成正比</td>
+</tr>
+<tr>
+<td>重定位处理</td>
+<td>填 GOT、改地址</td>
+<td>数千条重定位 = 数毫秒</td>
+</tr>
+<tr>
+<td>构造函数</td>
+<td><code>.init_array</code> 里每个函数跑一遍</td>
+<td>C++ 全局对象多时很明显</td>
+</tr>
+</tbody>
+</table></div><p>C++ 项目里这块尤其肉疼：<code>libstdc++</code> 一加载，<code>iostream</code> 的静态初始化就跟着跑，几百微秒起步，而你一个 <code>printf</code> 都没用。</p>
+<p>压这块的手段按顺序：</p>
+<ul>
+<li>砍库的数量。<code>-Wl,--as-needed</code> 让链接器只保留真正被用到的 <code>DT_NEEDED</code>，能少一个是一个。</li>
+<li>隐藏符号。<code>-fvisibility=hidden</code> 减少动态符号表条数，解析更快。</li>
+<li>关 PIE。<code>-no-pie</code> 省掉装载期的基址重定位，代价是失去 ASLR。</li>
+<li>少用 C++ 全局对象，尤其 <code>iostream</code>。</li>
+<li>冷启动要按冷缓存量。热缓存的启动时间没有参考价值：</li>
+</ul>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">sync</span>; <span class="hljs-built_in">echo</span> 3 &gt; /proc/sys/vm/drop_caches    <span class="hljs-comment"># root，清 page cache 后再测</span>
+</code></pre></div></code></pre>
+<h2 id="九静态链接与启动速度" tabindex="-1">九、静态链接与启动速度 <a class="header-anchor" href="#九静态链接与启动速度"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把库塞进可执行文件，<code>ld.so</code> 就没事可做：没有库文件要 <code>open</code>，没有库符号要解析，没有跨库重定位。启动链上直接少一层。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -static -O2 -o app_static main.c
+file ./app_static          <span class="hljs-comment"># 应显示 statically linked</span>
+ldd ./app_static           <span class="hljs-comment"># 应显示 not a dynamic executable</span>
+</code></pre></div></code></pre>
+<p>同一块 Cortex-A7 板子上量的量级对比（程序逻辑一样，冷缓存）：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>构建方式</th>
+<th>启动到 <code>main</code> 结束</th>
+<th>二进制体积</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>动态链接 glibc</td>
+<td>约 12ms 装载开销</td>
+<td>16KB</td>
+</tr>
+<tr>
+<td>静态链接 glibc</td>
+<td>约 2ms</td>
+<td>780KB</td>
+</tr>
+<tr>
+<td>静态链接 musl</td>
+<td>约 1ms</td>
+<td>40KB</td>
+</tr>
+</tbody>
+</table></div><p>动态链接的开销在 PC 上可以忽略，在启动时间以毫秒计的嵌入式板子上就不能忽略。devicetree 之外，<code>initramfs</code> 里的核心业务程序几乎都该静态链接。</p>
+<p>代价要算清：</p>
+<ul>
+<li>体积涨。glibc 静态一个 hello 就 700KB+，用 musl 才 7KB。</li>
+<li>glibc 静态链接有坑：<code>getaddrinfo</code>、<code>dlopen</code>、NSS 在静态模式下会告警或者行为异常，要用 <code>--enable-static-nss</code> 的定制 glibc，或者干脆换 musl。</li>
+<li>库更新要重新链接整个程序，不能只换 <code>.so</code>。</li>
+</ul>
+<p>还有一个折中选项：<code>-static-pie</code>，静态链接但保留 PIE 能力（体积更大，装载时要做自重定位）；以及 <code>-no-pie</code>，非 PIE 的普通可执行文件，装载最快，但放弃地址随机化。启动时间优先的固件，<code>-static -no-pie</code> 是常见组合。</p>
+<h2 id="十预链接与延迟加载" tabindex="-1">十、预链接与延迟加载 <a class="header-anchor" href="#十预链接与延迟加载"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>预链接（prelink）是老办法：在构建时把共享库的重定位提前算好，写进 ELF 的 <code>PT_GNU_PRELINKED</code> 段，装载时 <code>ld.so</code> 直接跳过重定位计算。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 预链接所有库与可执行文件，-R 随机化基址，-m 保留虚拟地址</span>
+prelink -amR
+prelink -u ./app        <span class="hljs-comment"># 撤销</span>
+</code></pre></div></code></pre>
+<p>为什么现在少用它：预链接会改共享库文件本身，一次库更新就让所有预链接结果失效；它和 ASLR 抢地址空间，安全上也不好；现代发行版默认 PIE，prelink 基本退出历史。老系统上还能用，新系统别折腾。</p>
+<p>延迟加载是另一半故事。ELF 默认就是延迟绑定：函数第一次被调用时才解析符号（<code>-Wl,-z,lazy</code>，默认值）。这对启动有利——没调用的函数不花解析时间。反过来，<code>-Wl,-z,now</code> 强制启动时全解析，启动变慢，但运行时没有第一次调用的抖动。策略是一句话：启动时间优先用 <code>lazy</code>，实时性优先（不能容忍首次调用抖动）用 <code>now</code>。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>readelf -d ./app | grep -E <span class="hljs-string">&#x27;BIND_NOW|FLAGS&#x27;</span>
+LD_BIND_NOW=1 ./app        <span class="hljs-comment"># 强制全解析，用来量化延迟绑定的收益</span>
+</code></pre></div></code></pre>
+<p>延迟加载的另一层含义在应用自己手里：不是所有初始化都要在启动路径上做完。把非首帧必需的活挪到后台线程：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">deferred_init</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span> {
+    (<span class="hljs-type">void</span>)arg;
+    init_telemetry();     <span class="hljs-comment">/* 埋点上报 */</span>
+    init_ota();           <span class="hljs-comment">/* 升级检查 */</span>
+    scan_media_files();   <span class="hljs-comment">/* 媒体库扫描 */</span>
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span> {
+    <span class="hljs-type">pthread_t</span> t;
+    init_display();                     <span class="hljs-comment">/* 首帧必需，同步做 */</span>
+    pthread_create(&amp;t, <span class="hljs-literal">NULL</span>, deferred_init, <span class="hljs-literal">NULL</span>);
+    pthread_detach(t);
+    render_first_frame();
+    <span class="hljs-keyword">for</span> (;;) pause();
+}
+</code></pre></div></code></pre>
+<p>前提取清楚：推迟的必须是不影响首帧、不影响用户第一眼判断的活。网络保活、媒体扫描、日志上传都可以推迟；显示参数、输入设备、音视频管线不能推迟。推迟错了，首帧画面就是错的。</p>
+<p>还有一招是减少读取的字节数。<code>posix_fadvise(fd, 0, 0, POSIX_FADV_WILLNEED)</code> 让内核对马上要读的文件提前预读，<code>readahead</code> 命令同理。启动脚本里把核心资源文件提前刷进 page cache，比逐次 <code>read</code> 等待磁盘快得多。</p>
+<h2 id="十一库的裁剪" tabindex="-1">十一、库的裁剪 <a class="header-anchor" href="#十一库的裁剪"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面的手段都在砍自己的代码，这一节砍依赖。链接时少带一个库，装载期就少一次 <code>open</code> 和一轮重定位。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>手段</th>
+<th>作用</th>
+<th>命令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--as-needed</code></td>
+<td>只保留被真正引用的 <code>DT_NEEDED</code></td>
+<td><code>gcc -Wl,--as-needed -o app main.o -lfoo -lbar</code></td>
+</tr>
+<tr>
+<td>隐藏符号</td>
+<td>减少动态符号表条数</td>
+<td><code>gcc -fvisibility=hidden</code></td>
+</tr>
+<tr>
+<td>version script</td>
+<td>精确控制导出符号集</td>
+<td><code>gcc -Wl,--version-script=exports.map</code></td>
+</tr>
+<tr>
+<td>静态库分文件</td>
+<td>一个符号只拉它所在的 <code>.o</code></td>
+<td>每函数一文件编译再 <code>ar rcs</code></td>
+</tr>
+<tr>
+<td>去 C++ 冗余</td>
+<td>关异常、关 RTTI、静态链 libstdc++</td>
+<td><code>-fno-exceptions -fno-rtti -static-libstdc++</code></td>
+</tr>
+<tr>
+<td>换库</td>
+<td>musl / uClibc-ng 替 glibc</td>
+<td>换工具链重编</td>
+</tr>
+<tr>
+<td><code>--gc-sections</code></td>
+<td>删未被引用的函数与数据</td>
+<td>见第六节</td>
+</tr>
+</tbody>
+</table></div><p>先看当前带了什么，再决定砍谁：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>readelf -d ./app | grep NEEDED
+nm -D --defined-only ./app | <span class="hljs-built_in">wc</span> -l       <span class="hljs-comment"># 导出的动态符号条数</span>
+size ./app
+</code></pre></div></code></pre>
+<p><code>--as-needed</code> 要放在库前面，位置写错等于没写：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -O2 -Wl,--as-needed -o app main.o -lfoo -lbar
+</code></pre></div></code></pre>
+<p>静态库的删除粒度是目标文件，不是一个函数。一个 <code>util.c</code> 里塞了二十个函数、只用到其中一个，链接器照样把整个 <code>.o</code> 拉进去，连带它的静态数据与依赖。拆文件是零成本的优化：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -Os -ffunction-sections -fdata-sections -c util_a.c -o util_a.o
+gcc -Os -ffunction-sections -fdata-sections -c util_b.c -o util_b.o
+ar rcs libutil.a util_a.o util_b.o
+</code></pre></div></code></pre>
+<p>C++ 项目的体积大头往往是 <code>libstdc++</code> 和异常表。业务不用异常就不用付这个税：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>g++ -Os -fno-exceptions -fno-rtti -static-libstdc++ -o app main.cpp
+</code></pre></div></code></pre>
+<p>注意 <code>-fno-exceptions</code> 必须整个工程一致，第三方库编着异常、你这边关掉，链接期就会报 <code>undefined reference to __cxa_throw</code>。</p>
+<p>C 库本身的可裁剪项在工具链里，不在命令行：uClibc-ng 有 <code>menuconfig</code> 式的配置界面，把 locale、NSS、宽字符、<code>libm</code> 的边角函数关掉，体积能再降一截。musl 没有配置项，但默认就小。</p>
+<h2 id="十二测量怎么知道优化有没有用" tabindex="-1">十二、测量：怎么知道优化有没有用 <a class="header-anchor" href="#十二测量怎么知道优化有没有用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一节是全文的地基。没测过的优化等于没做，测错口径的优化比没做更糟。先把工具对号入座：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>工具</th>
+<th>看什么</th>
+<th>命令</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>time</code></td>
+<td>端到端 wall / user / sys</td>
+<td><code>time ./app</code></td>
+</tr>
+<tr>
+<td><code>/usr/bin/time -v</code></td>
+<td>峰值 RSS、page fault、上下文切换</td>
+<td><code>/usr/bin/time -v ./app</code></td>
+</tr>
+<tr>
+<td><code>perf stat</code></td>
+<td>IPC、cache miss、分支预测失败</td>
+<td><code>perf stat -e cycles,instructions ./app</code></td>
+</tr>
+<tr>
+<td><code>perf record</code> / <code>perf report</code></td>
+<td>函数级 CPU 热点与调用栈</td>
+<td><code>perf record -g ./app</code></td>
+</tr>
+<tr>
+<td><code>strace -c</code></td>
+<td>系统调用次数与耗时排名</td>
+<td><code>strace -c ./app</code></td>
+</tr>
+<tr>
+<td><code>strace -tt -T</code></td>
+<td>单次调用耗时、调用之间的空档</td>
+<td><code>strace -tt -T -o log ./app</code></td>
+</tr>
+<tr>
+<td><code>ltrace</code></td>
+<td>库函数调用</td>
+<td><code>ltrace -c ./app</code></td>
+</tr>
+<tr>
+<td><code>oprofile</code></td>
+<td>全系统热点，含内核与中断</td>
+<td><code>opreport -l ./app</code></td>
+</tr>
+<tr>
+<td><code>valgrind --tool=callgrind</code></td>
+<td>指令级精确计数（慢 20~50 倍）</td>
+<td><code>valgrind --tool=callgrind ./app</code></td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td>段体积</td>
+<td><code>size ./app</code></td>
+</tr>
+<tr>
+<td><code>grabserial</code></td>
+<td>启动阶段逐行时间戳</td>
+<td><code>grabserial -e &quot;done&quot;</code></td>
+</tr>
+<tr>
+<td><code>systemd-analyze</code></td>
+<td>服务启动树与串行链</td>
+<td><code>systemd-analyze blame</code></td>
+</tr>
+</tbody>
+</table></div><p>口径先统一，否则数据不可比：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 锁频，别让调频器把测量搅乱</span>
+<span class="hljs-built_in">echo</span> performance | <span class="hljs-built_in">tee</span> /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+<span class="hljs-comment"># 关掉调试串口打印，或者至少把日志等级压下来</span>
+<span class="hljs-comment"># 每个版本跑 10 次，取中位数，不看最好那次</span>
+<span class="hljs-keyword">for</span> i <span class="hljs-keyword">in</span> $(<span class="hljs-built_in">seq</span> 1 10); <span class="hljs-keyword">do</span>
+    /usr/bin/time -f <span class="hljs-string">&quot;%e&quot;</span> ./app 2&gt;&amp;1 &gt;/dev/null
+<span class="hljs-keyword">done</span> | <span class="hljs-built_in">sort</span> -n | sed -n <span class="hljs-string">&#x27;5,6p&#x27;</span>
+</code></pre></div></code></pre>
+<p><code>perf stat</code> 看整体效率，两个数最有用：IPC（<code>instructions / cycles</code>）和 cache miss。IPC 掉下去、指令数没涨，说明在等内存。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>perf <span class="hljs-built_in">stat</span> -e cycles,instructions,cache-misses,cache-references,branch-misses ./app
+perf <span class="hljs-built_in">stat</span> -r 10 -e task-clock ./app
+</code></pre></div></code></pre>
+<p><code>perf record</code> 找函数级热点，<code>-F 99</code> 是采样频率，<code>-g</code> 抓调用栈：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 盯住一个已经在跑的进程，采 10 秒</span>
+perf record -F 99 -g -p &lt;PID&gt; -- <span class="hljs-built_in">sleep</span> 10
+perf report
+</code></pre></div></code></pre>
+<p><code>perf report</code> 里层层展开调用树，能落到具体函数，比如某个 JSON 解析器、某个死循环。要火焰图就 <code>perf script | stackcollapse-perf.pl | flamegraph.pl &gt; out.svg</code>。跑在板子上时把 <code>perf.data</code> 拷回 PC，用交叉版本或者同版本 <code>perf</code> 打开，符号表记得留着。</p>
+<p><code>strace</code> 找系统调用层面的罪。先看总账：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>strace -c ./app
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- -----------
+ 56.40    0.012300          42       292           read
+ 20.10    0.004383         101        43        20 open
+ 12.30    0.002685           5       512           mmap2
+</code></pre></div></code></pre>
+<p><code>read</code> 和 <code>open</code> 吃掉七成时间，问题就不在 CPU 上。再看细节，<code>-tt</code> 带微秒时间戳，<code>-T</code> 给每次调用标耗时，<code>-f</code> 跟子进程，<code>-o</code> 写文件：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>strace -tt -T -v -f -o strace_boot.log ./app
+</code></pre></div></code></pre>
+<p>日志里捞超过 10ms 的调用：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>awk -F<span class="hljs-string">&#x27;&lt;&#x27;</span> <span class="hljs-string">&#x27;{t=$NF; gsub(/&gt;/,&quot;&quot;,t); if (t+0 &gt; 0.01) print}&#x27;</span> strace_boot.log | <span class="hljs-built_in">head</span> -20
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>10:12:05.123456 open(&quot;/etc/config.bin&quot;, O_RDONLY) = -1 ENOENT (No such file or directory) &lt;0.012450&gt;
+</code></pre></div></code></pre>
+<p>打开一个不存在的配置文件花了 12ms，这种「等不存在的设备文件」是最典型的启动延时来源，改一行路径就没了。</p>
+<p>还有一个经典判断：CPU 忙还是在等硬件。系统调用耗时短、但两次调用之间有大跨度空档，CPU 在跑计算或者卡在锁上；系统调用耗时长（<code>read</code>、<code>select</code>、<code>ioctl</code> 都是几毫秒以上），在等驱动或外设。</p>
+<p><code>oprofile</code> 是另一套全系统采样，能看内核驱动与中断处理，内核要开 <code>CONFIG_OPROFILE=y</code>：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>opcontrol --vmlinux=/path/to/vmlinux
+opcontrol --start
+./my_performance_test
+opcontrol --stop
+
+<span class="hljs-comment"># 生成函数级热点报告</span>
+opreport -l ./my_performance_test
+</code></pre></div></code></pre>
+<p><code>perf</code> 需要内核开 <code>CONFIG_PERF_EVENTS=y</code>。两个工具二选一，<code>perf</code> 更新、更通用；老内核只有 <code>oprofile</code> 时就用它。</p>
+<p>症状到工具，最后收一张对照：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>症状</th>
+<th>先开哪个工具</th>
+<th>看什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>整机启动慢，不知道卡在哪段</td>
+<td><code>grabserial</code> / 示波器</td>
+<td>阶段边界时间戳</td>
+</tr>
+<tr>
+<td>服务启动互相等待</td>
+<td><code>systemd-analyze critical-chain</code></td>
+<td>串行依赖链</td>
+</tr>
+<tr>
+<td>驱动初始化慢</td>
+<td><code>initcall_debug</code> + <code>bootgraph.pl</code></td>
+<td>最长的那条 initcall</td>
+</tr>
+<tr>
+<td>程序 CPU 高</td>
+<td><code>perf record</code> / <code>perf top</code></td>
+<td>热点函数</td>
+</tr>
+<tr>
+<td>程序 CPU 不高但慢</td>
+<td><code>strace -c</code></td>
+<td>系统调用耗时</td>
+</tr>
+<tr>
+<td>内存涨、page fault 多</td>
+<td><code>/usr/bin/time -v</code></td>
+<td>maxrss、major fault</td>
+</tr>
+<tr>
+<td>首帧前卡住</td>
+<td><code>strace -tt -T</code></td>
+<td>调用之间的空档</td>
+</tr>
+</tbody>
+</table></div><h2 id="十三常见优化手法与陷阱" tabindex="-1">十三、常见优化手法与陷阱 <a class="header-anchor" href="#十三常见优化手法与陷阱"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先看账本。下面这些动作在嵌入式 Linux 上被反复验证过，收益量级写在第三列，实际数字取决于你的板子：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>措施</th>
+<th>预期缩减</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bootloader</td>
+<td><code>bootdelay</code> 设 0，裁掉 USB / Ethernet / PCIe</td>
+<td>300ms ~ 1s</td>
+</tr>
+<tr>
+<td>Bootloader</td>
+<td>开 Falcon Mode，SPL 直载内核</td>
+<td>500ms ~ 1.5s</td>
+</tr>
+<tr>
+<td>Kernel</td>
+<td><code>bootargs</code> 加 <code>quiet</code></td>
+<td>200ms ~ 800ms</td>
+</tr>
+<tr>
+<td>Kernel</td>
+<td>裁无用驱动 + 换 LZ4 / LZO 压缩</td>
+<td>300ms ~ 1.2s</td>
+</tr>
+<tr>
+<td>Rootfs</td>
+<td>换 SquashFS 只读压缩文件系统</td>
+<td>100ms ~ 500ms</td>
+</tr>
+<tr>
+<td>Init</td>
+<td>极简 <code>/init</code> 脚本替掉 systemd / SysV</td>
+<td>500ms ~ 3s</td>
+</tr>
+<tr>
+<td>Toolchain</td>
+<td>musl / uClibc-ng 替 glibc</td>
+<td>100ms ~ 300ms</td>
+</tr>
+<tr>
+<td>App</td>
+<td><code>--gc-sections</code> + <code>strip</code></td>
+<td>50ms ~ 200ms</td>
+</tr>
+</tbody>
+</table></div><p>U-Boot 侧三刀，按顺序砍：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 1. 去掉上电倒计时，别再等串口敲键</span>
+setenv bootdelay 0
+saveenv
+
+<span class="hljs-comment"># 2. 配置里关掉启动不用的总线与外设：CONFIG_USB、CONFIG_PCI、CONFIG_DM_ETH</span>
+<span class="hljs-comment"># 3. Falcon Mode：SPL 直接引导内核，跳过整个 U-Boot proper</span>
+</code></pre></div></code></pre>
+<p>Falcon Mode 省的是 <code>U-Boot proper</code> 的体积与初始化时间，500ms ~ 1.5s。代价要说明白：救援 shell 没了，量产后刷机得留一条后路（按键进 DFU、或者保留一个可跳过的环境变量分支）。</p>
+<p>存储介质是物理下限，选型阶段就该定：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>介质</th>
+<th>读速度</th>
+<th>特点</th>
+<th>用在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SPI NOR Flash</td>
+<td>几十 MB/s</td>
+<td>随机寻址好，容量小</td>
+<td>极小系统、boot 分区</td>
+</tr>
+<tr>
+<td>eMMC</td>
+<td>100 ~ 250MB/s</td>
+<td>支持并行多通道</td>
+<td>中高端平台主力</td>
+</tr>
+<tr>
+<td>SD 卡</td>
+<td>看卡等级（Class 10 / UHS-I）</td>
+<td>质量参差，不适合量产</td>
+<td>调试与原型</td>
+</tr>
+</tbody>
+</table></div><p>根文件系统上 <code>SquashFS</code>，只读、压缩比高，rootfs 能压到原体积的 30% 左右。解压要花 CPU，但启动时读的字节数大幅下降，小文件密集加载的场景整体更快。</p>
+<p>初始化系统是收益最大的一刀。先定位再砍，systemd 自带三把尺子：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>systemd-analyze                    <span class="hljs-comment"># 三个总数：firmware / loader / userspace</span>
+systemd-analyze blame              <span class="hljs-comment"># 每个服务耗时排名</span>
+systemd-analyze critical-chain     <span class="hljs-comment"># 串行依赖链，找真正的阻塞点</span>
+systemd-analyze plot &gt; boot_analysis.svg   <span class="hljs-comment"># 整张启动甘特图，浏览器直接看</span>
+</code></pre></div></code></pre>
+<p><code>blame</code> 排第一的往往是个无关服务：网络配置等待、时钟同步、<code>ModemManager</code> 探测。停掉它们比优化业务代码快得多。倒车影像这类必须在 2 秒内出画面的业务，直接跳过绝大多数系统初始化：</p>
+<pre><code class="language-ini"><div class="code-block" data-lang="ini"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">ini</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># /etc/systemd/system/reverse-cam.service</span>
+<span class="hljs-section">[Unit]</span>
+<span class="hljs-attr">Description</span>=Reverse Camera App
+<span class="hljs-attr">DefaultDependencies</span>=<span class="hljs-literal">no</span>
+<span class="hljs-attr">Conflicts</span>=shutdown.target
+<span class="hljs-attr">Before</span>=sysinit.target shutdown.target
+
+<span class="hljs-section">[Service]</span>
+<span class="hljs-attr">Type</span>=simple
+<span class="hljs-attr">ExecStart</span>=/usr/bin/reverse-cam-app
+<span class="hljs-attr">OOMScoreAdjust</span>=-<span class="hljs-number">1000</span>
+
+<span class="hljs-section">[Install]</span>
+<span class="hljs-attr">WantedBy</span>=sysinit.target
+</code></pre></div></code></pre>
+<p>三个参数是关键：<code>DefaultDependencies=no</code> 切断 systemd 自动加的那一堆默认依赖（网络在线、文件系统挂完、日志服务就绪），服务在 systemd 刚起来就能跑；<code>Before=sysinit.target</code> 让它排在系统初始化核心目标之前；<code>WantedBy=sysinit.target</code> 把它挂进早期阶段。<code>OOMScoreAdjust=-1000</code> 让它在内存紧张时不被 OOM killer 挑走。</p>
+<p>再狠一点，用 initramfs 替掉磁盘 rootfs：</p>
+<pre><code class="language-sh"><div class="code-block" data-lang="sh"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">sh</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#!/bin/sh</span>
+<span class="hljs-comment"># /init，initramfs 里的第一个用户空间程序</span>
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+
+<span class="hljs-comment"># 核心业务先跑，后台运行，别阻塞后续引导</span>
+/bin/reverse-cam-app &amp;
+
+<span class="hljs-comment"># 再拉起其他挂载和守护进程</span>
+<span class="hljs-built_in">exec</span> /bin/sh
+</code></pre></div></code></pre>
+<p>initramfs 是压进内核镜像的临时根文件系统，内核解压完直接在内存里跑，不用等存储驱动 probe 再挂分区。体积控制在 2MB ~ 5MB：<code>/init</code>、静态编译的 BusyBox、必需的内核模块、业务程序本身。业务程序一定静态链接，省掉装载 <code>ld-linux.so</code> 和解析符号的时间。</p>
+<p>陷阱都在代价那一侧：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>手法</th>
+<th>代价 / 风险</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-O3</code> 全工程铺开</td>
+<td>代码膨胀打爆 I-cache，反而更慢</td>
+</tr>
+<tr>
+<td><code>-flto</code></td>
+<td>构建时间翻倍，<code>strip</code> 后回溯更难</td>
+</tr>
+<tr>
+<td><code>-march=native</code></td>
+<td>换机器跑就是 <code>SIGILL</code></td>
+</tr>
+<tr>
+<td><code>-Ofast</code></td>
+<td>改浮点语义，数值结果与 <code>-O2</code> 不一致</td>
+</tr>
+<tr>
+<td><code>strip</code></td>
+<td>线上 coredump 无法定位，必须配 debuglink</td>
+</tr>
+<tr>
+<td><code>quiet</code></td>
+<td>故障时看不到内核日志，靠 <code>dmesg</code> 兜底</td>
+</tr>
+<tr>
+<td>Falcon Mode</td>
+<td>没有 U-Boot 救援 shell</td>
+</tr>
+<tr>
+<td>后台推迟初始化</td>
+<td>推迟错了，首帧数据是错的</td>
+</tr>
+<tr>
+<td><code>-no-pie</code></td>
+<td>失去 ASLR</td>
+</tr>
+<tr>
+<td>initramfs</td>
+<td>体积塞进内核镜像，压缩算法与启动内存都要重算</td>
+</tr>
+</tbody>
+</table></div><p>还有几个纯操作层面的坑，踩一次记一辈子：</p>
+<ul>
+<li>编译期给了 <code>-ffunction-sections</code>、链接期忘了 <code>-Wl,--gc-sections</code>，白干。</li>
+<li>编译期给了 <code>-flto</code>、链接期忘了，链接器报 <code>plugin needed to handle lto object</code>。</li>
+<li>静态库用普通 <code>ar</code> 归档 LTO 对象，元数据丢了，LTO 静默失效。</li>
+<li>用热缓存测启动，测出来的是 page cache 的速度，不是 Flash 的速度。</li>
+<li>只跑一次就下结论，一次测量里混着 CPU 调频、后台 cron、SD 卡抖动。</li>
+<li>串口日志开最详细级别测启动，测的是 UART 带宽。</li>
+</ul>
+<h2 id="十四易错点速查" tabindex="-1">十四、易错点速查 <a class="header-anchor" href="#十四易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>最后一章是一张查表。现象对不上先别改代码，按这张表排查：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>常见原因</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-O0</code> 能跑，<code>-O2</code> 崩</td>
+<td>严格别名违规、有符号溢出、缺 <code>volatile</code></td>
+<td>先加 <code>-fno-strict-aliasing</code> 验证，再改代码</td>
+</tr>
+<tr>
+<td><code>-O3</code> 比 <code>-O2</code> 慢</td>
+<td>代码膨胀导致 I-cache 失效</td>
+<td><code>perf stat</code> 看 <code>L1-icache-load-misses</code>，退回 <code>-O2</code></td>
+</tr>
+<tr>
+<td>二进制比预期大十倍</td>
+<td>没 <code>strip</code>，带了调试符号</td>
+<td><code>strip --strip-unneeded</code>，调试信息单独存</td>
+</tr>
+<tr>
+<td><code>.so</code> 更新后程序启动变慢</td>
+<td>重定位条数增加、构造函数变重</td>
+<td><code>LD_DEBUG=statistics</code> 对比，砍依赖</td>
+</tr>
+<tr>
+<td>目标板报 <code>Illegal instruction</code></td>
+<td>编译用了目标不支持的指令</td>
+<td>去掉 <code>-march=native</code>，降到 <code>x86-64-v2</code> 或具体 <code>armv7-a</code></td>
+</tr>
+<tr>
+<td>启动时间测出来每次差很多</td>
+<td>热缓存、调频、串口日志干扰</td>
+<td>关调频、<code>drop_caches</code>、<code>quiet</code> 后重测</td>
+</tr>
+<tr>
+<td><code>initcall_debug</code> 显示某驱动占 800ms</td>
+<td>驱动在等硬件就绪，串行阻塞</td>
+<td>改异步 probe，或用 <code>-EPROBE_DEFER</code> 拆开</td>
+</tr>
+<tr>
+<td><code>strace</code> 里大量 <code>ENOENT</code></td>
+<td>打开不存在的配置文件、探测式路径</td>
+<td>删掉探测代码，或把路径配死</td>
+</tr>
+<tr>
+<td>静态链接 glibc 后 <code>getaddrinfo</code> 异常</td>
+<td>glibc 静态 NSS 限制</td>
+<td>换 musl，或定制 <code>--enable-static-nss</code></td>
+</tr>
+<tr>
+<td>加 <code>--as-needed</code> 后链接报未定义符号</td>
+<td>选项位置在库后面，或库本身需要传递依赖</td>
+<td>参数前置，必要时加 <code>--copy-dt-needed-entries</code></td>
+</tr>
+<tr>
+<td><code>systemd</code> 服务抢跑导致依赖没就绪</td>
+<td><code>DefaultDependencies=no</code> 切太狠</td>
+<td>补最小 <code>After=</code>，只留真正必需的</td>
+</tr>
+<tr>
+<td>后台推迟初始化后首帧黑屏</td>
+<td>把显示相关初始化挪走了</td>
+<td>把首帧链路拉回同步路径</td>
+</tr>
+</tbody>
+</table></div><p>交付前过一遍自检表，十项里有一项没过就别发版：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>检查项</th>
+<th>命令 / 位置</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bootargs</code> 有 <code>quiet</code></td>
+<td><code>cat /proc/cmdline</code></td>
+<td>含 <code>quiet</code>，且 <code>loglevel</code> 不超过 3</td>
+</tr>
+<tr>
+<td>串口波特率够高</td>
+<td>U-Boot 环境变量</td>
+<td>115200 起，日志多时提到 460800</td>
+</tr>
+<tr>
+<td>生产二进制已 <code>strip</code></td>
+<td><code>file ./app</code></td>
+<td>显示 <code>stripped</code></td>
+</tr>
+<tr>
+<td>rootfs 用压缩只读镜像</td>
+<td><code>mount | grep squash</code></td>
+<td>有 <code>squashfs</code> 挂载</td>
+</tr>
+<tr>
+<td>垃圾回收已开</td>
+<td>构建日志</td>
+<td>见到 <code>-ffunction-sections -Wl,--gc-sections</code></td>
+</tr>
+<tr>
+<td>无用服务已禁</td>
+<td><code>systemctl list-unit-files --state=enabled</code></td>
+<td>只剩业务必需项</td>
+</tr>
+<tr>
+<td>关键服务抢在早期</td>
+<td><code>systemd-analyze critical-chain</code></td>
+<td>业务服务在 <code>sysinit.target</code> 前</td>
+</tr>
+<tr>
+<td>工具链按容量选过</td>
+<td>构建配置</td>
+<td>8MB / 16MB Flash 用 musl 或 uClibc-ng</td>
+</tr>
+<tr>
+<td>优化等级定过</td>
+<td>编译命令</td>
+<td><code>-O2</code> 打底，热点单独提级，固件用 <code>-Os</code></td>
+</tr>
+<tr>
+<td>U-Boot 没在扫无用总线</td>
+<td>U-Boot 配置</td>
+<td>USB / Ethernet / PCIe 按需关闭</td>
+</tr>
+</tbody>
+</table></div><p>这张表背下来，比背任何一篇优化指南都管用。剩下的时间花在测量上：把基线立住，一次只改一个变量，改完重测。优化是体力活，不是灵感活。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一性能问题从哪来" data-toc-target="一性能问题从哪来">一、性能问题从哪来</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二优化等级编译器替你做什么" data-toc-target="二优化等级编译器替你做什么">二、优化等级：编译器替你做什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三-o2-与--o3-的取舍" data-toc-target="三-o2-与--o3-的取舍">三、-O2 与 -O3 的取舍</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四内联与-lto" data-toc-target="四内联与-lto">四、内联与 LTO</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五针对具体-cpu-优化-march-与--mtune" data-toc-target="五针对具体-cpu-优化-march-与--mtune">五、针对具体 CPU 优化：-march 与 -mtune</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六减少体积-os-与-strip" data-toc-target="六减少体积-os-与-strip">六、减少体积：-Os 与 strip</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七启动时间的构成" data-toc-target="七启动时间的构成">七、启动时间的构成</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八动态链接的启动开销" data-toc-target="八动态链接的启动开销">八、动态链接的启动开销</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九静态链接与启动速度" data-toc-target="九静态链接与启动速度">九、静态链接与启动速度</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十预链接与延迟加载" data-toc-target="十预链接与延迟加载">十、预链接与延迟加载</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一库的裁剪" data-toc-target="十一库的裁剪">十一、库的裁剪</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二测量怎么知道优化有没有用" data-toc-target="十二测量怎么知道优化有没有用">十二、测量：怎么知道优化有没有用</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三常见优化手法与陷阱" data-toc-target="十三常见优化手法与陷阱">十三、常见优化手法与陷阱</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四易错点速查" data-toc-target="十四易错点速查">十四、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/E.编程语言与框架/05-编译与链接/编译优化与启动性能/","title":"编译优化与启动性能","url":"/E.编程语言与框架/05-编译与链接/编译优化与启动性能/","type":"current"},{"id":"/E.编程语言与框架/05-编译与链接/Clang-使用笔记/","title":"Clang 使用笔记","url":"/E.编程语言与框架/05-编译与链接/Clang-使用笔记/","type":"neighbor"},{"id":"/E.编程语言与框架/05-编译与链接/Doxygen-注释规范与文档生成/","title":"Doxygen 注释规范与文档生成","url":"/E.编程语言与框架/05-编译与链接/Doxygen-注释规范与文档生成/","type":"neighbor"},{"id":"/E.编程语言与框架/05-编译与链接/Makefile-与构建自动化/","title":"Makefile 与构建自动化","url":"/E.编程语言与框架/05-编译与链接/Makefile-与构建自动化/","type":"neighbor"},{"id":"/E.编程语言与框架/05-编译与链接/Matlab-代码生成：从-M-脚本到-C-代码/","title":"Matlab 代码生成：从 M 脚本到 C 代码","url":"/E.编程语言与框架/05-编译与链接/Matlab-代码生成：从-M-脚本到-C-代码/","type":"neighbor"}],"links":[{"source":"/E.编程语言与框架/05-编译与链接/编译优化与启动性能/","target":"/E.编程语言与框架/05-编译与链接/Clang-使用笔记/","type":"neighbor"},{"source":"/E.编程语言与框架/05-编译与链接/编译优化与启动性能/","target":"/E.编程语言与框架/05-编译与链接/Doxygen-注释规范与文档生成/","type":"neighbor"},{"source":"/E.编程语言与框架/05-编译与链接/编译优化与启动性能/","target":"/E.编程语言与框架/05-编译与链接/Makefile-与构建自动化/","type":"neighbor"},{"source":"/E.编程语言与框架/05-编译与链接/编译优化与启动性能/","target":"/E.编程语言与框架/05-编译与链接/Matlab-代码生成：从-M-脚本到-C-代码/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

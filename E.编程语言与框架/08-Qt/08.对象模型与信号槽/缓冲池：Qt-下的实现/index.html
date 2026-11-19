@@ -1,0 +1,1456 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>缓冲池：Qt 下的实现 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">缓冲池：Qt 下的实现</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/E.编程语言与框架/08-Qt/08.对象模型与信号槽/缓冲池：Qt-下的实现/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">缓冲池：Qt 下的实现</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">缓冲池：Qt 下的实现</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>这篇只讲一件事：生产数据的一方和消费数据的一方速度对不上时，中间那层内存队列该怎么设计。讲缓冲池本身——容量怎么定、满了怎么办、Qt 里用哪几个类落地。信号槽的连接语义、事件循环的派发顺序、QObject 的对象树归属，放在同目录另外几篇里，这里不重复。读完你得能回答三个问题：队列要不要加、加多深、满了之后选等还是选丢。</p>
+</blockquote>
+<h2 id="一缓冲池解决什么问题" tabindex="-1">一、缓冲池解决什么问题 <a class="header-anchor" href="#一缓冲池解决什么问题"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>速度对不上是常态。磁盘顺序写几十 MB/s，网卡能在一毫秒内顶进来几万个包，UI 线程每 16 毫秒才愿意醒一次。把任意两端直接对接，快的那头必然在等慢的那头：CPU 空转，线程被挂起，或者数据被反压回去。</p>
+<p>缓冲池就是中间插一段循环复用的内存。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>生产端 ──写入──▶ [ 缓冲区数组 ] ──读出──▶ 消费端
+                      ▲
+               读写指针 + 计数器
+</code></pre></div></code></pre>
+<h3 id="四个核心组成" tabindex="-1">四个核心组成 <a class="header-anchor" href="#四个核心组成"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>组件</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>缓冲区</td>
+<td>实际存储数据的内存区域，数据在传输过程中暂存于此</td>
+</tr>
+<tr>
+<td>读指针</td>
+<td>指示缓冲区中当前可读取数据的具体位置</td>
+</tr>
+<tr>
+<td>写指针</td>
+<td>指向缓冲区中能够写入新数据的位置</td>
+</tr>
+<tr>
+<td>计数器</td>
+<td>记录剩余可读数据量，以及还可写入的空闲空间大小</td>
+</tr>
+</tbody>
+</table></div><p>四个组件里只有两个是状态：指针和计数。指针管位置，计数管判断——能不能读看可读计数，能不能写看空闲计数。别拿指针相等去判断空和满，环形缓冲里 <code>read == write</code> 既代表空也代表满，这是经典歧义，用计数或者留一个空槽位来解决。</p>
+<h3 id="数据流转三阶段" tabindex="-1">数据流转三阶段 <a class="header-anchor" href="#数据流转三阶段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>阶段一 写入：数据进缓冲区，写指针后移，空闲计数 -1，可读计数 +1
+阶段二 读取：目标端取数据，读指针后移，可读计数 -1，空闲计数 +1
+阶段三 环绕：指针到末尾回到起点，取模算下标，不搬内存
+</code></pre></div></code></pre>
+<p>阶段一，源设备向目标设备传输数据，数据首先进入缓冲区。此时写指针指向可写入的位置，计数器记录剩余空闲空间大小。</p>
+<p>阶段二，目标设备从缓冲区取数据，读指针指向可读取数据的位置，计数器同时记录还有多少可读数据。读取完成后计数器减少相应数量，读指针移动到下一个可读数据位置。</p>
+<p>阶段三，源设备传输结束后若池中仍有未被读取的数据，把读指针重置到缓冲区起始位置，池子继续接收新数据，实现循环利用，保证数据传输的连贯性。重置不是必须清空——循环利用的前提是读写指针追尾，追尾就说明旧内容已被消费完。</p>
+<h3 id="本质是用空间换取速率解耦" tabindex="-1">本质是用空间换取速率解耦 <a class="header-anchor" href="#本质是用空间换取速率解耦"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>中间这段内存的价值不在「存」，在「隔开」。两个原本必须同步的节奏被拆成两个独立的节奏：生产方按自己的速度写，消费方按自己的速度读，两边只在队列满和队列空这两个瞬间才发生关系。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>无缓冲：生产 10ms/次 ──阻塞等待──▶ 消费 30ms/次    总耗时 30N
+有缓冲：生产 10ms/次 ─▶ [队列] ─▶ 消费 30ms/次    总耗时 30N
+                 ▲ 但生产方在这段时间里可以做别的事
+</code></pre></div></code></pre>
+<p>两行的总耗时一样。缓冲不会让慢的一方变快，它改变的是「谁在等」。加缓冲之前生产方被消费方卡住；加缓冲之后，生产方在自己的队列满之前都不被卡住。省下来的不是时间，是阻塞。</p>
+<h3 id="代价" tabindex="-1">代价 <a class="header-anchor" href="#代价"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>收益</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>生产方不再被消费方直接阻塞</td>
+<td>内存占用 = 深度 × 单条大小</td>
+</tr>
+<tr>
+<td>吸收瞬时突发流量</td>
+<td>延迟增加 = 深度 ÷ 消费速率</td>
+</tr>
+<tr>
+<td>两端独立调度、独立重试</td>
+<td>多一份共享状态，需要同步</td>
+</tr>
+<tr>
+<td>消费端可批量处理，摊薄单条成本</td>
+<td>积压时故障暴露被推迟</td>
+</tr>
+</tbody>
+</table></div><p>延迟那条要算清楚。队列堆了 1000 条、消费速率 100 条/秒，放进去的第一条要等 10 秒才被处理。对音频、控制指令、鼠标事件这类实时链路，这个数字就是短板。深度不是越大越好，它是在抗突发和低延迟之间取的一个点。</p>
+<h2 id="二生产者与消费者的速率差" tabindex="-1">二、生产者与消费者的速率差 <a class="header-anchor" href="#二生产者与消费者的速率差"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>缓冲池存在的唯一理由是速率差。速率差有两种，处理方式完全不同。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>趋势性不平衡（平均 120 进 / 100 出）：
+  队列长度单调上涨 ──▶ 任何有限队列都会满，缓冲只是推迟崩溃
+
+瞬时波动（平均 100 进 / 100 出，但每秒一次 500 的突发）：
+  队列长度锯齿波动 ──▶ 深度够就能完全吸收，缓冲真正有用
+</code></pre></div></code></pre>
+<p>这是第一个要认清的事实：缓冲只能吸收波动，不能吸收趋势。平均生产速率大于平均消费速率时，加缓冲只是把 OOM 从第一天推迟到第三天。该做的是让消费端变快、加消费者、或者在源头限流。</p>
+<p>队列深度用利特尔法则算：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>平均队列长度 L = 到达速率 λ × 平均停留时间 W
+
+例：λ = 2000 条/秒，要求 W ≤ 0.5 秒
+    L = 2000 × 0.5 = 1000 条
+</code></pre></div></code></pre>
+<p>反过来，定了深度 D、消费速率 μ，最坏情况下的排队延迟就是 D/μ。这两个数字必须一起报给需求方，别只报一个。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>生产端速率</th>
+<th>消费端速率</th>
+<th>缓冲要吸收的东西</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>串口收包 → 协议解析</td>
+<td>115200 bps ≈ 11 KB/s</td>
+<td>解析快，但会被日志拖慢</td>
+<td>解析偶发卡顿</td>
+</tr>
+<tr>
+<td>网卡收 UDP → 落盘</td>
+<td>瞬时几十万 pps</td>
+<td>磁盘几十 MB/s</td>
+<td>突发包簇 + 磁盘抖动</td>
+</tr>
+<tr>
+<td>采集卡 → UI 绘图</td>
+<td>固定 30~60 fps</td>
+<td>被重绘拖累</td>
+<td>UI 卡帧</td>
+</tr>
+<tr>
+<td>生产者线程 → 消费者线程</td>
+<td>受调度影响</td>
+<td>受调度影响</td>
+<td>双方调度抖动</td>
+</tr>
+</tbody>
+</table></div><p>最后一行值得留意：即使两端平均速率完全相同，线程调度抖动也会制造瞬时速率差。生产方抢到时间片连写一万条然后睡 50ms，消费方在这 50ms 里一条都拿不到。缓冲把这种抖动抹平。</p>
+<p>快慢还会在运行中翻转：启动阶段消费端要建索引、连数据库，慢，队列涨；稳态阶段消费端批量处理比逐条生产快，队列空。所以池子两头都得能处理——空时消费端要能等而不是空转，满时生产端要能让而不是硬塞。</p>
+<h2 id="三缓冲池的三种策略" tabindex="-1">三、缓冲池的三种策略 <a class="header-anchor" href="#三缓冲池的三种策略"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>容量策略就三种。选哪个取决于一个判断：这条数据丢了会不会出事。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>策略</th>
+<th>满了怎么办</th>
+<th>内存</th>
+<th>丢数据</th>
+<th>谁被卡</th>
+<th>适合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无界</td>
+<td>继续收</td>
+<td>会涨爆</td>
+<td>不丢（直到 OOM）</td>
+<td>谁都不卡，最后进程死</td>
+<td>原型、数据量有天然上限</td>
+</tr>
+<tr>
+<td>有界阻塞</td>
+<td>生产方等</td>
+<td>恒定</td>
+<td>不丢</td>
+<td>生产方</td>
+<td>数据不能丢、能接受反压</td>
+</tr>
+<tr>
+<td>有界丢弃</td>
+<td>丢最旧的</td>
+<td>恒定</td>
+<td>会丢</td>
+<td>谁都不卡</td>
+<td>实时性优先、只关心最新值</td>
+</tr>
+</tbody>
+</table></div><h3 id="无界最省事也最容易把进程搞死" tabindex="-1">无界：最省事，也最容易把进程搞死 <a class="header-anchor" href="#无界最省事也最容易把进程搞死"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">UnboundedQueue</span> {
+<span class="hljs-keyword">public</span>:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">produce</span><span class="hljs-params">(<span class="hljs-type">const</span> QByteArray&amp; data)</span> </span>{
+        <span class="hljs-function">QMutexLocker <span class="hljs-title">locker</span><span class="hljs-params">(&amp;mutex)</span></span>;
+        queue.<span class="hljs-built_in">enqueue</span>(data);      <span class="hljs-comment">// 永远成功，永远不阻塞</span>
+        cond.<span class="hljs-built_in">wakeOne</span>();
+    }
+    <span class="hljs-comment">// 私有成员：QQueue&lt;QByteArray&gt; queue; QMutex mutex; QWaitCondition cond;</span>
+};
+</code></pre></div></code></pre>
+<p><code>produce</code> 永不失败，调用方写起来最舒服。消费端一旦停摆（死锁、卡在 IO、被信号量堵住），生产端会一路往里塞，直到内存耗尽被 OOM killer 干掉。进程死得毫无征兆，日志里连个队列长度都没有。</p>
+<p>无界只在一个条件下成立：数据总量有天然上限。比如一次导入任务固定一万条，那就没必要设界。</p>
+<h3 id="有界阻塞安全但生产方会被卡" tabindex="-1">有界阻塞：安全，但生产方会被卡 <a class="header-anchor" href="#有界阻塞安全但生产方会被卡"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">produce</span><span class="hljs-params">(<span class="hljs-type">const</span> QByteArray&amp; data, <span class="hljs-type">int</span> timeoutMs = <span class="hljs-number">-1</span>)</span> </span>{
+    <span class="hljs-function">QMutexLocker <span class="hljs-title">locker</span><span class="hljs-params">(&amp;mutex)</span></span>;
+    <span class="hljs-keyword">while</span> (queue.<span class="hljs-built_in">size</span>() &gt;= capacity) {
+        <span class="hljs-keyword">if</span> (!cond.<span class="hljs-built_in">wait</span>(&amp;mutex, timeoutMs)) {
+            <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;          <span class="hljs-comment">// 超时，调用方自己决定重试还是放弃</span>
+        }
+    }
+    queue.<span class="hljs-built_in">enqueue</span>(data);
+    cond.<span class="hljs-built_in">wakeOne</span>();
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+}
+</code></pre></div></code></pre>
+<p>内存恒定，数据一条不丢，代价是把压力传回生产方。生产方是 UI 线程，界面就假死；是网络 IO 线程，收包会停，TCP 窗口收缩，对端超时。</p>
+<p>阻塞策略必须配超时。<code>cond.wait(&amp;mutex, timeoutMs)</code> 带的那一个不是可选项，它是从卡死里爬出来的唯一出口。</p>
+<h3 id="有界丢弃实时性优先丢谁要想清楚" tabindex="-1">有界丢弃：实时性优先，丢谁要想清楚 <a class="header-anchor" href="#有界丢弃实时性优先丢谁要想清楚"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">produce</span><span class="hljs-params">(<span class="hljs-type">const</span> QByteArray&amp; data)</span> </span>{
+    <span class="hljs-function">QMutexLocker <span class="hljs-title">locker</span><span class="hljs-params">(&amp;mutex)</span></span>;
+    <span class="hljs-keyword">while</span> (queue.<span class="hljs-built_in">size</span>() &gt;= capacity) {
+        queue.<span class="hljs-built_in">dequeue</span>();           <span class="hljs-comment">// 丢最旧的</span>
+        ++droppedOld;
+    }
+    queue.<span class="hljs-built_in">enqueue</span>(data);
+    cond.<span class="hljs-built_in">wakeOne</span>();
+}
+</code></pre></div></code></pre>
+<p>丢最旧适合只看最新状态的场合：视频帧、传感器读数、鼠标移动事件、行情快照。旧的那帧画面已经没人看了，留着只占内存。</p>
+<p>丢最新适合序列完整性优先的场合，逻辑上是「超出处理能力的请求直接拒掉」，<code>produce</code> 返回 <code>false</code> 让调用方知道：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">produce</span><span class="hljs-params">(<span class="hljs-type">const</span> QByteArray&amp; data)</span> </span>{
+    <span class="hljs-function">QMutexLocker <span class="hljs-title">locker</span><span class="hljs-params">(&amp;mutex)</span></span>;
+    <span class="hljs-keyword">if</span> (queue.<span class="hljs-built_in">size</span>() &gt;= capacity) {
+        ++droppedNew;
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;              <span class="hljs-comment">// 明确拒绝，不装作成功</span>
+    }
+    queue.<span class="hljs-built_in">enqueue</span>(data);
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+}
+</code></pre></div></code></pre>
+<p>两种丢弃都必须计数。丢数据不可怕，丢了不知道丢多少才可怕，<code>dropped()</code> 要进监控面板。</p>
+<h3 id="决策点只有一个" tabindex="-1">决策点只有一个 <a class="header-anchor" href="#决策点只有一个"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>这条数据丢了会出事吗？
+├─ 会 ──▶ 能接受生产方被卡吗？
+│         ├─ 能  ──▶ 有界阻塞
+│         └─ 不能 ──▶ 有界阻塞 + 超时 + 溢出落盘/告警
+└─ 不会 ─▶ 消费方只关心最新值吗？
+          ├─ 是 ──▶ 有界丢弃（丢最旧）
+          └─ 否 ──▶ 有界丢弃（丢最新并返回失败）
+</code></pre></div></code></pre>
+<p>「丢了会不会出事」是第一个决定，也是唯一真正的决定。定了它，剩下的容量、超时、水位线都是调参。</p>
+<h2 id="四qt-里的实现方案" tabindex="-1">四、Qt 里的实现方案 <a class="header-anchor" href="#四qt-里的实现方案"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Qt 的容器和同步原语够用，不用引第三方库。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类</th>
+<th>底层</th>
+<th>连续内存</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QByteArray</code></td>
+<td>引用计数字节数组</td>
+<td>是</td>
+<td>字节流、协议包、编解码前的载体</td>
+</tr>
+<tr>
+<td><code>QVector&lt;T&gt;</code></td>
+<td>动态数组</td>
+<td>是</td>
+<td>定长记录、需要下标随机访问</td>
+</tr>
+<tr>
+<td><code>QQueue&lt;T&gt;</code></td>
+<td>基于 <code>QList</code></td>
+<td>否</td>
+<td>逻辑队列，写法最像队列</td>
+</tr>
+<tr>
+<td><code>QRingBuffer</code></td>
+<td>私有类，块链</td>
+<td>否</td>
+<td>Qt 内部（QIODevice）用，不建议外部依赖</td>
+</tr>
+<tr>
+<td><code>std::deque&lt;T&gt;</code></td>
+<td>分段连续</td>
+<td>否</td>
+<td>两端 push/pop，不关心 Qt 风格</td>
+</tr>
+</tbody>
+</table></div><p>要真环形缓冲，用 <code>QVector</code> 加两个下标自己算取模。<code>QQueue</code> 不是环形，头部出队不搬数据（它是指针数组），但也拿不到连续的可读区段。</p>
+<h3 id="类结构" tabindex="-1">类结构 <a class="header-anchor" href="#类结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>核心成员两个：数据容器 <code>QVector&lt;QByteArray&gt;</code> 存字节数组形式的缓冲区，状态追踪 <code>QVector&lt;bool&gt;</code> 表示每个缓冲区的占用状态。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">BufferPool</span> : <span class="hljs-keyword">public</span> QObject {
+    Q_OBJECT
+
+<span class="hljs-keyword">public</span>:
+    <span class="hljs-function"><span class="hljs-keyword">explicit</span> <span class="hljs-title">BufferPool</span><span class="hljs-params">(<span class="hljs-type">int</span> bufferCount, <span class="hljs-type">int</span> bufferSize, QObject* parent = <span class="hljs-literal">nullptr</span>)</span></span>;
+    ~<span class="hljs-built_in">BufferPool</span>() = <span class="hljs-keyword">default</span>;
+
+    <span class="hljs-function">QByteArray* <span class="hljs-title">getAvailableBuffer</span><span class="hljs-params">()</span></span>;
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">releaseBuffer</span><span class="hljs-params">(QByteArray* buffer)</span></span>;
+
+    <span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">bufferCount</span><span class="hljs-params">()</span> <span class="hljs-type">const</span> </span>{ <span class="hljs-keyword">return</span> buffers.<span class="hljs-built_in">size</span>(); }
+    <span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">usedCount</span><span class="hljs-params">()</span> <span class="hljs-type">const</span></span>;
+
+signals:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">bufferFull</span><span class="hljs-params">(QByteArray* buffer)</span></span>;   <span class="hljs-comment">// 缓冲区已满，需要处理</span>
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">bufferEmpty</span><span class="hljs-params">()</span></span>;                    <span class="hljs-comment">// 所有缓冲区已耗尽</span>
+
+<span class="hljs-keyword">private</span>:
+    QVector&lt;QByteArray&gt; buffers;
+    QVector&lt;<span class="hljs-type">bool</span>&gt; bufferUsed;
+};
+</code></pre></div></code></pre>
+<h3 id="初始化" tabindex="-1">初始化 <a class="header-anchor" href="#初始化"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>在构造函数里创建指定数量和大小的缓冲区，并初始化使用状态：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>BufferPool::<span class="hljs-built_in">BufferPool</span>(<span class="hljs-type">int</span> bufferCount, <span class="hljs-type">int</span> bufferSize, QObject* parent)
+    : <span class="hljs-built_in">QObject</span>(parent)
+{
+    buffers.<span class="hljs-built_in">reserve</span>(bufferCount);       <span class="hljs-comment">// ← 先 reserve，后续 append 不重分配</span>
+    bufferUsed.<span class="hljs-built_in">reserve</span>(bufferCount);
+
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; bufferCount; ++i) {
+        <span class="hljs-function">QByteArray <span class="hljs-title">buffer</span><span class="hljs-params">(bufferSize, <span class="hljs-number">0</span>)</span></span>;   <span class="hljs-comment">// ← 创建指定大小的缓冲区</span>
+        buffers.<span class="hljs-built_in">append</span>(buffer);
+        bufferUsed.<span class="hljs-built_in">append</span>(<span class="hljs-literal">false</span>);           <span class="hljs-comment">// ← 初始状态为未使用</span>
+    }
+}
+</code></pre></div></code></pre>
+<p><code>reserve</code> 那一行不是优化，是正确性前提。<code>getAvailableBuffer</code> 返回的是 <code>&amp;buffers[i]</code>，一旦 <code>buffers</code> 扩容重分配，之前发出去的指针全成野指针。构造期一次 reserve 到最终容量，之后不再增删，指针才稳。</p>
+<h3 id="获取可用缓冲区" tabindex="-1">获取可用缓冲区 <a class="header-anchor" href="#获取可用缓冲区"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>遍历状态向量，返回第一个未使用的缓冲区：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function">QByteArray* <span class="hljs-title">BufferPool::getAvailableBuffer</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; bufferUsed.<span class="hljs-built_in">size</span>(); ++i) {
+        <span class="hljs-keyword">if</span> (!bufferUsed[i]) {
+            bufferUsed[i] = <span class="hljs-literal">true</span>;
+            <span class="hljs-keyword">return</span> &amp;buffers[i];
+        }
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;                     <span class="hljs-comment">// ← 无可用缓冲区时返回空指针</span>
+}
+</code></pre></div></code></pre>
+<p>返回 <code>nullptr</code> 是契约的一部分，调用方必须判空，否则下一步就是解引用崩溃。</p>
+<h3 id="释放缓冲区" tabindex="-1">释放缓冲区 <a class="header-anchor" href="#释放缓冲区"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>将缓冲区状态重置为未使用，以便复用：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">BufferPool::releaseBuffer</span><span class="hljs-params">(QByteArray* buffer)</span>
+</span>{
+    <span class="hljs-type">int</span> index = buffers.<span class="hljs-built_in">indexOf</span>(*buffer);
+    <span class="hljs-keyword">if</span> (index != <span class="hljs-number">-1</span>) {
+        bufferUsed[index] = <span class="hljs-literal">false</span>;
+    }
+}
+</code></pre></div></code></pre>
+<p>这里用的是值比较，<code>indexOf(*buffer)</code> 会逐字节比较内容。缓冲区越大、池子越深，比较越慢；内容全零的两个缓冲区还会被判成同一个：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>buffers[3] = {0x00, 0x00, ...}     内容全零
+buffers[7] = {0x00, 0x00, ...}     内容也全零
+indexOf(*buffers[7]) 返回 3        ← 释放错槽位
+</code></pre></div></code></pre>
+<p>用指针对下标就没这个问题：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">BufferPool::indexOfBuffer</span><span class="hljs-params">(<span class="hljs-type">const</span> QByteArray* buffer)</span> <span class="hljs-type">const</span>
+</span>{
+    <span class="hljs-type">const</span> qsizetype idx = buffer - buffers.<span class="hljs-built_in">constData</span>();
+    <span class="hljs-keyword">if</span> (idx &lt; <span class="hljs-number">0</span> || idx &gt;= buffers.<span class="hljs-built_in">size</span>()) {
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-keyword">static_cast</span>&lt;<span class="hljs-type">int</span>&gt;(idx);
+}
+
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">BufferPool::releaseBuffer</span><span class="hljs-params">(QByteArray* buffer)</span>
+</span>{
+    <span class="hljs-keyword">if</span> (!buffer) <span class="hljs-keyword">return</span>;
+    <span class="hljs-type">const</span> <span class="hljs-type">int</span> index = <span class="hljs-built_in">indexOfBuffer</span>(buffer);
+    <span class="hljs-keyword">if</span> (index &lt; <span class="hljs-number">0</span> || !bufferUsed[index]) <span class="hljs-keyword">return</span>;   <span class="hljs-comment">// 不在池里或重复释放</span>
+    bufferUsed[index] = <span class="hljs-literal">false</span>;
+}
+</code></pre></div></code></pre>
+<p>指针减法 O(1)，顺带解决了同一个 buffer 释放两次的误判。<code>bufferUsed[index]</code> 那层检查就是防重复释放的护栏。</p>
+<h3 id="使用方的合约" tabindex="-1">使用方的合约 <a class="header-anchor" href="#使用方的合约"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>缓冲区是池子的成员，谁也不能 <code>delete</code> 它：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>1. getAvailableBuffer() 返回 nullptr → 池子空了，等或者降级
+2. 拿到指针 → 用完调 releaseBuffer() → 不 delete、不存进长命结构
+</code></pre></div></code></pre>
+<p>第二条比第一条容易踩。把 <code>QByteArray*</code> 塞进全局 map 或者另一个线程的队列，等你想起来释放时那个指针早被复用了，数据被下一轮写入覆盖，读出来是别人家的内容。</p>
+<h3 id="三种实现怎么选" tabindex="-1">三种实现怎么选 <a class="header-anchor" href="#三种实现怎么选"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>实现</th>
+<th>适用场景</th>
+<th>复杂度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>基础缓冲池类</td>
+<td>单线程数据处理、简单数据缓存</td>
+<td>低</td>
+</tr>
+<tr>
+<td>信号槽集成</td>
+<td>事件驱动架构、GUI 应用数据流</td>
+<td>中</td>
+</tr>
+<tr>
+<td>多线程安全实现</td>
+<td>生产者-消费者模式、网络数据接收</td>
+<td>高</td>
+</tr>
+</tbody>
+</table></div><h2 id="五用-qqueue-实现环形缓冲" tabindex="-1">五、用 QQueue 实现环形缓冲 <a class="header-anchor" href="#五用-qqueue-实现环形缓冲"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>QQueue</code> 只加了几个方法，底层就是 <code>QList</code>，写起来最省事：<code>enqueue()</code> 入队、<code>dequeue()</code> 出队、<code>head()</code> 看一眼不弹、<code>size()</code> 看深度。超出上限就丢最旧的那条：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">push</span><span class="hljs-params">(<span class="hljs-type">const</span> QByteArray&amp; packet)</span> </span>{
+    queue.<span class="hljs-built_in">enqueue</span>(packet);                  <span class="hljs-comment">// 入队</span>
+    <span class="hljs-keyword">while</span> (queue.<span class="hljs-built_in">size</span>() &gt; maxDepth) {
+        queue.<span class="hljs-built_in">dequeue</span>();                    <span class="hljs-comment">// 超深就丢最旧的</span>
+        ++dropped;
+    }
+}
+</code></pre></div></code></pre>
+<p>短板是元素在内存里不连续，拿不到「一段连续可读区」。想把队列里攒的十帧直接 <code>write()</code> 给文件描述符，只能一帧一帧拷。</p>
+<h3 id="真环形qvector--读写下标" tabindex="-1">真环形：QVector + 读写下标 <a class="header-anchor" href="#真环形qvector--读写下标"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>要连续内存和确定容量，自己写。核心三件事：固定容量、取模、用计数消掉空满歧义。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">template</span> &lt;<span class="hljs-keyword">typename</span> T&gt;
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">RingBuffer</span> {
+<span class="hljs-keyword">public</span>:
+    <span class="hljs-function"><span class="hljs-keyword">explicit</span> <span class="hljs-title">RingBuffer</span><span class="hljs-params">(<span class="hljs-type">int</span> capacity)</span>
+        : data(capacity), cap(capacity) {</span>}      <span class="hljs-comment">// 容量固定，之后永不扩容</span>
+
+    <span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">push</span><span class="hljs-params">(<span class="hljs-type">const</span> T&amp; value)</span> </span>{
+        <span class="hljs-keyword">if</span> (count == cap) <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;         <span class="hljs-comment">// 满了，交给上层决定丢还是等</span>
+        data[(head + count) % cap] = value;     <span class="hljs-comment">// 写位置 = 读位置 + 已存量</span>
+        ++count;
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+    }
+
+    <span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">pop</span><span class="hljs-params">(T&amp; out)</span> </span>{
+        <span class="hljs-keyword">if</span> (count == <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+        out = data[head];
+        head = (head + <span class="hljs-number">1</span>) % cap;
+        --count;
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+    }
+
+    <span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">isEmpty</span><span class="hljs-params">()</span> <span class="hljs-type">const</span> </span>{ <span class="hljs-keyword">return</span> count == <span class="hljs-number">0</span>; }
+    <span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">isFull</span><span class="hljs-params">()</span>  <span class="hljs-type">const</span> </span>{ <span class="hljs-keyword">return</span> count == cap; }
+    <span class="hljs-function"><span class="hljs-type">int</span>  <span class="hljs-title">size</span><span class="hljs-params">()</span>    <span class="hljs-type">const</span> </span>{ <span class="hljs-keyword">return</span> count; }
+
+<span class="hljs-keyword">private</span>:
+    QVector&lt;T&gt; data;
+    <span class="hljs-type">int</span> cap = <span class="hljs-number">0</span>;
+    <span class="hljs-type">int</span> head = <span class="hljs-number">0</span>;      <span class="hljs-comment">// 读位置</span>
+    <span class="hljs-type">int</span> count = <span class="hljs-number">0</span>;     <span class="hljs-comment">// 已存数据量 ← 空/满歧义的解药</span>
+};
+</code></pre></div></code></pre>
+<p><code>(head + count) % cap</code> 是全部的精髓：不用维护写指针，写位置永远由读位置和存量算出来，少一个需要同步的变量。</p>
+<p>空满判断靠 <code>count</code>，不靠 <code>head == tail</code>。经典写法里 <code>head == tail</code> 既表示空也表示满，所以要少用一个槽位或者另加标志位，直接上计数更省事：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>count == 0        → 空
+count == cap      → 满
+head              → 下一个要读的下标
+(head + count) % cap → 下一个要写的下标
+</code></pre></div></code></pre>
+<h3 id="回绕时数据被切成两段" tabindex="-1">回绕时数据被切成两段 <a class="header-anchor" href="#回绕时数据被切成两段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>写指针绕回起点后，可读数据在物理内存上是两段：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>cap = 8，head = 5，count = 6
+
+下标:  0    1    2    3    4    5    6    7
+内容:  d8   d9   --   --   --   d5   d6   d7
+                          ▲         ▲
+                       第二段     第一段起点
+
+第一段 [head, cap)  长 3    第二段 [0, head)  长 3
+</code></pre></div></code></pre>
+<p>要一次拷出去，得分两次：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">const</span> <span class="hljs-type">int</span> firstChunk  = <span class="hljs-built_in">qMin</span>(count, cap - head);
+<span class="hljs-type">const</span> <span class="hljs-type">int</span> secondChunk = count - firstChunk;
+
+dev.<span class="hljs-built_in">write</span>(<span class="hljs-keyword">reinterpret_cast</span>&lt;<span class="hljs-type">const</span> <span class="hljs-type">char</span>*&gt;(data.<span class="hljs-built_in">constData</span>() + head), firstChunk * <span class="hljs-keyword">sizeof</span>(T));
+<span class="hljs-keyword">if</span> (secondChunk &gt; <span class="hljs-number">0</span>) {
+    dev.<span class="hljs-built_in">write</span>(<span class="hljs-keyword">reinterpret_cast</span>&lt;<span class="hljs-type">const</span> <span class="hljs-type">char</span>*&gt;(data.<span class="hljs-built_in">constData</span>()), secondChunk * <span class="hljs-keyword">sizeof</span>(T));
+}
+</code></pre></div></code></pre>
+<p>写网络包、写文件、喂解码器，凡是需要连续内存的地方都要处理这个切分。忘记第二段的表现是每环绕一次就丢一截数据，而且丢得很有规律。</p>
+<h2 id="六多线程下的缓冲池" tabindex="-1">六、多线程下的缓冲池 <a class="header-anchor" href="#六多线程下的缓冲池"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>单线程里池子只是个容器，跨线程它就是共享可变状态，每个读写点都得保护。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>原语</th>
+<th>语义</th>
+<th>在缓冲池里的位置</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QMutex</code></td>
+<td>互斥锁</td>
+<td>保护队列本身和计数器</td>
+</tr>
+<tr>
+<td><code>QMutexLocker</code></td>
+<td>RAII 自动加解锁</td>
+<td>替掉手写 <code>lock()</code>/<code>unlock()</code></td>
+</tr>
+<tr>
+<td><code>QWaitCondition</code></td>
+<td>条件等待，释放锁并挂起</td>
+<td>队列空时消费端等、满时生产端等</td>
+</tr>
+<tr>
+<td><code>QSemaphore</code></td>
+<td>计数信号量</td>
+<td>空位数、数据数，本身就是容量控制</td>
+</tr>
+<tr>
+<td><code>QReadWriteLock</code></td>
+<td>读写分锁</td>
+<td>统计、快照类读多写少的地方</td>
+</tr>
+<tr>
+<td><code>QAtomicInt</code></td>
+<td>无锁原子操作</td>
+<td>只读指标计数</td>
+</tr>
+</tbody>
+</table></div><h3 id="素材里的线程安全版" tabindex="-1">素材里的线程安全版 <a class="header-anchor" href="#素材里的线程安全版"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">ThreadSafeBufferPool</span> : <span class="hljs-keyword">public</span> QObject {
+    Q_OBJECT
+<span class="hljs-keyword">public</span>:
+    <span class="hljs-function">QByteArray* <span class="hljs-title">getAvailableBuffer</span><span class="hljs-params">()</span></span>;
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">releaseBuffer</span><span class="hljs-params">(QByteArray* buffer)</span></span>;
+<span class="hljs-keyword">private</span>:
+    QMutex mutex;
+    QWaitCondition bufferAvailable;
+    QVector&lt;QByteArray&gt; buffers;
+    QVector&lt;<span class="hljs-type">bool</span>&gt; bufferUsed;
+};
+
+<span class="hljs-function">QByteArray* <span class="hljs-title">ThreadSafeBufferPool::getAvailableBuffer</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-function">QMutexLocker <span class="hljs-title">locker</span><span class="hljs-params">(&amp;mutex)</span></span>;      <span class="hljs-comment">// ← RAII 风格自动加解锁</span>
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; bufferUsed.<span class="hljs-built_in">size</span>(); ++i) {
+        <span class="hljs-keyword">if</span> (!bufferUsed[i]) {
+            bufferUsed[i] = <span class="hljs-literal">true</span>;
+            <span class="hljs-keyword">return</span> &amp;buffers[i];
+        }
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;
+}
+
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">ThreadSafeBufferPool::releaseBuffer</span><span class="hljs-params">(QByteArray* buffer)</span>
+</span>{
+    <span class="hljs-function">QMutexLocker <span class="hljs-title">locker</span><span class="hljs-params">(&amp;mutex)</span></span>;
+    <span class="hljs-type">const</span> <span class="hljs-type">int</span> index = <span class="hljs-built_in">indexOfBuffer</span>(buffer);
+    <span class="hljs-keyword">if</span> (index != <span class="hljs-number">-1</span>) {
+        bufferUsed[index] = <span class="hljs-literal">false</span>;
+        bufferAvailable.<span class="hljs-built_in">wakeOne</span>();    <span class="hljs-comment">// ← 唤醒等待缓冲区的线程</span>
+    }
+}
+</code></pre></div></code></pre>
+<p><code>QMutexLocker</code> 替掉手动 <code>lock()</code>/<code>unlock()</code>，提前 return 和异常路径上锁都能正确释放。手写 <code>unlock()</code> 的代码里，多一个 <code>return</code> 就是一次死锁。</p>
+<p>上面那个 <code>return nullptr</code> 是半成品：池子空了直接返回空指针，调用方只能自旋。既然已经有 <code>QWaitCondition</code>，就该让它等：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function">QByteArray* <span class="hljs-title">getAvailableBuffer</span><span class="hljs-params">(<span class="hljs-type">int</span> timeoutMs = <span class="hljs-number">-1</span>)</span>
+</span>{
+    <span class="hljs-function">QMutexLocker <span class="hljs-title">locker</span><span class="hljs-params">(&amp;mutex)</span></span>;
+    <span class="hljs-keyword">while</span> (<span class="hljs-built_in">freeCount</span>() == <span class="hljs-number">0</span>) {
+        <span class="hljs-keyword">if</span> (!bufferAvailable.<span class="hljs-built_in">wait</span>(&amp;mutex, timeoutMs)) {
+            <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;           <span class="hljs-comment">// 超时了才返回空</span>
+        }
+    }
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; bufferUsed.<span class="hljs-built_in">size</span>(); ++i) {
+        <span class="hljs-keyword">if</span> (!bufferUsed[i]) {
+            bufferUsed[i] = <span class="hljs-literal">true</span>;
+            <span class="hljs-keyword">return</span> &amp;buffers[i];
+        }
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">nullptr</span>;
+}
+</code></pre></div></code></pre>
+<p><code>while</code> 不能写成 <code>if</code>。线程被唤醒不代表条件成立——虚假唤醒会凭空返回，多生产者场景下也会出现「我醒了但空位被别的线程抢走」。醒来必须重新检查条件，这是条件变量的铁律。</p>
+<h3 id="信号量版本容量控制内置在-api-里" tabindex="-1">信号量版本：容量控制内置在 API 里 <a class="header-anchor" href="#信号量版本容量控制内置在-api-里"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function"><span class="hljs-keyword">explicit</span> <span class="hljs-title">SemaphoreQueue</span><span class="hljs-params">(<span class="hljs-type">int</span> capacity)</span>
+    : freeSlots(capacity), usedSlots(<span class="hljs-number">0</span>) {</span>}
+
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">produce</span><span class="hljs-params">(<span class="hljs-type">const</span> QByteArray&amp; data)</span> </span>{
+    freeSlots.<span class="hljs-built_in">acquire</span>();              <span class="hljs-comment">// 空位 -1；满了就停在这里</span>
+    mutex.<span class="hljs-built_in">lock</span>();
+    queue.<span class="hljs-built_in">enqueue</span>(data);
+    mutex.<span class="hljs-built_in">unlock</span>();
+    usedSlots.<span class="hljs-built_in">release</span>();              <span class="hljs-comment">// 可读 +1</span>
+}
+
+<span class="hljs-function">QByteArray <span class="hljs-title">take</span><span class="hljs-params">()</span> </span>{
+    usedSlots.<span class="hljs-built_in">acquire</span>();              <span class="hljs-comment">// 没数据就停在这里</span>
+    mutex.<span class="hljs-built_in">lock</span>();
+    QByteArray item = queue.<span class="hljs-built_in">dequeue</span>();
+    mutex.<span class="hljs-built_in">unlock</span>();
+    freeSlots.<span class="hljs-built_in">release</span>();              <span class="hljs-comment">// 空位 +1</span>
+    <span class="hljs-keyword">return</span> item;
+}
+
+<span class="hljs-comment">// 私有成员：QQueue&lt;QByteArray&gt; queue; QMutex mutex;</span>
+<span class="hljs-comment">//           QSemaphore freeSlots;  // 剩余空位</span>
+<span class="hljs-comment">//           QSemaphore usedSlots;  // 已有数据</span>
+</code></pre></div></code></pre>
+<p>两个信号量的和恒等于容量，这就是一个不用额外判断的容量控制器。顺序别写反：先拿信号量再拿锁。反过来的写法在池子满时会持锁挂起，另一个线程连 <code>take()</code> 都进不来，直接死锁。</p>
+<h3 id="跨线程用信号槽投递" tabindex="-1">跨线程用信号槽投递 <a class="header-anchor" href="#跨线程用信号槽投递"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>缓冲区填满了，生产线程通知消费线程，跨线程连接走队列连接：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">connect</span>(producer, &amp;Producer::bufferFull,
+        consumer, &amp;DataProcessor::onBufferFull,
+        Qt::QueuedConnection);      <span class="hljs-comment">// 跨线程必须显式写出来</span>
+</code></pre></div></code></pre>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">DataProcessor::onBufferFull</span><span class="hljs-params">(QByteArray* buffer)</span>
+</span>{
+    <span class="hljs-built_in">processData</span>(*buffer);           <span class="hljs-comment">// 解析数据或写入文件</span>
+    bufferPool-&gt;<span class="hljs-built_in">releaseBuffer</span>(buffer);   <span class="hljs-comment">// 处理完成后释放缓冲区</span>
+}
+</code></pre></div></code></pre>
+<p>两个坑。第一，<code>QByteArray*</code> 默认没注册元类型，队列连接会丢参数并在控制台打印 <code>Cannot queue arguments of type 'QByteArray*'</code>，要在 <code>main()</code> 里补 <code>qRegisterMetaType&lt;QByteArray*&gt;(&quot;QByteArray*&quot;)</code>。</p>
+<p>第二，指针跨线程传的是地址不是数据。生产线程 <code>emit</code> 完立刻复用那块缓冲区，消费线程收到的是一个已被改写的内容。要么确认消费完成才释放，要么把所有权随信号一起转移，用带引用计数的智能指针封装。</p>
+<h2 id="七容量与阻塞策略" tabindex="-1">七、容量与阻塞策略 <a class="header-anchor" href="#七容量与阻塞策略"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>容量是唯一一个「调错了必然出事」的参数。太小天天堵，太大内存被吃掉。两头夹逼取交集：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>下界（按突发）：容量 ≥ 峰值速率差 × 最长卡顿时长 ÷ 单条大小
+上界（按内存）：容量 ≤ 内存预算 ÷ 单条大小
+
+例：收包突发 5000 包/秒，磁盘卡顿最长 0.4 秒，单包 1.5 KB
+    下界 = 5000 × 0.4 = 2000 包 ≈ 3 MB
+    上界 = 100 MB ÷ 1.5 KB ≈ 68000 包
+    取 2000，再留一倍余量 → 4000 包 ≈ 6 MB
+</code></pre></div></code></pre>
+<p>留一倍余量是给「卡顿比预期长一点」留的。压着下界取值，等于假设每次卡顿都不超过历史最大值，这种假设迟早被打破。设计的核心就是平衡内存占用与吞吐——缓冲区数量过少会导致阻塞，过多则浪费内存。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>含义</th>
+<th>定法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>容量</td>
+<td>队列最大深度</td>
+<td>两头夹逼</td>
+</tr>
+<tr>
+<td>单条大小</td>
+<td>一条数据的字节数</td>
+<td>固定则直接测，变长按 P95</td>
+</tr>
+<tr>
+<td>高水位</td>
+<td>触发限流/告警的深度</td>
+<td>容量的 70%~80%</td>
+</tr>
+<tr>
+<td>低水位</td>
+<td>解除限流的深度</td>
+<td>容量的 40%~50%</td>
+</tr>
+<tr>
+<td>阻塞超时</td>
+<td>生产方最多等多久</td>
+<td>从业务 SLA 倒推</td>
+</tr>
+<tr>
+<td>丢弃计数</td>
+<td>累计丢了多少条</td>
+<td>必须暴露成指标</td>
+</tr>
+</tbody>
+</table></div><p>高低水位要分开。只在满/空两个硬边界上反复阻塞唤醒，会出现「写一条立刻又满」的抖动，生产方在阻塞和运行之间高频切换：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>硬边界（仅容量 1000）：写入 → 满 → 阻塞 → 消费 1 条 → 唤醒 → 写 1 条 → 又满
+                      每秒几十次上下文切换，全是无用功
+高低水位（高 800 / 低 400）：涨到 800 开始拒绝或降速 → 冷却到 400 恢复
+</code></pre></div></code></pre>
+<p>阻塞怎么收尾，三选一：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>收尾</th>
+<th>代码</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>永远等</td>
+<td><code>wait(&amp;mutex)</code></td>
+<td>消费端挂了就永久卡死，线程池被拖住</td>
+</tr>
+<tr>
+<td>等一会儿</td>
+<td><code>wait(&amp;mutex, 100)</code></td>
+<td>有恢复机会，调用方得处理失败分支</td>
+</tr>
+<tr>
+<td>等不到就降级</td>
+<td>超时后改丢弃/落盘/直写</td>
+<td>最稳，但要写降级逻辑</td>
+</tr>
+</tbody>
+</table></div><p>永远等的 <code>wait(&amp;mutex)</code> 是定时炸弹。消费线程因未处理异常退出，生产线程就永远挂在那把锁上，既不上报也不退出，进程还活着，功能已经死了。</p>
+<p>背压要一路传到底，阻塞本身不是目的，把压力传到该负责的地方才是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>消费瓶颈 ──▶ 队列满 ──▶ 生产方阻塞
+                          ├─▶ IO 线程：停止读 socket → TCP 窗口收缩 → 对端减速
+                          ├─▶ 采集线程：跳过这一帧 → 丢帧计数 +1
+                          └─▶ 业务线程：返回 503 → 调用方退避重试
+</code></pre></div></code></pre>
+<p>甩到对端让它自己慢下来，比自己撑爆内存好。</p>
+<h2 id="八内存复用与对象池" tabindex="-1">八、内存复用与对象池 <a class="header-anchor" href="#八内存复用与对象池"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>缓冲池的「池」字，一半价值在复用上。频繁 <code>new</code>/<code>delete</code> 几十 KB 的缓冲区，代价不在分配本身，在分配器为碎片做的整理。</p>
+<h3 id="拷贝不贵写才贵" tabindex="-1">拷贝不贵，写才贵 <a class="header-anchor" href="#拷贝不贵写才贵"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>QByteArray</code> 是隐式共享的，拷贝构造只加引用计数：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function">QByteArray <span class="hljs-title">a</span><span class="hljs-params">(<span class="hljs-number">4096</span>, <span class="hljs-number">0</span>)</span></span>;
+QByteArray b = a;          <span class="hljs-comment">// 不加锁、不拷贝，只 ref++，O(1)</span>
+b[<span class="hljs-number">0</span>] = <span class="hljs-string">&#x27;x&#x27;</span>;                <span class="hljs-comment">// 这一刻才 detach，真复制 4096 字节</span>
+</code></pre></div></code></pre>
+<p>所以往队列里 <code>enqueue</code> 一个 <code>QByteArray</code> 传值不心疼，贵的是第一笔写入触发的深拷贝。要压测时不被「明明没写拷贝代码却很慢」迷惑，就在共享之后、写入之前显式调一次 <code>detach()</code>，把隐式开销摆到明面上。</p>
+<h3 id="复用缓冲区clear-不等于释放" tabindex="-1">复用缓冲区：clear 不等于释放 <a class="header-anchor" href="#复用缓冲区clear-不等于释放"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">// 错误：看起来复用了，其实每次都在换新内存</span>
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">reuseWrong</span><span class="hljs-params">(QByteArray&amp; buf, <span class="hljs-type">const</span> <span class="hljs-type">char</span>* src, <span class="hljs-type">int</span> len)</span> </span>{
+    buf = <span class="hljs-built_in">QByteArray</span>(src, len);          <span class="hljs-comment">// 直接构造新对象，旧内存归还分配器</span>
+}
+
+<span class="hljs-comment">// 正确：只改内容，内存不动</span>
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">reuseRight</span><span class="hljs-params">(QByteArray&amp; buf, <span class="hljs-type">const</span> <span class="hljs-type">char</span>* src, <span class="hljs-type">int</span> len)</span> </span>{
+    buf.<span class="hljs-built_in">resize</span>(len);                     <span class="hljs-comment">// 容量够就不重新分配</span>
+    <span class="hljs-built_in">memcpy</span>(buf.<span class="hljs-built_in">data</span>(), src, len);
+}
+</code></pre></div></code></pre>
+<p><code>resize(0)</code> 和 <code>= QByteArray()</code> 的差别就在这里：前者留着已分配的堆块，后者还给分配器。池子里的缓冲区必须走前者。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>重置方式</th>
+<th>代价</th>
+<th>什么场景用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>resize(0)</code></td>
+<td>O(1)</td>
+<td>定长协议包，长度由包头决定</td>
+</tr>
+<tr>
+<td><code>fill('\0')</code></td>
+<td>O(n) 内存写</td>
+<td>内容要交给外部，不希望泄漏上一轮数据</td>
+</tr>
+<tr>
+<td>什么都不做</td>
+<td>0</td>
+<td>内部使用，下一轮会完整覆盖</td>
+</tr>
+</tbody>
+</table></div><p>64 KB 缓冲区上一次 <code>fill('\0')</code> 是一笔实打实的 memcpy，池子每秒转一千次就是每秒 64 MB 的无效内存写。除了要把内存内容交给不受信任的一方，这个清零可以省掉。</p>
+<h3 id="对象池给非-pod-对象复用" tabindex="-1">对象池：给非 POD 对象复用 <a class="header-anchor" href="#对象池给非-pod-对象复用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>缓冲区是连续内存，对象池管的是带构造/析构的类型。<code>QObject</code> 派生类不能拷贝，只能复用指针，思路是维护一个空闲链表：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function">T* <span class="hljs-title">acquire</span><span class="hljs-params">()</span> </span>{
+    <span class="hljs-function">QMutexLocker <span class="hljs-title">locker</span><span class="hljs-params">(&amp;mutex)</span></span>;
+    <span class="hljs-keyword">if</span> (freeList.<span class="hljs-built_in">isEmpty</span>()) <span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> T;   <span class="hljs-comment">// 池子空了就现造，别让调用方等</span>
+    <span class="hljs-keyword">return</span> freeList.<span class="hljs-built_in">takeLast</span>();
+}
+
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">release</span><span class="hljs-params">(T* obj)</span> </span>{
+    obj-&gt;<span class="hljs-built_in">reset</span>();                            <span class="hljs-comment">// 关键：清掉上一轮状态</span>
+    <span class="hljs-function">QMutexLocker <span class="hljs-title">locker</span><span class="hljs-params">(&amp;mutex)</span></span>;
+    <span class="hljs-keyword">if</span> (freeList.<span class="hljs-built_in">size</span>() &gt;= maxIdle) { <span class="hljs-keyword">delete</span> obj; <span class="hljs-keyword">return</span>; }
+    freeList.<span class="hljs-built_in">append</span>(obj);
+}
+</code></pre></div></code></pre>
+<p><code>obj-&gt;reset()</code> 是对象池最容易漏的一行。忘了它，下一个使用者拿到的是带着上一轮数据的对象，症状是「偶发脏数据」，排查周期以天计。<code>maxIdle</code> 上限也得有——池子目的是削峰，不是无限囤积，峰值过去后一堆空闲对象占着内存反而成了负担。</p>
+<h2 id="九qt-内置的缓存机制" tabindex="-1">九、Qt 内置的缓存机制 <a class="header-anchor" href="#九qt-内置的缓存机制"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Qt 里有几套现成的「拿内存换时间」机制，选错了会白写一堆代码。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类</th>
+<th>定位</th>
+<th>淘汰策略</th>
+<th>容量语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QQueue&lt;T&gt;</code></td>
+<td>逻辑队列</td>
+<td>无，自己控制</td>
+<td>无上限，需自行限深</td>
+</tr>
+<tr>
+<td><code>QCache&lt;Key,T&gt;</code></td>
+<td>键值缓存</td>
+<td>LRU，超预算自动淘汰</td>
+<td>按 cost 计（可自定义单位）</td>
+</tr>
+<tr>
+<td><code>QPixmapCache</code></td>
+<td>全局图片缓存</td>
+<td>LRU，超预算自动淘汰</td>
+<td>全局静态，单位 KB</td>
+</tr>
+<tr>
+<td><code>QContiguousCache&lt;T&gt;</code></td>
+<td>连续区间缓存</td>
+<td>滚出窗口即失效</td>
+<td>按条目数</td>
+</tr>
+</tbody>
+</table></div><h3 id="qcache带-lru-淘汰的缓存" tabindex="-1">QCache：带 LRU 淘汰的缓存 <a class="header-anchor" href="#qcache带-lru-淘汰的缓存"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function">QCache&lt;QString, QImage&gt; <span class="hljs-title">cache</span><span class="hljs-params">(<span class="hljs-number">64</span> * <span class="hljs-number">1024</span>)</span></span>;        <span class="hljs-comment">// 预算 64 MB，cost 单位自定义为 KB</span>
+cache.<span class="hljs-built_in">insert</span>(key, <span class="hljs-keyword">new</span> <span class="hljs-built_in">QImage</span>(img), img.<span class="hljs-built_in">sizeInBytes</span>() / <span class="hljs-number">1024</span>);  <span class="hljs-comment">// 所有权转移给 cache</span>
+
+QImage* hit = cache.<span class="hljs-built_in">object</span>(key);                  <span class="hljs-comment">// 命中返回指针，未命中返回 nullptr</span>
+<span class="hljs-keyword">if</span> (!hit) {
+    <span class="hljs-built_in">loadInto</span>(cache, key);
+}
+cache.<span class="hljs-built_in">setMaxCost</span>(<span class="hljs-number">128</span> * <span class="hljs-number">1024</span>);                     <span class="hljs-comment">// 动态调预算，超了自动按 LRU 淘汰</span>
+</code></pre></div></code></pre>
+<p><code>insert</code> 之后对象的生命周期归 <code>QCache</code> 管，别再 <code>delete</code>。要自己接手用 <code>take()</code>，它会把所有权还给你。用 <code>object()</code> 拿到的指针不能长期持有——下一次 <code>insert</code> 触发淘汰时它就会变成悬空指针。</p>
+<h3 id="qpixmapcache全局图片缓存" tabindex="-1">QPixmapCache：全局图片缓存 <a class="header-anchor" href="#qpixmapcache全局图片缓存"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QPixmapCache::<span class="hljs-built_in">setCacheLimit</span>(<span class="hljs-number">20480</span>);               <span class="hljs-comment">// 单位 KB</span>
+QPixmap pm;
+<span class="hljs-keyword">if</span> (!QPixmapCache::<span class="hljs-built_in">find</span>(key, &amp;pm)) {
+    pm.<span class="hljs-built_in">load</span>(path);
+    QPixmapCache::<span class="hljs-built_in">insert</span>(key, pm);                <span class="hljs-comment">// 全局静态，所有 QPixmap 共享这一份</span>
+}
+</code></pre></div></code></pre>
+<p>它是全局的静态缓存，写进 <code>QPixmapCache</code> 的东西进程内任何地方都能读到。好处是图标、背景图不用自己管一份；坏处是全局状态没有归属，两个模块用同一个 key 会互相覆盖。key 一定要带命名空间前缀。</p>
+<h3 id="缓冲池和缓存的区别" tabindex="-1">缓冲池和缓存的区别 <a class="header-anchor" href="#缓冲池和缓存的区别"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>缓冲池 → 面向「流」：数据从 A 流向 B，中间暂存，读完就作废
+缓存   → 面向「重复访问」：同一份数据被多次读取，读不改变它
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>缓冲池</th>
+<th>缓存</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>目的</td>
+<td>解耦生产与消费的速率</td>
+<td>减少重复计算或重复 IO</td>
+</tr>
+<tr>
+<td>数据流向</td>
+<td>单向穿过，读完即弃</td>
+<td>留下来，等下一次命中</td>
+</tr>
+<tr>
+<td>淘汰依据</td>
+<td>满的时候按策略丢/等</td>
+<td>命中率低、预算超限时按 LRU 出</td>
+</tr>
+<tr>
+<td>命中概念</td>
+<td>没有命中，只有空和满</td>
+<td>命中率是核心指标</td>
+</tr>
+<tr>
+<td>容量语义</td>
+<td>深度决定延迟和抗突发能力</td>
+<td>预算决定内存上限</td>
+</tr>
+<tr>
+<td>典型类</td>
+<td><code>QQueue</code>、自建环形缓冲</td>
+<td><code>QCache</code>、<code>QPixmapCache</code></td>
+</tr>
+</tbody>
+</table></div><p>同一个结构可以同时干两件事，但指标得分开看。缓冲池盯的是队列深度和丢弃数，缓存盯的是命中率和淘汰数。混在一起统计，两边都读不懂。</p>
+<h2 id="十什么时候该用缓冲池" tabindex="-1">十、什么时候该用缓冲池 <a class="header-anchor" href="#十什么时候该用缓冲池"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>加不加缓冲，先过一遍这张清单：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>判断</th>
+<th>该加</th>
+<th>不该加</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>两端速率</td>
+<td>平均相当但存在突发</td>
+<td>平均差一个数量级，怎么缓冲都会满</td>
+</tr>
+<tr>
+<td>延迟要求</td>
+<td>允许几十毫秒以上排队</td>
+<td>硬实时，多一跳都不行</td>
+</tr>
+<tr>
+<td>内存预算</td>
+<td>拿得出「深度 × 单条大小」</td>
+<td>嵌入式，几百 KB 都要抠</td>
+</tr>
+<tr>
+<td>数据可丢性</td>
+<td>可丢（选丢弃）或可等（选阻塞）</td>
+<td>既不能丢也不能等</td>
+</tr>
+<tr>
+<td>消费端特性</td>
+<td>支持批量处理，批越大越划算</td>
+<td>必须逐条同步返回结果</td>
+</tr>
+</tbody>
+</table></div><p>不该用的时候，先看有没有更省事的替代：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>1. 两端同线程、处理很快 → 直接调用，队列是纯开销
+2. 只为了堆异步 → QThreadPool + QFutureWatcher 就够了，别再自己搭队列
+3. 只是想攒批 → 给接口加个批量版本，比在中间塞队列直接
+4. 生产端本来就有流控 → 让上游自己控速，队列只会掩盖问题
+</code></pre></div></code></pre>
+<p>一个反例很常见：为了「不阻塞 UI」把每个鼠标移动事件塞进队列，队列又深又没上限，最后 UI 线程在消费端反而被拖垮。这种场景要的是丢帧加合并，不是缓冲。</p>
+<h2 id="十一性能与陷阱" tabindex="-1">十一、性能与陷阱 <a class="header-anchor" href="#十一性能与陷阱"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="指针失效" tabindex="-1">指针失效 <a class="header-anchor" href="#指针失效"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>getAvailableBuffer()</code> 返回 <code>&amp;buffers[i]</code>，只要 <code>buffers</code> 发生扩容重分配，所有已发出的指针立刻失效，而且不会崩溃——它们指向的还是合法内存，只是内容变成了别人的。症状是数据错乱而不是段错误，最难查。修法只有一条：构造期 <code>reserve(bufferCount)</code> 定终身上限，之后任何位置都不再 <code>append</code>、不再 <code>resize</code> 到更大值、不再 <code>removeAt</code>。要动态扩容，就别返回裸指针，返回下标。</p>
+<h3 id="锁粒度" tabindex="-1">锁粒度 <a class="header-anchor" href="#锁粒度"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一把大锁保护整个池子，所有线程排队。池子本身的分段结构天然可切：按缓冲区编号分段加锁，或者用 <code>QAtomicInt</code> 做空闲链表。粗粒度一把 <code>QMutex</code> 保护 <code>buffers</code> 和 <code>bufferUsed</code>，写法简单，核数一多就成瓶颈；细粒度每 N 个缓冲区一把锁，快，但释放和统计跟着变复杂。</p>
+<p>先上粗锁量出瓶颈再拆，别一上来就设计无锁。多数链路的瓶颈在 IO 和拷贝，不在锁上。</p>
+<h3 id="其它几条" tabindex="-1">其它几条 <a class="header-anchor" href="#其它几条"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>· QByteArray(size, 0) 会先 memset 一遍，几 MB 的缓冲区光构造就够慢
+· 忘记 releaseBuffer 就是内存泄漏，池子最后变成永远返回 nullptr
+· 队列深度必须有指标，没有监控的缓冲池等于没设计
+· 缓冲区数量与大小要成对定：4 × 1 MB 和 4000 × 1 KB 行为完全不同
+</code></pre></div></code></pre>
+<p>最后一条容易被忽略。总量相同的情况下，少而大的缓冲区适合定长大包，多而小的适合变长小包。缓冲区太大，小包会浪费内部碎片；缓冲区太小，大包要跨块拼接，多一次拷贝和一段拼装逻辑。</p>
+<h2 id="十二易错点速查" tabindex="-1">十二、易错点速查 <a class="header-anchor" href="#十二易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>根因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>偶发脏数据</td>
+<td>缓冲区复用前没重置</td>
+<td><code>resize(0)</code> 或 <code>fill('\0')</code></td>
+</tr>
+<tr>
+<td>数据错乱不崩溃</td>
+<td>池子扩容导致返回的指针失效</td>
+<td>构造期 reserve 定容量，或返回下标</td>
+</tr>
+<tr>
+<td>消费线程收不到信号</td>
+<td><code>QByteArray*</code> 未注册元类型</td>
+<td><code>qRegisterMetaType&lt;QByteArray*&gt;()</code></td>
+</tr>
+<tr>
+<td>释放到了错槽位</td>
+<td><code>indexOf</code> 按值比较</td>
+<td>用指针地址算下标</td>
+</tr>
+<tr>
+<td>界面假死</td>
+<td>UI 线程上有界阻塞</td>
+<td>换丢弃策略或把等待挪出 UI 线程</td>
+</tr>
+<tr>
+<td>内存线性上涨</td>
+<td>无界队列 + 消费端停摆</td>
+<td>设容量上限，加高水位告警</td>
+</tr>
+<tr>
+<td>数据一段一段丢</td>
+<td>环形缓冲回绕只处理了第一段</td>
+<td>分两段读，处理 <code>secondChunk</code></td>
+</tr>
+<tr>
+<td>线程永久卡死</td>
+<td><code>wait(&amp;mutex)</code> 无超时</td>
+<td>必须带 timeout，加降级分支</td>
+</tr>
+<tr>
+<td>高频阻塞唤醒</td>
+<td>只有硬边界没有水位线</td>
+<td>加高/低水位做滞回</td>
+</tr>
+<tr>
+<td>吞吐上不去</td>
+<td>一把大锁 + 逐条处理</td>
+<td>分段锁，消费端批量取</td>
+</tr>
+<tr>
+<td>丢数据不知道丢多少</td>
+<td>丢弃没计数</td>
+<td><code>dropped()</code> 进监控</td>
+</tr>
+<tr>
+<td>对象池串数据</td>
+<td>释放时没回滚对象状态</td>
+<td><code>release()</code> 里调 <code>reset()</code></td>
+</tr>
+</tbody>
+</table></div><p>这张表里的每一条，都能在真实项目里找到对应的故障单。缓冲池的代码量不大，难点全在这些边角上——它把一个「快慢不匹配」的时序问题，摊平成一组必须显式回答的问题：容量多少、满了等不等、丢了算不算、指针还能不能用。这四个问题答完，池子就成了。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一缓冲池解决什么问题" data-toc-target="一缓冲池解决什么问题">一、缓冲池解决什么问题</a>
+                    
+                    <a class="toc-item toc-lv3" href="#四个核心组成" data-toc-target="四个核心组成">四个核心组成</a>
+                    
+                    <a class="toc-item toc-lv3" href="#数据流转三阶段" data-toc-target="数据流转三阶段">数据流转三阶段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#本质是用空间换取速率解耦" data-toc-target="本质是用空间换取速率解耦">本质是用空间换取速率解耦</a>
+                    
+                    <a class="toc-item toc-lv3" href="#代价" data-toc-target="代价">代价</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二生产者与消费者的速率差" data-toc-target="二生产者与消费者的速率差">二、生产者与消费者的速率差</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三缓冲池的三种策略" data-toc-target="三缓冲池的三种策略">三、缓冲池的三种策略</a>
+                    
+                    <a class="toc-item toc-lv3" href="#无界最省事也最容易把进程搞死" data-toc-target="无界最省事也最容易把进程搞死">无界：最省事，也最容易把进程搞死</a>
+                    
+                    <a class="toc-item toc-lv3" href="#有界阻塞安全但生产方会被卡" data-toc-target="有界阻塞安全但生产方会被卡">有界阻塞：安全，但生产方会被卡</a>
+                    
+                    <a class="toc-item toc-lv3" href="#有界丢弃实时性优先丢谁要想清楚" data-toc-target="有界丢弃实时性优先丢谁要想清楚">有界丢弃：实时性优先，丢谁要想清楚</a>
+                    
+                    <a class="toc-item toc-lv3" href="#决策点只有一个" data-toc-target="决策点只有一个">决策点只有一个</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四qt-里的实现方案" data-toc-target="四qt-里的实现方案">四、Qt 里的实现方案</a>
+                    
+                    <a class="toc-item toc-lv3" href="#类结构" data-toc-target="类结构">类结构</a>
+                    
+                    <a class="toc-item toc-lv3" href="#初始化" data-toc-target="初始化">初始化</a>
+                    
+                    <a class="toc-item toc-lv3" href="#获取可用缓冲区" data-toc-target="获取可用缓冲区">获取可用缓冲区</a>
+                    
+                    <a class="toc-item toc-lv3" href="#释放缓冲区" data-toc-target="释放缓冲区">释放缓冲区</a>
+                    
+                    <a class="toc-item toc-lv3" href="#使用方的合约" data-toc-target="使用方的合约">使用方的合约</a>
+                    
+                    <a class="toc-item toc-lv3" href="#三种实现怎么选" data-toc-target="三种实现怎么选">三种实现怎么选</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五用-qqueue-实现环形缓冲" data-toc-target="五用-qqueue-实现环形缓冲">五、用 QQueue 实现环形缓冲</a>
+                    
+                    <a class="toc-item toc-lv3" href="#真环形qvector--读写下标" data-toc-target="真环形qvector--读写下标">真环形：QVector + 读写下标</a>
+                    
+                    <a class="toc-item toc-lv3" href="#回绕时数据被切成两段" data-toc-target="回绕时数据被切成两段">回绕时数据被切成两段</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六多线程下的缓冲池" data-toc-target="六多线程下的缓冲池">六、多线程下的缓冲池</a>
+                    
+                    <a class="toc-item toc-lv3" href="#素材里的线程安全版" data-toc-target="素材里的线程安全版">素材里的线程安全版</a>
+                    
+                    <a class="toc-item toc-lv3" href="#信号量版本容量控制内置在-api-里" data-toc-target="信号量版本容量控制内置在-api-里">信号量版本：容量控制内置在 API 里</a>
+                    
+                    <a class="toc-item toc-lv3" href="#跨线程用信号槽投递" data-toc-target="跨线程用信号槽投递">跨线程用信号槽投递</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七容量与阻塞策略" data-toc-target="七容量与阻塞策略">七、容量与阻塞策略</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八内存复用与对象池" data-toc-target="八内存复用与对象池">八、内存复用与对象池</a>
+                    
+                    <a class="toc-item toc-lv3" href="#拷贝不贵写才贵" data-toc-target="拷贝不贵写才贵">拷贝不贵，写才贵</a>
+                    
+                    <a class="toc-item toc-lv3" href="#复用缓冲区clear-不等于释放" data-toc-target="复用缓冲区clear-不等于释放">复用缓冲区：clear 不等于释放</a>
+                    
+                    <a class="toc-item toc-lv3" href="#对象池给非-pod-对象复用" data-toc-target="对象池给非-pod-对象复用">对象池：给非 POD 对象复用</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九qt-内置的缓存机制" data-toc-target="九qt-内置的缓存机制">九、Qt 内置的缓存机制</a>
+                    
+                    <a class="toc-item toc-lv3" href="#qcache带-lru-淘汰的缓存" data-toc-target="qcache带-lru-淘汰的缓存">QCache：带 LRU 淘汰的缓存</a>
+                    
+                    <a class="toc-item toc-lv3" href="#qpixmapcache全局图片缓存" data-toc-target="qpixmapcache全局图片缓存">QPixmapCache：全局图片缓存</a>
+                    
+                    <a class="toc-item toc-lv3" href="#缓冲池和缓存的区别" data-toc-target="缓冲池和缓存的区别">缓冲池和缓存的区别</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十什么时候该用缓冲池" data-toc-target="十什么时候该用缓冲池">十、什么时候该用缓冲池</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一性能与陷阱" data-toc-target="十一性能与陷阱">十一、性能与陷阱</a>
+                    
+                    <a class="toc-item toc-lv3" href="#指针失效" data-toc-target="指针失效">指针失效</a>
+                    
+                    <a class="toc-item toc-lv3" href="#锁粒度" data-toc-target="锁粒度">锁粒度</a>
+                    
+                    <a class="toc-item toc-lv3" href="#其它几条" data-toc-target="其它几条">其它几条</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二易错点速查" data-toc-target="十二易错点速查">十二、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/缓冲池：Qt-下的实现/","title":"缓冲池：Qt 下的实现","url":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/缓冲池：Qt-下的实现/","type":"current"},{"id":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/QObject-与对象模型/","title":"QObject 与对象模型","url":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/QObject-与对象模型/","type":"neighbor"},{"id":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/事件处理/","title":"事件处理","url":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/事件处理/","type":"neighbor"},{"id":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/信号与槽/","title":"信号与槽","url":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/信号与槽/","type":"neighbor"},{"id":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/插件系统/","title":"插件系统","url":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/插件系统/","type":"neighbor"}],"links":[{"source":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/缓冲池：Qt-下的实现/","target":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/QObject-与对象模型/","type":"neighbor"},{"source":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/缓冲池：Qt-下的实现/","target":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/事件处理/","type":"neighbor"},{"source":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/缓冲池：Qt-下的实现/","target":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/信号与槽/","type":"neighbor"},{"source":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/缓冲池：Qt-下的实现/","target":"/E.编程语言与框架/08-Qt/08.对象模型与信号槽/插件系统/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

@@ -1,0 +1,1741 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Linux 图形栈：DRM、GBM 与 EGL · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">Linux 图形栈：DRM、GBM 与 EGL</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/E.编程语言与框架/09-图形与OpenGL/Linux-图形栈：DRM、GBM-与-EGL/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">Linux 图形栈：DRM、GBM 与 EGL</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">Linux 图形栈：DRM、GBM 与 EGL</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>本篇讲 Linux 上一个像素从应用到屏幕要经过哪几层：内核里的 DRM 管显示控制和显存，用户态的 GBM 管缓冲区分配，跨平台的 EGL 把应用和厂商驱动接起来。再往下是两个命令行工具 <code>modetest</code> 和 <code>xrandr</code>，用它们把上面这些层看穿、调通。</p>
+<p>讲什么：DRM 的 KMS 与 GEM 两套机制、CRTC/encoder/connector/plane 四个对象的选路关系、<code>/dev/dri/card0</code> 与 <code>renderD128</code> 的分工、GBM 的 buffer 分配、EGL 的 display/context/surface 生命周期、Wayland 与 X11 两条路径的差别，以及 <code>modetest</code>、<code>xrandr</code>、<code>drm_info</code> 这些工具怎么用。</p>
+<p>不讲什么：GPU 寄存器级编程、Mesa 内部编译器（NIR/ACO）的实现、具体 GPU 的性能数字。这些不在本篇射程内。</p>
+<p>跨篇指路：具体 GPU 的驱动栈看《Mali-T860 GPU 驱动：Panfrost 与 mesa》；Weston 作为 compositor 怎么跑起来看《嵌入式 GUI 与 Weston》；GLU、GLFW、GLUT 这些辅助库和着色器本身看《OpenGL 编程：从 GLUT 到 OpenGL SC》。</p>
+</blockquote>
+<h2 id="一一帧图像要经过哪几层" tabindex="-1">一、一帧图像要经过哪几层 <a class="header-anchor" href="#一一帧图像要经过哪几层"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先摆结论：<strong>四层，三次接力</strong>。应用写渲染循环，EGL 把这次循环接到某个具体的图形 API 实现上，GBM 负责掏出一块能被 GPU 写、也能被显示控制器读的内存，DRM 负责把这块内存挂到某块屏上，让它在下一个垂直消隐期变成光。</p>
+<p>把这三家的分工压成一句话记：<strong>DRM 管显示与显存，GBM 分配 buffer，EGL 把应用和驱动接起来</strong>。它们是接力关系，不是替代关系——少了任何一环，链路就断在中间，前面画的全都留在内存里出不去。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">层</th>
+<th style="text-align:left">在哪</th>
+<th style="text-align:left">典型组件</th>
+<th style="text-align:left">职责</th>
+<th style="text-align:left">断掉时的现象</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">应用</td>
+<td style="text-align:left">用户态进程</td>
+<td style="text-align:left">你的渲染循环</td>
+<td style="text-align:left">决定画什么</td>
+<td style="text-align:left">画面内容不对，但流程在跑</td>
+</tr>
+<tr>
+<td style="text-align:left">EGL</td>
+<td style="text-align:left">用户态库</td>
+<td style="text-align:left"><code>libEGL.so</code>、Mesa、厂商 blob</td>
+<td style="text-align:left">选择配置、创建上下文和表面、交换缓冲</td>
+<td style="text-align:left"><code>eglInitialize</code> 失败，或拿到软件渲染</td>
+</tr>
+<tr>
+<td style="text-align:left">GBM</td>
+<td style="text-align:left">用户态库</td>
+<td style="text-align:left"><code>libgbm.so</code></td>
+<td style="text-align:left">分配能被 GPU 和显示端共用的 buffer</td>
+<td style="text-align:left"><code>gbm_bo_create</code> 返回 NULL</td>
+</tr>
+<tr>
+<td style="text-align:left">DRM</td>
+<td style="text-align:left">内核子系统</td>
+<td style="text-align:left"><code>drivers/gpu/drm/</code></td>
+<td style="text-align:left">KMS 控制显示、GEM 管显存、提交渲染命令</td>
+<td style="text-align:left">屏幕黑、<code>/dev/dri</code> 打不开、<code>modetest</code> 报错</td>
+</tr>
+<tr>
+<td style="text-align:left">硬件</td>
+<td style="text-align:left">硅片</td>
+<td style="text-align:left">GPU + 显示控制器 + PHY</td>
+<td style="text-align:left">算像素、扫出行场信号</td>
+<td style="text-align:left">时序不对、花屏、无信号</td>
+</tr>
+</tbody>
+</table></div><p>画成纵向的栈就是：应用写渲染循环 → EGL 提供 display/config/context/surface → GBM 提供 gbm_device/gbm_surface/gbm_bo → DRM 内核侧做 KMS 显示、GEM 显存和命令提交 → 硬件算像素、扫出行场信号。上层不知道下层用的什么硬件，下层不知道上层画的是什么，各层之间只靠约定好的对象和句柄交接。</p>
+<p>一次 <code>eglSwapBuffers</code> 落地，链路是这样走的：</p>
+<ol>
+<li>应用调 <code>glDrawElements</code> 之类，命令进了 GPU 的命令队列。</li>
+<li>命令写的是 GBM 给出来的那块 buffer，buffer 本身是 DRM 分配的一段显存，被映射进进程地址空间。</li>
+<li><code>eglSwapBuffers</code> 到 EGL。EGL 问平台层：下一块可用的 buffer 在哪。</li>
+<li>平台层是 GBM。<code>gbm_surface_lock_front_buffer</code> 把刚渲染完的那块交出来，封成一个 <code>gbm_bo</code>。</li>
+<li>compositor 或者显示端把这个 <code>gbm_bo</code> 的 handle 转成 DRM 的 framebuffer ID（<code>drmModeAddFB2</code>）。</li>
+<li>一次 atomic commit：把这个 framebuffer 挂到某个 CRTC 的某个 plane 上。</li>
+<li>内核在下一个垂直消隐期把 plane 的内容合成为扫描输出，屏幕亮。</li>
+</ol>
+<p>七步里，第 2 步是 GBM 的地盘，第 5、6 步是 DRM 的地盘，第 3、4 步的交接由 EGL 和 GBM 一起完成。谁出问题，症状落在哪一层，看表就知道该往哪儿查——这是本篇最实用的一张图。</p>
+<h3 id="1.1-三条边界" tabindex="-1">1.1 三条边界 <a class="header-anchor" href="#1.1-三条边界"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>三条边界容易混：内存归谁——GBM 分配、DRM 记账；显示归谁——分辨率、刷新率、plane 合成都是内核说了算；API 归谁——EGL 决定用哪个实现，<code>eglQueryString(EGL_VENDOR)</code> 给的就是答案。有一点要提前说破：<strong>EGL 不画像素</strong>，它只安排「在哪儿画、画到哪块内存、用哪套状态」，真正执行绘制调用的是背后绑定的那个 GL 实现。</p>
+<h3 id="1.2-为什么嵌入式上要关心这些" tabindex="-1">1.2 为什么嵌入式上要关心这些 <a class="header-anchor" href="#1.2-为什么嵌入式上要关心这些"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>桌面环境里这三层被发行版和 X server 藏得很好，你写个 <code>glxgears</code> 就出画面。嵌入式不是这样：没有 X server，没有现成的 compositor，板子上电之后 <code>/dev/dri/card0</code> 是一个裸设备，谁去设置模式、谁去分配 buffer、谁去建上下文，全得自己来。所以在这类板子上，图形栈不是背景知识，是启动流程的一部分。</p>
+<h2 id="二drm内核的显示与渲染管理器" tabindex="-1">二、DRM：内核的显示与渲染管理器 <a class="header-anchor" href="#二drm内核的显示与渲染管理器"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>DRM（Direct Rendering Manager）是 Linux 内核中的一个子系统，用于管理图形硬件的驱动程序。它提供了一种通用的接口，允许用户空间程序直接与硬件交互，通过设备文件 <code>/dev/dri/cardX</code> 访问。DRM 提供了诸如模式设置、显示控制、渲染加速等功能。</p>
+<p>在 DRM 出现之前，用户态程序想用 GPU 得直接 <code>mmap</code> 显存、自己管 DMA、自己跟 X server 抢设备。DRM 把这些收进内核，做成一层统一抽象：设备是文件，资源是对象，操作是 ioctl。</p>
+<h3 id="2.1-drm-管的三类事" tabindex="-1">2.1 DRM 管的三类事 <a class="header-anchor" href="#2.1-drm-管的三类事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">类别</th>
+<th style="text-align:left">具体内容</th>
+<th style="text-align:left">用户态入口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">模式设置</td>
+<td style="text-align:left">分辨率、刷新率、像素格式、扫描方向、DPMS</td>
+<td style="text-align:left"><code>drmModeSetCrtc</code>、atomic commit</td>
+</tr>
+<tr>
+<td style="text-align:left">显存管理</td>
+<td style="text-align:left">buffer 的创建、映射、共享、释放</td>
+<td style="text-align:left">GEM ioctl、dumb buffer ioctl</td>
+</tr>
+<tr>
+<td style="text-align:left">渲染调度与同步</td>
+<td style="text-align:left">命令提交、GPU 上下文、围栏与时间线</td>
+<td style="text-align:left">驱动私有 ioctl、<code>drm_syncobj</code></td>
+</tr>
+</tbody>
+</table></div><p>三类事的边界感很强：<strong>前两类是所有驱动共有的公共接口，第三类是驱动私有的</strong>。这也解释了一个现象——写跨平台的显示代码很容易，写跨平台的渲染提交代码几乎做不到，因为提交路径每家 GPU 都不一样，只有 Mesa 这种体量的项目才会去逐个适配。</p>
+<h3 id="2.2-两代-ioctllegacy-与-atomic" tabindex="-1">2.2 两代 ioctl：legacy 与 atomic <a class="header-anchor" href="#2.2-两代-ioctllegacy-与-atomic"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>DRM 的显示接口有两代。老接口一次改一个东西：<code>drmModeSetCrtc</code> 设模式，<code>drmModeCursor</code> 移光标，<code>drmModePageFlip</code> 翻页。改三个东西要发三次 ioctl，中间那一瞬间屏幕上的状态是拼出来的，撕裂和闪烁就从这儿来。</p>
+<p>新接口叫 atomic，一次 ioctl 把整帧要变的属性全带上，内核先检查可行性，全部通过才一起生效：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>drmModeAtomicReq *req = drmModeAtomicAlloc();
+
+drmModeAtomicAddProperty(req, plane_id, prop_fb_id, fb_id);
+drmModeAtomicAddProperty(req, plane_id, prop_crtc_id, crtc_id);
+drmModeAtomicAddProperty(req, plane_id, prop_crtc_w, crtc_w);
+drmModeAtomicAddProperty(req, conn_id, prop_crtc_id, crtc_id);
+
+<span class="hljs-comment">/* 最后两个参数：DRM_MODE_ATOMIC_NONBLOCK 与 allow_modeset */</span>
+drmModeAtomicCommit(fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, <span class="hljs-literal">NULL</span>);
+drmModeAtomicFree(req);
+</code></pre></div></code></pre>
+<p>两个 flag 值得记住。带 <code>DRM_MODE_ATOMIC_ALLOW_MODESET</code> 表示这次提交会改时序，内核要重新配置 PHY，耗时在毫秒级；不带它就只能改动 plane 的位置和内容，走的是快速的翻页路径。带 <code>DRM_MODE_ATOMIC_TEST_ONLY</code> 表示只检查不生效，用来试探「这个组合能不能配出来」——比真去配一遍再回滚安全得多。</p>
+<h3 id="2.3-打开设备的正确姿势" tabindex="-1">2.3 打开设备的正确姿势 <a class="header-anchor" href="#2.3-打开设备的正确姿势"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>modeset_open</code> 这类辅助函数干的事就一件：打开作为参数给出的 DRM 设备节点。成功时新的 fd 存进输出参数，失败返回负的错误码。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">modeset_open</span><span class="hljs-params">(<span class="hljs-type">int</span> *out, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *node)</span>
+{
+    <span class="hljs-type">int</span> fd, ret;
+    <span class="hljs-type">uint64_t</span> has_dumb;
+
+    fd = open(node, O_RDWR | O_CLOEXEC);
+    <span class="hljs-keyword">if</span> (fd &lt; <span class="hljs-number">0</span>) {
+        ret = -errno;
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;cannot open &#x27;%s&#x27;: %m\n&quot;</span>, node);
+        <span class="hljs-keyword">return</span> ret;
+    }
+
+    <span class="hljs-comment">/* 关键一步：确认驱动支持 dumb buffer */</span>
+    <span class="hljs-keyword">if</span> (drmGetCap(fd, DRM_CAP_DUMB_BUFFER, &amp;has_dumb) &lt; <span class="hljs-number">0</span> || !has_dumb) {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;driver does not support dumb buffers\n&quot;</span>);
+        close(fd);
+        <span class="hljs-keyword">return</span> -EOPNOTSUPP;
+    }
+
+    *out = fd;
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>打开文件之后必须查 <code>DRM_CAP_DUMB_BUFFER</code>，这一步不能省。驱动支持这个 capability，意味着你可以只用公共 ioctl 就创建出能映射、能画的简单缓冲区，一行 radeon、nvidia、intel 的私有代码都不用写。不支持就只能走各家自己的分配路径，跨平台代码到此为止。</p>
+<p>DUMB_BUFFER 的能力有限：格式单一（XRGB8888 居多）、不能给 GPU 直接渲染（多数驱动只给你 CPU 映射）、没有格式修饰符。所以它适合做教学 demo、做 framebuffer console、做快速验证，不适合做真正的渲染目标。真渲染还是要走 GBM。</p>
+<h2 id="三kms显示控制" tabindex="-1">三、KMS：显示控制 <a class="header-anchor" href="#三kms显示控制"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>KMS 是 Kernel Mode Setting 的缩写，直译「内核模式设置」。它解决的问题在名字里：<strong>模式设置这件事，从用户态搬进内核</strong>。</p>
+<p>早期 X server 自己算时序、自己写显示控制器寄存器，这叫 UMS（Userspace Mode Setting）。后果是切换 VT 会黑屏闪一下、挂起恢复会花屏、两个显示服务器不能共存。KMS 把这些操作收进内核，谁想改显示状态都得走 DRM ioctl，内核负责串行化和状态一致性。</p>
+<h3 id="3.1-kms-管的东西" tabindex="-1">3.1 KMS 管的东西 <a class="header-anchor" href="#3.1-kms-管的东西"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">能力</th>
+<th style="text-align:left">说明</th>
+<th style="text-align:left">谁来设</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">时序</td>
+<td style="text-align:left">像素时钟、前后沿、同步脉宽</td>
+<td style="text-align:left">从 EDID 或 <code>modeline</code> 算出来</td>
+</tr>
+<tr>
+<td style="text-align:left">分辨率与刷新率</td>
+<td style="text-align:left">一组预置模式，或显式给的详细时序</td>
+<td style="text-align:left">connector 上的 mode list</td>
+</tr>
+<tr>
+<td style="text-align:left">像素格式与叠层</td>
+<td style="text-align:left">XRGB8888、ARGB8888、NV12；primary/overlay/cursor 三层</td>
+<td style="text-align:left">plane 的属性与 zpos</td>
+</tr>
+<tr>
+<td style="text-align:left">缩放、裁剪、电源与色彩</td>
+<td style="text-align:left">plane 的 src/dst 矩形；DPMS 四态；伽马表与 CTM</td>
+<td style="text-align:left">plane、connector、CRTC 属性</td>
+</tr>
+</tbody>
+</table></div><p>这张表里每一行都对应一个 DRM property。KMS 的配置面本质上是「一堆带名字和类型的属性」，atomic commit 就是「一组属性赋值」。</p>
+<h3 id="3.2-属性与-blob" tabindex="-1">3.2 属性与 blob <a class="header-anchor" href="#3.2-属性与-blob"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>属性分两类。定长的是整数、布尔、枚举，直接塞进 64 位字段；变长的是 blob，比如 EDID 原始数据、模式时序表、伽马表，这类属性存的是一个 ID，数据本身在另一个地方：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ modetest -M rockchip -c     <span class="hljs-comment"># 列出 connector 及其属性</span>
+$ modetest -M rockchip -p     <span class="hljs-comment"># 列出 CRTC 与 plane</span>
+$ modetest -M rockchip -a     <span class="hljs-comment"># 完整资源树，所有属性都给出来</span>
+
+$ <span class="hljs-built_in">cat</span> /sys/class/drm/card0-HDMI-A-1/edid | edid-decode   <span class="hljs-comment"># EDID 走 sysfs 读</span>
+</code></pre></div></code></pre>
+<p>调试时最常看的是三种属性：connector 的 <code>CRTC_ID</code>（这块屏接到哪个控制器）、plane 的 <code>FB_ID</code>（这层画面用的哪个 framebuffer）、connector 的 <code>DPMS</code>（屏是不是被关掉了）。三个值一对，问题基本能定位。</p>
+<h3 id="3.3-一次完整的模式设置" tabindex="-1">3.3 一次完整的模式设置 <a class="header-anchor" href="#3.3-一次完整的模式设置"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>从上电到出画面，KMS 侧的动作顺序是固定的：</p>
+<ol>
+<li>枚举资源，拿到 connector / encoder / CRTC / plane 的 ID 列表。</li>
+<li>轮询每个 connector 的 <code>status</code>，筛出 <code>connected</code> 的那些。</li>
+<li>读 connector 的 <code>modes</code>，挑一个目标分辨率。</li>
+<li>从 connector 的 <code>encoder_id</code> 找到 encoder，再从 encoder 的 <code>possible_crtcs</code> 位图里挑一个没人用的 CRTC。</li>
+<li>分配 framebuffer：GBM 或 dumb buffer 拿内存，<code>drmModeAddFB2</code> 转成 fb ID。</li>
+<li>一次 atomic commit，把 CRTC、connector、plane 的绑定关系和模式一起生效。</li>
+<li>之后每帧只改 plane 的 <code>FB_ID</code>，走翻页路径。</li>
+</ol>
+<p>第 4 步的位图是理解 KMS 的关键：<code>possible_crtcs</code> 是一个位掩码，第 n 位为 1 表示这个 encoder 能被第 n 个 CRTC 驱动。选了不被支持的组合，内核在 commit 阶段直接返回 <code>-EINVAL</code>，屏幕一点反应都没有。</p>
+<h2 id="四gem显存管理" tabindex="-1">四、GEM：显存管理 <a class="header-anchor" href="#四gem显存管理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>GEM 是 Graphics Execution Manager，2008 年从 i915 驱动里长出来，后来成了 DRM 的公共显存管理层。它管的不是「显存」这两个字面意思，而是<strong>一段 buffer object 的生命周期</strong>：谁分配、谁引用、谁能映射、什么时候能回收。</p>
+<p>在 GEM 之前，每家的显存分配接口各写各的，同一个 buffer 想在两个进程之间传，只能走 X server 转发或者自己实现一套 IPC。GEM 把这件事收成一套 ioctl，于是跨进程、跨设备共享有了公共语言。</p>
+<h3 id="4.1-三个标识符" tabindex="-1">4.1 三个标识符 <a class="header-anchor" href="#4.1-三个标识符"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>GEM 里同一个 buffer 有三种身份，混用是初学阶段最常见的错误来源。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">标识</th>
+<th style="text-align:left">作用域</th>
+<th style="text-align:left">怎么来</th>
+<th style="text-align:left">用在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">handle</td>
+<td style="text-align:left">单个进程，进程内唯一</td>
+<td style="text-align:left"><code>DRM_IOCTL_GEM_CREATE</code> 返回</td>
+<td style="text-align:left">本进程内的所有操作</td>
+</tr>
+<tr>
+<td style="text-align:left">name</td>
+<td style="text-align:left">全系统，靠 flink 生成</td>
+<td style="text-align:left"><code>DRM_IOCTL_GEM_FLINK</code></td>
+<td style="text-align:left">老式的跨进程共享，不安全，别用</td>
+</tr>
+<tr>
+<td style="text-align:left">dma-buf fd</td>
+<td style="text-align:left">内核文件描述符，可传递</td>
+<td style="text-align:left"><code>DRM_IOCTL_PRIME_HANDLE_TO_FD</code></td>
+<td style="text-align:left">跨设备、跨子系统共享，现代做法</td>
+</tr>
+</tbody>
+</table></div><p>handle 是进程私有的，这一点要记牢：A 进程拿到的 handle 值 3，在 B 进程里指向的完全是另一块内存。想把 buffer 传给别的进程，必须转成 dma-buf fd，通过 Unix socket 的 <code>SCM_RIGHTS</code> 传过去，对方再用 <code>DRM_IOCTL_PRIME_FD_TO_HANDLE</code> 换成本进程的 handle。</p>
+<h3 id="4.2-gem-的-ioctl-清单" tabindex="-1">4.2 GEM 的 ioctl 清单 <a class="header-anchor" href="#4.2-gem-的-ioctl-清单"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">ioctl</th>
+<th style="text-align:left">干什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>DRM_IOCTL_GEM_CREATE</code></td>
+<td style="text-align:left">分配一个 buffer object，返回 handle</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DRM_IOCTL_GEM_CLOSE</code></td>
+<td style="text-align:left">释放本进程对这个 handle 的引用</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DRM_IOCTL_GEM_FLINK</code> / <code>GEM_OPEN</code></td>
+<td style="text-align:left">handle 与全局 name 互相转换</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DRM_IOCTL_PRIME_HANDLE_TO_FD</code></td>
+<td style="text-align:left">handle 转 dma-buf fd</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DRM_IOCTL_PRIME_FD_TO_HANDLE</code></td>
+<td style="text-align:left">dma-buf fd 转 handle</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DRM_IOCTL_MODE_CREATE_DUMB</code></td>
+<td style="text-align:left">分配 dumb buffer，比 GEM_CREATE 多带尺寸信息</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DRM_IOCTL_MODE_MAP_DUMB</code></td>
+<td style="text-align:left">拿到 mmap 需要的偏移量</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>DRM_IOCTL_MODE_DESTROY_DUMB</code></td>
+<td style="text-align:left">释放 dumb buffer</td>
+</tr>
+</tbody>
+</table></div><p>注意 <code>GEM_CREATE</code> 和 <code>MODE_CREATE_DUMB</code> 的区别：前者只问「要多大」，驱动自己决定布局；后者显式给出宽、高、bpp，驱动按扫描输出的要求排布，所以能直接当 framebuffer 用。这也是为什么教学 demo 全用 dumb buffer——它省掉了 pitch、tiling、modifier 这一堆麻烦。</p>
+<h3 id="4.3-一块-dumb-buffer-从生到死" tabindex="-1">4.3 一块 dumb buffer 从生到死 <a class="header-anchor" href="#4.3-一块-dumb-buffer-从生到死"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;xf86drm.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;xf86drmMode.h&gt;</span></span>
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">dumb_fb</span> {</span>
+    <span class="hljs-type">uint32_t</span> width, height, pitch, handle, fb_id;
+    <span class="hljs-type">uint64_t</span> size;
+    <span class="hljs-type">uint8_t</span> *<span class="hljs-built_in">map</span>;
+};
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">dumb_fb_create</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-keyword">struct</span> dumb_fb *fb, <span class="hljs-type">uint32_t</span> w, <span class="hljs-type">uint32_t</span> h)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">drm_mode_create_dumb</span> <span class="hljs-title">creq</span> =</span> {<span class="hljs-number">0</span>};
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">drm_mode_map_dumb</span> <span class="hljs-title">mreq</span> =</span> {<span class="hljs-number">0</span>};
+
+    creq.width  = w;
+    creq.height = h;
+    creq.bpp    = <span class="hljs-number">32</span>;
+
+    <span class="hljs-keyword">if</span> (drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &amp;creq) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">return</span> -errno;
+
+    fb-&gt;width  = w;
+    fb-&gt;height = h;
+    fb-&gt;pitch  = creq.pitch;
+    fb-&gt;size   = creq.size;
+    fb-&gt;handle = creq.handle;
+
+    <span class="hljs-comment">/* 转成 framebuffer 对象，才有资格挂到 CRTC 上 */</span>
+    <span class="hljs-keyword">if</span> (drmModeAddFB(fd, w, h, <span class="hljs-number">24</span>, <span class="hljs-number">32</span>, fb-&gt;pitch, fb-&gt;handle, &amp;fb-&gt;fb_id))
+        <span class="hljs-keyword">return</span> -errno;
+
+    mreq.handle = fb-&gt;handle;
+    <span class="hljs-keyword">if</span> (drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &amp;mreq) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">return</span> -errno;
+
+    fb-&gt;<span class="hljs-built_in">map</span> = mmap(<span class="hljs-literal">NULL</span>, fb-&gt;size, PROT_READ | PROT_WRITE,
+                   MAP_SHARED, fd, mreq.offset);
+    <span class="hljs-keyword">return</span> fb-&gt;<span class="hljs-built_in">map</span> == MAP_FAILED ? -errno : <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">dumb_fb_destroy</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-keyword">struct</span> dumb_fb *fb)</span>
+{
+    munmap(fb-&gt;<span class="hljs-built_in">map</span>, fb-&gt;size);
+    drmModeRmFB(fd, fb-&gt;fb_id);
+
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">drm_mode_destroy_dumb</span> <span class="hljs-title">dreq</span> =</span> { .handle = fb-&gt;handle };
+    drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &amp;dreq);
+}
+</code></pre></div></code></pre>
+<p>四个注意点。<code>pitch</code> 不是 <code>width * 4</code>，驱动会对齐到 64 或 256 字节，写像素必须按 pitch 算行偏移，按 width 算必然斜切。<code>drmModeAddFB</code> 的 depth 参数给 24、bpp 给 32，因为 XRGB8888 是 32 位存储、24 位承载颜色。<code>mmap</code> 的偏移量来自 <code>MAP_DUMB</code> 返回的 <code>offset</code>，不是 0。<code>creq.size</code> 才是真正要映射的字节数，它等于 <code>pitch * height</code>，比 <code>width * height * 4</code> 大。</p>
+<h3 id="4.4-内存到底在哪儿" tabindex="-1">4.4 内存到底在哪儿 <a class="header-anchor" href="#4.4-内存到底在哪儿"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>「显存」这个词有误导性，GEM 管的 buffer 不一定在独立显存里。独立显卡（amdgpu、nouveau）大部分放 VRAM，紧张时换出到系统内存；集成显卡（i915、rockchip、msm）直接用系统内存，CPU 与 GPU 共享同一块物理页；嵌入式 SoC 上的图形 buffer 多数落在 CMA 区域，物理连续。</p>
+<p>所以嵌入式板子上 <code>gbm_bo_map</code> 拿到的指针和 GPU 看到的是同一块物理内存，cache 一致性靠驱动的 <code>begin/end_cpu_access</code> 处理。忘了刷 cache，就会出现「CPU 写的图 GPU 看不到」这种幽灵问题。</p>
+<p>GEM 早期用 TTM（Translation Table Manager）做内存迁移，后来 i915 换成了自己的 shmem-backed 方案。现在说「GEM/TTM」指的是这一整类显存管理机制，不特指某个结构体。</p>
+<h2 id="五四个核心对象crtcencoderconnectorplane" tabindex="-1">五、四个核心对象：CRTC、encoder、connector、plane <a class="header-anchor" href="#五四个核心对象crtcencoderconnectorplane"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>KMS 的东西全在这四个对象上。把它们的关系搞清楚，<code>modetest</code> 的输出和内核的报错就都能读了。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">对象</th>
+<th style="text-align:left">是什么</th>
+<th style="text-align:left">一句话</th>
+<th style="text-align:left">关键属性</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">Connector</td>
+<td style="text-align:left">物理输出口</td>
+<td style="text-align:left">接哪块屏</td>
+<td style="text-align:left"><code>status</code>、<code>modes</code>、<code>CRTC_ID</code>、<code>DPMS</code>、<code>EDID</code></td>
+</tr>
+<tr>
+<td style="text-align:left">Encoder</td>
+<td style="text-align:left">信号编码器</td>
+<td style="text-align:left">用哪条输出通道</td>
+<td style="text-align:left"><code>encoder_type</code>、<code>possible_crtcs</code>、<code>CRTC_ID</code></td>
+</tr>
+<tr>
+<td style="text-align:left">CRTC</td>
+<td style="text-align:left">显示控制器</td>
+<td style="text-align:left">用哪个扫描引擎</td>
+<td style="text-align:left"><code>mode_id</code>、<code>ACTIVE</code>、<code>gamma</code>、<code>OUT_FENCE_PTR</code></td>
+</tr>
+<tr>
+<td style="text-align:left">Plane</td>
+<td style="text-align:left">图层</td>
+<td style="text-align:left">第几层画面</td>
+<td style="text-align:left"><code>FB_ID</code>、<code>CRTC_ID</code>、<code>SRC_*</code>、<code>CRTC_*</code>、<code>zpos</code>、<code>type</code></td>
+</tr>
+</tbody>
+</table></div><h3 id="5.1-三个对象的原始定义" tabindex="-1">5.1 三个对象的原始定义 <a class="header-anchor" href="#5.1-三个对象的原始定义"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>CRTC（Cathode Ray Tube Controller）</strong>：名字是显像管时代留下的，现在叫显示控制器更贴切。CRTC 控制着实际显示设备的扫描和刷新操作，负责生成该显示设备的图像信号。一个显卡可以有多个 CRTC，每个 CRTC 控制一个显示输出。</p>
+<p><strong>Encoder（编码器）</strong>：Encoder 是 CRTC 输出信号的编码器，把图像数据转换为特定格式的信号，以便发送到显示设备。Encoder 与特定类型的连接器（HDMI、DVI、VGA 等）相关联，以便把图像数据转成对应的视频信号格式。一个 CRTC 可以与多个 Encoder 相关联，意味着它能同时支持多种连接器类型。</p>
+<p><strong>Connector（连接器）</strong>：Connector 表示与显卡相连的物理显示端口，如 HDMI 接口、DVI 接口。每个 Connector 对应一个实际的显示输出接口。每个 Connector 都与一个 Encoder 相关联，该 Encoder 负责把图像数据编码成连接器所需的信号格式。</p>
+<p>素材里的流程描述是这样的：用户空间通过 DRM 选择一个 Connector，创建一个 CRTC 并把它与所选 Connector 关联；然后创建一个 Encoder 并与之关联，以便把图像数据编码成正确的信号格式；最后把帧缓冲的内容提交给 CRTC，CRTC 收到后发给关联的 Encoder，最终显示到 Connector 所代表的设备上。</p>
+<p>这段描述的方向是对的，只有一处要纠正：<strong>Encoder 不是用户空间创建的，是驱动在初始化时预置好的</strong>。用户态做的是选择——从 connector 的 <code>encoders</code> 数组里挑一个，检查它的 <code>possible_crtcs</code> 位图，从里面挑一个空闲的 CRTC。创建权在内核，选择权在用户态。</p>
+<h3 id="5.2-选路的四个问题" tabindex="-1">5.2 选路的四个问题 <a class="header-anchor" href="#5.2-选路的四个问题"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>应用想显示一帧，逐个回答四个问题就够：</p>
+<ol>
+<li><strong>选 connector</strong>——接哪个屏？看 <code>status</code> 是否 <code>connected</code>，看 <code>modes</code> 里有没有你想要的分辨率。</li>
+<li><strong>选 encoder</strong>——用哪条输出？从 connector 的 encoder 列表里挑，或者直接用它当前的 <code>encoder_id</code>。</li>
+<li><strong>选 CRTC</strong>——用哪个控制器？在 encoder 的 <code>possible_crtcs</code> 位图里找一个没被别人占的。</li>
+<li><strong>选 plane</strong>——哪层画面？主画面用 primary，叠一层视频用 overlay，鼠标用 cursor。</li>
+</ol>
+<p>链路是 <code>connector → encoder → CRTC → plane</code>，单向下行，不能反着配。四个问题答完，一次 atomic commit 把所有绑定关系定下来。</p>
+<p>有一条硬约束：<strong>每个 CRTC 同一时刻只能驱动一个 connector</strong>。想要双屏镜像，得用两个 CRTC 输出同样的内容；想要双屏扩展，两个 CRTC 各带一个 connector。硬件上 CRTC 数量决定了能同时点亮的屏数，跟接口数量无关。</p>
+<h3 id="5.3-plane-的三种类型" tabindex="-1">5.3 plane 的三种类型 <a class="header-anchor" href="#5.3-plane-的三种类型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>primary 是主画面，每个 CRTC 一个，必须有；overlay 是视频层、字幕层、第二画面，数量从 0 到多个；cursor 是硬件光标，固定尺寸，不能缩放。</p>
+<p>plane 靠 <code>zpos</code> 属性决定叠放顺序，靠 <code>SRC_X/Y/W/H</code> 指定从 buffer 里裁哪块，靠 <code>CRTC_X/Y/W/H</code> 指定贴到屏幕的哪儿。两个矩形尺寸不一样就是硬件缩放，缩放器不支持时会返回 <code>-EINVAL</code>。</p>
+<h3 id="5.4-用-libdrm-把设备找出来" tabindex="-1">5.4 用 libdrm 把设备找出来 <a class="header-anchor" href="#5.4-用-libdrm-把设备找出来"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>需要一个容器装「已经配好的那一对」：每成功初始化一对 connector + CRTC + framebuffer，就建一个 <code>struct modeset_dev</code>，推到全局链表里。后面翻页时遍历这个链表逐个提交。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">modeset_dev</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">modeset_dev</span> *<span class="hljs-title">next</span>;</span>
+    <span class="hljs-type">uint32_t</span> fb_id, crtc_id;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> width, height;
+    drmModeConnector *conn;
+    drmModeEncoder *enc;
+    drmModeCrtc *saved_crtc;   <span class="hljs-comment">/* 退出时恢复原状态 */</span>
+};
+
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">modeset_dev</span> *<span class="hljs-title">modeset_list</span> =</span> <span class="hljs-literal">NULL</span>;
+</code></pre></div></code></pre>
+<p>资源信息从 <code>drmModeGetResources(fd)</code> 拿，用完 <code>drmModeFreeResources(res)</code> 释放。返回的 <code>drmModeRes</code> 里装着所有 connector、encoder、CRTC 的 ID 数组。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">modeset_prepare</span><span class="hljs-params">(<span class="hljs-type">int</span> fd)</span>
+{
+    drmModeRes *res = drmModeGetResources(fd);
+    <span class="hljs-keyword">if</span> (!res) <span class="hljs-keyword">return</span> -errno;
+
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; res-&gt;count_connectors; ++i) {
+        drmModeConnector *conn = drmModeGetConnector(fd, res-&gt;connectors[i]);
+        <span class="hljs-keyword">if</span> (!conn) <span class="hljs-keyword">continue</span>;
+
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">modeset_dev</span> *<span class="hljs-title">dev</span> =</span> <span class="hljs-built_in">calloc</span>(<span class="hljs-number">1</span>, <span class="hljs-keyword">sizeof</span>(*dev));
+        dev-&gt;conn = conn;
+
+        <span class="hljs-type">int</span> ret = modeset_setup_dev(fd, res, conn, dev);
+        <span class="hljs-keyword">if</span> (ret) {
+            <span class="hljs-comment">/* -ENOENT 表示这个口没插屏，正常跳过 */</span>
+            <span class="hljs-keyword">if</span> (ret != -ENOENT)
+                <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;connector %u: %s\n&quot;</span>,
+                        conn-&gt;connector_id, strerror(-ret));
+            <span class="hljs-built_in">free</span>(dev);
+            <span class="hljs-keyword">continue</span>;
+        }
+
+        dev-&gt;next = modeset_list;
+        modeset_list = dev;
+    }
+
+    drmModeFreeResources(res);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>modeset_setup_dev</code> 第一步就检查 connector 是不是真在用——<code>conn-&gt;connection != DRM_MODE_CONNECTED</code> 或者 <code>conn-&gt;count_modes == 0</code>，直接返回 <code>-ENOENT</code>。没插屏的口在资源表里照样存在，不筛掉后面全会失败。</p>
+<p>找 CRTC 的逻辑两段式：先试 connector 上已激活的 encoder 和 CRTC，找不到再全量枚举。先试现成组合的原因很实际——已配好的链路说明硬件支持，沿用它能避开一次完整模式设置，屏幕不闪。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">modeset_find_crtc</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, drmModeRes *res, drmModeConnector *conn,
+                             <span class="hljs-keyword">struct</span> modeset_dev *dev)</span>
+{
+    <span class="hljs-comment">/* 第一段：沿用 connector 上已激活的组合 */</span>
+    drmModeEncoder *enc = conn-&gt;encoder_id
+                        ? drmModeGetEncoder(fd, conn-&gt;encoder_id) : <span class="hljs-literal">NULL</span>;
+    <span class="hljs-keyword">if</span> (enc) {
+        <span class="hljs-keyword">if</span> (enc-&gt;crtc_id &amp;&amp; !crtc_used_elsewhere(enc-&gt;crtc_id)) {
+            dev-&gt;crtc_id = enc-&gt;crtc_id;
+            drmModeFreeEncoder(enc);
+            <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+        }
+        drmModeFreeEncoder(enc);
+    }
+
+    <span class="hljs-comment">/* 第二段：枚举 encoder，在 possible_crtcs 位图里找空闲 CRTC */</span>
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; conn-&gt;count_encoders; ++i) {
+        enc = drmModeGetEncoder(fd, conn-&gt;encoders[i]);
+        <span class="hljs-keyword">if</span> (!enc) <span class="hljs-keyword">continue</span>;
+
+        <span class="hljs-keyword">for</span> (<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> j = <span class="hljs-number">0</span>; j &lt; res-&gt;count_crtcs; ++j) {
+            <span class="hljs-keyword">if</span> (!(enc-&gt;possible_crtcs &amp; (<span class="hljs-number">1</span> &lt;&lt; j)))  <span class="hljs-keyword">continue</span>;  <span class="hljs-comment">/* 硬件不支持 */</span>
+            <span class="hljs-keyword">if</span> (crtc_used_elsewhere(res-&gt;crtcs[j])) <span class="hljs-keyword">continue</span>;  <span class="hljs-comment">/* 已被占用  */</span>
+
+            dev-&gt;crtc_id = res-&gt;crtcs[j];
+            drmModeFreeEncoder(enc);
+            <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+        }
+        drmModeFreeEncoder(enc);
+    }
+    <span class="hljs-keyword">return</span> -ENOENT;
+}
+</code></pre></div></code></pre>
+<p>两个判断缺一不可。<code>possible_crtcs</code> 管硬件可行性，<code>crtc_used_elsewhere</code> 管软件占用。漏掉第一个，commit 被内核拒绝；漏掉第二个，第二块屏会把第一块顶掉——现象是「插上第二个显示器，第一个黑了」。<code>crtc_used_elsewhere</code> 的实现就是遍历 <code>modeset_list</code> 看这个 CRTC 有没有被前面的设备记下来，这印证了那条硬约束：一个 CRTC 只能带一个 connector。</p>
+<h2 id="六devdricard0-与-renderd128" tabindex="-1">六、/dev/dri/card0 与 renderD128 <a class="header-anchor" href="#六devdricard0-与-renderd128"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Linux 内核检测到机器上的显卡时，会加载对应的设备驱动程序（源码在 <code>drivers/gpu/drm/&lt;厂商目录&gt;</code> 下），并提供两个字符设备来控制显卡。udev（或任何热插拔管理程序）会把它们创建成：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>/dev/dri/card0
+/dev/dri/controlD64
+</code></pre></div></code></pre>
+<p><code>controlD64</code> 是老的控制节点，留给 X server 的 UMS 时代，KMS 之后基本不用。真正要打开的是第一个。有多块显卡时，还会有 <code>/dev/dri/card1</code>、<code>/dev/dri/card2</code>。</p>
+<p>路径可以硬编码进程序，但更好的做法是用 libudev 枚举——这样才支持热插拔和多座（multi-seat）。硬编码在开发板上够用，在产品里迟早出问题。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ <span class="hljs-built_in">ls</span> -l /dev/dri/
+crw-rw----+ 1 root video  226,   0 11月 17 09:12 card0
+crw-rw----+ 1 root video  226,   1 11月 17 09:12 card1
+crw-rw----+ 1 root render 226, 128 11月 17 09:12 renderD128
+crw-rw----+ 1 root render 226, 129 11月 17 09:12 renderD129
+</code></pre></div></code></pre>
+<h3 id="6.1-两个节点的分工" tabindex="-1">6.1 两个节点的分工 <a class="header-anchor" href="#6.1-两个节点的分工"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">对比项</th>
+<th style="text-align:left"><code>cardN</code></th>
+<th style="text-align:left"><code>renderD128</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">主设备号</td>
+<td style="text-align:left">226</td>
+<td style="text-align:left">226</td>
+</tr>
+<tr>
+<td style="text-align:left">属组</td>
+<td style="text-align:left"><code>video</code></td>
+<td style="text-align:left"><code>render</code></td>
+</tr>
+<tr>
+<td style="text-align:left">能做什么</td>
+<td style="text-align:left">显示控制 + 渲染</td>
+<td style="text-align:left">只做渲染</td>
+</tr>
+<tr>
+<td style="text-align:left">能做 atomic commit</td>
+<td style="text-align:left">能</td>
+<td style="text-align:left">不能</td>
+</tr>
+<tr>
+<td style="text-align:left">需要 DRM master</td>
+<td style="text-align:left">显示操作需要</td>
+<td style="text-align:left">不需要</td>
+</tr>
+<tr>
+<td style="text-align:left">典型用户</td>
+<td style="text-align:left">compositor、X server、<code>modetest</code></td>
+<td style="text-align:left">无窗口的应用、计算、编解码</td>
+</tr>
+<tr>
+<td style="text-align:left">多卡对应关系</td>
+<td style="text-align:left">card0/card1 各一个</td>
+<td style="text-align:left">renderD128/renderD129 各一个</td>
+</tr>
+</tbody>
+</table></div><p>分工的理由是权限。显示控制是全局资源，谁拿到 DRM master 谁说了算，所以要卡在 <code>video</code> 组；渲染只用 GPU 算东西，不碰显示，权限可以放宽到 <code>render</code> 组。服务器上跑 headless 渲染任务，只需要进 <code>render</code> 组，不用给用户 <code>video</code> 权限。</p>
+<p>编号不一定对齐：<code>card0</code> 不一定配 <code>renderD128</code>。要看对应关系读 sysfs：<code>cat /sys/class/drm/renderD128/device/uevent</code> 查驱动名，<code>udevadm info -q property -n /dev/dri/card0 | grep ID_PATH</code> 查物理路径。多卡机器上这一步必须先做，不然调了半天发现调的是另一块卡。</p>
+<h3 id="6.2-drm-master" tabindex="-1">6.2 DRM master <a class="header-anchor" href="#6.2-drm-master"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>cardN</code> 上的显示操作需要一个身份：DRM master，同一个 card 节点同一时刻只能有一个。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (drmSetMaster(fd) &lt; <span class="hljs-number">0</span>)      <span class="hljs-comment">/* 抢，失败说明已经有人占着 */</span>
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;another DRM master is active\n&quot;</span>);
+drmDropMaster(fd);             <span class="hljs-comment">/* 用完放手 */</span>
+</code></pre></div></code></pre>
+<p>X server 和 Weston 启动时都会抢 master。所以在跑着桌面的机器上直接 <code>modetest -s ...</code>，要么直接失败，要么把桌面的显示配置改掉、退出时不恢复。调试显示问题最好切到文本 VT，或者用 <code>-d</code> 让 <code>modetest</code> 设完模式就放手——画面留在 framebuffer 里不动，master 身份已经交出去，后续起 compositor 不会被挡。</p>
+<h2 id="七gbm分配图形缓冲区" tabindex="-1">七、GBM：分配图形缓冲区 <a class="header-anchor" href="#七gbm分配图形缓冲区"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>GBM（Generic Buffer Manager，Mesa 里叫 Generic Buffer Management）是一个图形缓冲区管理库，属于 Mesa 3D 的一部分，主要服务于 Linux 平台，为 DRM 内核子系统提供用户空间 API。它提供了一套统一接口，用于管理图形缓冲区和设备之间的交互。</p>
+<p>它要解决的痛点很具体：<strong>基于 GEM/TTM 的驱动对外没有统一的内存管理接口</strong>，至少 Buffer Object 的创建、销毁这些操作，需要各家自己提供设备相关的实现。用户态没有统一接口管缓冲区，某些特定程序的开发就变得很难——最典型的就是 Wayland compositor，它必须在没有窗口系统的环境下自己分配能被 GPU 渲染、又能直接送去扫描输出的内存。</p>
+<p>一句话概括：<strong>GBM 的作用就是把 DRM 设备（<code>gbm_device</code>）变成 EGL 的本地平台，它创建的句柄可以用来初始化 EGL，并创建渲染目标缓冲区。</strong></p>
+<h3 id="7.1-gbm-的-api-面" tabindex="-1">7.1 GBM 的 API 面 <a class="header-anchor" href="#7.1-gbm-的-api-面"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">函数</th>
+<th style="text-align:left">干什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>gbm_create_device(fd)</code></td>
+<td style="text-align:left">用一个 DRM fd 建 gbm_device</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>gbm_bo_create(dev, w, h, format, flags)</code></td>
+<td style="text-align:left">分配一块 buffer object</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>gbm_bo_map(bo, ...)</code> / <code>gbm_bo_unmap</code></td>
+<td style="text-align:left">映射到 CPU 地址空间</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>gbm_bo_get_fd(bo)</code></td>
+<td style="text-align:left">导出 dma-buf fd，用于跨进程/跨设备</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>gbm_bo_import(dev, type, buffer, flags)</code></td>
+<td style="text-align:left">把外部 dma-buf 导入成 gbm_bo</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>gbm_surface_create(dev, w, h, format, flags)</code></td>
+<td style="text-align:left">建一个渲染表面，内部是双缓冲或三缓冲</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>gbm_surface_lock_front_buffer(surf)</code></td>
+<td style="text-align:left">取出刚渲染完的那块 bo</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>gbm_surface_release_buffer(surf, bo)</code></td>
+<td style="text-align:left">还回去，让 GBM 复用</td>
+</tr>
+</tbody>
+</table></div><p><code>gbm_surface_create</code> 的 <code>flags</code> 里最常用的是 <code>GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING</code>。前者告诉驱动「这块要能直接送去扫描输出」，后者告诉它「这块要能被 GPU 渲染」。两个都要，缺一个就会在某个环节被拒。</p>
+<h3 id="7.2-从-fd-到-surface" tabindex="-1">7.2 从 fd 到 surface <a class="header-anchor" href="#7.2-从-fd-到-surface"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">egl_gbm</span> {</span>
+    <span class="hljs-type">int</span> render_fd;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">gbm_device</span> *<span class="hljs-title">gbm_device</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">gbm_surface</span> *<span class="hljs-title">surface</span>;</span>
+    EGLDisplay display;
+};
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">gbm_init</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> egl_gbm *g, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *path, <span class="hljs-type">uint32_t</span> w, <span class="hljs-type">uint32_t</span> h)</span>
+{
+    <span class="hljs-comment">/* path 取 &quot;/dev/dri/renderD128&quot; 或 &quot;/dev/dri/card0&quot; */</span>
+    g-&gt;render_fd  = open(path, O_RDWR | O_CLOEXEC);
+    g-&gt;gbm_device = gbm_create_device(g-&gt;render_fd);
+    assert(g-&gt;render_fd &gt;= <span class="hljs-number">0</span> &amp;&amp; g-&gt;gbm_device);
+
+    g-&gt;surface = gbm_surface_create(g-&gt;gbm_device, w, h, GBM_FORMAT_XRGB8888,
+                                    GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING);
+    assert(g-&gt;surface);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>渲染循环里三件套的配合是这样的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 1. 用 gbm_surface 建 EGL 窗口表面（EGL 的 native window 就是 gbm_surface） */</span>
+EGLSurface egl_surf = eglCreateWindowSurface(g-&gt;display, config,
+                                             (EGLNativeWindowType)g-&gt;surface,
+                                             <span class="hljs-literal">NULL</span>);
+
+<span class="hljs-comment">/* 2. 渲染一帧 */</span>
+render_frame();
+eglSwapBuffers(g-&gt;display, egl_surf);        <span class="hljs-comment">/* 换缓冲，不阻塞 */</span>
+
+<span class="hljs-comment">/* 3. 取出刚渲染完的那块 bo，交给 KMS 显示 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">gbm_bo</span> *<span class="hljs-title">bo</span> =</span> gbm_surface_lock_front_buffer(g-&gt;surface);
+<span class="hljs-type">uint32_t</span> fb_id;
+drmModeAddFB(g-&gt;render_fd, gbm_bo_get_width(bo), gbm_bo_get_height(bo),
+             <span class="hljs-number">24</span>, <span class="hljs-number">32</span>, gbm_bo_get_stride(bo), gbm_bo_get_handle(bo).u32,
+             &amp;fb_id);
+
+<span class="hljs-comment">/* 4. 提交到 CRTC，下一帧再还回去 */</span>
+drmModePageFlip(fd, crtc_id, fb_id, DRM_MODE_PAGE_FLIP_EVENT, <span class="hljs-literal">NULL</span>);
+</code></pre></div></code></pre>
+<p>第三步里 <code>gbm_bo_get_handle(bo).u32</code> 那个联合体成员值得看一眼：它是 GBM 把 GEM handle 透出来的通道。GBM 自己不发明 buffer 标识，它就是 GEM handle 的一层包装。</p>
+<h3 id="7.3-格式修饰符" tabindex="-1">7.3 格式修饰符 <a class="header-anchor" href="#7.3-格式修饰符"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>现代 GPU 的 framebuffer 在内存里不是线性排布的，有的按 4x4 块平铺（tiling），有的压缩，有的分块交错。这些布局用「格式修饰符」（format modifier）描述，一个 64 位整数，高 8 位是厂商码，低位是布局细节。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">uint64_t</span> modifier = gbm_bo_get_modifier(bo);
+<span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;modifier = 0x%016lx\n&quot;</span>, modifier);   <span class="hljs-comment">/* 0x0 是线性排布 */</span>
+</code></pre></div></code></pre>
+<p>修饰符不对的后果很具体：GBM 按线性布局分配，GPU 按平铺布局渲染，屏幕上出现横条纹或者完全错位的色块。<code>drmModeAddFB2WithModifiers</code> 就是为这个存在的——它把修饰符一起告诉内核，让扫描输出端按同样的布局去读。<code>modetest</code> 的 <code>@</code> 格式参数也支持写修饰符，调试时可以强制指定某种布局，验证是不是这里协商出了问题。</p>
+<p>GBM 和 Wayland 常被放在一起讲，实际没有依赖关系。compositor 同时用两者，是因为它需要用 Wayland 跟客户端说话、用 GBM 分配自己的扫描输出 buffer。一个只用 DRM 不用 Wayland 的裸机播放器，照样需要 GBM；一个跑在 X11 上的程序，完全碰不到 GBM。</p>
+<h2 id="八egl跨平台的图形接口" tabindex="-1">八、EGL：跨平台的图形接口 <a class="header-anchor" href="#八egl跨平台的图形接口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>EGL 是 Khronos 渲染 API（OpenGL、OpenGL ES、OpenVG）与底层本地平台窗口系统之间的接口。它自己不做渲染，负责的是三件事：<strong>图形上下文管理、Buffer 管理、渲染同步</strong>。</p>
+<p>把它理解成一层适配层更准确。上面是 GL 的状态机，下面可以是 X11 窗口、Wayland surface、GBM surface、pbuffer，甚至是完全离屏的像素缓冲。EGL 的职责是把这两种世界对上，让同一份 GL 代码能在四种平台上跑。</p>
+<h3 id="8.1-四个对象" tabindex="-1">8.1 四个对象 <a class="header-anchor" href="#8.1-四个对象"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">对象</th>
+<th style="text-align:left">含义</th>
+<th style="text-align:left">关键点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">EGLDisplay</td>
+<td style="text-align:left">对实际显示设备/窗口系统的抽象</td>
+<td style="text-align:left">一切操作的入口，先拿到它</td>
+</tr>
+<tr>
+<td style="text-align:left">EGLConfig</td>
+<td style="text-align:left">一组能力描述：RGBA 位宽、深度、模板、采样数</td>
+<td style="text-align:left">由 <code>eglChooseConfig</code> 从一堆候选里筛</td>
+</tr>
+<tr>
+<td style="text-align:left">EGLSurface</td>
+<td style="text-align:left">存储图像的内存区域</td>
+<td style="text-align:left">窗口表面、pbuffer、pixmap 三种</td>
+</tr>
+<tr>
+<td style="text-align:left">EGLContext</td>
+<td style="text-align:left">存储渲染 API 的状态信息</td>
+<td style="text-align:left">每个线程同时只能绑一个</td>
+</tr>
+</tbody>
+</table></div><p><code>EGLConfig</code> 是最容易忽略的一个。它不是「你创建的」，是「你挑的」——驱动报出一堆配置，你按需求筛出第一个满足的。筛的条件写错，比如要求 32 位 alpha 但屏幕只支持 XRGB，<code>eglChooseConfig</code> 返回零个匹配，后面 <code>eglCreateWindowSurface</code> 拿着一个无效 config 直接失败。</p>
+<h3 id="8.2-一套标准的-egl-绘制流程" tabindex="-1">8.2 一套标准的 EGL 绘制流程 <a class="header-anchor" href="#8.2-一套标准的-egl-绘制流程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>十二步，顺序固定：</p>
+<ol>
+<li>获取 EGLDisplay 对象：<code>eglGetDisplay</code></li>
+<li>初始化与 EGLDisplay 之间的连接：<code>eglInitialize</code></li>
+<li>获取 EGLConfig 对象：<code>eglChooseConfig</code> / <code>eglGetConfigs</code></li>
+<li>创建 EGLContext 实例：<code>eglCreateContext</code></li>
+<li>创建 EGLSurface 实例：<code>eglCreateWindowSurface</code> / <code>eglCreatePbufferSurface</code></li>
+<li>连接 EGLContext 和 EGLSurface：<code>eglMakeCurrent</code></li>
+<li>使用 OpenGL ES API 绘制图形：<code>gl*</code></li>
+<li>切换 front buffer 和 back buffer 显示：<code>eglSwapBuffers</code></li>
+<li>断开 EGLSurface 关联的 EGLContext：<code>eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT)</code></li>
+<li>删除 EGLSurface 对象：<code>eglDestroySurface</code></li>
+<li>删除 EGLContext 对象：<code>eglDestroyContext</code></li>
+<li>终止与 EGLDisplay 之间的连接：<code>eglTerminate</code></li>
+</ol>
+<p>落成代码：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>EGLDisplay dpy = eglGetDisplay((EGLNativeDisplayType)gbm_device);
+<span class="hljs-keyword">if</span> (dpy == EGL_NO_DISPLAY) { <span class="hljs-comment">/* 拿不到 display，链路第一环就断了 */</span> }
+
+EGLint major, minor;
+<span class="hljs-keyword">if</span> (!eglInitialize(dpy, &amp;major, &amp;minor))
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;eglInitialize: 0x%x\n&quot;</span>, eglGetError());
+
+EGLint cfg_attr[] = {
+    EGL_SURFACE_TYPE,    EGL_WINDOW_BIT,
+    EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+    EGL_RED_SIZE, <span class="hljs-number">8</span>, EGL_GREEN_SIZE, <span class="hljs-number">8</span>, EGL_BLUE_SIZE, <span class="hljs-number">8</span>, EGL_ALPHA_SIZE, <span class="hljs-number">0</span>,
+    EGL_NONE
+};
+EGLConfig cfg;
+EGLint n = <span class="hljs-number">0</span>;
+eglChooseConfig(dpy, cfg_attr, &amp;cfg, <span class="hljs-number">1</span>, &amp;n);
+<span class="hljs-keyword">if</span> (n == <span class="hljs-number">0</span>) { <span class="hljs-comment">/* 没有满足条件的配置，多半是属性写太严 */</span> }
+
+EGLint ctx_attr[] = { EGL_CONTEXT_CLIENT_VERSION, <span class="hljs-number">2</span>, EGL_NONE };
+EGLContext ctx = eglCreateContext(dpy, cfg, EGL_NO_CONTEXT, ctx_attr);
+EGLSurface surf = eglCreateWindowSurface(dpy, cfg,
+                                         (EGLNativeWindowType)gbm_surface,
+                                         <span class="hljs-literal">NULL</span>);
+
+eglMakeCurrent(dpy, surf, surf, ctx);
+<span class="hljs-comment">/* ... 这里是 gl* 调用的地盘 ... */</span>
+eglSwapBuffers(dpy, surf);
+</code></pre></div></code></pre>
+<p>两个细节。<code>eglSwapBuffers</code> 是带 s 的复数形式，素材里写作 <code>eglSwapBuffer</code>、<code>eglCratePbufferSurface</code>、<code>eglRelease</code> 的地方都是笔误，正确拼写是 <code>eglSwapBuffers</code>、<code>eglCreatePbufferSurface</code>，最后那个「释放」动作由 <code>eglMakeCurrent</code> 传入 <code>EGL_NO_CONTEXT</code> 完成，没有单独的 <code>eglRelease</code>。<code>eglMakeCurrent</code> 的 draw 和 read 参数这里都传 <code>surf</code>，只做离屏渲染时传 <code>EGL_NO_SURFACE</code> 配一个 pbuffer 上下文。</p>
+<h3 id="8.3-拿-display-的三种方式" tabindex="-1">8.3 拿 Display 的三种方式 <a class="header-anchor" href="#8.3-拿-display-的三种方式"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>EGLDisplay <span class="hljs-title function_">eglGetDisplay</span><span class="hljs-params">(NativeDisplayType native_display)</span>;
+EGLDisplay <span class="hljs-title function_">eglGetPlatformDisplay</span><span class="hljs-params">(EGLenum platform, <span class="hljs-type">void</span> *native_display,
+                                 <span class="hljs-type">const</span> EGLAttrib *attrib_list)</span>;
+EGLDisplay <span class="hljs-title function_">eglGetPlatformDisplayEXT</span><span class="hljs-params">(EGLenum platform, <span class="hljs-type">void</span> *native_display,
+                                    <span class="hljs-type">const</span> EGLint *attrib_list)</span>;
+</code></pre></div></code></pre>
+<p>三者的差别在「平台是谁决定的」。<code>eglGetDisplay</code> 根据当前环境推断默认的原生窗口系统——有 <code>WAYLAND_DISPLAY</code> 就走 Wayland，有 <code>DISPLAY</code> 就走 X11。后两个必须显式指定平台，行为可预测。</p>
+<p>compositor 的处境特殊：它相当于裸机运行，没有窗口环境，环境变量一个都没有，<code>eglGetDisplay</code> 无从推断。所以它必须走 GBM 或者 <code>EGL_PLATFORM_DEVICE_EXT</code> 扩展这两条路之一来获取 EGLDisplay。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 三条等效写法，从 GBM 拿 display */</span>
+display = eglGetDisplay((EGLNativeDisplayType)gbm_device);
+display = eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR, gbm_device, <span class="hljs-literal">NULL</span>);
+display = eglGetPlatformDisplayEXT(EGL_PLATFORM_GBM_MESA, gbm_device, <span class="hljs-literal">NULL</span>);
+</code></pre></div></code></pre>
+<p>三个平台枚举值要分清：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">枚举</th>
+<th style="text-align:left">谁定义</th>
+<th style="text-align:left">用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>EGL_PLATFORM_GBM_KHR</code></td>
+<td style="text-align:left">Khronos 扩展</td>
+<td style="text-align:left">通用 GBM 平台，跨实现</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>EGL_PLATFORM_GBM_MESA</code></td>
+<td style="text-align:left">Mesa 私有</td>
+<td style="text-align:left">Mesa 的 GBM 平台，比 KHR 版本早</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>EGL_PLATFORM_DEVICE_EXT</code></td>
+<td style="text-align:left"><code>EGL_EXT_platform_device</code></td>
+<td style="text-align:left">直接指定 EGL 设备，绕开窗口系统</td>
+</tr>
+</tbody>
+</table></div><p>wlroots 里从严谨性讲，通过 GBM 获取 EGL Display 时，<code>eglGetPlatformDisplayEXT</code> 后面跟的参数应该是 <code>EGL_PLATFORM_GBM_MESA</code> 而不是 <code>EGL_PLATFORM_GBM_KHR</code>。EXT 版本是 Mesa 先实现的私有扩展，枚举值跟后来的 KHR 标准化版本不是一回事；值恰好相同是巧合，语义上该用 MESA。混用不报错，但换驱动或者换 Mesa 版本时行为会变。</p>
+<h2 id="九egl-与-opengl-es-的关系" tabindex="-1">九、EGL 与 OpenGL ES 的关系 <a class="header-anchor" href="#九egl-与-opengl-es-的关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>两者是上下层，不是同一件事。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">对比项</th>
+<th style="text-align:left">EGL</th>
+<th style="text-align:left">OpenGL ES</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">管什么</td>
+<td style="text-align:left">资源、上下文、表面、同步</td>
+<td style="text-align:left">绘制状态机与绘制调用</td>
+</tr>
+<tr>
+<td style="text-align:left">谁调用谁</td>
+<td style="text-align:left">先 EGL，后 GL</td>
+<td style="text-align:left">GL 必须在 EGL 之后</td>
+</tr>
+<tr>
+<td style="text-align:left">依赖窗口系统吗</td>
+<td style="text-align:left">依赖，需要平台适配</td>
+<td style="text-align:left">不依赖，纯 GPU</td>
+</tr>
+<tr>
+<td style="text-align:left">头文件与库</td>
+<td style="text-align:left"><code>&lt;EGL/egl.h&gt;</code>，<code>-lEGL</code></td>
+<td style="text-align:left"><code>&lt;GLES2/gl2.h&gt;</code>，<code>-lGLESv2</code></td>
+</tr>
+</tbody>
+</table></div><p>一句话：<strong>EGL 决定「在哪儿画、画到哪块内存」，GL 决定「画成什么样」</strong>。所以 EGL 出错时症状是「根本没画面」，GL 出错时症状是「有画面但画错了」。</p>
+<h3 id="9.1-一个常被问的问题mesa-project-是不是软件渲染" tabindex="-1">9.1 一个常被问的问题：Mesa Project 是不是软件渲染 <a class="header-anchor" href="#9.1-一个常被问的问题mesa-project-是不是软件渲染"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>跑 <code>eglinfo</code> 或者任何查 EGL 信息的程序，看到 <code>EGL_VENDOR</code> 输出 <code>Mesa Project</code>，第一反应往往是「我是不是没用上显卡」。这个判断需要更细的证据。</p>
+<p>Mesa 源码 <code>src/egl/main/egldefines.h</code> 里定义了 <code>EGL_VENDOR</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> _EGL_VENDOR_STRING <span class="hljs-string">&quot;Mesa Project&quot;</span></span>
+</code></pre></div></code></pre>
+<p>输出 Mesa Project 说明你连的是 Mesa 的 <code>libEGL.so</code>，确认输出无误——<strong>这个字符串跟走硬件还是走软件无关</strong>。Mesa 的硬件驱动和软件驱动共用同一个 EGL 前端，vendor 串是前端填的。</p>
+<p>真正能分辨的是 <code>EGL_RENDERER</code> 和 GL 侧的 <code>GL_RENDERER</code>：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ eglinfo 2&gt;/dev/null | <span class="hljs-built_in">head</span> -6
+EGL client APIs: OpenGL OpenGL_ES
+EGL vendor string: Mesa Project
+...
+OpenGL ES 2.0 Renderer: Mali-T860          <span class="hljs-comment"># 这一行才是结论</span>
+
+$ glxinfo -B | grep -E <span class="hljs-string">&#x27;OpenGL renderer&#x27;</span>
+OpenGL renderer string: llvmpipe (LLVM 15.0.7, 256 bits)
+</code></pre></div></code></pre>
+<p><code>llvmpipe</code>、<code>softpipe</code>、<code>swrast</code> 这三个名字出现，才是软件渲染的铁证。看到 GPU 型号，就是硬件路径。这条串的来历在 askubuntu 上有完整讨论：<a href="https://askubuntu.com/questions/1027168/why-is-opengl-vendor-mesa-project" target="_blank" rel="noopener noreferrer">Why is OpenGL vendor Mesa Project</a>。</p>
+<h3 id="9.2-glxinfo-的视野有限" tabindex="-1">9.2 glxinfo 的视野有限 <a class="header-anchor" href="#9.2-glxinfo-的视野有限"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>glxinfo</code> 告诉你的是「你正在跑的这个 X11 server 用的是哪套 GL」，它不告诉你「一个不走 X11 的程序会用哪套 GL」。桌面里跑着 Xorg，Mesa 通过 GLX 走 i915 硬件驱动，<code>glxinfo</code> 报硬件渲染器；同一个机器上跑一个直接用 GBM + EGL、环境里没有 <code>DISPLAY</code> 的程序，它连的是另一个 EGL 显示，落到软件渲染也正常。</p>
+<p>Nvidia 的机器上这个差异更明显：装了闭源驱动之后，<code>libEGL.so</code> 往往有多份（Mesa 一份在 <code>/usr/lib</code>，Nvidia 一份在 <code>/usr/lib/nvidia-xxx</code>），谁先被 <code>ld.so</code> 找到取决于链接路径和具体程序的需要。</p>
+<h3 id="9.3-一条完整的排查链" tabindex="-1">9.3 一条完整的排查链 <a class="header-anchor" href="#9.3-一条完整的排查链"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>显卡是 Nvidia，<code>EGL_VENDOR</code> 报 Mesa Project，<code>eglChooseConfig</code> 拿不到想要的配置。按这个顺序查：</p>
+<ol>
+<li><strong>确认 EGL 实现是谁</strong>：<code>ldd ./your_app | grep -E 'EGL|GL'</code>，看加载的是 Nvidia 的库还是 Mesa 的。</li>
+<li><strong>确认渲染器是谁</strong>：查 <code>EGL_RENDERER</code> 或 <code>GL_RENDERER</code>，出现 llvmpipe 就是软件路径。</li>
+<li><strong>确认设备节点权限</strong>：<code>ls -l /dev/dri/</code>，当前用户是否在 <code>video</code> 和 <code>render</code> 组里。</li>
+<li><strong>确认 config 需求是否合理</strong>：属性里要求了 <code>EGL_ALPHA_SIZE 8</code> 但硬件只支持 XRGB，就会零匹配。</li>
+</ol>
+<p>结论有两条。其一，没有正确启用显卡，EGL 采用了 Mesa 软件渲染，因而提供不了正确的 config——第 2、3 步给的就是这个证据。其二，这条路走不通就该换：走 GLX 让 X server 帮忙选实现，或者切到 Wayland 会话，让 compositor 从 GBM 初始化 EGL。两条都比在 X11 + EGL 上死磕厂商驱动容易。</p>
+<h2 id="十wayland-与-x11-下的图形路径差异" tabindex="-1">十、Wayland 与 X11 下的图形路径差异 <a class="header-anchor" href="#十wayland-与-x11-下的图形路径差异"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>同一份渲染代码，换个显示服务器，底下走的路径完全不同。差异的根子在<strong>谁负责合成</strong>。</p>
+<h3 id="10.1-四条关系" tabindex="-1">10.1 四条关系 <a class="header-anchor" href="#10.1-四条关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>Wayland 与 DRM</strong>：Wayland 是图形显示服务器协议，DRM 是 Linux 内核中管理图形硬件驱动的子系统。在 Wayland 里，客户端应用通过 Wayland 协议与显示服务器通信，而 Wayland 服务器（compositor）通过 DRM 接口与底层图形硬件交互。</p>
+<p><strong>DRM 与 GBM</strong>：DRM 管硬件驱动，GBM 是用户态库，提供一套标准接口用于分配、管理和操作图形内存，与 DRM 配合使用。应用用 GBM 接口分配和管理缓冲区，以便做硬件加速渲染。GBM 与 Wayland 无直接关联，特定场景下才会一起用。</p>
+<p><strong>GBM 与 EGL</strong>：两者结合使用，在硬件加速渲染中创建和管理图形表面。EGL 提供通用接口，用于创建和管理 OpenGL、OpenGL ES 的上下文、表面和相关对象。</p>
+<p><strong>EGL 与 OpenGL API</strong>：EGL 管理上下文和表面，应用才能用 OpenGL API 做图形操作；它提供标准接口，在不同图形系统里创建和管理上下文与表面，实现跨平台渲染。</p>
+<p>四条串起来就是接力链：<code>Wayland 协议 → compositor → GBM 分配 → EGL 初始化 → GL 绘制 → DRM 提交</code>。</p>
+<h3 id="10.2-两条路径的对比" tabindex="-1">10.2 两条路径的对比 <a class="header-anchor" href="#10.2-两条路径的对比"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>X11 路径：
+  应用 → GLX/EGL → X server（DRI3 传 dma-buf）→ X server 合成 → DRM 提交
+                     ↑ buffer 由 X server 或驱动分配
+
+Wayland 路径：
+  应用 → EGL(GBM) → 自己渲染到 gbm_bo → wl_surface 提交 dma-buf
+                                        → compositor 合成 → DRM 提交
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">对比项</th>
+<th style="text-align:left">X11</th>
+<th style="text-align:left">Wayland</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">谁分配扫描输出 buffer</td>
+<td style="text-align:left">X server</td>
+<td style="text-align:left">客户端自己（经 GBM）或 compositor</td>
+</tr>
+<tr>
+<td style="text-align:left">buffer 怎么给出去</td>
+<td style="text-align:left">DRI3 传 dma-buf fd，Present 扩展提交</td>
+<td style="text-align:left"><code>wl_surface.attach</code> 传 dma-buf</td>
+</tr>
+<tr>
+<td style="text-align:left">合成在哪</td>
+<td style="text-align:left">X server 或 compositor</td>
+<td style="text-align:left">compositor 独占</td>
+</tr>
+<tr>
+<td style="text-align:left">swap 语义</td>
+<td style="text-align:left">双缓冲，会撕裂</td>
+<td style="text-align:left">隐式同步，compositor 决定何时上屏</td>
+</tr>
+<tr>
+<td style="text-align:left">客户端的 GL 接口</td>
+<td style="text-align:left">GLX 为主，EGL 为辅</td>
+<td style="text-align:left">EGL 为主，GLX 用不上</td>
+</tr>
+<tr>
+<td style="text-align:left">环境变量</td>
+<td style="text-align:left"><code>DISPLAY=:0</code></td>
+<td style="text-align:left"><code>WAYLAND_DISPLAY=wayland-0</code></td>
+</tr>
+<tr>
+<td style="text-align:left">没被合成时的现象</td>
+<td style="text-align:left">窗口黑块、花屏</td>
+<td style="text-align:left">客户端卡在 <code>wl_display_dispatch</code></td>
+</tr>
+</tbody>
+</table></div><p>最本质的一行：<strong>X11 下 buffer 的归属由 X server 决定，Wayland 下由客户端自己决定</strong>。所以 Wayland 客户端必须懂 GBM，X11 客户端可以完全不懂。</p>
+<h3 id="10.3-怎么知道自己现在在哪条路径上" tabindex="-1">10.3 怎么知道自己现在在哪条路径上 <a class="header-anchor" href="#10.3-怎么知道自己现在在哪条路径上"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ <span class="hljs-built_in">echo</span> <span class="hljs-string">&quot;DISPLAY=<span class="hljs-variable">$DISPLAY</span>  WAYLAND_DISPLAY=<span class="hljs-variable">$WAYLAND_DISPLAY</span>&quot;</span>
+DISPLAY=:0  WAYLAND_DISPLAY=wayland-0
+$ loginctl show-session <span class="hljs-variable">$XDG_SESSION_ID</span> -p Type
+Type=wayland
+</code></pre></div></code></pre>
+<p>两个变量都在，说明这是 Wayland 会话下的 XWayland，走 X11 的程序被 XWayland 接住，多一层转发。想把程序强制切到原生 Wayland，<code>unset DISPLAY</code> 再跑，或者用程序自己的 backend 参数（GTK 是 <code>GDK_BACKEND=wayland</code>，Qt 是 <code>QT_QPA_PLATFORM=wayland</code>）。调试显示问题前先确认自己在哪条路径上，对着 Wayland 会话调 <code>xrandr</code> 改不动任何东西。</p>
+<h2 id="十一modetest查看与测试显示" tabindex="-1">十一、modetest：查看与测试显示 <a class="header-anchor" href="#十一modetest查看与测试显示"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>modetest</code> 是 libdrm 自带的测试工具，直接对 <code>/dev/dri/cardN</code> 打 ioctl，不依赖 X server，也不依赖 Wayland。板子上没有桌面、串口登录，能用的显示工具就它一个。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">选项</th>
+<th style="text-align:left">作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>-M &lt;module&gt;</code></td>
+<td style="text-align:left">指定驱动模块名，如 <code>rockchip</code>、<code>i915</code>、<code>msm</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>-D &lt;device&gt;</code></td>
+<td style="text-align:left">直接指定设备节点；和 <code>-M</code> 二选一</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>-c</code></td>
+<td style="text-align:left">列出所有 connector</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>-e</code></td>
+<td style="text-align:left">列出所有 encoder</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>-p</code></td>
+<td style="text-align:left">列出所有 CRTC 和 plane</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>-f</code></td>
+<td style="text-align:left">列出所有 framebuffer</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>-a</code></td>
+<td style="text-align:left">完整资源树，含全部属性</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>-s &lt;conn&gt;[@&lt;crtc&gt;]:&lt;mode&gt;</code></td>
+<td style="text-align:left">给指定 connector 设置模式</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>-w &lt;obj&gt;:&lt;prop&gt;:&lt;value&gt;</code></td>
+<td style="text-align:left">设置任意属性</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>-P &lt;crtc&gt;:&lt;w&gt;x&lt;h&gt;[@&lt;fmt&gt;]</code></td>
+<td style="text-align:left">在指定 CRTC 上配一个 plane</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>-d</code></td>
+<td style="text-align:left">设完模式就 drop master，方便接力</td>
+</tr>
+</tbody>
+</table></div><h3 id="11.1-先看有哪些屏" tabindex="-1">11.1 先看有哪些屏 <a class="header-anchor" href="#11.1-先看有哪些屏"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ modetest -M rockchip -c
+Connectors:
+<span class="hljs-built_in">id</span>      encoder status          name            size (mm)       modes   encoders
+38      37      connected       HDMI-A-1        520x320         14      37
+41      0       disconnected    DP-1            0x0             0       40
+</code></pre></div></code></pre>
+<p>这五行信息量很大。<code>id 38</code> 是 connector 号，后面 <code>-s</code> 要用。<code>encoder 37</code> 是它当前挂的 encoder——非 0 说明这条链路已经配上了。<code>status connected</code> 表示插着线并且协商成功。<code>modes 14</code> 表示 EDID 报上来 14 个可用模式。<code>encoders 37</code> 是这个 connector 能用的 encoder 列表。</p>
+<p><code>disconnected</code> 的那个口照样出现在表里，<code>encoder 0</code>、<code>modes 0</code>，这就是前面 <code>modeset_setup_dev</code> 要返回 <code>-ENOENT</code> 的原因——不筛掉它，后面选 CRTC 必然失败。</p>
+<p><code>modetest -M rockchip -c -s 38</code> 会把每个模式的序号打出来，形如 <code>#0 1920x1080 60.00 Hz ... 148.500 MHz</code>。这个 <code>#0</code> 就是 <code>-s</code> 参数里 <code>&lt;mode index&gt;</code> 要填的值。</p>
+<h3 id="11.2-点一块屏" tabindex="-1">11.2 点一块屏 <a class="header-anchor" href="#11.2-点一块屏"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ modetest -M rockchip -s 38:#0                  <span class="hljs-comment"># 用第一个模式点亮 HDMI-A-1</span>
+$ modetest -M rockchip -s 38:1920x1080           <span class="hljs-comment"># 指定分辨率，刷新率由内核挑</span>
+$ modetest -M rockchip -s 38@35:1920x1080@XR24   <span class="hljs-comment"># 指定 CRTC 与像素格式</span>
+$ modetest -M rockchip -d -s 38:#0               <span class="hljs-comment"># 设完就放手，方便接着起 weston</span>
+</code></pre></div></code></pre>
+<p>设完之后屏幕上会出现一个彩条测试图，那是 <code>modetest</code> 自己画的。看到彩条，说明从 DRM 到接口到屏这一整条路是通的，问题只出在应用层。没看到彩条，说明 DRM 以下就有问题，往上查没有意义。</p>
+<p>改模式之前有个坑：<code>modetest</code> 退出时默认不恢复原状。在跑着桌面的机器上这么搞，桌面会停在错误的分辨率上。切到文本 VT 再做，或者用 <code>-d</code>。</p>
+<h3 id="11.3-改属性和-plane" tabindex="-1">11.3 改属性和 plane <a class="header-anchor" href="#11.3-改属性和-plane"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ modetest -M rockchip -w 38:DPMS:off                      <span class="hljs-comment"># 关掉这块屏</span>
+$ modetest -M rockchip -w 38:DPMS:on                       <span class="hljs-comment"># 再打开</span>
+$ modetest -M rockchip -P 35@19:640x480+100+100@XR24       <span class="hljs-comment"># fb 19 贴到 CRTC 35 的 (100,100)</span>
+$ modetest -M rockchip -f                                  <span class="hljs-comment"># 列出所有 framebuffer</span>
+</code></pre></div></code></pre>
+<p><code>-w</code> 是万能的。凡是 <code>-a</code> 输出里能看到的属性，都能用 <code>-w</code> 改。调试色彩问题改 <code>gamma</code>，调试叠层问题改 plane 的 <code>zpos</code>，验证硬件光标改 <code>CURSOR_W</code>、<code>CURSOR_H</code>。</p>
+<h2 id="十二xrandrx11-下的显示配置" tabindex="-1">十二、xrandr：X11 下的显示配置 <a class="header-anchor" href="#十二xrandrx11-下的显示配置"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>xrandr</code> 是 X11 的 RandR 扩展客户端。它只对 X server 说话，所以在 Wayland 会话里跑它，要么连不上、要么改的是 XWayland 的虚拟屏，看不到效果。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ xrandr
+Screen 0: minimum 320 x 200, current 1920 x 1080, maximum 8192 x 8192
+HDMI-1 connected primary 1920x1080+0+0 (normal left inverted right x axis y axis) 520mm x 320mm
+   1920x1080     60.00*+  59.94    50.00
+   1280x720      60.00    59.94
+DP-1 disconnected (normal left inverted right x axis y axis)
+</code></pre></div></code></pre>
+<p>读懂这几行：<code>current 1920 x 1080</code> 是当前整屏尺寸；<code>HDMI-1 connected primary</code> 表示接上了且是主屏；<code>1920x1080+0+0</code> 里的 <code>+0+0</code> 是这块屏在整个画布里的偏移；<code>60.00*+</code> 里星号是当前模式，加号是首选模式；下面缩进的就是可选模式列表。</p>
+<h3 id="12.1-常用命令" tabindex="-1">12.1 常用命令 <a class="header-anchor" href="#12.1-常用命令"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ xrandr --output HDMI-1 --mode 1920x1080        <span class="hljs-comment"># 改分辨率</span>
+$ xrandr --output HDMI-1 --mode 1920x1080 --rate 59.94   <span class="hljs-comment"># 改刷新率</span>
+$ xrandr --output HDMI-1 --auto                  <span class="hljs-comment"># 自动挑一个模式</span>
+$ xrandr --output DP-1 --off                     <span class="hljs-comment"># 关掉一个输出</span>
+$ xrandr --output HDMI-1 --primary               <span class="hljs-comment"># 设主屏</span>
+$ xrandr --output HDMI-1 --rotate left           <span class="hljs-comment"># 旋转</span>
+$ xrandr --fb 3840x1080                          <span class="hljs-comment"># 虚拟画布，双屏要够大</span>
+$ xrandr --output DP-1 --mode 1920x1080 --output HDMI-1 --mode 1920x1080 --right-of DP-1
+$ xrandr --output DP-1 --mode 1920x1080 --output HDMI-1 --mode 1920x1080 --same-as DP-1
+</code></pre></div></code></pre>
+<p>最后两条是双屏扩展和双屏镜像。扩展时 <code>--right-of DP-1</code> 决定 HDMI-1 摆在哪一侧，镜像用 <code>--same-as</code> 让两个输出共享同一块画布区域。</p>
+<p>素材里记过一条配合用法：<code>xrandr --output HDMI-1 --mode 1920x1080 | ./a.out</code>。这里的管道符要改成 <code>&amp;&amp;</code>——<code>xrandr</code> 的 stdout 是一行行文本，不是可执行内容，管道过去等于把输出喂给 <code>a.out</code> 的 stdin。想要「先改分辨率再跑程序」，写成 <code>xrandr --output HDMI-1 --mode 1920x1080 &amp;&amp; ./a.out</code>，这样 <code>xrandr</code> 返回 0 之后才启动程序。用管道的话，两个进程同时启动，程序先跑起来，分辨率还没改完，测出来的结果不可信。</p>
+<h3 id="12.2-modetest-与-xrandr-的分工" tabindex="-1">12.2 modetest 与 xrandr 的分工 <a class="header-anchor" href="#12.2-modetest-与-xrandr-的分工"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">对比项</th>
+<th style="text-align:left"><code>modetest</code></th>
+<th style="text-align:left"><code>xrandr</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">依赖</td>
+<td style="text-align:left">只要 DRM 设备节点</td>
+<td style="text-align:left">必须有 X server</td>
+</tr>
+<tr>
+<td style="text-align:left">层</td>
+<td style="text-align:left">直接打 KMS ioctl</td>
+<td style="text-align:left">通过 RandR 扩展，间接改 KMS</td>
+</tr>
+<tr>
+<td style="text-align:left">Wayland 下能用吗</td>
+<td style="text-align:left">能（要抢 master）</td>
+<td style="text-align:left">不能</td>
+</tr>
+<tr>
+<td style="text-align:left">能看属性、能设 plane 吗</td>
+<td style="text-align:left">能，<code>-a</code> 全列，<code>-P</code> 直接配</td>
+<td style="text-align:left">只能看 RandR 暴露的那部分，plane 碰不到</td>
+</tr>
+<tr>
+<td style="text-align:left">典型用途</td>
+<td style="text-align:left">裸机验证、板级 bring-up</td>
+<td style="text-align:left">桌面里调多屏布局</td>
+</tr>
+</tbody>
+</table></div><p>一句话分界：<strong>没有 X server 用 <code>modetest</code>，有 X server 用 <code>xrandr</code></strong>。两者改的都是同一份内核状态，只是入口不同。</p>
+<h2 id="十三其他调试手段" tabindex="-1">十三、其他调试手段 <a class="header-anchor" href="#十三其他调试手段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>除了上面两个大件，这些工具在具体场景里更快。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">工具或文件</th>
+<th style="text-align:left">看什么</th>
+<th style="text-align:left">怎么用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>drm_info</code></td>
+<td style="text-align:left">整棵 KMS 对象树，比 <code>modetest -a</code> 更整齐</td>
+<td style="text-align:left"><code>drm_info</code></td>
+</tr>
+<tr>
+<td style="text-align:left">sysfs 的 status</td>
+<td style="text-align:left">connector 有没有插上</td>
+<td style="text-align:left"><code>cat /sys/class/drm/card0-HDMI-A-1/status</code></td>
+</tr>
+<tr>
+<td style="text-align:left">sysfs 的 modes</td>
+<td style="text-align:left">EDID 报上来的模式</td>
+<td style="text-align:left"><code>cat /sys/class/drm/card0-HDMI-A-1/modes</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>edid-decode</code></td>
+<td style="text-align:left">EDID 原始内容，查时序和支持格式</td>
+<td style="text-align:left"><code>edid-decode /sys/class/drm/card0-HDMI-A-1/edid</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>dmesg</code></td>
+<td style="text-align:left">驱动初始化的报错、链路训练结果</td>
+<td style="text-align:left"><code>dmesg</code> 里搜 drm、hdmi、edid 三个关键字</td>
+</tr>
+<tr>
+<td style="text-align:left">debugfs 的 state</td>
+<td style="text-align:left">内核视角下每个 CRTC 的当前状态</td>
+<td style="text-align:left"><code>cat /sys/kernel/debug/dri/0/state</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>eglinfo</code> / <code>glxinfo -B</code></td>
+<td style="text-align:left">EGL 实现与 X11 下的 GL 渲染器</td>
+<td style="text-align:left"><code>eglinfo</code>、<code>glxinfo -B</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>weston-info</code></td>
+<td style="text-align:left">Wayland compositor 报的能力</td>
+<td style="text-align:left"><code>weston-info</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>v4l2-ctl --list-devices</code></td>
+<td style="text-align:left">带 HDMI 输入的板子，确认输入通路</td>
+<td style="text-align:left"><code>v4l2-ctl --list-devices</code></td>
+</tr>
+</tbody>
+</table></div><p>其中 <code>drm_info</code> 值得单独装一个。它按对象层级把 connector、encoder、CRTC、plane 和它们的属性全列出来，比 <code>modetest</code> 的原始输出好读得多，查「这个 plane 到底支持哪些格式」这类问题时几乎是一眼的事。</p>
+<h2 id="十四常见故障与现象" tabindex="-1">十四、常见故障与现象 <a class="header-anchor" href="#十四常见故障与现象"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>屏幕不亮的原因可以有很多层，但症状和原因的对应关系相当固定。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">现象</th>
+<th style="text-align:left">最常见的原因</th>
+<th style="text-align:left">先查什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>/dev/dri/card0</code> 不存在</td>
+<td style="text-align:left">驱动没加载，或没编进内核</td>
+<td style="text-align:left"><code>dmesg</code>、<code>lsmod</code>、<code>/sys/class/drm</code></td>
+</tr>
+<tr>
+<td style="text-align:left">打开设备返回 <code>EACCES</code></td>
+<td style="text-align:left">用户不在 <code>video</code> / <code>render</code> 组</td>
+<td style="text-align:left"><code>id</code>、<code>ls -l /dev/dri/</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>modetest</code> 报 <code>Permission denied</code></td>
+<td style="text-align:left">别的进程拿着 DRM master</td>
+<td style="text-align:left">停掉桌面，或切文本 VT</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>connected</code> 但 <code>modes 0</code></td>
+<td style="text-align:left">EDID 读不到</td>
+<td style="text-align:left">换线、查 <code>edid-decode</code></td>
+</tr>
+<tr>
+<td style="text-align:left">一直是 <code>disconnected</code></td>
+<td style="text-align:left">线、口、HPD 检测</td>
+<td style="text-align:left">换线换口；查 <code>dmesg</code> 的 HPD 日志</td>
+</tr>
+<tr>
+<td style="text-align:left">commit 返回 <code>EINVAL</code></td>
+<td style="text-align:left">CRTC/encoder/plane 组合不合法</td>
+<td style="text-align:left">查 <code>possible_crtcs</code> 位图</td>
+</tr>
+<tr>
+<td style="text-align:left">屏幕亮但全黑</td>
+<td style="text-align:left">plane 的 <code>FB_ID</code> 是 0，或 CRTC 没 <code>ACTIVE</code></td>
+<td style="text-align:left"><code>modetest -p</code> 看属性</td>
+</tr>
+<tr>
+<td style="text-align:left">花屏、横条纹</td>
+<td style="text-align:left">格式或修饰符不匹配</td>
+<td style="text-align:left">格式改 <code>XR24</code> 试，查 modifier</td>
+</tr>
+<tr>
+<td style="text-align:left">画面斜切、错位</td>
+<td style="text-align:left">按 width 算行偏移，没用 pitch</td>
+<td style="text-align:left">代码里改成 <code>pitch * y + x * 4</code></td>
+</tr>
+<tr>
+<td style="text-align:left">能画但撕裂</td>
+<td style="text-align:left">没走翻页，直接写前台缓冲</td>
+<td style="text-align:left">用 <code>drmModePageFlip</code> 或 atomic commit</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>eglInitialize</code> 失败</td>
+<td style="text-align:left">display 拿错，或平台枚举不匹配</td>
+<td style="text-align:left">打印 <code>eglGetError()</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>eglChooseConfig</code> 返回 0 个</td>
+<td style="text-align:left">属性要求超过硬件能力</td>
+<td style="text-align:left">放宽 alpha、depth、samples</td>
+</tr>
+<tr>
+<td style="text-align:left">渲染器是 llvmpipe</td>
+<td style="text-align:left">落到软件渲染</td>
+<td style="text-align:left">查 <code>ldd</code> 加载了哪份 <code>libEGL</code></td>
+</tr>
+<tr>
+<td style="text-align:left">程序卡在 <code>wl_display_dispatch</code></td>
+<td style="text-align:left">compositor 没给 buffer 反馈</td>
+<td style="text-align:left">查 surface 提交和 fence</td>
+</tr>
+</tbody>
+</table></div><p>这张表按「从下往上」的顺序排——先查设备节点和权限，再查 KMS 对象组合，最后查应用层。顺序反了会浪费很多时间，因为上层的一切报错都是底层没通导致的。</p>
+<h2 id="十五易错点速查" tabindex="-1">十五、易错点速查 <a class="header-anchor" href="#十五易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">易错点</th>
+<th style="text-align:left">为什么错</th>
+<th style="text-align:left">正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">把 DRM、GBM、EGL 当成三选一</td>
+<td style="text-align:left">它们是接力关系</td>
+<td style="text-align:left">DRM 管显示与显存，GBM 分配 buffer，EGL 接应用</td>
+</tr>
+<tr>
+<td style="text-align:left">以为 EGL 会画像素</td>
+<td style="text-align:left">EGL 只安排资源和同步</td>
+<td style="text-align:left">绘制是 GL 实现的事</td>
+</tr>
+<tr>
+<td style="text-align:left">以为 <code>EGL_VENDOR</code> 是 Mesa Project 就是软件渲染</td>
+<td style="text-align:left">厂商串由 EGL 前端填，跟硬件无关</td>
+<td style="text-align:left">看 <code>GL_RENDERER</code> 是不是 llvmpipe</td>
+</tr>
+<tr>
+<td style="text-align:left">用 <code>card0</code> 做纯渲染</td>
+<td style="text-align:left">会和显示端抢 master</td>
+<td style="text-align:left">渲染走 <code>renderD128</code></td>
+</tr>
+<tr>
+<td style="text-align:left">硬编码 <code>/dev/dri/card0</code></td>
+<td style="text-align:left">多卡机器上编号会变</td>
+<td style="text-align:left">用 libudev 枚举</td>
+</tr>
+<tr>
+<td style="text-align:left">打开设备不查 <code>DRM_CAP_DUMB_BUFFER</code></td>
+<td style="text-align:left">后续 ioctl 全失败且不好定位</td>
+<td style="text-align:left">打开后立刻 <code>drmGetCap</code> 检查</td>
+</tr>
+<tr>
+<td style="text-align:left">按 <code>width * 4</code> 算行偏移</td>
+<td style="text-align:left">驱动会把 pitch 对齐到 64/256</td>
+<td style="text-align:left">一律用 <code>pitch</code></td>
+</tr>
+<tr>
+<td style="text-align:left">先 <code>DESTROY_DUMB</code> 再 <code>RmFB</code></td>
+<td style="text-align:left">framebuffer 指向已释放内存</td>
+<td style="text-align:left">顺序反过来</td>
+</tr>
+<tr>
+<td style="text-align:left">一个 CRTC 挂两个 connector</td>
+<td style="text-align:left">硬件约束，一个 CRTC 只能带一个口</td>
+<td style="text-align:left">双屏用两个 CRTC</td>
+</tr>
+<tr>
+<td style="text-align:left">不查 <code>possible_crtcs</code> 就配</td>
+<td style="text-align:left">组合硬件不支持，commit 返回 EINVAL</td>
+<td style="text-align:left">按位图筛，再查是否被占用</td>
+</tr>
+<tr>
+<td style="text-align:left">忘了排除 <code>disconnected</code> 的 connector</td>
+<td style="text-align:left">没插屏的也会出现在资源表里</td>
+<td style="text-align:left">检查 <code>status</code> 和 <code>count_modes</code></td>
+</tr>
+<tr>
+<td style="text-align:left">混用 <code>EGL_PLATFORM_GBM_KHR</code> 与 <code>..._GBM_MESA</code></td>
+<td style="text-align:left">语义不同，换实现就变行为</td>
+<td style="text-align:left">EXT 版本用 MESA</td>
+</tr>
+<tr>
+<td style="text-align:left">在 Wayland 会话里用 <code>xrandr</code></td>
+<td style="text-align:left">改的是 XWayland，看不到效果</td>
+<td style="text-align:left">换 <code>modetest</code>，或切 X11 会话</td>
+</tr>
+<tr>
+<td style="text-align:left">用管道串 <code>xrandr</code> 和程序</td>
+<td style="text-align:left">两个进程同时启动，顺序没保证</td>
+<td style="text-align:left">用 <code>&amp;&amp;</code></td>
+</tr>
+<tr>
+<td style="text-align:left">忽略格式修饰符</td>
+<td style="text-align:left">GPU 按平铺布局渲染，屏幕出条纹</td>
+<td style="text-align:left">用 <code>drmModeAddFB2WithModifiers</code></td>
+</tr>
+<tr>
+<td style="text-align:left">commit 时随手加 <code>ALLOW_MODESET</code></td>
+<td style="text-align:left">每次提交都走重配时序的慢路径</td>
+<td style="text-align:left">只有真改分辨率才加</td>
+</tr>
+</tbody>
+</table></div><p>这十五条里有大半是同一个根源：<strong>把接力链上某一环的职责错记到另一环头上</strong>。记住 <code>connector → encoder → CRTC → plane</code> 这条下行链路，记住 buffer 从 GBM 出、显示从 KMS 出、上下文从 EGL 出，剩下的问题都能顺着链路往前找——找到哪一环开始不对，就是哪一环的事。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一一帧图像要经过哪几层" data-toc-target="一一帧图像要经过哪几层">一、一帧图像要经过哪几层</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.1-三条边界" data-toc-target="1.1-三条边界">1.1 三条边界</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.2-为什么嵌入式上要关心这些" data-toc-target="1.2-为什么嵌入式上要关心这些">1.2 为什么嵌入式上要关心这些</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二drm内核的显示与渲染管理器" data-toc-target="二drm内核的显示与渲染管理器">二、DRM：内核的显示与渲染管理器</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.1-drm-管的三类事" data-toc-target="2.1-drm-管的三类事">2.1 DRM 管的三类事</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.2-两代-ioctllegacy-与-atomic" data-toc-target="2.2-两代-ioctllegacy-与-atomic">2.2 两代 ioctl：legacy 与 atomic</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.3-打开设备的正确姿势" data-toc-target="2.3-打开设备的正确姿势">2.3 打开设备的正确姿势</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三kms显示控制" data-toc-target="三kms显示控制">三、KMS：显示控制</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.1-kms-管的东西" data-toc-target="3.1-kms-管的东西">3.1 KMS 管的东西</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.2-属性与-blob" data-toc-target="3.2-属性与-blob">3.2 属性与 blob</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.3-一次完整的模式设置" data-toc-target="3.3-一次完整的模式设置">3.3 一次完整的模式设置</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四gem显存管理" data-toc-target="四gem显存管理">四、GEM：显存管理</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.1-三个标识符" data-toc-target="4.1-三个标识符">4.1 三个标识符</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.2-gem-的-ioctl-清单" data-toc-target="4.2-gem-的-ioctl-清单">4.2 GEM 的 ioctl 清单</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.3-一块-dumb-buffer-从生到死" data-toc-target="4.3-一块-dumb-buffer-从生到死">4.3 一块 dumb buffer 从生到死</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.4-内存到底在哪儿" data-toc-target="4.4-内存到底在哪儿">4.4 内存到底在哪儿</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五四个核心对象crtcencoderconnectorplane" data-toc-target="五四个核心对象crtcencoderconnectorplane">五、四个核心对象：CRTC、encoder、connector、plane</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.1-三个对象的原始定义" data-toc-target="5.1-三个对象的原始定义">5.1 三个对象的原始定义</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.2-选路的四个问题" data-toc-target="5.2-选路的四个问题">5.2 选路的四个问题</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.3-plane-的三种类型" data-toc-target="5.3-plane-的三种类型">5.3 plane 的三种类型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.4-用-libdrm-把设备找出来" data-toc-target="5.4-用-libdrm-把设备找出来">5.4 用 libdrm 把设备找出来</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六devdricard0-与-renderd128" data-toc-target="六devdricard0-与-renderd128">六、/dev/dri/card0 与 renderD128</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.1-两个节点的分工" data-toc-target="6.1-两个节点的分工">6.1 两个节点的分工</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.2-drm-master" data-toc-target="6.2-drm-master">6.2 DRM master</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七gbm分配图形缓冲区" data-toc-target="七gbm分配图形缓冲区">七、GBM：分配图形缓冲区</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.1-gbm-的-api-面" data-toc-target="7.1-gbm-的-api-面">7.1 GBM 的 API 面</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.2-从-fd-到-surface" data-toc-target="7.2-从-fd-到-surface">7.2 从 fd 到 surface</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.3-格式修饰符" data-toc-target="7.3-格式修饰符">7.3 格式修饰符</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八egl跨平台的图形接口" data-toc-target="八egl跨平台的图形接口">八、EGL：跨平台的图形接口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.1-四个对象" data-toc-target="8.1-四个对象">8.1 四个对象</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.2-一套标准的-egl-绘制流程" data-toc-target="8.2-一套标准的-egl-绘制流程">8.2 一套标准的 EGL 绘制流程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.3-拿-display-的三种方式" data-toc-target="8.3-拿-display-的三种方式">8.3 拿 Display 的三种方式</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九egl-与-opengl-es-的关系" data-toc-target="九egl-与-opengl-es-的关系">九、EGL 与 OpenGL ES 的关系</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.1-一个常被问的问题mesa-project-是不是软件渲染" data-toc-target="9.1-一个常被问的问题mesa-project-是不是软件渲染">9.1 一个常被问的问题：Mesa Project 是不是软件渲染</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.2-glxinfo-的视野有限" data-toc-target="9.2-glxinfo-的视野有限">9.2 glxinfo 的视野有限</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.3-一条完整的排查链" data-toc-target="9.3-一条完整的排查链">9.3 一条完整的排查链</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十wayland-与-x11-下的图形路径差异" data-toc-target="十wayland-与-x11-下的图形路径差异">十、Wayland 与 X11 下的图形路径差异</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.1-四条关系" data-toc-target="10.1-四条关系">10.1 四条关系</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.2-两条路径的对比" data-toc-target="10.2-两条路径的对比">10.2 两条路径的对比</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.3-怎么知道自己现在在哪条路径上" data-toc-target="10.3-怎么知道自己现在在哪条路径上">10.3 怎么知道自己现在在哪条路径上</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一modetest查看与测试显示" data-toc-target="十一modetest查看与测试显示">十一、modetest：查看与测试显示</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.1-先看有哪些屏" data-toc-target="11.1-先看有哪些屏">11.1 先看有哪些屏</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.2-点一块屏" data-toc-target="11.2-点一块屏">11.2 点一块屏</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.3-改属性和-plane" data-toc-target="11.3-改属性和-plane">11.3 改属性和 plane</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二xrandrx11-下的显示配置" data-toc-target="十二xrandrx11-下的显示配置">十二、xrandr：X11 下的显示配置</a>
+                    
+                    <a class="toc-item toc-lv3" href="#12.1-常用命令" data-toc-target="12.1-常用命令">12.1 常用命令</a>
+                    
+                    <a class="toc-item toc-lv3" href="#12.2-modetest-与-xrandr-的分工" data-toc-target="12.2-modetest-与-xrandr-的分工">12.2 modetest 与 xrandr 的分工</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三其他调试手段" data-toc-target="十三其他调试手段">十三、其他调试手段</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四常见故障与现象" data-toc-target="十四常见故障与现象">十四、常见故障与现象</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五易错点速查" data-toc-target="十五易错点速查">十五、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/E.编程语言与框架/09-图形与OpenGL/Linux-图形栈：DRM、GBM-与-EGL/","title":"Linux 图形栈：DRM、GBM 与 EGL","url":"/E.编程语言与框架/09-图形与OpenGL/Linux-图形栈：DRM、GBM-与-EGL/","type":"current"},{"id":"/E.编程语言与框架/09-图形与OpenGL/Mali-T860-GPU-驱动：Panfrost-与-mesa/","title":"Mali-T860 GPU 驱动：Panfrost 与 mesa","url":"/E.编程语言与框架/09-图形与OpenGL/Mali-T860-GPU-驱动：Panfrost-与-mesa/","type":"neighbor"},{"id":"/E.编程语言与框架/09-图形与OpenGL/OpenGL-编程：从-GLUT-到-OpenGL-SC/","title":"OpenGL 编程：从 GLUT 到 OpenGL SC","url":"/E.编程语言与框架/09-图形与OpenGL/OpenGL-编程：从-GLUT-到-OpenGL-SC/","type":"neighbor"},{"id":"/E.编程语言与框架/09-图形与OpenGL/Qt-的-OpenGL-示例：从-.pro-到渲染/","title":"Qt 的 OpenGL 示例：从 .pro 到渲染","url":"/E.编程语言与框架/09-图形与OpenGL/Qt-的-OpenGL-示例：从-.pro-到渲染/","type":"neighbor"},{"id":"/E.编程语言与框架/09-图形与OpenGL/嵌入式-GUI-与-Weston/","title":"嵌入式 GUI 与 Weston","url":"/E.编程语言与框架/09-图形与OpenGL/嵌入式-GUI-与-Weston/","type":"neighbor"}],"links":[{"source":"/E.编程语言与框架/09-图形与OpenGL/Linux-图形栈：DRM、GBM-与-EGL/","target":"/E.编程语言与框架/09-图形与OpenGL/Mali-T860-GPU-驱动：Panfrost-与-mesa/","type":"neighbor"},{"source":"/E.编程语言与框架/09-图形与OpenGL/Linux-图形栈：DRM、GBM-与-EGL/","target":"/E.编程语言与框架/09-图形与OpenGL/OpenGL-编程：从-GLUT-到-OpenGL-SC/","type":"neighbor"},{"source":"/E.编程语言与框架/09-图形与OpenGL/Linux-图形栈：DRM、GBM-与-EGL/","target":"/E.编程语言与框架/09-图形与OpenGL/Qt-的-OpenGL-示例：从-.pro-到渲染/","type":"neighbor"},{"source":"/E.编程语言与框架/09-图形与OpenGL/Linux-图形栈：DRM、GBM-与-EGL/","target":"/E.编程语言与框架/09-图形与OpenGL/嵌入式-GUI-与-Weston/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

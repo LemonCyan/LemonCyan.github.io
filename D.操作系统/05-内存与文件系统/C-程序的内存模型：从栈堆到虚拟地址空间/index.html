@@ -1,0 +1,1545 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>C 程序的内存模型：从栈堆到虚拟地址空间 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">C 程序的内存模型：从栈堆到虚拟地址空间</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/D.操作系统/05-内存与文件系统/C-程序的内存模型：从栈堆到虚拟地址空间/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">C 程序的内存模型：从栈堆到虚拟地址空间</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">C 程序的内存模型：从栈堆到虚拟地址空间</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <h2 id="一c-程序的内存布局全景" tabindex="-1">一、C 程序的内存布局全景 <a class="header-anchor" href="#一c-程序的内存布局全景"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先记一句话：每个进程都以为自己独占一整块内存。这不是错觉，是虚拟地址空间给的承诺。你打印的每一个 <code>%p</code>，都是这份承诺的一部分。</p>
+<p>可执行文件跑起来变成进程，操作系统发给它一份独立的虚拟地址空间。32 位系统上是 4GB，地址 <code>0x00000000</code> 到 <code>0xFFFFFFFF</code>，Linux 把它切成两半：</p>
+<ul>
+<li>用户空间：低地址 3GB，<code>0x00000000</code> 到 <code>0xC0000000</code>，普通程序只能碰这一段。</li>
+<li>内核空间：高地址 1GB，<code>0xC0000000</code> 到 <code>0xFFFFFFFF</code>，内核代码和数据常驻，用户程序想访问只能通过系统调用切进内核态。</li>
+</ul>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>+----------------------------------+ 0xFFFFFFFF (4GB)
+|        内核空间 (Kernel Space)     |  1GB，所有进程共享同一份
++----------------------------------+ 0xC0000000 (3GB)
+|      环境变量 / 命令行参数          |
++----------------------------------+
+|              栈 (Stack)          |  栈顶在下，向下长
+|               |                  |
+|               v                  |
+|                                  |
+|           共享映射区              |  mmap、共享库、大块 malloc
+|                                  |
+|               ^                  |
+|               |                  |
+|              堆 (Heap)           |  向上长
++----------------------------------+
+|      BSS 段 (未初始化全局)         |
++----------------------------------+
+|      数据段 (已初始化全局)          |
++----------------------------------+
+|   只读数据 / 代码区 (Text / RO)    |  32 位下从 0x08048000 起
++----------------------------------+
+|             保留区                |  0x00000000 - 0x08048000
++----------------------------------+ 0x00000000
+</code></pre></div></code></pre>
+<p>低地址那片空洞不是浪费，是留着抓空指针的：谁解引用 <code>NULL</code>，谁立刻撞上未映射区域，进程当场 <code>SIGSEGV</code>，而不是悄悄读到一个随机值。</p>
+<p>64 位下地址空间大得多，形状没变，只是位置挪了。<code>/proc/self/maps</code> 里你会看到 <code>0x55...</code>（PIE 可执行文件的代码和数据）、<code>0x7f...</code>（共享库、mmap 区、大块堆）、<code>0x7ff...</code>（栈）。从低到高仍然是：代码、数据、堆、共享库、栈。<code>maps</code> 每行格式是 <code>起始-结束 权限 偏移 设备 inode 路径</code>，带路径的是文件映射，<code>00:00</code> 配 inode <code>0</code> 的是匿名映射。</p>
+<h3 id="五段对照" tabindex="-1">五段对照 <a class="header-anchor" href="#五段对照"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">段</th>
+<th style="text-align:left">放什么</th>
+<th style="text-align:left">权限</th>
+<th style="text-align:left">生命周期</th>
+<th style="text-align:left">maps 里的串</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">代码段 Text</td>
+<td style="text-align:left">机器指令、只读常量、字符串字面量</td>
+<td style="text-align:left">只读、可执行</td>
+<td style="text-align:left">进程全程</td>
+<td style="text-align:left"><code>r-xp</code> / <code>r--p</code></td>
+</tr>
+<tr>
+<td style="text-align:left">数据段 Data</td>
+<td style="text-align:left">已初始化的全局变量和 <code>static</code></td>
+<td style="text-align:left">可读写</td>
+<td style="text-align:left">进程全程</td>
+<td style="text-align:left"><code>rw-p</code></td>
+</tr>
+<tr>
+<td style="text-align:left">BSS</td>
+<td style="text-align:left">未初始化的全局变量和 <code>static</code></td>
+<td style="text-align:left">可读写</td>
+<td style="text-align:left">进程全程，加载时清零</td>
+<td style="text-align:left"><code>rw-p</code></td>
+</tr>
+<tr>
+<td style="text-align:left">堆 Heap</td>
+<td style="text-align:left"><code>malloc</code> 家族拿到的内存</td>
+<td style="text-align:left">可读写</td>
+<td style="text-align:left">手动 <code>free</code> 前一直存在</td>
+<td style="text-align:left"><code>rw-p</code>，带 <code>[heap]</code></td>
+</tr>
+<tr>
+<td style="text-align:left">栈 Stack</td>
+<td style="text-align:left">局部变量、形参、返回地址、保存的寄存器</td>
+<td style="text-align:left">可读写</td>
+<td style="text-align:left">函数返回即失效</td>
+<td style="text-align:left"><code>rw-p</code>，带 <code>[stack]</code></td>
+</tr>
+</tbody>
+</table></div><p>想亲眼看到这张表，一条命令就够。输出地址每次运行都不同，格式见下文：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">cat</span> /proc/self/maps
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>55d4a1c1e000-55d4a1c20000 r-xp 00001000 08:01 1234567  /usr/bin/app
+55d4a3f5b000-55d4a3f7c000 rw-p 00000000 00:00 0        [heap]
+7ffd2a3e1000-7ffd2a402000 rw-p 00000000 00:00 0        [stack]
+</code></pre></div></code></pre>
+<p>权限四个字符依次是读、写、执行、私有或共享。看懂这张表，等于拿到了进程内存的地图。</p>
+<h3 id="从源码到段编译四阶段" tabindex="-1">从源码到段：编译四阶段 <a class="header-anchor" href="#从源码到段编译四阶段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>变量最后落进哪个段，由链接器决定。中间过四道手：预处理（展开 <code>#include</code>、替换 <code>#define</code>、处理 <code>#ifdef</code>）、编译（C 变汇编）、汇编（汇编变机器指令，得到目标文件）、链接（合并目标文件和系统库，解析符号、做重定位，产出 ELF）。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -E main.c -o main.i     <span class="hljs-comment"># 预处理</span>
+gcc -S main.i -o main.s     <span class="hljs-comment"># 编译</span>
+gcc -c main.s -o main.o     <span class="hljs-comment"># 汇编</span>
+gcc main.o -o app           <span class="hljs-comment"># 链接</span>
+</code></pre></div></code></pre>
+<p>符号归属可以直接查，<code>readelf -s app | grep -E &quot;global|static&quot;</code> 会告诉你每个符号将来睡在哪个段。</p>
+<p><code>Ndx</code> 列是关键：<code>.data</code> 是已初始化数据段，<code>.bss</code> 是未初始化段，<code>.text</code> 是代码，<code>UND</code> 表示要靠链接解决。在 <code>.o</code> 文件里，未初始化全局变量往往先挂在 <code>COM</code> 名下，链接阶段才收进 <code>.bss</code>。</p>
+<h3 id="打印地址验证布局" tabindex="-1">打印地址验证布局 <a class="header-anchor" href="#打印地址验证布局"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>写段代码打脸最快：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdlib.h&gt;</span></span>
+
+<span class="hljs-type">int</span> global_init = <span class="hljs-number">10</span>;          <span class="hljs-comment">/* Data */</span>
+<span class="hljs-type">int</span> global_uninit;             <span class="hljs-comment">/* BSS */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> static_global = <span class="hljs-number">20</span>; <span class="hljs-comment">/* Data */</span>
+<span class="hljs-type">const</span> <span class="hljs-type">int</span> global_const = <span class="hljs-number">100</span>;  <span class="hljs-comment">/* .rodata */</span>
+
+<span class="hljs-type">void</span> <span class="hljs-title function_">show_stack</span><span class="hljs-params">(<span class="hljs-type">int</span> arg)</span> {
+    <span class="hljs-type">int</span> local = <span class="hljs-number">30</span>;                 <span class="hljs-comment">/* 栈 */</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">int</span> const_local = <span class="hljs-number">40</span>;     <span class="hljs-comment">/* 栈，const 只约束编译器 */</span>
+    <span class="hljs-type">static</span> <span class="hljs-type">int</span> static_local = <span class="hljs-number">50</span>;   <span class="hljs-comment">/* Data，函数退出不销毁 */</span>
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *lit = <span class="hljs-string">&quot;ABCDE&quot;</span>;      <span class="hljs-comment">/* 指针在栈，字面量在 .rodata */</span>
+    <span class="hljs-type">char</span> arr[] = <span class="hljs-string">&quot;ABCDE&quot;</span>;           <span class="hljs-comment">/* 整个数组在栈 */</span>
+
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;形参 %p  局部 %p  const %p\n&quot;</span>,
+           (<span class="hljs-type">void</span> *)&amp;arg, (<span class="hljs-type">void</span> *)&amp;local, (<span class="hljs-type">void</span> *)&amp;const_local);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;静态 local %p  栈数组 %p\n&quot;</span>, (<span class="hljs-type">void</span> *)&amp;static_local, (<span class="hljs-type">void</span> *)arr);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;栈上指针 &amp;lit %p  字面量 lit %p\n&quot;</span>, (<span class="hljs-type">void</span> *)&amp;lit, (<span class="hljs-type">void</span> *)lit);
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span> {
+    <span class="hljs-type">int</span> *h1 = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">4</span>);
+    <span class="hljs-type">int</span> *h2 = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">4</span>);
+
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;代码段 main %p  只读常量 %p\n&quot;</span>, (<span class="hljs-type">void</span> *)main, (<span class="hljs-type">void</span> *)&amp;global_const);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;已初始化 %p  静态全局 %p\n&quot;</span>, (<span class="hljs-type">void</span> *)&amp;global_init, (<span class="hljs-type">void</span> *)&amp;static_global);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;未初始化 %p  堆 %p %p\n&quot;</span>, (<span class="hljs-type">void</span> *)&amp;global_uninit, (<span class="hljs-type">void</span> *)h1, (<span class="hljs-type">void</span> *)h2);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;堆增长方向 : %s\n&quot;</span>, h2 &gt; h1 ? <span class="hljs-string">&quot;由低向高&quot;</span> : <span class="hljs-string">&quot;由高向低&quot;</span>);
+
+    show_stack(<span class="hljs-number">99</span>);
+    <span class="hljs-built_in">free</span>(h1);
+    <span class="hljs-built_in">free</span>(h2);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>编译时关掉 PIE，地址关系更直白：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -no-pie -O0 layout.c -o layout &amp;&amp; ./layout
+</code></pre></div></code></pre>
+<p>顺序会是：<code>main</code> &lt; <code>global_const</code> &lt; <code>global_init</code> &lt; <code>static_global</code> &lt; <code>global_uninit</code> &lt; 堆 &lt; 栈。堆里两次 <code>malloc</code> 相差几十字节（glibc 给每块加了头部），栈上则一路往下掉。</p>
+<h2 id="二代码段与数据段" tabindex="-1">二、代码段与数据段 <a class="header-anchor" href="#二代码段与数据段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>代码段是进程里权限最紧的一块。它装机器指令，也装只读常量：字符串字面量、<code>const</code> 修饰的全局变量，都进 <code>.rodata</code>。</p>
+<p>权限是只读加可执行。你改它一个字节，硬件触发页保护异常，内核发 <code>SIGSEGV</code>，进程死掉。这就是「改字符串字面量报段错误」的全部原因，不是编译器脾气差，是页表不让写。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">char</span> *s = <span class="hljs-string">&quot;hello&quot;</span>;
+s[<span class="hljs-number">0</span>] = <span class="hljs-string">&#x27;H&#x27;</span>;   <span class="hljs-comment">/* 段错误，发生在运行时 */</span>
+</code></pre></div></code></pre>
+<p>32 位 Linux 上代码段固定在 <code>0x08048000</code> 起步。固定是有意的：这以下的地址永不映射，空指针加小偏移的解引用必然崩，方便定位。</p>
+<p>数据段装已初始化的全局变量和已初始化的静态变量，<code>int global_var = 100;</code> 就住这儿。可读写，因为程序要能改自己的全局状态。需要看各节大小时跑 <code>readelf -S app | grep -E &quot;text|data|bss|rodata&quot;</code>，<code>.data</code> 的大小正好等于那几个初始值之和。</p>
+<h3 id="变量的三个维度" tabindex="-1">变量的三个维度 <a class="header-anchor" href="#变量的三个维度"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一个变量住哪、活多久、几个人能看见它，由三个互相独立的维度决定。C 标准把这三件事分得很清楚，混起来谈必然糊涂。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">维度</th>
+<th style="text-align:left">取值</th>
+<th style="text-align:left">含义</th>
+<th style="text-align:left">例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">存储时期</td>
+<td style="text-align:left">静态存储时期</td>
+<td style="text-align:left">程序启动时分配，退出才回收</td>
+<td style="text-align:left">全局变量、<code>static</code> 变量</td>
+</tr>
+<tr>
+<td style="text-align:left">存储时期</td>
+<td style="text-align:left">自动存储时期</td>
+<td style="text-align:left">进入代码块分配，离开立即回收</td>
+<td style="text-align:left">普通局部变量</td>
+</tr>
+<tr>
+<td style="text-align:left">存储时期</td>
+<td style="text-align:left">动态存储时期</td>
+<td style="text-align:left">手动申请，手动释放</td>
+<td style="text-align:left"><code>malloc</code> 得到的内存</td>
+</tr>
+<tr>
+<td style="text-align:left">作用域</td>
+<td style="text-align:left">代码块作用域</td>
+<td style="text-align:left">只在声明它的 <code>{}</code> 内可见</td>
+<td style="text-align:left">函数内局部变量</td>
+</tr>
+<tr>
+<td style="text-align:left">作用域</td>
+<td style="text-align:left">文件作用域</td>
+<td style="text-align:left">从定义处到文件结尾可见</td>
+<td style="text-align:left">函数外定义的变量</td>
+</tr>
+<tr>
+<td style="text-align:left">链接属性</td>
+<td style="text-align:left">外部链接</td>
+<td style="text-align:left">其他源文件也能用</td>
+<td style="text-align:left">非 <code>static</code> 的全局变量、函数</td>
+</tr>
+<tr>
+<td style="text-align:left">链接属性</td>
+<td style="text-align:left">内部链接</td>
+<td style="text-align:left">只在当前文件可见</td>
+<td style="text-align:left"><code>static</code> 修饰的文件作用域变量</td>
+</tr>
+<tr>
+<td style="text-align:left">链接属性</td>
+<td style="text-align:left">空链接</td>
+<td style="text-align:left">只有声明它的块能用</td>
+<td style="text-align:left">块作用域变量</td>
+</tr>
+</tbody>
+</table></div><p>关键点：<code>static</code> 修饰局部变量时改的是存储时期（从栈挪进数据段），修饰全局变量时改的是链接属性（从外部链接变内部链接）。同一个关键字，两个完全不同的作用。</p>
+<h3 id="跨文件的共享与隔离" tabindex="-1">跨文件的共享与隔离 <a class="header-anchor" href="#跨文件的共享与隔离"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>多文件项目里，链接属性就是权限系统。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* file_provider.c：提供方 */</span>
+<span class="hljs-type">int</span> shared_count = <span class="hljs-number">999</span>;              <span class="hljs-comment">/* 外部链接，别人能用 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> file_private_key = <span class="hljs-number">12345</span>; <span class="hljs-comment">/* 内部链接，只此文件可见 */</span>
+
+<span class="hljs-type">void</span> <span class="hljs-title function_">print_private_key</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span> {
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Provider: Private Key = %d\n&quot;</span>, file_private_key);
+}
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* main_entry.c：使用方 */</span>
+<span class="hljs-keyword">extern</span> <span class="hljs-type">int</span> shared_count;
+<span class="hljs-keyword">extern</span> <span class="hljs-type">void</span> <span class="hljs-title function_">print_private_key</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>;
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span> {
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Main: Shared Count = %d\n&quot;</span>, shared_count);
+    shared_count = <span class="hljs-number">1000</span>;                 <span class="hljs-comment">/* 直接改写外部链接变量 */</span>
+    print_private_key();                 <span class="hljs-comment">/* 通过导出函数读它的私有变量 */</span>
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc main_entry.c file_provider.c -o app &amp;&amp; ./app
+</code></pre></div></code></pre>
+<p>现在把 <code>extern int file_private_key;</code> 加进 <code>main_entry.c</code> 试试，链接器直接拒绝：<code>undefined reference to 'file_private_key'</code>。</p>
+<p>这就是 <code>static</code> 在文件作用域下的隔离作用：它把符号从全局符号表里藏起来，别的翻译单元连找都找不到。大型项目里给所有内部函数和模块级变量加 <code>static</code>，等于给自己划了一块不会被别人踩的地。</p>
+<h2 id="三bss-段与未初始化数据" tabindex="-1">三、BSS 段与未初始化数据 <a class="header-anchor" href="#三bss-段与未初始化数据"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>BSS 是 Block Started by Symbol 的缩写，名字来自上古汇编器，含义留到今天：存放未初始化的全局变量和未初始化的静态变量。</p>
+<p>它最特别的地方是不占可执行文件的体积：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> big_uninit[<span class="hljs-number">1000000</span>];        <span class="hljs-comment">/* BSS */</span>
+<span class="hljs-type">int</span> big_init[<span class="hljs-number">1000000</span>] = {<span class="hljs-number">1</span>};    <span class="hljs-comment">/* Data */</span>
+</code></pre></div></code></pre>
+<p>第二个数组得把 4MB 的零和那个 <code>1</code> 实实在在写进文件。第一个数组全是零，文件里一个字节都不用存，链接器只在段头记一句「这里要 4MB，全零」。所以可执行文件大小几乎只受 <code>big_init</code> 影响。</p>
+<p>程序加载时，内核把 BSS 对应的页映射成匿名零页，读到就是零。C 标准保证静态存储期的对象未初始化时被初始化为零，不用你自己 <code>memset</code>。跑一下 <code>size app</code>，三列 <code>text</code>、<code>data</code>、<code>bss</code> 直接给答案：往 BSS 里塞大数组，<code>bss</code> 列涨，<code>data</code> 列不动，文件大小也不动。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">对比项</th>
+<th style="text-align:left">Data 段</th>
+<th style="text-align:left">BSS 段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">内容</td>
+<td style="text-align:left">有非零初值的全局 / 静态变量</td>
+<td style="text-align:left">无显式初值，或初值全零</td>
+</tr>
+<tr>
+<td style="text-align:left">是否占文件体积</td>
+<td style="text-align:left">占</td>
+<td style="text-align:left">不占，只记大小</td>
+</tr>
+<tr>
+<td style="text-align:left">加载时动作</td>
+<td style="text-align:left">从文件读入</td>
+<td style="text-align:left">映射零页</td>
+</tr>
+<tr>
+<td style="text-align:left">典型写法</td>
+<td style="text-align:left"><code>int g = 100;</code></td>
+<td style="text-align:left"><code>int g;</code> / <code>int g = 0;</code></td>
+</tr>
+<tr>
+<td style="text-align:left">符号表标记</td>
+<td style="text-align:left"><code>.data</code></td>
+<td style="text-align:left"><code>.bss</code>（<code>.o</code> 阶段为 <code>COM</code>）</td>
+</tr>
+</tbody>
+</table></div><p>注意 <code>int g = 0;</code> 这种显式零初始化，编译器也会放进 BSS。零就是零，没必要在文件里存一遍。</p>
+<h3 id="静态局部变量的代价" tabindex="-1">静态局部变量的代价 <a class="header-anchor" href="#静态局部变量的代价"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>static</code> 局部变量住在数据段，函数返回不销毁，值一直留着。这个特性用起来方便，多线程下就是一个坑：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">accumulate_sum</span><span class="hljs-params">(<span class="hljs-type">int</span> val)</span> {
+    <span class="hljs-type">static</span> <span class="hljs-type">int</span> current_sum = <span class="hljs-number">0</span>;   <span class="hljs-comment">/* 全局区，所有线程共享同一块内存 */</span>
+    current_sum += val;
+    usleep(<span class="hljs-number">100</span>);                  <span class="hljs-comment">/* 放大竞争窗口 */</span>
+    <span class="hljs-keyword">return</span> current_sum;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">accumulate_sum_safe</span><span class="hljs-params">(<span class="hljs-type">int</span> val)</span> {
+    <span class="hljs-type">static</span> <span class="hljs-keyword">_Thread_local</span> <span class="hljs-type">int</span> current_sum = <span class="hljs-number">0</span>;   <span class="hljs-comment">/* C11，每线程一份 */</span>
+    current_sum += val;
+    <span class="hljs-keyword">return</span> current_sum;
+}
+</code></pre></div></code></pre>
+<p>两个线程同时调 <code>accumulate_sum(1)</code>，读到的是同一份 <code>current_sum</code>。加法不是原子的，<code>usleep</code> 又把窗口撑开，结果不是 1 也不是 2，而是取决于调度顺序的某个值。这种 bug 在单线程测试里永远复现不了。</p>
+<p><code>_Thread_local</code> 是 C11 给的专用工具。这类变量既不进 Data/BSS，也不在普通栈上，它进 TLS 段（Thread-Local Storage）。每个线程创建时，运行时库给它单独准备一份副本，各改各的，互不干扰。它和 <code>static</code> 一起写也合法，此时同时具备静态存储时期和线程私有。</p>
+<h2 id="四栈自动变量的位置" tabindex="-1">四、栈：自动变量的位置 <a class="header-anchor" href="#四栈自动变量的位置"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>栈管函数调用。每进一个函数压一个栈帧，每出一个函数弹掉一个。</p>
+<p>一个栈帧从高地址往低地址依次是：寄存器放不下的参数、返回地址、调用者保存的 <code>rbp</code>、局部变量、对齐填充。x86-64 上函数入口几乎是固定套路：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>push   rbp          ; 保存调用者的帧基址
+mov    rbp, rsp     ; 建立本次调用的帧基址
+sub    rsp, 0x30    ; 给局部变量腾空间
+</code></pre></div></code></pre>
+<p><code>rbp</code> 是帧基址，不动；<code>rsp</code> 是栈顶指针，随压栈弹栈移动。局部变量用 <code>[rbp-0x8]</code> 这样的负偏移访问，所以同一函数里的局部变量地址总比 <code>rbp</code> 小。</p>
+<p>参数传递在 x86-64 System V ABI 里优先用寄存器：<code>rdi</code>、<code>rsi</code>、<code>rdx</code>、<code>rcx</code>、<code>r8</code>、<code>r9</code> 装前六个参数，第七个起才上栈。所以在 64 位下打印形参地址，它常常离局部变量不远，那是编译器把寄存器里的值溢出到了栈上。</p>
+<p>写代码量一下栈帧的生长方向：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">inner</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span> {
+    <span class="hljs-type">int</span> deep = <span class="hljs-number">2</span>;
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;inner 局部 : %p\n&quot;</span>, (<span class="hljs-type">void</span> *)&amp;deep);
+}
+
+<span class="hljs-type">void</span> <span class="hljs-title function_">outer</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span> {
+    <span class="hljs-type">int</span> shallow = <span class="hljs-number">1</span>;
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;outer 局部 : %p\n&quot;</span>, (<span class="hljs-type">void</span> *)&amp;shallow);
+    inner();
+}
+</code></pre></div></code></pre>
+<p>地址一路递减：<code>main</code> 里的局部变量最高，<code>outer</code> 的 <code>shallow</code> 低一些，<code>inner</code> 的 <code>deep</code> 最低。栈从高地址往低地址长，这是事实，不是习惯。</p>
+<p>栈数组和指向栈的指针，在机器码层面是两回事：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>; 栈数组：直接寻址，一步到位
+mov cl, byte ptr [rbp-7]
+
+; 指针指向的内存：先取地址，再间接寻址
+mov edx, dword ptr [rbp-12]
+mov al, byte ptr [edx+1]
+</code></pre></div></code></pre>
+<p>栈数组省掉一次解引用。这是栈在存取效率上占优的硬件原因，跟「栈更快」这种笼统说法不是一回事：真正的原因是局部性好，命中缓存。</p>
+<h2 id="五栈的生长方向与栈溢出" tabindex="-1">五、栈的生长方向与栈溢出 <a class="header-anchor" href="#五栈的生长方向与栈溢出"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>栈为什么向下长？历史包袱加设计取舍。早期机器把栈放高地址、堆放低地址，两边向中间长，地址空间紧张的年代，谁的用量大谁就多占，中间的空闲区能被双方共用。</p>
+<p>代价是你必须记住：栈的地址在减小，堆的地址在增大。</p>
+<h3 id="栈有多大" tabindex="-1">栈有多大 <a class="header-anchor" href="#栈有多大"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">ulimit</span> -s            <span class="hljs-comment"># 查当前上限，输出 8192 表示 8MB</span>
+<span class="hljs-built_in">ulimit</span> -s 16384      <span class="hljs-comment"># 当前 shell 及子进程改成 16MB</span>
+<span class="hljs-built_in">ulimit</span> -s unlimited  <span class="hljs-comment"># 解除限制，不建议，容易把系统内存吃光</span>
+</code></pre></div></code></pre>
+<p><code>unlimited</code> 在某些发行版上会让栈长到和共享库区撞车，程序行为变得难以预测。宁可改大到一个具体数值，也别图省事写 unlimited。</p>
+<h3 id="三种压垮栈的写法" tabindex="-1">三种压垮栈的写法 <a class="header-anchor" href="#三种压垮栈的写法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>第一种，无限递归：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">infinite_recursion</span><span class="hljs-params">(<span class="hljs-type">int</span> depth)</span> {
+    <span class="hljs-type">char</span> dummy_buffer[<span class="hljs-number">1024</span>];   <span class="hljs-comment">/* 每层 1KB */</span>
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Depth: %d\n&quot;</span>, depth);
+    infinite_recursion(depth + <span class="hljs-number">1</span>);
+}
+</code></pre></div></code></pre>
+<p>每层吃掉 1KB 加一个栈帧，8MB 撑不了几千层。<code>rsp</code> 一路下移，撞到栈区下边界那块守护页（guard page），页保护异常，内核发 <code>SIGSEGV</code>，程序崩掉。</p>
+<p>第二种，局部数组开太大：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">too_big</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span> {
+    <span class="hljs-type">char</span> buffer[<span class="hljs-number">16</span> * <span class="hljs-number">1024</span> * <span class="hljs-number">1024</span>];   <span class="hljs-comment">/* 16MB，超过 8MB 栈上限 */</span>
+    buffer[<span class="hljs-number">0</span>] = <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>编译能过，运行即崩。编译器不拦你，因为它不知道你的 <code>ulimit</code> 是多少。</p>
+<p>第三种，变长数组或 <code>alloca</code> 在循环里用：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-number">1000</span>; i++) {
+    <span class="hljs-type">char</span> *p = alloca(<span class="hljs-number">8192</span>);   <span class="hljs-comment">/* 每次 8KB，函数退出才回收 */</span>
+}
+</code></pre></div></code></pre>
+<p><code>alloca</code> 分配的内存跟着当前函数存活，循环里申请一千次就是 8MB，函数还没返回栈就爆了。这类代码在评审里最难看出来。</p>
+<p>判断标准很简单：单函数局部变量总量控制在 10KB 以内，超过就放堆。几百 KB 的报文缓冲区没有理由住在栈上。</p>
+<h2 id="六堆与-malloc" tabindex="-1">六、堆与 malloc <a class="header-anchor" href="#六堆与-malloc"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>栈归编译器管，堆归你管。界线很清楚：栈上的东西出了作用域自动消失，堆上的东西你不 <code>free</code>，它就一直在。</p>
+<p>堆在进程布局里紧挨着 BSS 之上，从低地址往高地址长。第一次 <code>malloc</code> 时堆往往还不存在，glibc 才去内核要第一段。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> *p = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">100</span> * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">int</span>));
+<span class="hljs-keyword">if</span> (p == <span class="hljs-literal">NULL</span>) {
+    <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+}
+p[<span class="hljs-number">0</span>] = <span class="hljs-number">42</span>;
+<span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;p = %p, p[0] = %d\n&quot;</span>, (<span class="hljs-type">void</span> *)p, p[<span class="hljs-number">0</span>]);
+<span class="hljs-built_in">free</span>(p);
+p = <span class="hljs-literal">NULL</span>;
+</code></pre></div></code></pre>
+<p>三个细节不能省：检查 <code>NULL</code>、用完 <code>free</code>、<code>free</code> 之后置空。少任何一个，都会在某个深夜让你加班。</p>
+<h3 id="堆和栈的差别" tabindex="-1">堆和栈的差别 <a class="header-anchor" href="#堆和栈的差别"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">维度</th>
+<th style="text-align:left">栈</th>
+<th style="text-align:left">堆</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">管理者</td>
+<td style="text-align:left">编译器插入指令自动完成</td>
+<td style="text-align:left">程序员手动 <code>malloc</code> / <code>free</code></td>
+</tr>
+<tr>
+<td style="text-align:left">空间大小</td>
+<td style="text-align:left">固定上限，默认 8MB，<code>ulimit -s</code> 可调</td>
+<td style="text-align:left">受虚拟地址空间和物理内存限制，灵活</td>
+</tr>
+<tr>
+<td style="text-align:left">增长方向</td>
+<td style="text-align:left">从高地址向低地址</td>
+<td style="text-align:left">从低地址向高地址</td>
+</tr>
+<tr>
+<td style="text-align:left">分配速度</td>
+<td style="text-align:left">移动 <code>rsp</code>，几条指令</td>
+<td style="text-align:left">要查找空闲块，慢一到两个数量级</td>
+</tr>
+<tr>
+<td style="text-align:left">释放时机</td>
+<td style="text-align:left">函数返回自动回收</td>
+<td style="text-align:left">显式 <code>free</code>，或进程退出</td>
+</tr>
+<tr>
+<td style="text-align:left">碎片问题</td>
+<td style="text-align:left">没有</td>
+<td style="text-align:left">有，长期运行的程序会碎</td>
+</tr>
+<tr>
+<td style="text-align:left">访问效率</td>
+<td style="text-align:left">局部性好，缓存命中高</td>
+<td style="text-align:left">指针间接寻址，多一次内存读</td>
+</tr>
+<tr>
+<td style="text-align:left">出错后果</td>
+<td style="text-align:left">爆栈，直接崩</td>
+<td style="text-align:left">泄漏、越界，出错时不吭声</td>
+</tr>
+</tbody>
+</table></div><p>分配速度差多少？差在机制上。栈分配就是把 <code>rsp</code> 减一个数，没有任何查找。堆分配要在空闲结构里找一块够大的，切出来，记账。百万次循环里这个差距是几十倍，不是几倍。</p>
+<h3 id="malloc-系列" tabindex="-1">malloc 系列 <a class="header-anchor" href="#malloc-系列"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">函数</th>
+<th style="text-align:left">作用</th>
+<th style="text-align:left">是否清零</th>
+<th style="text-align:left">返回值</th>
+<th style="text-align:left">要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>malloc(size)</code></td>
+<td style="text-align:left">申请 <code>size</code> 字节</td>
+<td style="text-align:left">不清零，内容是垃圾</td>
+<td style="text-align:left">成功返回指针，失败返回 <code>NULL</code></td>
+<td style="text-align:left">必须检查 <code>NULL</code></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>calloc(n, size)</code></td>
+<td style="text-align:left">申请 <code>n * size</code> 字节</td>
+<td style="text-align:left">清零</td>
+<td style="text-align:left">同上</td>
+<td style="text-align:left"><code>n * size</code> 会溢出要留意</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>realloc(ptr, size)</code></td>
+<td style="text-align:left">调整已有块大小</td>
+<td style="text-align:left">新扩展部分不清零</td>
+<td style="text-align:left">成功返回新指针，失败返回 <code>NULL</code> 且原块不动</td>
+<td style="text-align:left">绝不能用原指针接返回值</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>free(ptr)</code></td>
+<td style="text-align:left">释放块</td>
+<td style="text-align:left">不清零，数据还在</td>
+<td style="text-align:left">无返回值</td>
+<td style="text-align:left">只能释放 <code>malloc</code> 家族给的指针</td>
+</tr>
+</tbody>
+</table></div><p><code>calloc</code> 的零不一定是白送的。大块时内核给的匿名页本来就是零页，可以直接用；小块则要显式写零。所以别以为 <code>calloc</code> 一定比 <code>malloc</code> 加 <code>memset</code> 慢。</p>
+<p><code>realloc</code> 是四个里最容易用错的。它有三种行为：原地扩容、搬到新地址、失败。原地扩容时返回指针和原来一样；搬到新地址时旧块已被释放，旧指针立刻变成野指针；失败时返回 <code>NULL</code>，但原块还在。所以绝不能写 <code>p = realloc(p, n)</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> *tmp = <span class="hljs-built_in">realloc</span>(p, new_size);
+<span class="hljs-keyword">if</span> (tmp == <span class="hljs-literal">NULL</span>) {
+    <span class="hljs-built_in">free</span>(p);            <span class="hljs-comment">/* 原块还在，自己决定保留还是释放 */</span>
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+p = tmp;
+</code></pre></div></code></pre>
+<p><code>realloc(p, 0)</code> 在 C89 里是实现定义，C99 之后等价于 <code>free(p)</code> 并返回一个可以传给 <code>free</code> 的指针。别写这种代码，要释放就写 <code>free</code>。</p>
+<p><code>alloca</code> 是个异类。它在栈上分配，函数返回时自动回收，不需要也不能 <code>free</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">use_alloca</span><span class="hljs-params">(<span class="hljs-type">size_t</span> n)</span> {
+    <span class="hljs-type">char</span> *buf = alloca(n);   <span class="hljs-comment">/* 栈上分配，跟着函数走，退出自动回收 */</span>
+    buf[<span class="hljs-number">0</span>] = <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>它极快，就是移动栈指针。但没有失败返回值，分配不下直接爆栈，也没有可移植性保证（POSIX 里没有 <code>alloca</code>）。别在库的公开接口里用它。</p>
+<h3 id="大小决定走哪条路" tabindex="-1">大小决定走哪条路 <a class="header-anchor" href="#大小决定走哪条路"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>小块（glibc 默认阈值 128KB 以下）：分配器向内核要一块连续的堆区，方式是抬高堆顶指针（<code>brk</code>）。<code>free</code> 之后这块内存不会马上还给内核，而是留在分配器自己的空闲结构里，等下次同样大小的请求复用。</p>
+<p>大块（128KB 及以上）：改用 <code>mmap</code>，在共享映射区单独开一块匿名映射。<code>free</code> 时直接 <code>munmap</code>，虚拟地址空间立刻还回去。</p>
+<p>这个差异在 <code>free</code> 之后量一下就能看见。读 <code>/proc/self/statm</code> 的第二个字段（常驻页数）乘 4 就是 RSS：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">long</span> <span class="hljs-title function_">rss_kb</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span> {
+    FILE *f = fopen(<span class="hljs-string">&quot;/proc/self/statm&quot;</span>, <span class="hljs-string">&quot;r&quot;</span>);
+    <span class="hljs-type">long</span> size = <span class="hljs-number">0</span>, resident = <span class="hljs-number">0</span>;
+    <span class="hljs-keyword">if</span> (f) {
+        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">fscanf</span>(f, <span class="hljs-string">&quot;%ld %ld&quot;</span>, &amp;size, &amp;resident) != <span class="hljs-number">2</span>) {
+            resident = <span class="hljs-number">0</span>;
+        }
+        fclose(f);
+    }
+    <span class="hljs-keyword">return</span> resident * <span class="hljs-number">4</span>;   <span class="hljs-comment">/* 页大小 4KB */</span>
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span> {
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;初始 RSS   : %ld KB\n&quot;</span>, rss_kb());
+    <span class="hljs-type">char</span> *small = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">1024</span>);
+    <span class="hljs-built_in">memset</span>(small, <span class="hljs-number">0xAA</span>, <span class="hljs-number">1024</span>);
+    <span class="hljs-built_in">free</span>(small);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;小块释放后 : %ld KB\n&quot;</span>, rss_kb());
+    <span class="hljs-type">char</span> *big = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">64</span> * <span class="hljs-number">1024</span> * <span class="hljs-number">1024</span>);
+    <span class="hljs-built_in">memset</span>(big, <span class="hljs-number">0xBB</span>, <span class="hljs-number">64</span> * <span class="hljs-number">1024</span> * <span class="hljs-number">1024</span>);
+    <span class="hljs-built_in">free</span>(big);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;大块释放后 : %ld KB\n&quot;</span>, rss_kb());
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>小块释放后 RSS 基本没降，内存还挂在堆里；大块释放后 RSS 明显回落，映射被撤了。这就是「大块内存适合一次性分配、一次性释放」的实测依据。</p>
+<p>阈值可以用环境变量 <code>MALLOC_MMAP_THRESHOLD_=65536</code> 或者 <code>mallopt(M_MMAP_THRESHOLD, 65536)</code> 改。阈值调低，大块走 <code>mmap</code> 更频繁，<code>free</code> 还得更彻底，代价是每次分配多了系统调用开销。</p>
+<h2 id="七malloc-与-free-的行为" tabindex="-1">七、malloc 与 free 的行为 <a class="header-anchor" href="#七malloc-与-free-的行为"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>malloc</code> 的返回值只有两种局面：一个可用指针，或者 <code>NULL</code>。没有第三种。所谓「内存不够」在 Linux 上多半不是 <code>malloc</code> 返回 <code>NULL</code>，而是你写的时候内核才去要页，要不到就把进程杀掉（OOM killer）。这叫 overcommit。</p>
+<p>所以「<code>malloc</code> 成功」不代表「内存真的到手」，它只代表虚拟地址空间里给你划了一块，物理页还没发。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">char</span> *p = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">1024</span> * <span class="hljs-number">1024</span> * <span class="hljs-number">1024</span>);   <span class="hljs-comment">/* 1GB，往往立刻成功 */</span>
+<span class="hljs-keyword">if</span> (p) {
+    p[<span class="hljs-number">0</span>] = <span class="hljs-number">1</span>;   <span class="hljs-comment">/* 真正写的时候才分配物理页 */</span>
+}
+</code></pre></div></code></pre>
+<p><code>malloc(0)</code> 是实现定义：要么返回 <code>NULL</code>，要么返回一个可以 <code>free</code> 的最小指针。别依赖任何一种。<code>free(NULL)</code> 是合法的，什么都不做，这个特性能让「指针为空就跳过」的代码不加额外判断。</p>
+<h3 id="五条行为规则" tabindex="-1">五条行为规则 <a class="header-anchor" href="#五条行为规则"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>第一条，谁申请谁释放。跨模块传递所有权时必须有明确约定。接口文档里写不清「返回的指针归谁释放」，这个接口就是定时炸弹。</p>
+<p>第二条，只能释放 <code>malloc</code> 家族给的地址。栈上的地址、全局变量的地址、指针算术偏移过的地址，都不能传给 <code>free</code>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> a[<span class="hljs-number">10</span>];
+<span class="hljs-built_in">free</span>(a);            <span class="hljs-comment">/* 未定义行为 */</span>
+
+<span class="hljs-type">char</span> *p = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">100</span>);
+<span class="hljs-built_in">free</span>(p + <span class="hljs-number">10</span>);       <span class="hljs-comment">/* 未定义行为，必须传原始指针 */</span>
+</code></pre></div></code></pre>
+<p>第三条，不能重复释放，也不能释放后继续用。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">char</span> *p = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">100</span>);
+<span class="hljs-built_in">free</span>(p);
+<span class="hljs-built_in">free</span>(p);            <span class="hljs-comment">/* 双重释放，堆结构被破坏 */</span>
+p[<span class="hljs-number">0</span>] = <span class="hljs-string">&#x27;x&#x27;</span>;         <span class="hljs-comment">/* use-after-free，改到谁的数据全看运气 */</span>
+</code></pre></div></code></pre>
+<p>第四条，<code>free</code> 不清零。释放后的内存里还留着你写的数据，会被下一次 <code>malloc</code> 读到。涉及密码、密钥的缓冲区，释放前自己清一遍，并且用 <code>volatile</code> 防止编译器把循环优化掉：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">wipe</span><span class="hljs-params">(<span class="hljs-type">void</span> *p, <span class="hljs-type">size_t</span> n)</span> {
+    <span class="hljs-keyword">volatile</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *v = p;
+    <span class="hljs-keyword">while</span> (n--) {
+        *v++ = <span class="hljs-number">0</span>;
+    }
+}
+</code></pre></div></code></pre>
+<p>第五条，<code>free</code> 之后立刻置空。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">free</span>(p);
+p = <span class="hljs-literal">NULL</span>;
+</code></pre></div></code></pre>
+<p>这一行不是形式主义。它把后续所有「用已释放指针」从随机破坏内存降级成立刻段错误。可复现的崩溃比随机的数据损坏好一百倍。</p>
+<h3 id="分配失败的两种真相" tabindex="-1">分配失败的两种真相 <a class="header-anchor" href="#分配失败的两种真相"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>64 位系统上你几乎不会遇到 <code>malloc</code> 返回 <code>NULL</code>，虚拟地址空间有 128TB。能把它耗尽的场景很少：申请一个负数转换来的巨大 <code>size_t</code>，或者循环里泄漏了上百万次。前者的根源往往是无符号整数的减法回绕，比如 <code>size_t n = 0; n--;</code> 之后 <code>malloc(n)</code> 必然失败。任何用户输入参与计算的 <code>malloc</code> 大小，都要先检查上界：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (count &gt; <span class="hljs-number">0</span> &amp;&amp; size &gt; <span class="hljs-number">0</span> &amp;&amp; count &gt; SIZE_MAX / size) {
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;            <span class="hljs-comment">/* 乘法会溢出，提前拦住 */</span>
+}
+<span class="hljs-type">void</span> *p = <span class="hljs-built_in">malloc</span>(count * size);
+</code></pre></div></code></pre>
+<h2 id="八虚拟地址空间的意义" tabindex="-1">八、虚拟地址空间的意义 <a class="header-anchor" href="#八虚拟地址空间的意义"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>到这里可以回答那个核心问题了：为什么每个进程都以为自己独占整块内存？</p>
+<p>因为进程持有的地址是虚拟的。CPU 执行 <code>mov rax, [0x400000]</code> 时，这个 <code>0x400000</code> 不会直接送到内存条，它先送到 MMU，由 MMU 按当前进程的映射表翻译成物理地址，再发出去。</p>
+<p>于是只有两条路：虚拟地址映射到了某个物理页，访问成功；或者没映射，CPU 触发缺页异常，内核介入。整个机制的前提是每个进程有自己独立的一套映射表，进程切换时这套表跟着换。所以两个进程用同一个虚拟地址 <code>0x400000</code>，读到的是完全不同的物理内存，谁也看不见谁。</p>
+<p>这一句解释了四件事。</p>
+<p>进程之间天然隔离。A 进程写坏了自己的内存，B 进程毫无感觉。想通信只能走管道、共享内存、socket 这些明确开了口的通道。</p>
+<p>每个进程都能用满整个地址空间。你的程序里 <code>malloc</code> 返回 <code>0x7f2b6c9c0000</code>，别人的程序里也是差不多的地址，两者互不冲突，因为背后的物理页不同。</p>
+<p>地址看起来不连续。<code>/proc/self/maps</code> 里一段一段的映射之间有大片空洞，那是没映射的区域。堆和栈之间隔着共享库，共享库之间也隔着空洞。程序不需要连续的内存，只需要「我要的这块是连续的」。</p>
+<p>共享库能省内存。十个进程都用 <code>libc.so.6</code>，每个进程的地址空间里都有一段映射指向它，但物理内存里只有一份代码页。只读的代码页被十个进程共享，可写的数据页各有一份。</p>
+<h3 id="缺页地址第一次被碰" tabindex="-1">缺页：地址第一次被碰 <a class="header-anchor" href="#缺页地址第一次被碰"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>虚拟地址映射好了，物理页还没有。内核按需分配：<code>malloc</code> 只是登记，第一次读写某个页时才真正给物理页。</p>
+<p><code>min_flt</code> 是次要缺页，页已在内存里，只要补一条映射。<code>maj_flt</code> 是主要缺页，得从磁盘读，比如加载代码段、访问被换出的页。第一次跑一个程序时的启动延迟，大部分花在 <code>maj_flt</code> 上。用 <code>grep -E &quot;min_flt|maj_flt&quot; /proc/self/stat</code> 和 <code>ps -o pid,vsz,rss,comm -p $$</code> 都能看到这两组数字。</p>
+<p>这也解释了一个常见困惑：<code>malloc</code> 了 1GB，RSS 却没涨，因为那些页还没被碰过，一页物理内存都没发。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">指标</th>
+<th style="text-align:left">含义</th>
+<th style="text-align:left">你该关心什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">VSZ 虚拟内存大小</td>
+<td style="text-align:left">映射了多大的地址空间</td>
+<td style="text-align:left">大不代表占内存，只是映射占位</td>
+</tr>
+<tr>
+<td style="text-align:left">RSS 常驻集大小</td>
+<td style="text-align:left">真正占了物理内存的部分</td>
+<td style="text-align:left">这才是内存压力来源</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>min_flt</code></td>
+<td style="text-align:left">次要缺页次数</td>
+<td style="text-align:left">大量出现说明页在反复映射</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>maj_flt</code></td>
+<td style="text-align:left">主要缺页次数</td>
+<td style="text-align:left">大量出现说明 IO 是瓶颈</td>
+</tr>
+</tbody>
+</table></div><p>VSZ 和 RSS 差得远是正常的。看到 VSZ 几个 GB 不用慌，看 RSS。</p>
+<h2 id="九从虚拟地址到物理地址" tabindex="-1">九、从虚拟地址到物理地址 <a class="header-anchor" href="#九从虚拟地址到物理地址"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>翻译这件事由 MMU 做，按页为单位。x86-64 上一页 4KB，虚拟地址被拆成「页号 + 页内偏移」，页号去映射表里查，查到的物理页号再拼上原来的偏移。</p>
+<p>多级页表是为了省空间：128TB 的地址空间里进程实际用到的只有零散几块，建一级大表就浪费了。多级结构让未使用的区域连表项都不用建。细节属于内核篇，你只需要知道结果：一次翻译要访问好几级表，所以 MMU 里有 TLB 缓存最近的翻译结果。TLB 命中就一次搞定，未命中要走完整流程，这也是随机访问大数组比顺序访问慢的原因之一。</p>
+<p><code>/proc/self/maps</code> 里每一行就是一个虚拟内存区域（VMA）。VMA 是内核记账的单位，描述一段连续的、权限相同的地址范围。你看到的 <code>r-xp</code>、<code>rw-p</code> 就是这一段的属性。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">head</span> -20 /proc/self/maps
+</code></pre></div></code></pre>
+<p>翻这张表能看出几件事。可执行文件被拆成好几段映射，代码段 <code>r-xp</code>、只读数据 <code>r--p</code>、可写数据 <code>rw-p</code>，同一段不会既可写又可执行，这是 W^X 策略。堆只有一行 <code>[heap]</code>，所有小块 <code>malloc</code> 都在里面。栈一行 <code>[stack]</code>，是主线程的。大块 <code>malloc</code> 不在 <code>[heap]</code> 里，而是单独一行匿名映射，路径列空着，设备号 <code>00:00</code>。共享库每个 <code>.so</code> 占好几行。</p>
+<p>想知道某个具体地址属于哪一段，把这个函数塞进程序里查：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">show_maps_for</span><span class="hljs-params">(<span class="hljs-type">void</span> *addr)</span> {
+    FILE *f = fopen(<span class="hljs-string">&quot;/proc/self/maps&quot;</span>, <span class="hljs-string">&quot;r&quot;</span>);
+    <span class="hljs-keyword">if</span> (!f) {
+        <span class="hljs-keyword">return</span>;
+    }
+    <span class="hljs-type">char</span> line[<span class="hljs-number">512</span>];
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> start, end;
+    <span class="hljs-keyword">while</span> (fgets(line, <span class="hljs-keyword">sizeof</span>(line), f)) {
+        <span class="hljs-keyword">if</span> (<span class="hljs-built_in">sscanf</span>(line, <span class="hljs-string">&quot;%lx-%lx&quot;</span>, &amp;start, &amp;end) == <span class="hljs-number">2</span>
+            &amp;&amp; (<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>)addr &gt;= start &amp;&amp; (<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>)addr &lt; end) {
+            <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;%p -&gt; %s&quot;</span>, addr, line);
+            <span class="hljs-keyword">break</span>;
+        }
+    }
+    fclose(f);
+}
+</code></pre></div></code></pre>
+<p>传 <code>&amp;local</code> 和 <code>malloc</code> 返回值进去，各自归属的区域和权限串一目了然。排查「这个指针到底指向谁的地盘」时很好用。</p>
+<h3 id="物理地址的边界" tabindex="-1">物理地址的边界 <a class="header-anchor" href="#物理地址的边界"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>进程能不能知道自己的物理地址？理论上能通过 <code>/proc/self/pagemap</code>，但那需要 root 权限，内核出于安全考虑对普通用户做了屏蔽。这不是该依赖的手段。你唯一需要建立的直觉是：虚拟地址连续不代表物理地址连续，也不代表内存真的存在。内核会做页面回收、迁移、合并，同一个虚拟页在不同时刻落到不同物理页。任何「地址就是内存位置」的假设都是错的。</p>
+<h2 id="十mmap-与文件映射" tabindex="-1">十、mmap 与文件映射 <a class="header-anchor" href="#十mmap-与文件映射"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>mmap</code> 把一段虚拟地址和某个对象绑起来，对象可以是文件，也可以是匿名内存。POSIX.1-2008 的接口：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/mman.h&gt;</span></span>
+
+<span class="hljs-type">void</span> *<span class="hljs-title function_">mmap</span><span class="hljs-params">(<span class="hljs-type">void</span> *addr, <span class="hljs-type">size_t</span> length, <span class="hljs-type">int</span> prot, <span class="hljs-type">int</span> flags, <span class="hljs-type">int</span> fd, <span class="hljs-type">off_t</span> offset)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">munmap</span><span class="hljs-params">(<span class="hljs-type">void</span> *addr, <span class="hljs-type">size_t</span> length)</span>;
+</code></pre></div></code></pre>
+<ul>
+<li><code>addr</code>：建议起始地址，传 <code>NULL</code> 让内核选，最常用。</li>
+<li><code>length</code>：映射字节数，内核按页大小向上取整。</li>
+<li><code>prot</code>：权限，<code>PROT_READ</code>、<code>PROT_WRITE</code>、<code>PROT_EXEC</code>、<code>PROT_NONE</code> 的组合。</li>
+<li><code>flags</code>：<code>MAP_SHARED</code> 或 <code>MAP_PRIVATE</code> 二选一，再加 <code>MAP_ANONYMOUS</code>、<code>MAP_FIXED</code> 之类的修饰。</li>
+<li><code>fd</code>：文件描述符，匿名映射传 <code>-1</code>。</li>
+<li><code>offset</code>：文件内偏移，必须是页大小的整数倍。</li>
+</ul>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">组合</th>
+<th style="text-align:left">含义</th>
+<th style="text-align:left">典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>PROT_READ</code> + <code>MAP_PRIVATE</code></td>
+<td style="text-align:left">只读私有映射</td>
+<td style="text-align:left">读文件，改动不影响原文件</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>PROT_READ|PROT_WRITE</code> + <code>MAP_SHARED</code></td>
+<td style="text-align:left">读写共享映射</td>
+<td style="text-align:left">多进程共享内存、改文件</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>PROT_READ|PROT_WRITE</code> + <code>MAP_PRIVATE</code></td>
+<td style="text-align:left">读写私有，写时复制</td>
+<td style="text-align:left">加载后各自修改</td>
+</tr>
+<tr>
+<td style="text-align:left">匿名 + <code>MAP_PRIVATE</code></td>
+<td style="text-align:left">匿名私有内存</td>
+<td style="text-align:left">大块 <code>malloc</code> 的底层实现</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>PROT_NONE</code></td>
+<td style="text-align:left">完全禁止访问</td>
+<td style="text-align:left">守护页，抓越界</td>
+</tr>
+</tbody>
+</table></div><p>读大文件时 <code>read</code> 要把数据从内核页缓存拷到你的缓冲区，<code>mmap</code> 不用拷，直接把文件页映射进地址空间：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> fd = open(argv[<span class="hljs-number">1</span>], O_RDONLY);
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">stat</span> <span class="hljs-title">st</span>;</span>
+fstat(fd, &amp;st);
+<span class="hljs-type">size_t</span> len = (<span class="hljs-type">size_t</span>)st.st_size;
+
+<span class="hljs-type">char</span> *data = mmap(<span class="hljs-literal">NULL</span>, len, PROT_READ, MAP_PRIVATE, fd, <span class="hljs-number">0</span>);
+<span class="hljs-keyword">if</span> (data == MAP_FAILED) {
+    perror(<span class="hljs-string">&quot;mmap&quot;</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+}
+close(fd);                          <span class="hljs-comment">/* 映射建立后 fd 可以关 */</span>
+<span class="hljs-keyword">for</span> (<span class="hljs-type">size_t</span> i = <span class="hljs-number">0</span>; i &lt; len; i++) {
+    <span class="hljs-keyword">if</span> (data[i] == <span class="hljs-string">&#x27;\n&#x27;</span>) { <span class="hljs-comment">/* 计行 */</span> }
+}
+munmap(data, len);
+</code></pre></div></code></pre>
+<p>四个要点：<code>mmap</code> 失败返回 <code>MAP_FAILED</code>（<code>(void *)-1</code>）而不是 <code>NULL</code>，这是最常见的判断错误；映射建立后 <code>close(fd)</code> 不影响映射；访问超出文件末尾的页收到 <code>SIGBUS</code> 而非 <code>SIGSEGV</code>；文件被别的进程截断时，访问已映射区同样收到 <code>SIGBUS</code>。</p>
+<p>把 <code>MAP_PRIVATE</code> 换成 <code>MAP_SHARED</code> 并配 <code>MAP_ANONYMOUS</code>，这块内存就能在 <code>fork</code> 出的父子进程之间共享，这是进程间共享大块数据最直接的方式，没有拷贝：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">char</span> *p = mmap(<span class="hljs-literal">NULL</span>, len, PROT_READ | PROT_WRITE,
+               MAP_SHARED | MAP_ANONYMOUS, <span class="hljs-number">-1</span>, <span class="hljs-number">0</span>);
+<span class="hljs-keyword">if</span> (fork() == <span class="hljs-number">0</span>) {
+    <span class="hljs-built_in">strcpy</span>(p, <span class="hljs-string">&quot;来自子进程&quot;</span>);
+    _exit(<span class="hljs-number">0</span>);
+}
+wait(<span class="hljs-literal">NULL</span>);
+<span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;%s\n&quot;</span>, p);   <span class="hljs-comment">/* 父进程能读到 */</span>
+</code></pre></div></code></pre>
+<p><code>MAP_SHARED</code> 加文件就是持久化的共享内存，改完用 <code>msync</code> 刷盘。<code>MAP_PRIVATE</code> 加文件则是写时复制，改了只影响自己，不写回文件。</p>
+<p><code>mmap</code> 不是万能加速器。小文件顺序读一次，建立映射的成本反而更高；大文件随机访问、或者需要跨进程共享，它才划算。32 位系统映射不了超过地址空间的文件，只能分段读。</p>
+<h2 id="十一常见的内存错误" tabindex="-1">十一、常见的内存错误 <a class="header-anchor" href="#十一常见的内存错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>C 的内存错误就那么几类，反复出现。认全了，调试时间能省一大半。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">错误</th>
+<th style="text-align:left">表现</th>
+<th style="text-align:left">根因</th>
+<th style="text-align:left">正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">解引用空指针</td>
+<td style="text-align:left">立刻 <code>SIGSEGV</code></td>
+<td style="text-align:left">没检查返回值或忘记初始化</td>
+<td style="text-align:left">分配后判 <code>NULL</code>，指针初始化为 <code>NULL</code></td>
+</tr>
+<tr>
+<td style="text-align:left">悬空指针</td>
+<td style="text-align:left">随机崩溃或数据错乱</td>
+<td style="text-align:left">返回局部变量地址，或 <code>free</code> 后继续用</td>
+<td style="text-align:left">返回堆内存，<code>free</code> 后置空</td>
+</tr>
+<tr>
+<td style="text-align:left">改只读区</td>
+<td style="text-align:left"><code>SIGSEGV</code></td>
+<td style="text-align:left">对字符串字面量写入</td>
+<td style="text-align:left">用字符数组 <code>char s[] = &quot;...&quot;</code></td>
+</tr>
+<tr>
+<td style="text-align:left">缓冲区越界</td>
+<td style="text-align:left">覆盖相邻数据，金丝雀报警</td>
+<td style="text-align:left"><code>strcpy</code> / <code>sprintf</code> 无长度限制</td>
+<td style="text-align:left">用 <code>snprintf</code>，检查长度</td>
+</tr>
+<tr>
+<td style="text-align:left">双重释放</td>
+<td style="text-align:left">堆结构损坏，<code>abort</code></td>
+<td style="text-align:left">两条路径都 <code>free</code> 同一个指针</td>
+<td style="text-align:left">释放后置空，理清所有权</td>
+</tr>
+<tr>
+<td style="text-align:left">用已释放内存</td>
+<td style="text-align:left">数据莫名改变</td>
+<td style="text-align:left"><code>free</code> 后还留着指针</td>
+<td style="text-align:left">置空，或用 ASan 抓</td>
+</tr>
+<tr>
+<td style="text-align:left">内存泄漏</td>
+<td style="text-align:left">RSS 持续上涨</td>
+<td style="text-align:left">异常分支漏了 <code>free</code>，或指针被覆盖</td>
+<td style="text-align:left">单一出口，统一释放</td>
+</tr>
+<tr>
+<td style="text-align:left">形参传值改不了实参</td>
+<td style="text-align:left">实参仍为 <code>NULL</code></td>
+<td style="text-align:left">只改了形参副本</td>
+<td style="text-align:left">传 <code>char **</code> 或用返回值</td>
+</tr>
+<tr>
+<td style="text-align:left">对齐不符</td>
+<td style="text-align:left">某些架构上 <code>SIGBUS</code></td>
+<td style="text-align:left">强制转换未对齐指针</td>
+<td style="text-align:left">用 <code>memcpy</code> 或保证对齐</td>
+</tr>
+<tr>
+<td style="text-align:left">无符号回绕</td>
+<td style="text-align:left"><code>malloc</code> 返回 <code>NULL</code> 或崩溃</td>
+<td style="text-align:left"><code>size</code> 由减法得到负数</td>
+<td style="text-align:left">计算前检查上界</td>
+</tr>
+</tbody>
+</table></div><p>四个高频的展开。</p>
+<p>返回栈地址：函数一返回，局部数组所在的栈帧就失效了，调用者拿到的是悬空地址。改成 <code>malloc</code> 并把 <code>free</code> 的责任写进接口文档。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">char</span> *<span class="hljs-title function_">get_memory_bad</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span> {
+    <span class="hljs-type">char</span> p[] = <span class="hljs-string">&quot;hello world!&quot;</span>;   <span class="hljs-comment">/* 数组在栈上 */</span>
+    <span class="hljs-keyword">return</span> p;                    <span class="hljs-comment">/* 函数返回，栈帧销毁 */</span>
+}
+</code></pre></div></code></pre>
+<p>改字符串字面量：字面量在 <code>.rodata</code>，只读。改成数组就有了一份可写副本。指针和数组在这里的差别不是风格问题，是内存归属问题：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">char</span> *s = <span class="hljs-string">&quot;hello&quot;</span>;
+s[<span class="hljs-number">0</span>] = <span class="hljs-string">&#x27;H&#x27;</span>;    <span class="hljs-comment">/* 段错误 */</span>
+
+<span class="hljs-type">char</span> t[] = <span class="hljs-string">&quot;hello&quot;</span>;
+t[<span class="hljs-number">0</span>] = <span class="hljs-string">&#x27;H&#x27;</span>;    <span class="hljs-comment">/* 正常，t 有自己的可写内存 */</span>
+</code></pre></div></code></pre>
+<p>形参传值：C 只有值传递，形参是实参的一份拷贝。改形参不影响实参，还会顺手泄漏掉刚申请的那块。传二级指针，或者用返回值，别指望改形参。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">get_memory_param</span><span class="hljs-params">(<span class="hljs-type">char</span> *p)</span> {
+    p = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">100</span>);   <span class="hljs-comment">/* 只改了副本，实参仍为 NULL，这 100 字节泄漏 */</span>
+}
+</code></pre></div></code></pre>
+<p>缓冲区溢出与栈金丝雀：<code>char buffer[8]</code> 里写 24 字节，多出来的 16 字节覆盖保存的 <code>rbp</code> 和返回地址。攻击者控制返回地址就能改变执行流，这就是栈溢出攻击。</p>
+<p>现代 GCC 默认开 <code>-fstack-protector-strong</code>，在局部数组和返回地址之间插一个随机值。函数返回前校验，变了就调用 <code>__stack_chk_fail</code>：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>*** stack smashing detected ***: terminated
+</code></pre></div></code></pre>
+<p>程序直接死，而不是跳到攻击者构造的地址。这不能防溢出，只能阻止溢出被利用。真正该做的是别写出越界的代码。<code>-D_FORTIFY_SOURCE=2</code> 能让 <code>strcpy</code>、<code>sprintf</code> 在编译期检查目标大小，拦住一部分常量可算的越界。</p>
+<h2 id="十二内存泄漏与工具" tabindex="-1">十二、内存泄漏与工具 <a class="header-anchor" href="#十二内存泄漏与工具"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>泄漏的定义：程序不再持有某块内存的引用，但也没有 <code>free</code> 它。这块内存到进程退出前一直占着。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">make_leak</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span> {
+    <span class="hljs-type">int</span> *<span class="hljs-built_in">array</span> = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">10</span> * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">int</span>));   <span class="hljs-comment">/* 函数退出，指针没了，块还在 */</span>
+}
+</code></pre></div></code></pre>
+<p>短命进程泄漏无所谓，退出时全还给系统。长期运行的服务泄漏就是事故：RSS 一直涨，最后被 OOM killer 干掉。最麻烦的是缓慢泄漏，一天涨几百 MB，压测看不出来，线上跑一周才炸。</p>
+<h3 id="valgrind" tabindex="-1">Valgrind <a class="header-anchor" href="#valgrind"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -g leak_app.c -o leak_app
+valgrind --tool=memcheck --leak-check=full ./leak_app
+</code></pre></div></code></pre>
+<p><code>-g</code> 必须加，否则报错里只有地址没有行号。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>==12345== 40 bytes in 1 blocks are definitely lost in loss record 1 of 1
+==12345==    at 0x4C29F73: malloc (vg_replace_malloc.c:309)
+==12345==    by 0x40052D: make_leak (leak_app.c:4)
+==12345==    by 0x40053E: main (leak_app.c:9)
+==12345== LEAK SUMMARY: definitely lost: 40 bytes in 1 blocks
+</code></pre></div></code></pre>
+<p>两个数字最有用：<code>definitely lost</code> 是确定丢了、没有任何指针指向它；<code>make_leak (leak_app.c:4)</code> 直接告诉你泄漏发生在第 4 行的 <code>malloc</code>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">分类</th>
+<th style="text-align:left">含义</th>
+<th style="text-align:left">严重程度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">definitely lost</td>
+<td style="text-align:left">没有任何可达指针</td>
+<td style="text-align:left">真泄漏，必修</td>
+</tr>
+<tr>
+<td style="text-align:left">indirectly lost</td>
+<td style="text-align:left">被另一个泄漏的结构持有</td>
+<td style="text-align:left">真泄漏，跟着一起修</td>
+</tr>
+<tr>
+<td style="text-align:left">possibly lost</td>
+<td style="text-align:left">有指针指向块内部而非头部</td>
+<td style="text-align:left">多半是问题，要查</td>
+</tr>
+<tr>
+<td style="text-align:left">still reachable</td>
+<td style="text-align:left">全局变量或栈上还有指针</td>
+<td style="text-align:left">进程退出才释放，多数可接受</td>
+</tr>
+</tbody>
+</table></div><p>代价是慢，程序跑得慢二三十倍，只适合单元测试和小用例。</p>
+<h3 id="addresssanitizer" tabindex="-1">AddressSanitizer <a class="header-anchor" href="#addresssanitizer"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>ASan 是编译器插桩，慢两倍左右，可以直接挂在测试流水线里。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -fsanitize=address -g buffer_overflow.c -o buffer_overflow
+./buffer_overflow
+</code></pre></div></code></pre>
+<p>原理是影子内存：每 8 字节程序内存对应 1 字节影子内存，影子值记录这 8 字节里有几个是合法的。0 表示 8 字节全可访问，1 到 7 表示前 N 字节可访问，负数表示整块被隔离（已释放或越界）。每次内存访问前插一段检查，查影子值。</p>
+<p>ASan 抓的错误比 Valgrind 更全也更快：堆越界、栈越界、全局越界、use-after-free、double-free、内存泄漏。报错直接给源码行号和分配、释放的调用栈。开泄漏检测用 <code>ASAN_OPTIONS=detect_leaks=1 ./app</code>，想连未定义行为一起抓就编 <code>-fsanitize=address,undefined</code>。</p>
+<h3 id="gdb" tabindex="-1">GDB <a class="header-anchor" href="#gdb"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>有些崩溃只在生产环境的特定输入下出现，你手上只有 core dump。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>(gdb) run              # 跑到崩溃
+(gdb) backtrace        # 看调用栈
+(gdb) frame 1          # 切到第 1 帧
+(gdb) info frame       # 看这一帧的 rbp、rsp、返回地址
+(gdb) info locals      # 看局部变量
+(gdb) x/16xb &amp;buffer   # 从 &amp;buffer 起 dump 16 个字节
+</code></pre></div></code></pre>
+<p><code>x/16xb</code> 的意思是「从 <code>&amp;buffer</code> 开始，显示 16 个字节，十六进制」。看越界写了什么、覆盖到哪个位置，一目了然。生产环境一般关着 core dump（占磁盘），排查时临时 <code>ulimit -c unlimited</code> 打开，抓完就关。</p>
+<h2 id="十三内存对齐与结构体布局" tabindex="-1">十三、内存对齐与结构体布局 <a class="header-anchor" href="#十三内存对齐与结构体布局"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>CPU 读内存不是一个字节一个字节读的，它按字长整块读。32 位机器一次读 4 字节，64 位一次读 8 字节。一个 <code>int</code> 横跨两个 4 字节块时，CPU 要么发两次总线请求再拼接，要么直接报错。所以编译器主动加填充，让每个成员都落在自己大小的整数倍地址上。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">DefaultStruct</span> {</span>
+    <span class="hljs-type">char</span> a;    <span class="hljs-comment">/* 偏移 0，占 1 字节 */</span>
+               <span class="hljs-comment">/* 偏移 1-3，填充 3 字节 */</span>
+    <span class="hljs-type">int</span>  b;    <span class="hljs-comment">/* 偏移 4，占 4 字节 */</span>
+    <span class="hljs-type">char</span> c;    <span class="hljs-comment">/* 偏移 8，占 1 字节 */</span>
+               <span class="hljs-comment">/* 偏移 9-11，填充 3 字节 */</span>
+};             <span class="hljs-comment">/* 总大小 12，是最大成员 4 的倍数 */</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">pragma</span> pack(1)</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">CompactStruct</span> {</span> <span class="hljs-type">char</span> a; <span class="hljs-type">int</span> b; <span class="hljs-type">char</span> c; };   <span class="hljs-comment">/* 6 字节 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">pragma</span> pack()</span>
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">Bad</span>  {</span> <span class="hljs-type">char</span> a; <span class="hljs-type">int</span> b; <span class="hljs-type">char</span> c; <span class="hljs-type">double</span> d; };  <span class="hljs-comment">/* 24 字节 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">Good</span> {</span> <span class="hljs-type">double</span> d; <span class="hljs-type">int</span> b; <span class="hljs-type">char</span> a; <span class="hljs-type">char</span> c; };  <span class="hljs-comment">/* 16 字节 */</span>
+</code></pre></div></code></pre>
+<p>三条规则记住就够：每个成员的偏移必须是它自身大小的整数倍；结构体总大小必须是最大对齐值的整数倍，末尾补填充；嵌套结构体按内部最大对齐值参与前两条。查偏移用 <code>&lt;stddef.h&gt;</code> 里的 <code>offsetof(struct DefaultStruct, b)</code>，不用自己拿地址相减。</p>
+<p><code>Bad</code> 和 <code>Good</code> 成员完全一样，只换了顺序就从 24 降到 16。原则是按对齐值从大到小排。<code>#pragma pack(1)</code> 能强行压到 6，用在网络协议封包、串口传输、文件头上，这些场景多一个填充就多传一个字节。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">类型</th>
+<th style="text-align:left">大小</th>
+<th style="text-align:left">对齐（x86-64）</th>
+<th style="text-align:left">备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><code>char</code></td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">1</td>
+<td style="text-align:left">永远不填充</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>short</code></td>
+<td style="text-align:left">2</td>
+<td style="text-align:left">2</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>int</code></td>
+<td style="text-align:left">4</td>
+<td style="text-align:left">4</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>long</code></td>
+<td style="text-align:left">8</td>
+<td style="text-align:left">8</td>
+<td style="text-align:left">LP64 模型</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>float</code></td>
+<td style="text-align:left">4</td>
+<td style="text-align:left">4</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left"><code>double</code></td>
+<td style="text-align:left">8</td>
+<td style="text-align:left">8</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">指针</td>
+<td style="text-align:left">8</td>
+<td style="text-align:left">8</td>
+<td style="text-align:left">32 位下为 4</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>long double</code></td>
+<td style="text-align:left">16</td>
+<td style="text-align:left">16</td>
+<td style="text-align:left">x86-64 上占 16 字节</td>
+</tr>
+</tbody>
+</table></div><p>这些是 ABI 规定，不是 C 标准规定。标准只说「对齐由实现定义」，换到 ARM 或 RISC-V 上某些值会变。</p>
+<p><code>#pragma pack(1)</code> 的代价真实存在：取 <code>int</code> 成员时编译器不能生成一条对齐的取指，只能按字节读四次再拼。某些架构上访问未对齐地址直接触发异常。跨平台代码里更安全的做法是不动结构体布局，改用显式序列化，字节序和对齐都由你控制。</p>
+<p><code>malloc</code> 返回的地址保证适合任何基本类型（<code>max_align_t</code>），但指针算术之后就不保证了：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">char</span> *buf = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">1024</span>);
+<span class="hljs-type">int</span> *p = (<span class="hljs-type">int</span> *)(buf + <span class="hljs-number">1</span>);   <span class="hljs-comment">/* 未对齐，某些架构上崩 */</span>
+
+<span class="hljs-type">int</span> v;
+<span class="hljs-built_in">memcpy</span>(&amp;v, buf + <span class="hljs-number">1</span>, <span class="hljs-keyword">sizeof</span>(v));   <span class="hljs-comment">/* 正确，编译器会优化成合适指令 */</span>
+</code></pre></div></code></pre>
+<p>类型双关也一样。把 <code>float</code> 的内存当 <code>uint32_t</code> 读，用 <code>memcpy</code> 或 union，别用指针强转，那是严格别名规则的违规，<code>-O2</code> 下会优化出错。</p>
+<h2 id="十四易错点速查" tabindex="-1">十四、易错点速查 <a class="header-anchor" href="#十四易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把这一篇的坑压缩成一张表，写代码卡住时先扫一眼。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th style="text-align:left">场景</th>
+<th style="text-align:left">错误写法</th>
+<th style="text-align:left">正确写法</th>
+<th style="text-align:left">后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">检查 <code>mmap</code></td>
+<td style="text-align:left"><code>if (p == NULL)</code></td>
+<td style="text-align:left"><code>if (p == MAP_FAILED)</code></td>
+<td style="text-align:left">漏判失败</td>
+</tr>
+<tr>
+<td style="text-align:left">检查 <code>malloc</code></td>
+<td style="text-align:left">直接用返回值</td>
+<td style="text-align:left">先判 <code>NULL</code></td>
+<td style="text-align:left">空指针崩溃</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>free</code> 之后</td>
+<td style="text-align:left">继续用指针</td>
+<td style="text-align:left"><code>free(p); p = NULL;</code></td>
+<td style="text-align:left">UAF / 双重释放</td>
+</tr>
+<tr>
+<td style="text-align:left"><code>realloc</code></td>
+<td style="text-align:left"><code>p = realloc(p, n)</code></td>
+<td style="text-align:left">用临时变量接</td>
+<td style="text-align:left">失败时原块泄漏</td>
+</tr>
+<tr>
+<td style="text-align:left">返回字符串</td>
+<td style="text-align:left"><code>return local_array;</code></td>
+<td style="text-align:left"><code>malloc</code> 或传缓冲区</td>
+<td style="text-align:left">悬空指针</td>
+</tr>
+<tr>
+<td style="text-align:left">改字面量</td>
+<td style="text-align:left"><code>char *s = &quot;abc&quot;; s[0]='x';</code></td>
+<td style="text-align:left"><code>char s[] = &quot;abc&quot;;</code></td>
+<td style="text-align:left">段错误</td>
+</tr>
+<tr>
+<td style="text-align:left">拷字符串</td>
+<td style="text-align:left"><code>strcpy(dst, src);</code></td>
+<td style="text-align:left"><code>snprintf(dst, n, &quot;%s&quot;, src)</code></td>
+<td style="text-align:left">缓冲区溢出</td>
+</tr>
+<tr>
+<td style="text-align:left">传指针改实参</td>
+<td style="text-align:left"><code>void f(char *p)</code></td>
+<td style="text-align:left"><code>void f(char **p)</code> 或返回值</td>
+<td style="text-align:left">实参不变</td>
+</tr>
+<tr>
+<td style="text-align:left">大数组</td>
+<td style="text-align:left"><code>char buf[1&lt;&lt;20]</code> 在栈上</td>
+<td style="text-align:left"><code>malloc</code></td>
+<td style="text-align:left">爆栈</td>
+</tr>
+<tr>
+<td style="text-align:left">结构体比较</td>
+<td style="text-align:left"><code>memcmp(&amp;a, &amp;b, sizeof(a))</code></td>
+<td style="text-align:left">逐字段比</td>
+<td style="text-align:left">填充字节内容不定</td>
+</tr>
+<tr>
+<td style="text-align:left">取成员偏移</td>
+<td style="text-align:left"><code>(char*)&amp;s.b - (char*)&amp;s</code></td>
+<td style="text-align:left"><code>offsetof(struct S, b)</code></td>
+<td style="text-align:left">手算出错</td>
+</tr>
+<tr>
+<td style="text-align:left">数组参数取大小</td>
+<td style="text-align:left">函数内 <code>sizeof(arr)</code></td>
+<td style="text-align:left">传长度一起给</td>
+<td style="text-align:left">得到指针大小</td>
+</tr>
+<tr>
+<td style="text-align:left">无符号减法</td>
+<td style="text-align:left"><code>malloc(n - 1)</code>，<code>n</code> 为 0</td>
+<td style="text-align:left">先判 <code>n &gt; 0</code></td>
+<td style="text-align:left">申请 4GB 失败</td>
+</tr>
+<tr>
+<td style="text-align:left">释放栈地址</td>
+<td style="text-align:left"><code>int a[10]; free(a);</code></td>
+<td style="text-align:left">只释放堆指针</td>
+<td style="text-align:left">堆损坏</td>
+</tr>
+<tr>
+<td style="text-align:left">跨模块所有权</td>
+<td style="text-align:left">文档没写谁释放</td>
+<td style="text-align:left">明确约定</td>
+<td style="text-align:left">泄漏或双重释放</td>
+</tr>
+<tr>
+<td style="text-align:left">多线程静态变量</td>
+<td style="text-align:left"><code>static int sum;</code></td>
+<td style="text-align:left"><code>_Thread_local</code> 或加锁</td>
+<td style="text-align:left">数据竞争</td>
+</tr>
+</tbody>
+</table></div><p>再补五条不进表的经验。</p>
+<p>给所有内部函数和模块级全局变量加 <code>static</code>。它把符号从全局符号表里隐藏，别人引用不到，等于免费拿到了封装。</p>
+<p>分配和释放写在同一层。谁 <code>malloc</code>，谁 <code>free</code>。中间隔了三层函数调用，就一定有人在某个 <code>if</code> 分支里漏掉。接口要么返回完整的对象，要么接受调用者提供的缓冲区，别搞半所有权。</p>
+<p>所有异常分支走同一个出口，这是防泄漏最土也最管用的办法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">process</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span> {
+    <span class="hljs-type">char</span> *a = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">100</span>);
+    <span class="hljs-type">char</span> *b = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">200</span>);
+    <span class="hljs-type">int</span> ret = <span class="hljs-number">-1</span>;
+    <span class="hljs-keyword">if</span> (!a || !b) {
+        <span class="hljs-keyword">goto</span> out;
+    }
+    <span class="hljs-keyword">if</span> (do_something(a, b) &lt; <span class="hljs-number">0</span>) {
+        <span class="hljs-keyword">goto</span> out;
+    }
+    ret = <span class="hljs-number">0</span>;
+out:
+    <span class="hljs-built_in">free</span>(a);
+    <span class="hljs-built_in">free</span>(b);
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<p><code>goto</code> 在这里是正确用法。C 里没有析构函数，单一出口加集中释放是最不容易漏的写法。</p>
+<p><code>sizeof</code> 只在数组还在作用域内时才对。数组作为参数传给函数立刻退化成指针，函数里 <code>sizeof(arr)</code> 得到的是 8。</p>
+<p>栈上不要放超过 10KB 的东西。这条不是教条，是踩过坑之后的经验值。真需要大缓冲区，用 <code>malloc</code>，用完 <code>free</code>，成本远小于一次爆栈事故。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一c-程序的内存布局全景" data-toc-target="一c-程序的内存布局全景">一、C 程序的内存布局全景</a>
+                    
+                    <a class="toc-item toc-lv3" href="#五段对照" data-toc-target="五段对照">五段对照</a>
+                    
+                    <a class="toc-item toc-lv3" href="#从源码到段编译四阶段" data-toc-target="从源码到段编译四阶段">从源码到段：编译四阶段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#打印地址验证布局" data-toc-target="打印地址验证布局">打印地址验证布局</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二代码段与数据段" data-toc-target="二代码段与数据段">二、代码段与数据段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#变量的三个维度" data-toc-target="变量的三个维度">变量的三个维度</a>
+                    
+                    <a class="toc-item toc-lv3" href="#跨文件的共享与隔离" data-toc-target="跨文件的共享与隔离">跨文件的共享与隔离</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三bss-段与未初始化数据" data-toc-target="三bss-段与未初始化数据">三、BSS 段与未初始化数据</a>
+                    
+                    <a class="toc-item toc-lv3" href="#静态局部变量的代价" data-toc-target="静态局部变量的代价">静态局部变量的代价</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四栈自动变量的位置" data-toc-target="四栈自动变量的位置">四、栈：自动变量的位置</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五栈的生长方向与栈溢出" data-toc-target="五栈的生长方向与栈溢出">五、栈的生长方向与栈溢出</a>
+                    
+                    <a class="toc-item toc-lv3" href="#栈有多大" data-toc-target="栈有多大">栈有多大</a>
+                    
+                    <a class="toc-item toc-lv3" href="#三种压垮栈的写法" data-toc-target="三种压垮栈的写法">三种压垮栈的写法</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六堆与-malloc" data-toc-target="六堆与-malloc">六、堆与 malloc</a>
+                    
+                    <a class="toc-item toc-lv3" href="#堆和栈的差别" data-toc-target="堆和栈的差别">堆和栈的差别</a>
+                    
+                    <a class="toc-item toc-lv3" href="#malloc-系列" data-toc-target="malloc-系列">malloc 系列</a>
+                    
+                    <a class="toc-item toc-lv3" href="#大小决定走哪条路" data-toc-target="大小决定走哪条路">大小决定走哪条路</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七malloc-与-free-的行为" data-toc-target="七malloc-与-free-的行为">七、malloc 与 free 的行为</a>
+                    
+                    <a class="toc-item toc-lv3" href="#五条行为规则" data-toc-target="五条行为规则">五条行为规则</a>
+                    
+                    <a class="toc-item toc-lv3" href="#分配失败的两种真相" data-toc-target="分配失败的两种真相">分配失败的两种真相</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八虚拟地址空间的意义" data-toc-target="八虚拟地址空间的意义">八、虚拟地址空间的意义</a>
+                    
+                    <a class="toc-item toc-lv3" href="#缺页地址第一次被碰" data-toc-target="缺页地址第一次被碰">缺页：地址第一次被碰</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九从虚拟地址到物理地址" data-toc-target="九从虚拟地址到物理地址">九、从虚拟地址到物理地址</a>
+                    
+                    <a class="toc-item toc-lv3" href="#物理地址的边界" data-toc-target="物理地址的边界">物理地址的边界</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十mmap-与文件映射" data-toc-target="十mmap-与文件映射">十、mmap 与文件映射</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一常见的内存错误" data-toc-target="十一常见的内存错误">十一、常见的内存错误</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二内存泄漏与工具" data-toc-target="十二内存泄漏与工具">十二、内存泄漏与工具</a>
+                    
+                    <a class="toc-item toc-lv3" href="#valgrind" data-toc-target="valgrind">Valgrind</a>
+                    
+                    <a class="toc-item toc-lv3" href="#addresssanitizer" data-toc-target="addresssanitizer">AddressSanitizer</a>
+                    
+                    <a class="toc-item toc-lv3" href="#gdb" data-toc-target="gdb">GDB</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三内存对齐与结构体布局" data-toc-target="十三内存对齐与结构体布局">十三、内存对齐与结构体布局</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四易错点速查" data-toc-target="十四易错点速查">十四、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/D.操作系统/05-内存与文件系统/C-程序的内存模型：从栈堆到虚拟地址空间/","title":"C 程序的内存模型：从栈堆到虚拟地址空间","url":"/D.操作系统/05-内存与文件系统/C-程序的内存模型：从栈堆到虚拟地址空间/","type":"current"},{"id":"/D.操作系统/05-内存与文件系统/Linux-目录结构与-FHS-标准/","title":"Linux 目录结构与 FHS 标准","url":"/D.操作系统/05-内存与文件系统/Linux-目录结构与-FHS-标准/","type":"neighbor"},{"id":"/D.操作系统/05-内存与文件系统/分区、挂载与磁盘工具/","title":"分区、挂载与磁盘工具","url":"/D.操作系统/05-内存与文件系统/分区、挂载与磁盘工具/","type":"neighbor"},{"id":"/D.操作系统/05-内存与文件系统/垃圾回收的三种基本方式/","title":"垃圾回收的三种基本方式","url":"/D.操作系统/05-内存与文件系统/垃圾回收的三种基本方式/","type":"neighbor"},{"id":"/D.操作系统/05-内存与文件系统/文件-IO-与描述符管理/","title":"文件 IO 与描述符管理","url":"/D.操作系统/05-内存与文件系统/文件-IO-与描述符管理/","type":"neighbor"}],"links":[{"source":"/D.操作系统/05-内存与文件系统/C-程序的内存模型：从栈堆到虚拟地址空间/","target":"/D.操作系统/05-内存与文件系统/Linux-目录结构与-FHS-标准/","type":"neighbor"},{"source":"/D.操作系统/05-内存与文件系统/C-程序的内存模型：从栈堆到虚拟地址空间/","target":"/D.操作系统/05-内存与文件系统/分区、挂载与磁盘工具/","type":"neighbor"},{"source":"/D.操作系统/05-内存与文件系统/C-程序的内存模型：从栈堆到虚拟地址空间/","target":"/D.操作系统/05-内存与文件系统/垃圾回收的三种基本方式/","type":"neighbor"},{"source":"/D.操作系统/05-内存与文件系统/C-程序的内存模型：从栈堆到虚拟地址空间/","target":"/D.操作系统/05-内存与文件系统/文件-IO-与描述符管理/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

@@ -1,0 +1,1455 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>并发与 IO 模型速记 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">并发与 IO 模型速记</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/C.驱动/13-杂项/并发与-IO-模型速记/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">并发与 IO 模型速记</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">并发与 IO 模型速记</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <h2 id="一并发与竞态课堂上的第一个错误示范" tabindex="-1">一、并发与竞态：课堂上的第一个错误示范 <a class="header-anchor" href="#一并发与竞态课堂上的第一个错误示范"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>课上给并发的定义是从两个视角切开的：宏观上看，操作系统里多个任务在并行执行；微观上看，任何一个瞬间 CPU 只跑一条指令，多个任务是被切碎了串行跑的。这两句话不矛盾，它们是同一件事的两面——并发是宏观的并行，微观的串行加上切换。</p>
+<p>竞态就从这个「切碎了串行跑」里长出来。当多个执行单元访问同一份共享资源（硬件寄存器、全局变量、链表、静态变量），访问顺序不同、结果就不同，这就是竞态。资源本身没毛病，毛病在于访问没被约束。</p>
+<p>第一个贯穿全课的引子是个很朴素的需求：让一个驱动在同一时刻只能被一个进程打开。课上先用一个 <code>flag</code> 变量去实现它，代码写出来是这样的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> flag = <span class="hljs-number">1</span>;          <span class="hljs-comment">/* 1 表示空闲，0 表示已被占用 */</span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">hello_open</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-keyword">struct</span> file *file)</span>
+{
+    <span class="hljs-keyword">if</span> (flag != <span class="hljs-number">1</span>) {
+        <span class="hljs-keyword">return</span> -EBUSY;
+    }
+
+    flag = <span class="hljs-number">0</span>;                 <span class="hljs-comment">/* 占住 */</span>
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">hello_release</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-keyword">struct</span> file *file)</span>
+{
+    flag++;
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>这段代码写完，问题留在了黑板上：它错在哪？</p>
+<p>问题不在语法，也不在逻辑顺序。问题在于 <code>if (flag != 1)</code> 和 <code>flag = 0;</code> 是两条彼此独立的指令，中间那个缝可以插进任何东西。课堂上把这条时间线当场摊开：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>进程 A：读 flag    → 1，判断通过
+        ← 时间片用完，或被更高优先级的进程抢占，CPU 切走
+进程 B：读 flag    → 还是 1，判断通过
+进程 B：写 flag=0  → open 成功，拿到设备
+进程 A：被调度回来，写 flag=0 → open 也成功
+        ✗ 两个进程同时持有 /dev/hello
+</code></pre></div></code></pre>
+<p>这段示范的价值在于它把「临界区」这个词从定义变成了画面。<code>flag</code> 是临界资源，读写它的那几行代码是临界区，而临界区一旦被拆开执行，互斥就失效了。<code>hello_release</code> 里的 <code>flag++</code> 同理——读、加、写三步，同样能被拆。</p>
+<p>课堂板书还有另一个版本，写的是结构体成员：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (hello_dev.flag == <span class="hljs-number">1</span>) {
+    hello_dev.flag = <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>这两版是同一节课的两块板书，判断方向并不冲突（都是 1 表示空闲），差别只在于第二版只记了 <code>if</code> 分支，<code>else</code> 分支在抄写时掉了。看速记时别被这个坑住。</p>
+<p>判断和修改必须是一个不可分割的整体，这个需求直接催生了后面所有机制。课上把它归成一句话：访问共享资源的那几条指令不能被打断，打断它的东西一共有三类——别的进程（抢占）、中断、别的 CPU。</p>
+<h2 id="二临界区与临界资源" tabindex="-1">二、临界区与临界资源 <a class="header-anchor" href="#二临界区与临界资源"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>课上的定义给得很直接，四个词两两成对：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>概念</th>
+<th>课堂定义</th>
+<th>落到代码上</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>并发</td>
+<td>多个执行单元同时执行；或多执行单元微观串行、宏观并行</td>
+<td>两个 <code>open</code> 同时进来</td>
+</tr>
+<tr>
+<td>竞态</td>
+<td>并发执行单元对共享资源访问导致的状态错乱</td>
+<td><code>flag</code> 被读了两遍、写了两遍</td>
+</tr>
+<tr>
+<td>临界资源</td>
+<td>同一时刻只允许一个执行单元使用的资源</td>
+<td><code>flag</code>、环形缓冲区、硬件寄存器</td>
+</tr>
+<tr>
+<td>临界区</td>
+<td>访问临界资源的那段代码</td>
+<td><code>if (flag != 1) ... flag = 0;</code></td>
+</tr>
+</tbody>
+</table></div><p>关键点在于<strong>临界区是代码，不是资源</strong>。判断一段代码是不是临界区，只看它碰不碰临界资源，不看它写在哪个函数里。<code>open</code> 里碰了，<code>open</code> 里那两行就是；<code>release</code> 里碰了，<code>release</code> 里那行也是。同一份资源的所有临界区必须用同一把锁保护，漏掉任何一处，锁就白加了。</p>
+<p>课上强调过一个容易被忽略的推论：临界区的粒度决定了锁的代价。围得太大，把 <code>printk</code>、<code>copy_to_user</code> 这种慢操作包进去，锁的持有时间被拉长，别的执行单元全在门外排队；围得太小，漏掉几行，互斥直接破功。三种粒度当场对比过：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>写法</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只锁 <code>flag = 0;</code> 一行</td>
+<td>判断在锁外，还是两个进程都能通过判断，等于没锁</td>
+</tr>
+<tr>
+<td>锁住判断到赋值两行</td>
+<td>正确，这是最小可用临界区</td>
+</tr>
+<tr>
+<td>锁住整个 <code>hello_open</code></td>
+<td>正确但浪费，<code>printk</code> 之类不该进临界区</td>
+</tr>
+</tbody>
+</table></div><p>那个「只锁一行」的写法是课上专门写出来反着讲的，它比完全不锁更有欺骗性——代码里明明有 <code>spin_lock</code>，跑起来照样两个进程进得去。</p>
+<h2 id="三四种并发场合" tabindex="-1">三、四种并发场合 <a class="header-anchor" href="#三四种并发场合"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>并发场合这条是考试重点，课上要求背下来并且能对上每种场合该用什么机制。四种场合按「谁打断谁」排列：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>场合</th>
+<th>打断关系</th>
+<th>单/多核</th>
+<th>课上给的对应机制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>单 CPU，进程与进程之间</td>
+<td>抢占，高优先级进程打断低优先级</td>
+<td>单核</td>
+<td>自旋锁、信号量</td>
+</tr>
+<tr>
+<td>2</td>
+<td>单 CPU，进程与中断之间</td>
+<td>中断打断正在执行的进程</td>
+<td>单核</td>
+<td>加锁 + 关中断</td>
+</tr>
+<tr>
+<td>3</td>
+<td>多 CPU 之间</td>
+<td>真正并行，各自跑各自的</td>
+<td>多核</td>
+<td>原子操作、自旋锁</td>
+</tr>
+<tr>
+<td>4</td>
+<td>单 CPU，中断与中断之间</td>
+<td>高优先级中断打断低优先级中断</td>
+<td>单核</td>
+<td>关中断 + 锁</td>
+</tr>
+</tbody>
+</table></div><p>课上对着这张表的讲法是：场合 1 是「进程打进程」，场合 2 是「中断打进程」，场合 3 是「CPU 打 CPU」，场合 4 是「中断打中断」。四种里只有场合 3 是物理上的同时发生，其余三种都是靠切换制造出来的假并行——但对代码来说没区别，一样会烂。</p>
+<p>这里有个课堂反复纠正的误解：单 CPU 就不用上锁。错。单 CPU 上如果内核是可抢占的，进程跑到临界区中间被切走，另一个进程进来照样踩。只有当「单 CPU + 内核不可抢占 + 不涉及中断」三个条件同时成立时，竞态才不存在——而这三个条件在真实系统里凑不齐。</p>
+<p>场合 2 和场合 4 为什么必须关中断，课上是用反证讲的：如果只加锁不关中断，进程 A 拿到锁以后中断来了，中断处理函数也要这把锁，它在中断上下文里自旋等——可 A 已经被中断挂起了，永远回不来交出锁，于是死锁。这个场景后面第六节还会展开。</p>
+<h2 id="四中断屏蔽" tabindex="-1">四、中断屏蔽 <a class="header-anchor" href="#四中断屏蔽"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>最原始的一招。进临界区前把本地 CPU 的中断全关掉，出来再打开：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>local_irq_disable();          <span class="hljs-comment">/* 屏蔽本 CPU 中断 */</span>
+<span class="hljs-comment">/* ... 临界区 ... */</span>
+local_irq_enable();           <span class="hljs-comment">/* 开中断 */</span>
+</code></pre></div></code></pre>
+<p>课上给的结论很干脆：单 CPU 下没问题，多 CPU 下照样有竞态。原因是 <code>local_irq_disable()</code> 只动本地 CPU 的中断标志位，另一个 CPU 上的进程该跑还是跑，它进临界区不需要经过你的中断开关。所以中断屏蔽从来不是一把完整的锁，它只是把「中断」这一路竞争者挡在门外。</p>
+<p>结论很直接：这东西不单独使用。原因两条，第一条是关中断以后很多事都做不了——时钟中断进不来，调度器停摆，系统的时间感消失；第二条是临界区必须尽量短，赶紧干完赶紧开中断，关久了整个系统跟着卡。</p>
+<p>正因为它这么粗暴，实际代码里更常见的是保存恢复版本：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+
+local_irq_save(flags);        <span class="hljs-comment">/* 关中断，同时把原中断状态存进 flags */</span>
+<span class="hljs-comment">/* ... 临界区 ... */</span>
+local_irq_restore(flags);     <span class="hljs-comment">/* 恢复成原来的状态，不是无脑开中断 */</span>
+</code></pre></div></code></pre>
+<p>区别在 <code>local_irq_restore</code> 恢复的是「进来之前的样子」。如果这段代码本身已经运行在关中断上下文里，用 <code>local_irq_enable()</code> 出去就直接把中断打开了，等于把外层关的中断给拆了——这类嵌套场景正是 save/restore 存在的理由。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>作用范围</td>
+<td>只影响本地 CPU</td>
+</tr>
+<tr>
+<td>能挡住</td>
+<td>中断、以及依赖中断的进程抢占</td>
+</tr>
+<tr>
+<td>挡不住</td>
+<td>其他 CPU 上的进程</td>
+</tr>
+<tr>
+<td>代价</td>
+<td>系统失去时间感，临界区必须极短</td>
+</tr>
+<tr>
+<td>课堂结论</td>
+<td>一般不单独使用，作为自旋锁的配套手段出现</td>
+</tr>
+</tbody>
+</table></div><p>（<code>local_irq_save</code> / <code>local_irq_restore</code> 在 3.x 已有；具体宏展开随架构不同，未验证。）</p>
+<h2 id="五原子操作那个经典的单例判断" tabindex="-1">五、原子操作：那个经典的单例判断 <a class="header-anchor" href="#五原子操作那个经典的单例判断"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>原子操作的定义课上只讲了一句：不可分割的操作。执行期间不会被任何东西打断，连中断也不行。它能保护的范围很小，只针对单个变量，但正好卡在第一节那个 <code>flag</code> 的判断上。</p>
+<p>一个原子变量用 <code>atomic_t</code> 定义，初值靠 <code>ATOMIC_INIT</code> 给：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">atomic_t</span> v = ATOMIC_INIT(<span class="hljs-number">1</span>);     <span class="hljs-comment">/* 1 表示没有被占用 */</span>
+</code></pre></div></code></pre>
+<p>配套的几个操作里，关键是 <code>atomic_dec_and_test()</code>：把变量减 1，然后测试结果是不是 0，是 0 返回真，否则返回假。注意它把「减」和「测」合成了一步，这两步之间没有缝可插——难点正在这里，拆成 <code>atomic_dec()</code> 再读值又回到竞态了。</p>
+<p>课上给的正确版是这样：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">atomic_t</span> v = ATOMIC_INIT(<span class="hljs-number">1</span>);
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">hello_open</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-keyword">struct</span> file *file)</span>
+{
+    printk(<span class="hljs-string">&quot;hello_open()\n&quot;</span>);
+
+    <span class="hljs-keyword">if</span> (!atomic_dec_and_test(&amp;v)) {      <span class="hljs-comment">/* 减到 0 才算抢到 */</span>
+        atomic_inc(&amp;v);                  <span class="hljs-comment">/* 没抢到，把计数加回来 */</span>
+        <span class="hljs-keyword">return</span> -EBUSY;
+    }
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">hello_release</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> inode *inode, <span class="hljs-keyword">struct</span> file *file)</span>
+{
+    printk(<span class="hljs-string">&quot;hello_release()\n&quot;</span>);
+    atomic_inc(&amp;v);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>两个细节必须抠清楚。第一，初值为什么是 1 而不是 0：<code>atomic_dec_and_test</code> 是「减完看是不是 0」，初值 1 减一次到 0 返回真，表示第一个进程拿到了；第二个进程再减就变成 -1，返回假。如果初值给 0，第一个进程一减就成 -1，永远拿不到。第二，失败分支里的 <code>atomic_inc(&amp;v)</code> 不是可选的客气话：不加回来，计数会一路往下掉，掉到很负以后，即便所有进程都关了设备，<code>atomic_dec_and_test</code> 也再也回不到 0，这把「是否被占用」的判断彻底废掉。</p>
+<p>课上把原子操作的常用项列成一张表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>函数</th>
+<th>语义</th>
+<th>返回值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>atomic_set(v, i)</code></td>
+<td>设为 i</td>
+<td>无</td>
+</tr>
+<tr>
+<td><code>atomic_read(v)</code></td>
+<td>读当前值</td>
+<td>当前值</td>
+</tr>
+<tr>
+<td><code>atomic_inc(v)</code></td>
+<td>加 1</td>
+<td>无</td>
+</tr>
+<tr>
+<td><code>atomic_dec(v)</code></td>
+<td>减 1</td>
+<td>无</td>
+</tr>
+<tr>
+<td><code>atomic_inc_and_test(v)</code></td>
+<td>加 1 后测是否等于 0</td>
+<td>等于 0 返回真</td>
+</tr>
+<tr>
+<td><code>atomic_dec_and_test(v)</code></td>
+<td>减 1 后测是否等于 0</td>
+<td>等于 0 返回真</td>
+</tr>
+<tr>
+<td><code>atomic_add(i, v)</code> / <code>atomic_sub(i, v)</code></td>
+<td>加减 i</td>
+<td>无</td>
+</tr>
+</tbody>
+</table></div><p>（<code>atomic_t</code>、<code>ATOMIC_INIT</code>、<code>atomic_dec_and_test</code> 在 3.x 与 2.6 后期都可用；<code>atomic_inc_and_test</code> 同期的存在性未逐版本验证。）</p>
+<p>课上还专门澄清过一次板书里的表述错误。速记里写的是「上述操作对原子变量执行自增、自减和减操作后（注意没有加）测试其是否为 0」，这句话读不通——<code>atomic_inc_and_test</code> 就是「加 1 后测试」，<code>atomic_dec_and_test</code> 是「减 1 后测试」，两个都有，没有「没有加」这回事。</p>
+<p>原子操作的局限也要说清：它只能做计数类的事，保护的是一两个整数，说不上保护一段逻辑。要保护多行代码、多个变量，就得往上走，用锁。它的优点是简单、不进睡眠、中断上下文里也能用。</p>
+<h2 id="六自旋锁什么时候必须关中断" tabindex="-1">六、自旋锁：什么时候必须关中断 <a class="header-anchor" href="#六自旋锁什么时候必须关中断"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>自旋锁的语义课上用两个词拆开讲：锁，是拿到就能访问临界资源；自旋，是拿不到就在原地忙等，不睡、不放手、占着 CPU 转圈。</p>
+<p>先讲它跟 CPU 核数的关系，这块是课堂上的一个小表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>自旋锁的实际行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单核、内核不可抢占</td>
+<td>空操作，退化成什么都不做</td>
+</tr>
+<tr>
+<td>单核、内核可抢占</td>
+<td>关掉内核抢占</td>
+</tr>
+<tr>
+<td>多核</td>
+<td>关抢占 + 真的自旋等锁</td>
+</tr>
+</tbody>
+</table></div><p>单核非抢占下为什么能退化成空操作：只有一个执行流在跑，不存在「另一个人正拿着锁」这种情况，加锁解锁自然没意义。单核抢占下要关抢占，是因为抢占会让另一个进程进来抢同一把锁。多核下两者都要。</p>
+<p>API 只有四个，课上要求默写：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">spinlock_t</span> lock;              <span class="hljs-comment">/* 定义 */</span>
+spin_lock_init(&amp;lock);        <span class="hljs-comment">/* 初始化 */</span>
+
+spin_lock(&amp;lock);             <span class="hljs-comment">/* 拿到立即返回，拿不到原地自旋 */</span>
+<span class="hljs-comment">/* ... 临界区 ... */</span>
+spin_unlock(&amp;lock);           <span class="hljs-comment">/* 释放 */</span>
+</code></pre></div></code></pre>
+<p><code>spin_trylock()</code> 课上提了一句：拿到返回真，拿不到立刻返回假，不在原地打转——用在不值得等或者不能等的场合。</p>
+<p>内核抢占这件事课上单独讲了一段，因为它是自旋锁一切限制的根源：不管当前进程在内核态还是用户态，内核都会去调度优先级更高的进程运行、把当前进程停下。而自旋锁自旋期间内核抢占是关闭的，内核不会去调度别的进程。好处是持锁的进程一定能拿到 CPU 把活干完、把锁放掉；坏处是持锁的进程一旦不放手，全系统陪着等。</p>
+<p>两种死锁是课堂重点，都是从这个「抢占关闭」推出来的。</p>
+<p>死锁一，持锁睡眠：进程 A 拿到自旋锁以后在内核态阻塞了（比如调了个会睡的接口），内核调度进程 B，B 也要同一把锁，B 只能自旋；而此时抢占是关闭的，A 不会被调度回来，B 永远自旋下去。</p>
+<p>死锁二，中断取锁：进程 A 拿着自旋锁，中断来了，CPU 转去执行中断处理函数，该函数也要这把锁，拿不到只能自旋；可锁在 A 手里，A 被这个中断挂起了，永远回不来。两边互等，卡死。</p>
+<p>死锁二正好回答了「什么时候必须关中断」这个标题：只要临界区会跟中断处理函数抢同一把锁，进临界区就必须把中断一起关上，用 <code>spin_lock_irqsave()</code> 系列：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+
+spin_lock_irqsave(&amp;lock, flags);     <span class="hljs-comment">/* 关中断 + 拿锁 */</span>
+<span class="hljs-comment">/* ... 临界区 ... */</span>
+spin_unlock_irqrestore(&amp;lock, flags);<span class="hljs-comment">/* 放锁 + 恢复中断 */</span>
+</code></pre></div></code></pre>
+<p>注意是 save/restore 而不是 <code>spin_lock_irq</code> / <code>spin_unlock_irq</code>。后者出去时无条件开中断，遇到嵌套调用会把外层的关中断状态搞坏。课上把这个当成纪律要求，不是风格偏好。</p>
+<p>注意事项课上列了四条：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>注意事项</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>能解决多 CPU 之间的并发</td>
+<td>这是它被设计出来的主因</td>
+</tr>
+<tr>
+<td>2</td>
+<td>单 CPU 进程之间可直接加锁；进程与中断、中断与中断必须加锁 + 关中断</td>
+<td>中断不受锁约束，只受中断开关约束</td>
+</tr>
+<tr>
+<td>3</td>
+<td>加锁时间一定不能太长</td>
+<td>忙等烧 CPU，不睡不放手</td>
+</tr>
+<tr>
+<td>4</td>
+<td>持锁期间不能调用会引起调度的函数</td>
+<td>一调度就撞上死锁一</td>
+</tr>
+</tbody>
+</table></div><p>第 4 条的具体清单课上点过几个：<code>copy_to_user</code>、<code>copy_from_user</code>、<code>kmalloc(GFP_KERNEL)</code>、<code>msleep</code>、<code>schedule</code>。判据只有一条：这个函数会不会睡。</p>
+<p>还有一条课上顺带说的：自旋锁不能递归。已经拿着锁的代码再去 <code>spin_lock</code> 同一把锁，它自己就在原地自旋，而唯一能解锁的人是它自己——自己等自己，锁死。</p>
+<p>（<code>spin_lock_init</code>、<code>spin_lock</code>、<code>spin_unlock</code>、<code>spin_lock_irqsave</code>、<code>spin_unlock_irqrestore</code> 在 3.x 可用。3.x 里 <code>spinlock_t</code> 是 <code>struct spinlock</code> 的 typedef，其内部成员随 <code>CONFIG_DEBUG_SPINLOCK</code> 等配置变化，未验证。）</p>
+<h2 id="七信号量什么时候可以睡" tabindex="-1">七、信号量：什么时候可以睡 <a class="header-anchor" href="#七信号量什么时候可以睡"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>自旋锁的毛病是「拿不到就占着 CPU 转」。信号量换个思路：拿不到就把当前任务挂起、让出 CPU、睡觉去，等别人放锁时把它叫醒。</p>
+<p>课上把根本区别压成一句：信号量是睡眠锁。它内部是一个计数加一张等待队列，计数表达「还剩几个资源」，队列放着「谁在等」。</p>
+<p>P/V 那套术语课上提了一次，落到 Linux 就是 down/up：P 是申请（计数减一），V 是释放（计数加一）。课上顺带把用户态的分法点了一下——线程之间用无名信号量，进程之间用信号灯（System V 信号量），内核里用 <code>struct semaphore</code>，这三者名字像、机制不是一回事，别混。</p>
+<p>结构体三个成员，课上画了图：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">semaphore</span> {</span>
+    <span class="hljs-type">spinlock_t</span> lock;              <span class="hljs-comment">/* 保护 count 的小锁 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> count;           <span class="hljs-comment">/* &gt;0 空闲；=0 忙但没人等；&lt;0 忙且有 |count| 个在等 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">wait_list</span>;</span>   <span class="hljs-comment">/* 等待队列链表 */</span>
+};
+</code></pre></div></code></pre>
+<p><code>count</code> 的三态语义是这块的核心：一个变量同时表达了「剩几个」和「几个人在等」，负数表示有人在等，绝对值就是人数。</p>
+<p>驱动的用法四步：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">semaphore</span> <span class="hljs-title">sem</span>;</span>                 <span class="hljs-comment">/* 定义 */</span>
+sema_init(&amp;sem, <span class="hljs-number">1</span>);                   <span class="hljs-comment">/* 初始化，1 就是二值信号量 */</span>
+
+down(&amp;sem);                           <span class="hljs-comment">/* 申请，拿不到就睡，且睡得不可被打断 */</span>
+<span class="hljs-comment">/* ... 临界区 ... */</span>
+up(&amp;sem);                             <span class="hljs-comment">/* 释放，唤醒等待队列里的一个 */</span>
+</code></pre></div></code></pre>
+<p>申请有两个版本，区别只在「睡下去以后能不能被信号叫醒」：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>函数</th>
+<th>拿不到时</th>
+<th>返回值</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>down(&amp;sem)</code></td>
+<td>进入不可中断睡眠</td>
+<td>无</td>
+<td>确定不会有人 Ctrl-C 的场合</td>
+</tr>
+<tr>
+<td><code>down_interruptible(&amp;sem)</code></td>
+<td>进入可中断睡眠，收到信号就醒</td>
+<td>0 成功；<code>-EINTR</code> 被信号打断</td>
+<td>驱动里优先用这个</td>
+</tr>
+</tbody>
+</table></div><p><code>down_interruptible</code> 优先的原因课上讲得实在：用 <code>down()</code> 睡下去，用户按下 Ctrl-C，进程处在不可中断睡眠里，信号挂在那里不处理，<code>ps</code> 里显示成 <code>D</code> 状态，谁也杀不掉。用户以为程序死了，其实它只是不肯被叫醒。</p>
+<p>但优先用它有个代价必须配套处理——返回 <code>-EINTR</code> 说明你根本没拿到信号量，不能往下走，也不能 <code>up</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (down_interruptible(&amp;sem)) {
+    <span class="hljs-keyword">return</span> -ERESTARTSYS;      <span class="hljs-comment">/* 让上层决定是否重新发起系统调用 */</span>
+}
+<span class="hljs-comment">/* 到这里才是真的拿到了 */</span>
+</code></pre></div></code></pre>
+<p><code>-ERESTARTSYS</code> 这个返回值的语义是「被信号打断，请回到系统调用入口重来」，由内核的信号处理逻辑按 <code>SA_RESTART</code> 决定要不要重启。直接返回 <code>-EINTR</code> 也能编译通过，但语义是「这个系统调用失败了」，跟「被打断、可以重试」不是一回事。</p>
+<p><code>sema_init(&amp;sem, 2)</code> 这种写法课上单独提了一句：初值给 2 就是计数信号量，允许两个执行单元同时进临界区。它不再是互斥锁，而是限流器——比如限制同时打开的会话数。</p>
+<p>信号量的使用限制跟自旋锁正好互补：它<strong>可以</strong>睡，所以能保护耗时的、会阻塞的临界区；也正因为会睡，它不能用在中断上下文里——中断处理函数没有进程上下文可睡，睡了没人来叫醒。这是考试里的高频错点。</p>
+<p>（<code>sema_init</code>、<code>down</code>、<code>down_interruptible</code>、<code>up</code> 在 3.x 可用；<code>struct semaphore</code> 的成员布局在 3.x 与 4.x 早期一致，新版本的细节未验证。<code>down_interruptible</code> 返回 <code>-EINTR</code> 是 3.x 的语义，2.6 早期版本返回值的具体取值未验证。）</p>
+<h2 id="八自旋锁与信号量的选择" tabindex="-1">八、自旋锁与信号量的选择 <a class="header-anchor" href="#八自旋锁与信号量的选择"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>五种互斥机制的关系课上用一句话概括：中断屏蔽管的是「中断」这一路，原子操作管的是「一条指令」，剩下三种才管「一段代码」，区别只在于拿不到锁时干什么。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>机制</th>
+<th>拿不到时</th>
+<th>能保护的粒度</th>
+<th>能睡吗</th>
+<th>中断上下文可用</th>
+<th>课堂定位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中断屏蔽</td>
+<td>不存在「拿不到」</td>
+<td>一段代码</td>
+<td>不能</td>
+<td>就是给中断用的</td>
+<td>保底手段，少单用</td>
+</tr>
+<tr>
+<td>原子操作</td>
+<td>不存在「拿不到」</td>
+<td>单个整型变量</td>
+<td>不能</td>
+<td>可以</td>
+<td>只能计数</td>
+</tr>
+<tr>
+<td>自旋锁</td>
+<td>忙等、不放手</td>
+<td>一段代码</td>
+<td>不能</td>
+<td>可以（配 irqsave）</td>
+<td>短临界区</td>
+</tr>
+<tr>
+<td>信号量</td>
+<td>睡眠、让出 CPU</td>
+<td>一段代码</td>
+<td>可以</td>
+<td>不可以</td>
+<td>长临界区</td>
+</tr>
+<tr>
+<td>互斥锁（mutex）</td>
+<td>睡眠</td>
+<td>一段代码</td>
+<td>可以</td>
+<td>不可以</td>
+<td>二值信号量的专用版</td>
+</tr>
+</tbody>
+</table></div><p>课上把自旋锁和信号量单独拎出来对照，这是考试必答的一道题：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>对比项</th>
+<th>自旋锁</th>
+<th>信号量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>等待方式</td>
+<td>忙等待（busy-wait），占着 CPU 自旋</td>
+<td>睡眠等待，让出 CPU</td>
+</tr>
+<tr>
+<td>适用临界区</td>
+<td>极短，几条指令</td>
+<td>可以较长，允许调用会睡的函数</td>
+</tr>
+<tr>
+<td>开销</td>
+<td>无调度开销，烧 CPU</td>
+<td>有调度开销，但不烧 CPU</td>
+</tr>
+<tr>
+<td>内核抢占</td>
+<td>持锁期间关闭</td>
+<td>不关</td>
+</tr>
+<tr>
+<td>中断上下文</td>
+<td>可用</td>
+<td>不可用</td>
+</tr>
+<tr>
+<td>能否递归</td>
+<td>不可（自己等自己）</td>
+<td>可（计数 &gt;1 时同名函数可再进，但同一把二值信号量仍会死锁）</td>
+</tr>
+<tr>
+<td>本质</td>
+<td>一把锁</td>
+<td>一个计数器 + 一张等待队列</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>保护寄存器、链表指针、标志位</td>
+<td>保护需要 <code>copy_from_user</code>、<code>kmalloc</code> 的长流程</td>
+</tr>
+</tbody>
+</table></div><p>选择的判据课上按优先级排了顺序，照着问下来就能定：</p>
+<ol>
+<li>临界区里会不会睡？会睡，就只能选信号量或互斥锁，自旋锁直接出局。</li>
+<li>代码跑在中断上下文里？是中断上下文，就只能选自旋锁或原子操作，会睡的全出局。</li>
+<li>只保护一个整型计数？用原子操作，别上锁。</li>
+<li>临界区是几条指令、竞争激烈？用自旋锁。</li>
+<li>其余情况用信号量或互斥锁。</li>
+</ol>
+<p>最后一条注意事项课上重复过两遍：<strong>同一份资源只能有一种保护方式</strong>。有人既加自旋锁又加信号量，还关中断，三重保险看着稳，实际是把锁的顺序搞复杂了，嵌套一深就容易互相等死。</p>
+<p>（<code>mutex</code> 在 3.x 提供的接口是 <code>mutex_init</code> / <code>mutex_lock</code> / <code>mutex_unlock</code>，与信号量不共用 API；素材只写了「互斥锁」三个字，没有展开，具体接口未在素材中验证。）</p>
+<h2 id="九阻塞与非阻塞从-read-说起" tabindex="-1">九、阻塞与非阻塞：从 read 说起 <a class="header-anchor" href="#九阻塞与非阻塞从-read-说起"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>read</code> 进到驱动里，做的事很少：有数据就 <code>copy_to_user</code> 拷过去、返回拷贝长度；没数据怎么办？这里是分水岭。</p>
+<p>两条路。一条是立刻返回一个错误码，告诉应用「现在没东西，你自己待会儿再来」——这是非阻塞。另一条是把当前进程挂起、让出 CPU、等有数据了再被叫醒——这是阻塞。</p>
+<p>阻塞读的两个阶段值得摊开看，五种 IO 模型的差别全在这两个阶段上：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>阶段</th>
+<th>干什么</th>
+<th>谁在等</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>第一阶段</td>
+<td>等数据就绪（硬件收完、缓冲区非空）</td>
+<td>内核 / 驱动</td>
+</tr>
+<tr>
+<td>第二阶段</td>
+<td>把数据从内核缓冲拷到用户空间</td>
+<td>进程</td>
+</tr>
+</tbody>
+</table></div><p>阻塞读在两个阶段都让进程睡；非阻塞读第一阶段立刻返回，第二阶段根本不会进入。</p>
+<p>非阻塞的驱动侧写法短得没什么可讲，就一个 <code>-EAGAIN</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (<span class="hljs-number">0</span> == hello_dev.len) {
+    printk(<span class="hljs-string">&quot;no resource\n&quot;</span>);
+    <span class="hljs-keyword">return</span> -EAGAIN;          <span class="hljs-comment">/* 告诉应用：现在没数据，别等了 */</span>
+}
+</code></pre></div></code></pre>
+<p><code>-EAGAIN</code> 的语义是「暂时不可用，稍后重试」，不是错误。应用层拿到它要自己决定是马上再 <code>read</code> 一次（这就是轮询），还是干别的去。用户侧打开设备时带上标志位：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>fd = open(<span class="hljs-string">&quot;/dev/hello&quot;</span>, O_RDWR | O_NONBLOCK);
+</code></pre></div></code></pre>
+<p>驱动里判断这个标志，靠的是 <code>file-&gt;f_flags &amp; O_NONBLOCK</code>。课上把这个判断放进了阻塞/非阻塞二合一的 <code>read</code> 里，因为它必须在同一个函数里分流：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (file-&gt;f_flags &amp; O_NONBLOCK) {
+    <span class="hljs-keyword">return</span> -EAGAIN;                       <span class="hljs-comment">/* 非阻塞：立刻回去 */</span>
+}
+wait_event_interruptible(wq, havedata == <span class="hljs-number">1</span>);   <span class="hljs-comment">/* 阻塞：睡下等 */</span>
+</code></pre></div></code></pre>
+<p>课上还提了一个测试小技巧，用 shell 一条命令就能验证非阻塞路径：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>echo xxx &gt; /dev/hello
+</code></pre></div></code></pre>
+<p>这条命令等价于一次 <code>open</code> + <code>write</code> + <code>close</code>。设备没资源时 <code>write</code> 返回 <code>-EAGAIN</code>，<code>echo</code> 会打印一句写失败的提示。所以课上先用它确认驱动到底是「没数据」还是「真坏了」——这条命令不区分阻塞非阻塞，因为 <code>echo</code> 只写不读。</p>
+<p>阻塞的依赖关系也定死了：<strong>阻塞一定靠等待队列实现，没有第二种办法</strong>。非阻塞不需要任何基础设施，加个 <code>if</code> 返回错误码就完事。所以「实现阻塞」这件事的成本，全在等待队列上。</p>
+<h2 id="十等待队列的五个步骤" tabindex="-1">十、等待队列的五个步骤 <a class="header-anchor" href="#十等待队列的五个步骤"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>等待队列是这一节的全部内容，课上要求按五步默写。</p>
+<p>第一步，定义等待队列头：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">wait_queue_head_t</span> my_queue;
+</code></pre></div></code></pre>
+<p>第二步，初始化它：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>init_waitqueue_head(&amp;my_queue);
+</code></pre></div></code></pre>
+<p>这两步有个一步到位的写法，定义和初始化合在一起：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-title function_">DECLARE_WAIT_QUEUE_HEAD</span><span class="hljs-params">(my_queue)</span>;
+</code></pre></div></code></pre>
+<p><code>DECLARE_WAIT_QUEUE_HEAD</code> 在素材里没有出现，是补进来的；它在 3.x 的 <code>include/linux/wait.h</code> 中是静态定义并初始化的宏，静态全局队列用它更省事。（该宏在 2.6 后期到 3.x 的形态一致，更早版本未验证。）</p>
+<p>第三步，等待事件。没资源就让进程睡，条件满足才往下走：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>wait_event(<span class="hljs-built_in">queue</span>, condition);
+wait_event_interruptible(<span class="hljs-built_in">queue</span>, condition);
+</code></pre></div></code></pre>
+<p><code>condition</code> 的判定时机是这块最容易记错的地方，课上专门拆成睡前睡后两行：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>时机</th>
+<th><code>condition</code> 为真</th>
+<th><code>condition</code> 为假</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>睡前检查</td>
+<td>不睡，直接往下走</td>
+<td>进入睡眠</td>
+</tr>
+<tr>
+<td>睡后检查（被唤醒时）</td>
+<td>醒了，返回，继续执行</td>
+<td>继续睡回去</td>
+</tr>
+</tbody>
+</table></div><p>关键理解是：唤醒不等于条件成立。<code>wake_up</code> 只是把进程从睡眠队列里拎出来，它醒来第一件事是重新检查 <code>condition</code>，不成立就继续睡。这个「唤醒后重查」的循环是整个等待队列不丢事件的根本，也是为什么 <code>condition</code> 必须能反映真实状态、不能用一次性标志糊弄。</p>
+<p>返回值语义也要标清楚，素材里完全没写：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>调用</th>
+<th>返回值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wait_event</code></td>
+<td>无（宏，不返回状态）</td>
+<td>不可中断睡眠，只能被 <code>wake_up</code> 叫醒</td>
+</tr>
+<tr>
+<td><code>wait_event_interruptible</code></td>
+<td>0：条件成立后醒来；<code>-ERESTARTSYS</code>：被信号打断</td>
+<td>调用方必须判断返回值，非 0 说明条件没满足</td>
+</tr>
+</tbody>
+</table></div><p>（返回值取值来自 3.x <code>include/linux/wait.h</code> 的惯例；本机无 3.x 源码可核对，未验证。4.x 之后的 <code>wait_event_interruptible</code> 仍是同一套返回值。）</p>
+<p>第四步，有资源时唤醒：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">wake_up</span><span class="hljs-params">(<span class="hljs-type">wait_queue_head_t</span> *<span class="hljs-built_in">queue</span>)</span>;
+<span class="hljs-type">void</span> <span class="hljs-title function_">wake_up_interruptible</span><span class="hljs-params">(<span class="hljs-type">wait_queue_head_t</span> *<span class="hljs-built_in">queue</span>)</span>;
+</code></pre></div></code></pre>
+<p>配对规则课上强调过：<code>wait_event</code> 配 <code>wake_up</code>，<code>wait_event_interruptible</code> 配 <code>wake_up_interruptible</code>。混着用不会编译报错，但会漏唤醒——不可中断睡眠的进程只能被 <code>wake_up</code> 叫醒，用 <code>wake_up_interruptible</code> 叫它等于没叫。</p>
+<p>第五步，处理「一次唤醒几个」的问题。这就是惊群。</p>
+<p>课上在这里追问了一句：一次唤醒几个？这个概念有个名字叫<strong>疯狂兽群</strong>（thundering herd，惊群），现象是：缓冲区里只来了一份数据，<code>wake_up</code> 把队列上所有睡着的进程全叫醒，它们冲进来抢这一份数据，抢到的只有一个，其余全部白醒一趟、再睡回去——一次唤醒换来 N 次无效调度。</p>
+<p>解药是独占等待，靠标志位 <code>WQ_FLAG_EXCLUSIVE</code>。内核侧对应的唤醒接口是 <code>wake_up_interruptible</code> 的限定版，醒来时只叫醒队列头部的若干个独占等待者，而不是把所有人掀起来。素材对这部分只有「标记，WQ_FLAG_EXCLUSIVE」一句，没有代码；<code>prepare_to_wait_exclusive</code> 等接口出自 3.x 的 <code>wait.h</code>，素材里没出现，未验证。</p>
+<p>课上还留了一句带实验色彩的话：「通过实验得出结论，唤醒所有的」。意思是先别背结论，自己在设备上加打印，把 <code>wake_up</code> 前后每个进程的状态打出来看——看到几个进程被叫醒、几个又睡回去，惊群就不是概念了。</p>
+<p>把这些拼起来，就是课上那个完整的阻塞 <code>read</code>，它同时处理了三件事：数据长度裁剪、非阻塞分流、阻塞等待：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">ssize_t</span> <span class="hljs-title function_">hello_read</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *file, <span class="hljs-type">char</span> __user *user, <span class="hljs-type">size_t</span> size, <span class="hljs-type">loff_t</span> *pos)</span>
+{
+    <span class="hljs-keyword">if</span> (size &gt; <span class="hljs-built_in">strlen</span>(buf)) {
+        size = <span class="hljs-built_in">strlen</span>(buf);              <span class="hljs-comment">/* 别让应用要的比我们有的还多 */</span>
+    }
+
+    <span class="hljs-keyword">if</span> (havedata == <span class="hljs-number">0</span>) {                 <span class="hljs-comment">/* 没数据 */</span>
+        <span class="hljs-keyword">if</span> (file-&gt;f_flags &amp; O_NONBLOCK) {
+            <span class="hljs-keyword">return</span> -EAGAIN;              <span class="hljs-comment">/* 非阻塞：立刻回去 */</span>
+        }
+        wait_event_interruptible(wq, havedata == <span class="hljs-number">1</span>);   <span class="hljs-comment">/* 阻塞：睡下等 */</span>
+    }
+
+    <span class="hljs-keyword">if</span> (copy_to_user(user, buf, size)) {
+        <span class="hljs-keyword">return</span> -EFAULT;                  <span class="hljs-comment">/* 拷贝失败，用户地址有问题 */</span>
+    }
+
+    havedata = <span class="hljs-number">0</span>;                        <span class="hljs-comment">/* 数据被取走了 */</span>
+    <span class="hljs-keyword">return</span> size;
+}
+</code></pre></div></code></pre>
+<p><code>havedata</code> 是配套的软件标志，写侧写进数据后把它置 1、再 <code>wake_up_interruptible(&amp;wq)</code>；读侧取走后清 0。它和 <code>condition</code> 是同一个东西的两个身份：既是状态位，又是 <code>wait_event</code> 的判据。</p>
+<p>这段代码还有一处课堂没展开但必须知道的缺口：<code>wait_event_interruptible</code> 的返回值被直接忽略了。被信号打断时它返回 <code>-ERESTARTSYS</code>，此时 <code>havedata</code> 仍是 0，代码却继续往下走 <code>copy_to_user</code>，把空缓冲区拷给应用。严谨写法是先判返回值：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (wait_event_interruptible(wq, havedata == <span class="hljs-number">1</span>)) {
+    <span class="hljs-keyword">return</span> -ERESTARTSYS;
+}
+</code></pre></div></code></pre>
+<h2 id="十一poll-与多路复用" tabindex="-1">十一、poll 与多路复用 <a class="header-anchor" href="#十一poll-与多路复用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一个进程要同时盯好几个设备，阻塞读做不到——它一睡就只等一个 fd。多路复用解决的就是这件事：让一个进程同时监听多路输入输出。应用层用 <code>select</code>，驱动层靠 <code>poll</code> 方法配合。</p>
+<p><code>select</code> 的原型和参数在课上抄了完整一遍：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">select</span><span class="hljs-params">(<span class="hljs-type">int</span> nfds, fd_set *readfds, fd_set *writefds,
+           fd_set *exceptfds, <span class="hljs-keyword">struct</span> timeval *timeout)</span>;
+</code></pre></div></code></pre>
+<p>参数逐个抠：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>含义</th>
+<th>课堂备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nfds</code></td>
+<td>所监控的描述符最大值 + 1</td>
+<td>不是个数，是最大值加一</td>
+</tr>
+<tr>
+<td><code>readfds</code></td>
+<td>读集合，关心「有数据可读」的 fd 放这里</td>
+<td>传入传出双向使用</td>
+</tr>
+<tr>
+<td><code>writefds</code></td>
+<td>写集合，关心「可以写」的 fd 放这里</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>exceptfds</code></td>
+<td>异常集合</td>
+<td>课上没细讲</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>超时时间</td>
+<td>三种取值见下</td>
+</tr>
+</tbody>
+</table></div><p><code>timeout</code> 的三态是考点：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>取值</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NULL</code></td>
+<td>一直阻塞，直到有 fd 就绪</td>
+</tr>
+<tr>
+<td>指向 <code>{0, 0}</code> 的时间结构</td>
+<td>非阻塞，立刻返回当前就绪情况</td>
+</tr>
+<tr>
+<td>指向一个大于 0 的时间</td>
+<td>等到有 fd 就绪，或超过这个时间就立刻返回</td>
+</tr>
+</tbody>
+</table></div><p>配套四个宏，操作 <code>fd_set</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">FD_CLR</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, fd_set *<span class="hljs-built_in">set</span>)</span>;     <span class="hljs-comment">/* 从集合里清掉一个 fd */</span>
+<span class="hljs-type">int</span>  <span class="hljs-title function_">FD_ISSET</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, fd_set *<span class="hljs-built_in">set</span>)</span>;   <span class="hljs-comment">/* 判断某个 fd 是否就绪 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">FD_SET</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, fd_set *<span class="hljs-built_in">set</span>)</span>;     <span class="hljs-comment">/* 把一个 fd 加进集合 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">FD_ZERO</span><span class="hljs-params">(fd_set *<span class="hljs-built_in">set</span>)</span>;            <span class="hljs-comment">/* 清空整个集合 */</span>
+</code></pre></div></code></pre>
+<p><code>select</code> 的返回值素材里空着，这里补齐：返回就绪的 fd 总数，返回 0 表示超时、一个都没就绪，返回 -1 表示出错（错误码在 <code>errno</code>）。（这是 POSIX 语义，与内核版本无关。）</p>
+<p>驱动侧要提供的是 <code>poll</code> 方法，它在 <code>file_operations</code> 里的原型是：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">unsigned</span> <span class="hljs-title function_">int</span> <span class="hljs-params">(*poll)</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *, <span class="hljs-keyword">struct</span> poll_table_struct *)</span>;
+</code></pre></div></code></pre>
+<p>课上给的实现只有十几行，但每一行都有讲究：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> <span class="hljs-title function_">hello_poll</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *filep, <span class="hljs-keyword">struct</span> poll_table_struct *wait)</span>
+{
+    poll_wait(filep, &amp;hello_dev.<span class="hljs-built_in">queue</span>, wait);   <span class="hljs-comment">/* 把本驱动的等待队列挂到 poll 表上 */</span>
+
+    <span class="hljs-keyword">if</span> (hello_dev.len != <span class="hljs-number">0</span>) {
+        <span class="hljs-keyword">return</span> POLLIN | POLLRDNORM;             <span class="hljs-comment">/* 有数据可读 */</span>
+    } <span class="hljs-keyword">else</span> {
+        <span class="hljs-keyword">return</span> POLLOUT | POLLWRNORM;            <span class="hljs-comment">/* 原注释写「可写」 */</span>
+    }
+}
+</code></pre></div></code></pre>
+<p><code>poll_wait</code> 是这件事的核心，课上给它的注释是「添加一个等待队列到 <code>poll_table</code> 结构体里面」。它不睡、不阻塞，只做登记：把你的等待队列挂到这次 <code>select</code> 的监听表上，等 <code>select</code> 那边睡下去，你的 <code>wake_up</code> 才能把它叫醒。</p>
+<p>状态掩码的含义：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>掩码</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POLLIN</code></td>
+<td>有普通数据可读</td>
+</tr>
+<tr>
+<td><code>POLLRDNORM</code></td>
+<td>有普通数据可读（<code>POLLIN</code> 的细分）</td>
+</tr>
+<tr>
+<td><code>POLLOUT</code></td>
+<td>可以写</td>
+</tr>
+<tr>
+<td><code>POLLWRNORM</code></td>
+<td>可以写（<code>POLLOUT</code> 的细分）</td>
+</tr>
+<tr>
+<td><code>POLLERR</code> / <code>POLLHUP</code></td>
+<td>设备出错 / 挂断，驱动不主动返回，由内核补</td>
+</tr>
+</tbody>
+</table></div><p>（<code>POLLIN</code>、<code>POLLRDNORM</code>、<code>POLLOUT</code>、<code>POLLWRNORM</code> 在 3.x 的 <code>include/uapi/asm-generic/poll.h</code> 中定义；具体数值未验证。）</p>
+<p>这段代码课上有两处当场被指出来的毛病，抄速记时容易一起抄错：</p>
+<p>第一，<code>else</code> 分支的注释写「可写」，但它判断的是 <code>len == 0</code>，意思是没数据可读。这两件事不是一回事——没数据可读，不代表设备可写；只有在设备同时具备读写能力、且缓冲区空着可写时，这个 <code>else</code> 才成立。严谨的写法是把可读和可写分别判断，可写条件单独写一个 <code>if</code>，而不是拿「不可读」当「可写」。</p>
+<p>第二，两个分支互斥的写法意味着 <code>poll</code> 一次只返回一种能力。真实设备常常同时可读可写，返回值应当按位或累加，而不是二选一。</p>
+<h2 id="十二五种-io-模型的对照" tabindex="-1">十二、五种 IO 模型的对照 <a class="header-anchor" href="#十二五种-io-模型的对照"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>素材里只列了四种：阻塞、非阻塞、多路复用、异步。少的那一种是<strong>信号驱动 IO</strong>，它正好在异步通知那一节讲到了实现，属于漏列，这里按五种补齐：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>模型</th>
+<th>第一阶段（等数据）</th>
+<th>第二阶段（拷贝）</th>
+<th>同步/异步</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>阻塞 IO</td>
+<td>进程睡，等数据就绪</td>
+<td>进程睡，等拷贝完成</td>
+<td>同步</td>
+</tr>
+<tr>
+<td>2</td>
+<td>非阻塞 IO</td>
+<td>立刻返回 <code>-EAGAIN</code>，应用自己轮询</td>
+<td>拷贝时进程参与</td>
+<td>同步</td>
+</tr>
+<tr>
+<td>3</td>
+<td>IO 多路复用（select/poll）</td>
+<td>进程睡在 <code>select</code> 上，等任一 fd 就绪</td>
+<td>拷贝时进程参与</td>
+<td>同步</td>
+</tr>
+<tr>
+<td>4</td>
+<td>信号驱动 IO（SIGIO）</td>
+<td>不睡，注册信号后干别的，数据就绪时收信号</td>
+<td>拷贝时进程参与</td>
+<td>同步</td>
+</tr>
+<tr>
+<td>5</td>
+<td>异步 IO（AIO）</td>
+<td>不睡</td>
+<td>拷贝也由内核完成，完成后通知</td>
+<td>异步</td>
+</tr>
+</tbody>
+</table></div><p>判据只有一条，课上重复过：<strong>第二阶段要不要进程自己动手拷</strong>。要，就是同步；不要，才是异步。所以前四种全归同步，只有第五种是真异步——这个结论反直觉，但卡在判据上就清楚了。</p>
+<p>第 4 种在驱动侧叫异步通知，课上给的实现分应用层和驱动层两块。</p>
+<p>应用层三步，顺序不能乱：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 1. 捕捉 SIGIO 信号 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">sig_handler</span><span class="hljs-params">(<span class="hljs-type">int</span> signo)</span>
+{
+    <span class="hljs-comment">/* 有数据了，在这儿读 */</span>
+}
+
+signal(SIGIO, sig_handler);        <span class="hljs-comment">/* 注册处理函数 */</span>
+
+<span class="hljs-comment">/* 2. 指定进程为文件的属主，让设备知道该给谁发信号 */</span>
+fcntl(fd, F_SETOWN, getpid());
+
+<span class="hljs-comment">/* 3. 在设备上打开 FASYNC 标志 */</span>
+oflags = fcntl(fd, F_GETFL);
+oflags = oflags | FASYNC;
+fcntl(fd, F_SETFL, oflags);
+</code></pre></div></code></pre>
+<p>第一步的名字在素材里是错的：声明的是 <code>sig_handler</code>，注册时写的是 <code>handler</code>，两个名字对不上，编译就过不去。这类错在速记里很常见，抄的时候顺手改了就行。</p>
+<p>信号的处置方式课上点过三种：默认、忽略、捕获。默认处置对 <code>SIGIO</code> 是「忽略」，所以不做第一步就永远收不到通知——这是「为什么我的驱动不发信号」最常见的原因之一。捕获既可以用 <code>signal()</code>，也可以用 <code>sigaction()</code>；<code>sigaction</code> 能带 <code>SA_RESTART</code> 之类的标志，<code>signal</code> 的可移植性和语义在不同标准里不一样。素材只留了 <code>sigaction</code> 一个词，没展开。</p>
+<p>还有一层联系：进程如果正阻塞在 <code>read</code> 里（<code>wait_event_interruptible</code> 的那条路），收到被捕获的信号会被打断，<code>wait_event_interruptible</code> 返回 <code>-ERESTARTSYS</code>。这跟第七节信号量那段的返回值处理是同一套机制。</p>
+<p>驱动层要提供 <code>fasync</code> 方法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> (*fasync)(<span class="hljs-type">int</span>, <span class="hljs-keyword">struct</span> file *, <span class="hljs-type">int</span>);
+</code></pre></div></code></pre>
+<p>实现只有一行，把活交给 <code>fasync_helper</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">hello_fasync</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-keyword">struct</span> file *filp, <span class="hljs-type">int</span> mode)</span>
+{
+    <span class="hljs-keyword">return</span> fasync_helper(fd, filp, mode, &amp;async_queue);   <span class="hljs-comment">/* 处理标志的变更 */</span>
+}
+</code></pre></div></code></pre>
+<p><code>fasync_helper</code> 干的事是把「谁要收信号」这个信息维护进 <code>async_queue</code>。应用层那三步里的 <code>F_SETFL</code> 触发的就是这个回调，<code>mode</code> 带进来的就是 <code>FASYNC</code> 开关的变化。</p>
+<p>有数据的时候发信号：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>kill_fasync(&amp;async_queue, SIGIO, POLL_IN);
+</code></pre></div></code></pre>
+<p><code>POLL_IN</code> 表示「可读」这个事件，跟 <code>poll</code> 里的 <code>POLLIN</code> 是同一套语义，一个给信号用，一个给多路复用用。</p>
+<p>（<code>fasync_helper</code>、<code>kill_fasync</code>、<code>struct fasync_struct</code> 在 3.x 可用；<code>file_operations</code> 中 <code>fasync</code> 的位置随版本变化，3.x 里在 <code>.fasync</code> 字段，未逐版本验证。）</p>
+<h2 id="十三课堂踩坑记录" tabindex="-1">十三、课堂踩坑记录 <a class="header-anchor" href="#十三课堂踩坑记录"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一节收的是课上真正踩出来的东西，按现象归拢：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>现象</th>
+<th>根因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>两个进程同时打开成功</td>
+<td><code>if (flag != 1)</code> 与 <code>flag = 0</code> 之间被抢占</td>
+<td>换原子操作或锁</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>flag</code> 计数一路变负，设备再也打不开</td>
+<td>失败分支只减不加，忘了 <code>atomic_inc</code> 回补</td>
+<td>失败路径必须还原计数</td>
+</tr>
+<tr>
+<td>3</td>
+<td>加锁后仍然两个进程进得去</td>
+<td>只锁了赋值那一行，判断在锁外</td>
+<td>判断和赋值一起进临界区</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>release</code> 里改了 <code>flag</code> 却不加锁</td>
+<td>同一份资源写了两套代码，只有一处加锁</td>
+<td><code>release</code> 也加同一把锁</td>
+</tr>
+<tr>
+<td>5</td>
+<td>系统整个卡死，<code>ps</code> 看到进程 <code>D</code> 状态杀不掉</td>
+<td>用了 <code>down()</code> 不可中断睡眠</td>
+<td>换 <code>down_interruptible</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>加锁以后系统整体卡住不动</td>
+<td>持自旋锁调了会睡的函数（<code>copy_to_user</code>、<code>kmalloc(GFP_KERNEL)</code>）</td>
+<td>移出临界区</td>
+</tr>
+<tr>
+<td>7</td>
+<td>中断一来就死锁</td>
+<td>中断处理函数抢了进程手里的自旋锁</td>
+<td><code>spin_lock_irqsave</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>一份数据来了，N 个进程全醒</td>
+<td>惊群，<code>wake_up</code> 叫醒全部</td>
+<td>独占等待 <code>WQ_FLAG_EXCLUSIVE</code></td>
+</tr>
+<tr>
+<td>9</td>
+<td>驱动写完了不报错，应用收不到信号</td>
+<td>没做 <code>F_SETOWN</code>，或没做 <code>F_SETFL</code> 打 <code>FASYNC</code></td>
+<td>补应用层三步</td>
+</tr>
+<tr>
+<td>10</td>
+<td>编不过，报在全角分号上</td>
+<td>速记把 <code>;</code> 抄成 <code>；</code></td>
+<td>手敲，别粘贴</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>select</code> 永远不返回</td>
+<td><code>nfds</code> 填成了 fd 个数而不是最大值加一</td>
+<td>改成 <code>maxfd + 1</code></td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>poll</code> 报告可读但 <code>read</code> 返回 <code>-EAGAIN</code></td>
+<td><code>poll</code> 判断条件与 <code>read</code> 的判断条件不一致</td>
+<td>两处共用同一个状态位</td>
+</tr>
+</tbody>
+</table></div><p>第 6 条值得单独说。自旋锁的临界区里有一份「禁止调用清单」，课上点名过：<code>copy_to_user</code>、<code>copy_from_user</code>、<code>kmalloc</code> 带 <code>GFP_KERNEL</code> 的版本、<code>msleep</code>、<code>schedule</code>。判据就一个：这个函数会不会睡。会睡的，一律搬出临界区。搬不出去的，说明临界区划错了，得重新划。</p>
+<p>第 10 条是速记里真实存在的破损。素材里那句 <code>oflags = oflags | FASYNC；</code> 用了个全角分号，粘贴进编辑器后，编译器报的错和分号本身看不出关系。同类破损还有一处：<code>atomic_dec_and_test()</code> 后面跟着的说明里混进了「（注意没有加）」，读不通，实际是抄写时把 <code>atomic_inc_and_test</code> 那行漏了。清理碎片时顺手改掉，但要知道原文长什么样，不然下次还认不出来。</p>
+<p>课上留过一个综合练习，把并发和 IO 两条线并到一起：</p>
+<blockquote>
+<p>一个应用程序同时控制三个驱动。一个驱动控制灯，一个驱动控制蜂鸣器鸣叫，一个驱动用于接收字符（<code>write /dev/hello</code>）。收到字符 <code>1</code>，灯亮；收到字符 <code>p</code>，蜂鸣器叫。</p>
+</blockquote>
+<p>这个题的用意是把本节的东西串起来：三个设备要同时盯，靠 <code>poll</code> 或 <code>select</code>；字符从应用层 <code>write</code> 进驱动，读侧要用等待队列把「有字符可读」这件事告诉应用；不走多路复用就只能用信号驱动，三个设备都要做 <code>fasync</code>、三个 <code>SIGIO</code> 处理函数，还得区分信号是谁发的——这一点比 <code>poll</code> 麻烦得多，这类场景 <code>poll</code> 更顺手。</p>
+<h2 id="十四易错点速查" tabindex="-1">十四、易错点速查 <a class="header-anchor" href="#十四易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>易错点</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>用普通变量做「只能开一次」的判断</td>
+<td>判断和修改必须原子，用 <code>atomic_dec_and_test</code> 或锁</td>
+</tr>
+<tr>
+<td>2</td>
+<td>原子操作失败分支不回补计数</td>
+<td><code>atomic_inc</code> 还回去</td>
+</tr>
+<tr>
+<td>3</td>
+<td>认为单 CPU 不会并发</td>
+<td>内核可抢占时照样会</td>
+</tr>
+<tr>
+<td>4</td>
+<td>用 <code>local_irq_disable</code> 解决多核竞态</td>
+<td>它只关本地 CPU，多核要自旋锁</td>
+</tr>
+<tr>
+<td>5</td>
+<td>进临界区用 <code>local_irq_disable</code>、出来用 <code>local_irq_enable</code></td>
+<td>用 <code>local_irq_save</code> / <code>local_irq_restore</code>，恢复而非打开</td>
+</tr>
+<tr>
+<td>6</td>
+<td>自旋锁里调 <code>copy_to_user</code></td>
+<td>搬出临界区，或改用信号量</td>
+</tr>
+<tr>
+<td>7</td>
+<td>自旋锁递归加同一把锁</td>
+<td>不允许，会自己等自己</td>
+</tr>
+<tr>
+<td>8</td>
+<td>进程与中断共享资源时只 <code>spin_lock</code></td>
+<td>用 <code>spin_lock_irqsave</code> 系列</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>wait_event</code> 与 <code>wake_up_interruptible</code> 混配</td>
+<td>可中断配可中断，不可中断配 <code>wake_up</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td>忽略 <code>wait_event_interruptible</code> 的返回值</td>
+<td>非 0 说明被信号打断，要返回 <code>-ERESTARTSYS</code></td>
+</tr>
+<tr>
+<td>11</td>
+<td>把「唤醒」当成「条件成立」</td>
+<td>唤醒后要重查 <code>condition</code></td>
+</tr>
+<tr>
+<td>12</td>
+<td>以为 <code>wake_up</code> 只叫醒一个</td>
+<td>它叫醒全部，独占等待才限量</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>select</code> 的 <code>nfds</code> 填成 fd 个数</td>
+<td>最大值 + 1</td>
+</tr>
+<tr>
+<td>14</td>
+<td>在中断上下文里用信号量或 <code>mutex</code></td>
+<td>会睡的机制一律不能在中断里用</td>
+</tr>
+<tr>
+<td>15</td>
+<td>信号驱动只写 <code>signal()</code> 不做 <code>F_SETOWN</code></td>
+<td>三步齐全，缺一步收不到信号</td>
+</tr>
+<tr>
+<td>16</td>
+<td><code>poll</code> 的返回值和 <code>read</code> 的判断不一致</td>
+<td>两处共用同一个状态位</td>
+</tr>
+</tbody>
+</table></div>
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一并发与竞态课堂上的第一个错误示范" data-toc-target="一并发与竞态课堂上的第一个错误示范">一、并发与竞态：课堂上的第一个错误示范</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二临界区与临界资源" data-toc-target="二临界区与临界资源">二、临界区与临界资源</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三四种并发场合" data-toc-target="三四种并发场合">三、四种并发场合</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四中断屏蔽" data-toc-target="四中断屏蔽">四、中断屏蔽</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五原子操作那个经典的单例判断" data-toc-target="五原子操作那个经典的单例判断">五、原子操作：那个经典的单例判断</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六自旋锁什么时候必须关中断" data-toc-target="六自旋锁什么时候必须关中断">六、自旋锁：什么时候必须关中断</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七信号量什么时候可以睡" data-toc-target="七信号量什么时候可以睡">七、信号量：什么时候可以睡</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八自旋锁与信号量的选择" data-toc-target="八自旋锁与信号量的选择">八、自旋锁与信号量的选择</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九阻塞与非阻塞从-read-说起" data-toc-target="九阻塞与非阻塞从-read-说起">九、阻塞与非阻塞：从 read 说起</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十等待队列的五个步骤" data-toc-target="十等待队列的五个步骤">十、等待队列的五个步骤</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一poll-与多路复用" data-toc-target="十一poll-与多路复用">十一、poll 与多路复用</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二五种-io-模型的对照" data-toc-target="十二五种-io-模型的对照">十二、五种 IO 模型的对照</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三课堂踩坑记录" data-toc-target="十三课堂踩坑记录">十三、课堂踩坑记录</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四易错点速查" data-toc-target="十四易错点速查">十四、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/C.驱动/13-杂项/并发与-IO-模型速记/","title":"并发与 IO 模型速记","url":"/C.驱动/13-杂项/并发与-IO-模型速记/","type":"current"},{"id":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","title":"ADC 与 DS18B20 传感器驱动","url":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","type":"neighbor"},{"id":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","title":"LED 与 PWM 字符设备驱动","url":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","type":"neighbor"},{"id":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","title":"Linux下用户空间修改设备寄存器或者物理内存的实现","url":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","type":"neighbor"},{"id":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","title":"RK3399 的 Wi-Fi 与蓝牙 rfkill 实现","url":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","type":"neighbor"}],"links":[{"source":"/C.驱动/13-杂项/并发与-IO-模型速记/","target":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","type":"neighbor"},{"source":"/C.驱动/13-杂项/并发与-IO-模型速记/","target":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","type":"neighbor"},{"source":"/C.驱动/13-杂项/并发与-IO-模型速记/","target":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","type":"neighbor"},{"source":"/C.驱动/13-杂项/并发与-IO-模型速记/","target":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

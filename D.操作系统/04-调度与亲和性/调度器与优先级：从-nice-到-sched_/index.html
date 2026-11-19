@@ -1,0 +1,1620 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>调度器与优先级：从 nice 到 sched_ · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">调度器与优先级：从 nice 到 sched_</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/D.操作系统/04-调度与亲和性/调度器与优先级：从-nice-到-sched_/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">调度器与优先级：从 nice 到 sched_</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">调度器与优先级：从 nice 到 sched_</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <h2 id="一调度器在做什么" tabindex="-1">一、调度器在做什么 <a class="header-anchor" href="#一调度器在做什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一句话：把可运行的线程排个队，决定下一个上 CPU 的是谁，以及它能待多久。</p>
+<p>Linux 的做法是给每个 CPU 维护一个运行队列，队列里放着所有处于 runnable 状态的线程（就绪但没在跑，加上正在跑的那个）。调度器在调度点到来时，从队列里挑一个出来。</p>
+<p>挑的规则由两层东西决定：</p>
+<ul>
+<li><strong>调度策略</strong>（scheduling policy）：这一层决定用哪套规则挑。策略是每个线程自己的属性，存在 <code>policy</code> 字段里，用户态通过 <code>sched_setscheduler()</code> 或 <code>sched_setattr()</code> 改。</li>
+<li><strong>优先级</strong>（priority）：同一套规则内部用来排序的数值。这里有<strong>两套独立的体系</strong>，不要混。</li>
+</ul>
+<p>两套体系的分工：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>体系</th>
+<th>取值范围</th>
+<th>谁在用</th>
+<th>用户态接口</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>nice 值</td>
+<td>-20 ～ 19</td>
+<td><code>SCHED_OTHER</code> / <code>SCHED_BATCH</code> / <code>SCHED_IDLE</code></td>
+<td><code>nice()</code>、<code>setpriority()</code></td>
+</tr>
+<tr>
+<td>实时优先级 rt prio</td>
+<td>1 ～ 99（普通进程记为 0）</td>
+<td><code>SCHED_FIFO</code> / <code>SCHED_RR</code></td>
+<td><code>sched_setscheduler()</code>、<code>sched_setparam()</code></td>
+</tr>
+</tbody>
+</table></div><p><code>SCHED_DEADLINE</code> 两个都不用，它用 <code>runtime</code> / <code>deadline</code> / <code>period</code> 三个时间参数描述自己。</p>
+<p>在用户空间，进程优先级这个词有两层含义，说的就是上面这两套：普通进程的优先级是 nice 值，实时进程的优先级是 rt priority。后面反复出现的「优先级」，落到代码上就是这两个整数。</p>
+<p>从用户态看过去，调度器的行为可以压成这样一张图：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>                 ┌──────────────────────────────────┐
+                 │  CPU 运行队列（每个 CPU 一个）    │
+                 └──────────────────────────────────┘
+                                    │
+              ┌─────────────────────┼─────────────────────┐
+              │                     │                     │
+        SCHED_DEADLINE        SCHED_FIFO/RR         SCHED_OTHER
+        runtime/deadline       rt prio 1..99        nice -20..19
+        period 三参数          数值大者先跑          SCHED_BATCH
+              │                     │                SCHED_IDLE
+              └─────────────────────┴─────────────────────┘
+                        调度器按类挑，类内按优先级挑
+</code></pre></div></code></pre>
+<p>一个必须先记住的结论：<strong>实时策略的线程只要处于 runnable 状态，普通线程就没有机会执行</strong>。这不是礼貌问题，是设计如此。所以调 <code>sched_setscheduler()</code> 给线程上 <code>SCHED_FIFO</code> 之前，先想清楚它会不会卡在一个不阻塞的循环里。</p>
+<h2 id="二nice-值-20-到-19" tabindex="-1">二、nice 值：-20 到 19 <a class="header-anchor" href="#二nice-值-20-到-19"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>nice 值的范围是 <code>-20</code> 到 <code>19</code>：</p>
+<ul>
+<li><code>-20</code> 优先级最高，最「不 nice」，抢 CPU 最凶；</li>
+<li><code>0</code> 是默认值，新建线程的起点；</li>
+<li><code>19</code> 优先级最低，最「nice」，最有礼貌。</li>
+</ul>
+<p>「nice」这个词的语义是「对别人有多友好」。数值调大，等于对系统里其他线程更友好，自己分到的 CPU 比例下降。所以「提高 nice 值」是降优先级，「降低 nice 值」是升优先级。这个方向别记反，反了以后调优全程都是错的。</p>
+<p>nice 值和内核里的静态优先级是线性关系：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>static_prio = 120 + nice
+</code></pre></div></code></pre>
+<p>于是 nice 的 <code>[-20, 19]</code> 映射到静态优先级的 <code>[100, 139]</code>。静态优先级的数值越小优先级越高，缺省值是 120。内核里 <code>0 ～ 99</code> 这一段留给实时进程，<code>100 ～ 139</code> 这一段留给普通进程。</p>
+<p>nice 值的几个用户态可观测事实：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>事实</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>线程私有</td>
+<td>POSIX 标准把 nice 值定义成 per process，Linux 没照做，它是 <strong>per-thread</strong> 属性。多线程程序里 <code>nice()</code> 只影响调用它的那个线程</td>
+</tr>
+<tr>
+<td>可继承</td>
+<td>fork 出的子线程默认继承父线程的静态优先级，也就是继承 nice 值</td>
+</tr>
+<tr>
+<td>睡眠不重置</td>
+<td>nice 值跟着线程走，不会因为阻塞、唤醒而改变</td>
+</tr>
+<tr>
+<td>不是配额</td>
+<td>nice 值给出的是<strong>权重比</strong>，不是硬性时间配额。没有实时线程争抢时，一组 nice 相同的线程平分 CPU</td>
+</tr>
+</tbody>
+</table></div><p>查当前值的命令：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ps -o pid,ni,pri,psr,<span class="hljs-built_in">comm</span> -p $$
+<span class="hljs-built_in">nice</span>            <span class="hljs-comment"># 不带参数时打印当前 nice 值</span>
+</code></pre></div></code></pre>
+<p><code>ps</code> 里的 <code>NI</code> 列就是 nice 值。<code>PRI</code> 列是内核视角的优先级，普通线程等于 <code>static_prio</code>，实时线程是 <code>99 - rt_priority</code> 那套映射的结果。</p>
+<h2 id="三nice-与权重的换算" tabindex="-1">三、nice 与权重的换算 <a class="header-anchor" href="#三nice-与权重的换算"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>nice 值本身不参与计算，内核先把它查表换成<strong>权重</strong>（weight）。这张表是 <code>prio_to_weight[40]</code>，下标是 <code>nice + 20</code>。</p>
+<p>规则很规整：<strong>nice 每差 1，权重相差约 1.25 倍</strong>。这个 1.25 是设计出来的，不是拟合出来的，<code>1024 / 820 ≈ 1.2488</code>。</p>
+<p>完整对照：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>nice</th>
+<th>权重</th>
+<th>nice</th>
+<th>权重</th>
+<th>nice</th>
+<th>权重</th>
+<th>nice</th>
+<th>权重</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>-20</td>
+<td>88761</td>
+<td>-10</td>
+<td>9548</td>
+<td>0</td>
+<td>1024</td>
+<td>10</td>
+<td>110</td>
+</tr>
+<tr>
+<td>-19</td>
+<td>71755</td>
+<td>-9</td>
+<td>7620</td>
+<td>1</td>
+<td>820</td>
+<td>11</td>
+<td>87</td>
+</tr>
+<tr>
+<td>-18</td>
+<td>56483</td>
+<td>-8</td>
+<td>6100</td>
+<td>2</td>
+<td>655</td>
+<td>12</td>
+<td>70</td>
+</tr>
+<tr>
+<td>-17</td>
+<td>46273</td>
+<td>-7</td>
+<td>4904</td>
+<td>3</td>
+<td>526</td>
+<td>13</td>
+<td>56</td>
+</tr>
+<tr>
+<td>-16</td>
+<td>36291</td>
+<td>-6</td>
+<td>3906</td>
+<td>4</td>
+<td>423</td>
+<td>14</td>
+<td>45</td>
+</tr>
+<tr>
+<td>-15</td>
+<td>29154</td>
+<td>-5</td>
+<td>3121</td>
+<td>5</td>
+<td>335</td>
+<td>15</td>
+<td>36</td>
+</tr>
+<tr>
+<td>-14</td>
+<td>23254</td>
+<td>-4</td>
+<td>2501</td>
+<td>6</td>
+<td>272</td>
+<td>16</td>
+<td>29</td>
+</tr>
+<tr>
+<td>-13</td>
+<td>18705</td>
+<td>-3</td>
+<td>1991</td>
+<td>7</td>
+<td>215</td>
+<td>17</td>
+<td>23</td>
+</tr>
+<tr>
+<td>-12</td>
+<td>15076</td>
+<td>-2</td>
+<td>1586</td>
+<td>8</td>
+<td>172</td>
+<td>18</td>
+<td>15</td>
+</tr>
+<tr>
+<td>-11</td>
+<td>11916</td>
+<td>-1</td>
+<td>1277</td>
+<td>9</td>
+<td>137</td>
+<td>19</td>
+<td>10</td>
+</tr>
+</tbody>
+</table></div><p>有了权重，CPU 占比就能算出来：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>某线程的 CPU 占比 = 该线程权重 / 队列中所有 runnable 线程权重之和
+</code></pre></div></code></pre>
+<p>几个能直接背下来的例子：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>权重比</th>
+<th>实际占比</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>两个 nice 0 的线程</td>
+<td>1024 : 1024</td>
+<td>各 50%</td>
+</tr>
+<tr>
+<td>nice 0 与 nice 5</td>
+<td>1024 : 335</td>
+<td>约 75% : 25%</td>
+</tr>
+<tr>
+<td>nice 0 与 nice 10</td>
+<td>1024 : 110</td>
+<td>约 90% : 10%</td>
+</tr>
+<tr>
+<td>nice -20 与 nice 19</td>
+<td>88761 : 10</td>
+<td>约 99.99% : 0.01%</td>
+</tr>
+<tr>
+<td>十个 nice 0 的线程</td>
+<td>相同</td>
+<td>各 10%</td>
+</tr>
+</tbody>
+</table></div><p>nice 差 10，占比差 9 倍多。这是很多人调优时的第一课：<strong>nice 的杠杆比想象中大</strong>，从 0 调到 10 已经很激烈了，从 0 调到 -20 基本等于把这个线程钉在 CPU 上。</p>
+<p>内核内部的记账方式是给每个线程维护一个虚拟运行时间 <code>vruntime</code>，实际跑了多久就按权重折算进 <code>vruntime</code>：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>vruntime += 实际运行时间 × (NICE_0_LOAD / 该线程权重)
+</code></pre></div></code></pre>
+<p>权重大的线程，<code>vruntime</code> 涨得慢，于是下一次挑人时更容易被选上。连续跑同一批线程，最终收敛到的比例就是上面的权重比。你不需要看这段代码也能推出结论：<strong>权重是 CPU 份额的斜率，nice 是调斜率的旋钮</strong>。</p>
+<p>两个必须知道的偏差来源：</p>
+<ul>
+<li>线程睡眠后醒来，内核会给它的 <code>vruntime</code> 做补偿（把它拉到队列最小 <code>vruntime</code> 附近），避免一个刚醒的交互线程被饿死。所以实际占比会低于按权重算出的理论值，睡得越久偏得越多。</li>
+<li>权重只在同一个运行队列（同一 CPU）内部做归一化。线程被迁到别的核上，参与分配的是那个核上的队列。想让占比可预测，绑核比调 nice 更直接。</li>
+</ul>
+<h2 id="四实时优先级0-到-99" tabindex="-1">四、实时优先级：0 到 99 <a class="header-anchor" href="#四实时优先级0-到-99"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>实时优先级（rt priority，<code>sched_param.sched_priority</code>）是另一套数值体系，和 nice 值没有任何换算关系。</p>
+<p>区间划分：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>区间</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>普通进程。普通线程的 rt priority 恒为 0</td>
+</tr>
+<tr>
+<td><code>1 ～ 99</code></td>
+<td>实时进程。数值越大优先级越高，99 最高，1 最低</td>
+</tr>
+</tbody>
+</table></div><p>边界要查，不要背死：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sched.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;SCHED_FIFO  min=%d max=%d\n&quot;</span>,
+           sched_get_priority_min(SCHED_FIFO), sched_get_priority_max(SCHED_FIFO));
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;SCHED_RR    min=%d max=%d\n&quot;</span>,
+           sched_get_priority_min(SCHED_RR),   sched_get_priority_max(SCHED_RR));
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;SCHED_OTHER min=%d max=%d\n&quot;</span>,
+           sched_get_priority_min(SCHED_OTHER), sched_get_priority_max(SCHED_OTHER));
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>Linux 上 <code>SCHED_FIFO</code> 和 <code>SCHED_RR</code> 都是 <code>min = 1</code>、<code>max = 99</code>，一共 99 个 level。别的调度策略这两个函数返回 0。不同 Unix 实现的 level 数量不一样，所以 <code>sched_get_priority_min/max</code> 存在的意义就是别把 1 和 99 写死。</p>
+<p>内核侧的映射是翻转的：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>内核 prio = 99 - rt_priority
+</code></pre></div></code></pre>
+<p>于是 rt priority 99 对应内核 prio 0（最高），rt priority 1 对应内核 prio 98。这个翻转很好理解：内核里所有优先级都是「数值越小越高」，用户态的 rt priority 是「数值越大越高」，两边对不齐，所以在边界上翻一次。</p>
+<p>两套体系的对照，用一张表定死：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>nice</th>
+<th>rt priority</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>范围</td>
+<td>-20 ～ 19</td>
+<td>1 ～ 99（0 = 普通进程）</td>
+</tr>
+<tr>
+<td>依据标准</td>
+<td>历史沿革，POSIX 定义了 <code>nice()</code> / <code>setpriority()</code></td>
+<td>POSIX 实时扩展（2008 版）</td>
+</tr>
+<tr>
+<td>生效策略</td>
+<td><code>SCHED_OTHER</code> / <code>BATCH</code> / <code>IDLE</code></td>
+<td><code>SCHED_FIFO</code> / <code>SCHED_RR</code></td>
+</tr>
+<tr>
+<td>方向</td>
+<td>数值越大优先级越低</td>
+<td>数值越大优先级越高</td>
+</tr>
+<tr>
+<td>内核字段</td>
+<td><code>static_prio</code>（= 120 + nice）</td>
+<td><code>rt_priority</code></td>
+</tr>
+<tr>
+<td>交叉影响</td>
+<td>实时线程改 nice 不改变调度行为</td>
+<td>普通线程的 rt priority 恒为 0</td>
+</tr>
+</tbody>
+</table></div><p>最后一行是关键：给一个 <code>SCHED_FIFO</code> 的线程调 nice 值，不会改变它的调度行为。它按 rt priority 排队，nice 值在那条路径上没被读。</p>
+<h2 id="五六种调度策略" tabindex="-1">五、六种调度策略 <a class="header-anchor" href="#五六种调度策略"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>策略是线程的属性，用 <code>sched_setscheduler()</code> 设。六个常量、语义、参数如下：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>策略</th>
+<th>值</th>
+<th>语义</th>
+<th>生效参数</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SCHED_OTHER</code></td>
+<td>0</td>
+<td>普通分时，默认策略</td>
+<td>nice</td>
+<td>别名 <code>SCHED_NORMAL</code>，绝大多数线程都是它</td>
+</tr>
+<tr>
+<td><code>SCHED_FIFO</code></td>
+<td>1</td>
+<td>实时，同优先级先到先跑，不主动让出就一直跑</td>
+<td>rt priority 1 ～ 99</td>
+<td>无时间片</td>
+</tr>
+<tr>
+<td><code>SCHED_RR</code></td>
+<td>2</td>
+<td>实时，同优先级按时间片轮转</td>
+<td>rt priority 1 ～ 99</td>
+<td>有时间片</td>
+</tr>
+<tr>
+<td><code>SCHED_BATCH</code></td>
+<td>3</td>
+<td>批处理，按普通分时算但不鼓励抢占唤醒</td>
+<td>nice</td>
+<td>运算密集型适用</td>
+</tr>
+<tr>
+<td><code>SCHED_IDLE</code></td>
+<td>5</td>
+<td>极低优先级，系统没别的事才跑</td>
+<td>nice</td>
+<td>nice 19 之外还有一层降级</td>
+</tr>
+<tr>
+<td><code>SCHED_DEADLINE</code></td>
+<td>6</td>
+<td>按周期与截止期调度</td>
+<td>runtime/deadline/period</td>
+<td>3.14 引入</td>
+</tr>
+</tbody>
+</table></div><p><code>SCHED_NORMAL</code> 和 <code>SCHED_OTHER</code> 是同一个值 0，两个名字，代码里都能用。</p>
+<p>按优先级从高到低排：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>SCHED_DEADLINE  &gt;  SCHED_FIFO / SCHED_RR  &gt;  SCHED_OTHER / SCHED_BATCH / SCHED_IDLE
+</code></pre></div></code></pre>
+<p>这条链是硬边界：<code>SCHED_DEADLINE</code> 进程只要能被调度，实时进程让路；实时进程 runnable，普通进程让路。三档之间不是「高一点」，是「不同类」。</p>
+<p>用命令看一眼系统当前的分布：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ps -eLo pid,tid,cls,rtprio,ni,<span class="hljs-built_in">comm</span> | awk <span class="hljs-string">&#x27;$3 != &quot;TS&quot; {print}&#x27;</span> | <span class="hljs-built_in">head</span> -30
+chrt -p $$          <span class="hljs-comment"># 查看某个进程的策略与 rt priority</span>
+</code></pre></div></code></pre>
+<p><code>CLS</code> 列的含义：<code>TS</code> = <code>SCHED_OTHER</code>，<code>FF</code> = <code>SCHED_FIFO</code>，<code>RR</code> = <code>SCHED_RR</code>，<code>B</code> = <code>SCHED_BATCH</code>，<code>IDL</code> = <code>SCHED_IDLE</code>，<code>DLN</code> = <code>SCHED_DEADLINE</code>。</p>
+<h2 id="六sched_other普通分时" tabindex="-1">六、SCHED_OTHER：普通分时 <a class="header-anchor" href="#六sched_other普通分时"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这是默认策略，值是 0，别名 <code>SCHED_NORMAL</code>。一个线程 fork 出来不带任何调度设定，它就是 <code>SCHED_OTHER</code>。</p>
+<p>语义上看不到「时间片」这个词的旧含义了。现在的做法是维护每个线程的虚拟运行时间 <code>vruntime</code>，每次挑 <code>vruntime</code> 最小的那个跑。权重大的线程跑同样的真实时间，<code>vruntime</code> 涨得慢，于是被选中得更频繁。这就是第三章那张权重表的作用。</p>
+<p>但你仍然能从外部观察到「一轮」的存在。调度器维护两个参数：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>sysctl 路径</th>
+<th>缺省值</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>目标调度延迟</td>
+<td><code>/proc/sys/kernel/sched_latency_ns</code></td>
+<td>6 ms（6000000）</td>
+<td>理想情况下，一轮里每个 runnable 线程至少跑一次</td>
+</tr>
+<tr>
+<td>最小调度粒度</td>
+<td><code>/proc/sys/kernel/sched_min_granularity_ns</code></td>
+<td>0.75 ms（750000）</td>
+<td>一轮里每个线程至少跑这么久，不允许切得太碎</td>
+</tr>
+</tbody>
+</table></div><p>线程数少的时候，一轮长度按目标延迟算。runnable 线程超过 8 个（<code>sched_nr_latency</code>）以后，一轮长度不再固定，改按「线程数 × 最小粒度」扩张，防止切换开销吃掉全部 CPU。</p>
+<p>用户态能看到的 <code>SCHED_OTHER</code> 行为特征：</p>
+<ul>
+<li><code>sched_param.sched_priority</code> 必须是 0。传非 0 调 <code>sched_setscheduler()</code> 返回 <code>EINVAL</code>。</li>
+<li>只有 nice 值起作用，其余参数无效。</li>
+<li>一个新唤醒的线程会做 <code>vruntime</code> 补偿，被放到队列里 <code>vruntime</code> 最小值的附近。所以交互型线程（睡一会儿干一会儿）能拿到比权重比更高的实际份额。</li>
+<li>唤醒会尝试立刻抢占当前运行的线程。这个行为由 <code>/proc/sys/kernel/sched_wakeup_granularity_ns</code> 控制阈值，值越小越容易抢占。</li>
+<li><code>ps</code> 里 <code>CLS</code> 列显示 <code>TS</code>。</li>
+</ul>
+<p>一个实际的查看方式：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">cat</span> /proc/sys/kernel/sched_latency_ns
+<span class="hljs-built_in">cat</span> /proc/sys/kernel/sched_min_granularity_ns
+<span class="hljs-built_in">cat</span> /sys/kernel/debug/sched/debug    <span class="hljs-comment"># 需要 root 且 debugfs 已挂载</span>
+</code></pre></div></code></pre>
+<h2 id="七sched_fifo-与-sched_rr实时策略" tabindex="-1">七、SCHED_FIFO 与 SCHED_RR：实时策略 <a class="header-anchor" href="#七sched_fifo-与-sched_rr实时策略"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>两者都叫实时策略，内核里统一判断为 rt 类。区别只有一个：<strong>同一 rt priority 的多个线程之间怎么分 CPU</strong>。</p>
+<p><code>SCHED_FIFO</code>（值 1）的规则：</p>
+<ul>
+<li>一个 FIFO 线程一旦上 CPU，就一直跑，直到下述任一情况发生：自己阻塞（发起 I/O、睡眠、等待锁）、自己调用 <code>sched_yield()</code>、自己退出、被更高 rt priority 的线程抢占。</li>
+<li>它<strong>没有时间片</strong>。不会因为跑得久而被打断。</li>
+<li>同 rt priority 的线程按进入 runnable 状态的先后排队，先来的先跑。后来的必须等前面的让出。</li>
+</ul>
+<p><code>SCHED_RR</code>（值 2）的规则：</p>
+<ul>
+<li>与 FIFO 相同的部分：高优先级压死低优先级，被高优先级抢占。</li>
+<li>不同的部分：同 rt priority 的线程之间有<strong>时间片</strong>。时间片用完，当前线程被排到同优先级队列尾部，下一个同优先级线程上。</li>
+<li>时间片长度由 <code>/proc/sys/kernel/sched_rr_timeslice_ms</code> 控制，缺省 100 ms。这也是 <code>RR_TIMESLICE</code> 的缺省值。</li>
+</ul>
+<p>一句话对比：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>SCHED_FIFO：同优先级里，谁先来谁一直跑，除非自己让。
+SCHED_RR  ：同优先级里，每人 100ms，轮着跑。
+</code></pre></div></code></pre>
+<p>跨优先级的行为两者完全一样：rt priority 99 的线程 runnable 期间，rt priority 1 的线程一次都上不去，不管是不是 RR、时间片有没有用完。</p>
+<p><code>SCHED_FIFO</code> 线程主动让出的标准做法是 <code>sched_yield()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sched.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;errno.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_param</span> <span class="hljs-title">sp</span> =</span> { .sched_priority = <span class="hljs-number">10</span> };
+
+    <span class="hljs-keyword">if</span> (sched_setscheduler(<span class="hljs-number">0</span>, SCHED_FIFO, &amp;sp) != <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;sched_setscheduler&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+    }
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;policy now: %d\n&quot;</span>, sched_getscheduler(<span class="hljs-number">0</span>));
+
+    <span class="hljs-keyword">for</span> (;;) {
+        <span class="hljs-comment">/* 干活 */</span>
+        sched_yield();   <span class="hljs-comment">/* 把 CPU 让给同优先级的其他 FIFO 线程 */</span>
+    }
+}
+</code></pre></div></code></pre>
+<p><code>0</code> 作为 <code>pid</code> 表示「调用线程自己」。返回 0 成功，-1 失败并置 <code>errno</code>。没有 <code>CAP_SYS_NICE</code> 时，把普通线程抬成 <code>SCHED_FIFO</code> 会失败，<code>errno</code> 是 <code>EPERM</code>。</p>
+<h2 id="八sched_batch-与-sched_idle" tabindex="-1">八、SCHED_BATCH 与 SCHED_IDLE <a class="header-anchor" href="#八sched_batch-与-sched_idle"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这两种都是普通分时的变体，都吃 nice 值，都要求 <code>sched_priority</code> 为 0。</p>
+<p><code>SCHED_BATCH</code>（值 3）是给<strong>运算密集型</strong>线程用的：</p>
+<ul>
+<li>调度器不会那么勤快地唤醒抢占它。一个刚醒来的线程想抢它的 CPU，门槛更高。</li>
+<li>它自己按 nice 值正常参与权重分配，不吃亏。</li>
+<li>换来的是更少的上下文切换，缓存命中率更高。</li>
+</ul>
+<p>典型场景：编译、视频转码、离线数据处理、批量 ETL。这类任务跑得久、切换代价高，把它们标成 batch 对整机吞吐有好处。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">nice</span> -n 10 ionice -c2 -n7 make -j8      <span class="hljs-comment"># 配合 nice 一起用</span>
+chrt -b 0 ./render --frames 1-4000      <span class="hljs-comment"># chrt -b 设置 SCHED_BATCH</span>
+</code></pre></div></code></pre>
+<p><code>SCHED_IDLE</code>（值 5）是给<strong>后台清理</strong>用的：</p>
+<ul>
+<li>权重被策略钉在一个极低档（内核里 <code>WEIGHT_IDLEPRIO</code> 是 3），比 nice 19 的权重 10 还要低一个量级。</li>
+<li>实际表现：只要系统里有任何 <code>SCHED_OTHER</code> 线程 runnable，IDLE 线程几乎推进不了。CPU 全空闲时它才跑满。</li>
+<li>nice 值仍然能被设置、被读取，但对权重的计算不起作用。策略已经把权重定死了。</li>
+</ul>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>chrt -i 0 ./cleanup-old-logs.sh    <span class="hljs-comment"># chrt -i 设置 SCHED_IDLE</span>
+</code></pre></div></code></pre>
+<p>两者与 nice 19 的区别值得单独记一笔：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>方式</th>
+<th>权重</th>
+<th>有别的普通线程在跑时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>nice 19</td>
+<td>10</td>
+<td>仍能分到约 1/103 的 CPU</td>
+</tr>
+<tr>
+<td><code>SCHED_IDLE</code></td>
+<td>3</td>
+<td>基本分不到，CPU 空下来才跑</td>
+</tr>
+</tbody>
+</table></div><p>如果你只是想让任务慢一点，用 nice 19。如果你想让任务完全让路、只在机器闲着时干活，用 <code>SCHED_IDLE</code>。</p>
+<h2 id="九sched_deadline截止期调度" tabindex="-1">九、SCHED_DEADLINE：截止期调度 <a class="header-anchor" href="#九sched_deadline截止期调度"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面的策略都在回答「谁先跑」。<code>SCHED_DEADLINE</code> 回答的是另一个问题：「我每隔一段时间要跑一次，每次要跑够这么久，你能保证吗」。</p>
+<p>它用三个时间参数描述自己，不用 nice，也不用 rt priority：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>含义</th>
+<th>单位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sched_runtime</code></td>
+<td>一个周期内需要的 CPU 时间（comp. time）</td>
+<td>ns</td>
+</tr>
+<tr>
+<td><code>sched_deadline</code></td>
+<td>相对于周期起点的截止期（relative deadline）</td>
+<td>ns</td>
+</tr>
+<tr>
+<td><code>sched_period</code></td>
+<td>周期长度</td>
+<td>ns</td>
+</tr>
+</tbody>
+</table></div><p>约束是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>sched_runtime &lt;= sched_deadline &lt;= sched_period
+</code></pre></div></code></pre>
+<p>三者都必须大于 0。任何一个条件不满足，<code>sched_setattr()</code> 返回 <code>EINVAL</code>。<code>sched_period</code> 传 0 时，内核按 <code>sched_deadline</code> 的值当作周期，即 period == deadline。</p>
+<p>语义：每到周期起点（线程被唤醒的时刻），调度器在 <code>sched_deadline</code> 之内把线程调度上去，让它跑满 <code>sched_runtime</code>，跑完可以调度走；下一个周期到了再来一遍。</p>
+<p>优先级位置：<code>SCHED_DEADLINE</code> 高于 <code>SCHED_FIFO</code>、<code>SCHED_RR</code>，更高于普通线程。内核里它的归一化优先级是 <code>-1</code>，比实时线程的 <code>0</code> 还要高，是整条优先级数轴的顶端。</p>
+<p>设置接口只有 <code>sched_setattr()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/sched/types.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/syscall.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;errno.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">sched_setattr_wrap</span><span class="hljs-params">(<span class="hljs-type">pid_t</span> pid, <span class="hljs-keyword">struct</span> sched_attr *attr, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> flags)</span>
+{
+    <span class="hljs-keyword">return</span> (<span class="hljs-type">int</span>)syscall(__NR_sched_setattr, pid, attr, flags);
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_attr</span> <span class="hljs-title">attr</span>;</span>
+
+    <span class="hljs-built_in">memset</span>(&amp;attr, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(attr));
+    attr.size          = <span class="hljs-keyword">sizeof</span>(attr);
+    attr.sched_policy  = SCHED_DEADLINE;
+    attr.sched_runtime  =  <span class="hljs-number">2000000</span>;   <span class="hljs-comment">/*  2 ms CPU 时间 */</span>
+    attr.sched_deadline = <span class="hljs-number">10000000</span>;   <span class="hljs-comment">/* 10 ms 内必须跑完 */</span>
+    attr.sched_period   = <span class="hljs-number">20000000</span>;   <span class="hljs-comment">/* 每 20 ms 一个周期 */</span>
+
+    <span class="hljs-keyword">if</span> (sched_setattr_wrap(<span class="hljs-number">0</span>, &amp;attr, <span class="hljs-number">0</span>) != <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;sched_setattr&quot;</span>);   <span class="hljs-comment">/* EPERM 缺权限，EBUSY 超带宽，EINVAL 参数非法 */</span>
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+    }
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;SCHED_DEADLINE set\n&quot;</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>几点必须知道的：</p>
+<ul>
+<li>glibc 没有 <code>sched_setattr()</code> 的包装函数，得自己用 <code>syscall(__NR_sched_setattr, ...)</code>。头文件用 <code>&lt;linux/sched/types.h&gt;</code> 拿 <code>struct sched_attr</code>。</li>
+<li>需要 <code>CAP_SYS_NICE</code>。</li>
+<li>内核做准入控制。把这组参数加进系统后，如果总带宽超过可用容量，返回 <code>EBUSY</code>。所以它不是「设了就一定成功」的接口，得处理失败。</li>
+<li><code>sched_getattr()</code> 原型是 <code>int sched_getattr(pid_t pid, struct sched_attr *attr, unsigned int size, unsigned int flags)</code>，读回来的 <code>attr-&gt;size</code> 是内核实际填的长度，比你自己传的 <code>size</code> 小的时候要用它。</li>
+<li>这是 Linux 特有接口，不在 POSIX 标准里。跨平台代码里要用 <code>#ifdef __linux__</code> 包起来。</li>
+</ul>
+<p><code>SCHED_DEADLINE</code> 不适合拿来当「超级优先级」用。它需要你对任务的执行时间有真实的测量：<code>sched_runtime</code> 设小了任务做不完，设大了准不进去。没有测量数据就别上这个策略。</p>
+<h2 id="十调整-nice-值nice-与-setpriority" tabindex="-1">十、调整 nice 值：nice 与 setpriority <a class="header-anchor" href="#十调整-nice-值nice-与-setpriority"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1nice" tabindex="-1">1、nice() <a class="header-anchor" href="#1nice"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>最老的接口，也是能力最弱的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">nice</span><span class="hljs-params">(<span class="hljs-type">int</span> inc)</span>;
+</code></pre></div></code></pre>
+<p>语义：把调用线程的 nice 值加上 <code>inc</code>。<code>inc</code> 可正可负，结果会被裁剪到 <code>[-20, 19]</code>。</p>
+<ul>
+<li><code>nice(3)</code>：nice 值 +3，优先级降低 3 档。因为调大 nice 值等于对别人更友好，自己让出 CPU。</li>
+<li><code>nice(-5)</code>：nice 值 -5，优先级提升 5 档。</li>
+</ul>
+<p>返回值这块有坑：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>标准</th>
+<th>成功时返回</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POSIX</td>
+<td>新的 nice 值</td>
+</tr>
+<tr>
+<td>Linux 系统调用与 libc</td>
+<td>0</td>
+</tr>
+</tbody>
+</table></div><p>失败返回 -1。于是在 Linux 上写 <code>if (nice(-5) == -1)</code> 判断失败是成立的，但拿不到新值。想知道当前值，只能用 <code>getpriority()</code>。</p>
+<p>还有两个限制：</p>
+<ul>
+<li>只能改<strong>自己</strong>，没有 <code>pid</code> 参数。</li>
+<li>无 <code>CAP_SYS_NICE</code> 时只能往大调（降优先级），往小调会被裁剪回原值而不是报错。这点与 <code>setpriority()</code> 不同，后者会返回 <code>EACCES</code>。</li>
+</ul>
+<p>另外记住：POSIX 标准把 nice 值定义为 per process，Linux 没遵守，它是 <strong>per-thread</strong> 属性。多线程程序里 <code>nice()</code> 只作用于调用它的那个线程。</p>
+<h3 id="2getpriority--setpriority" tabindex="-1">2、getpriority() / setpriority() <a class="header-anchor" href="#2getpriority--setpriority"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>加强版：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/time.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/resource.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">getpriority</span><span class="hljs-params">(<span class="hljs-type">int</span> which, <span class="hljs-type">int</span> who)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">setpriority</span><span class="hljs-params">(<span class="hljs-type">int</span> which, <span class="hljs-type">int</span> who, <span class="hljs-type">int</span> prio)</span>;
+</code></pre></div></code></pre>
+<p>名字为什么不叫 getnice/setnice？历史上先用的是 nice 值，后来大家觉得「nice」这个词对初学者不直观，改叫 priority 更容易理解。这个改名后来的事实证明不算成功，因为真正的优先级（rt priority）登场后，两个「优先级」撞名了。</p>
+<p><code>which</code> 决定操作对象的口径：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th><code>which</code></th>
+<th><code>who</code> 的含义</th>
+<th><code>getpriority</code> 返回</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PRIO_PROCESS</code></td>
+<td>进程（线程）ID</td>
+<td>该线程的 nice 值</td>
+</tr>
+<tr>
+<td><code>PRIO_PGRP</code></td>
+<td>进程组 ID</td>
+<td>组内所有线程中最小的 nice 值（即优先级最高的那个）</td>
+</tr>
+<tr>
+<td><code>PRIO_USER</code></td>
+<td>用户 ID</td>
+<td>该用户所有线程中最小的 nice 值</td>
+</tr>
+</tbody>
+</table></div><p><code>who</code> 传 0 表示当前进程 / 当前进程组 / 当前用户。</p>
+<p><code>setpriority()</code> 比 <code>nice()</code> 强的地方就在这个 <code>which</code>：它一次可以改一组线程的 nice 值。成功返回 0，失败返回 -1。</p>
+<p><code>getpriority()</code> 的返回值需要一个特殊处理。它要返回的值本身就是 -1，而 -1 是一个合法的 nice 值，而 -1 又是通用的错误标志。区分办法是动用 <code>errno</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/resource.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;errno.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">int</span> prio;
+
+    errno = <span class="hljs-number">0</span>;                    <span class="hljs-comment">/* 关键：先清零 */</span>
+    prio = getpriority(PRIO_PROCESS, <span class="hljs-number">0</span>);
+    <span class="hljs-keyword">if</span> (prio == <span class="hljs-number">-1</span> &amp;&amp; errno != <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;getpriority&quot;</span>);    <span class="hljs-comment">/* 真的失败了 */</span>
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+    }
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;nice = %d\n&quot;</span>, prio);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>规则：调用前 <code>errno</code> 清零；调用后若返回 -1 且 <code>errno</code> 仍是 0，说明返回值就是 -1，不是错误。<code>getpriority()</code> 是少数「返回 -1 仍属正确」的接口。</p>
+<h3 id="3命令行工具" tabindex="-1">3、命令行工具 <a class="header-anchor" href="#3命令行工具"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">nice</span> -n 10 ./job.sh          <span class="hljs-comment"># 以 nice 10 启动</span>
+<span class="hljs-built_in">nice</span>                          <span class="hljs-comment"># 不带参数：打印当前 shell 的 nice 值</span>
+renice -n 5 -p 1234          <span class="hljs-comment"># 改已运行进程</span>
+renice -n -5 -p 1234         <span class="hljs-comment"># 提优先级，需要 root 或 CAP_SYS_NICE</span>
+renice -n 19 -g 4321         <span class="hljs-comment"># 改整个进程组</span>
+</code></pre></div></code></pre>
+<p><code>renice</code> 降低优先级时普通用户可以自己做，提升优先级需要权限。和老接口一致。</p>
+<h2 id="十一设置调度策略sched_setscheduler" tabindex="-1">十一、设置调度策略：sched_setscheduler <a class="header-anchor" href="#十一设置调度策略sched_setscheduler"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>核心接口：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sched.h&gt;</span></span>
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_param</span> {</span>
+    <span class="hljs-type">int</span> sched_priority;      <span class="hljs-comment">/* 实时策略下是 rt priority，普通策略下必须是 0 */</span>
+};
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">sched_setscheduler</span><span class="hljs-params">(<span class="hljs-type">pid_t</span> pid, <span class="hljs-type">int</span> policy, <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> sched_param *param)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">sched_getscheduler</span><span class="hljs-params">(<span class="hljs-type">pid_t</span> pid)</span>;
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">sched_setparam</span><span class="hljs-params">(<span class="hljs-type">pid_t</span> pid, <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> sched_param *param)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">sched_getparam</span><span class="hljs-params">(<span class="hljs-type">pid_t</span> pid, <span class="hljs-keyword">struct</span> sched_param *param)</span>;
+</code></pre></div></code></pre>
+<p>四个接口的分工：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>能改策略</th>
+<th>能改 rt priority</th>
+<th>能改 nice</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sched_setscheduler()</code></td>
+<td>是</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td><code>sched_setparam()</code></td>
+<td>否</td>
+<td>是</td>
+<td>否</td>
+</tr>
+<tr>
+<td><code>sched_setattr()</code></td>
+<td>是</td>
+<td>是</td>
+<td>是</td>
+</tr>
+<tr>
+<td><code>setpriority()</code></td>
+<td>否</td>
+<td>否</td>
+<td>是</td>
+</tr>
+</tbody>
+</table></div><p><code>sched_setscheduler()</code> 一次搞定策略和该策略下的参数。<code>sched_setparam()</code> 只改当前策略下的参数，不能换策略。<code>sched_setattr()</code> 是全集，策略、nice、rt priority、deadline 三件套全能设，代价是它是 Linux 专有扩展。</p>
+<p>返回值一律是 0 成功、-1 失败并置 <code>errno</code>。<code>pid</code> 传 0 表示调用线程自己。</p>
+<p><code>sched_setscheduler()</code> 的完整用法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sched.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;errno.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">set_rt</span><span class="hljs-params">(<span class="hljs-type">int</span> prio)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_param</span> <span class="hljs-title">sp</span>;</span>
+
+    <span class="hljs-built_in">memset</span>(&amp;sp, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(sp));
+    sp.sched_priority = prio;                 <span class="hljs-comment">/* 1 ～ 99 */</span>
+    <span class="hljs-keyword">if</span> (sched_setscheduler(<span class="hljs-number">0</span>, SCHED_FIFO, &amp;sp) != <span class="hljs-number">0</span>) {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;set FIFO %d failed: %s\n&quot;</span>, prio, strerror(errno));
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">set_normal</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_param</span> <span class="hljs-title">sp</span>;</span>
+
+    <span class="hljs-built_in">memset</span>(&amp;sp, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(sp));
+    sp.sched_priority = <span class="hljs-number">0</span>;                    <span class="hljs-comment">/* 普通策略必须为 0 */</span>
+    <span class="hljs-keyword">if</span> (sched_setscheduler(<span class="hljs-number">0</span>, SCHED_OTHER, &amp;sp) != <span class="hljs-number">0</span>) {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;back to OTHER failed: %s\n&quot;</span>, strerror(errno));
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_param</span> <span class="hljs-title">p</span>;</span>
+
+    <span class="hljs-keyword">if</span> (set_rt(<span class="hljs-number">10</span>) != <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+    sched_getparam(<span class="hljs-number">0</span>, &amp;p);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;now policy=%d prio=%d\n&quot;</span>, sched_getscheduler(<span class="hljs-number">0</span>), p.sched_priority);
+    set_normal();                             <span class="hljs-comment">/* 一定要有回退路径 */</span>
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>注意 <code>set_normal()</code> 那一行。上了实时策略就一定留回退路径，不然程序退出前那个核一直被它按着。</p>
+<p>参数检查的几条铁律，违反了就是 <code>EINVAL</code>：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>检查项</th>
+<th>条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>普通策略的优先级</td>
+<td><code>sched_priority</code> 必须等于 0</td>
+</tr>
+<tr>
+<td>实时策略的优先级</td>
+<td><code>sched_priority</code> 必须在 <code>[sched_get_priority_min(policy), sched_get_priority_max(policy)]</code> 内</td>
+</tr>
+<tr>
+<td>策略值合法</td>
+<td>必须是六个常量之一</td>
+</tr>
+<tr>
+<td>deadline 参数</td>
+<td><code>runtime &lt;= deadline &lt;= period</code> 且都 &gt; 0</td>
+</tr>
+</tbody>
+</table></div><p><code>SCHED_DEADLINE</code> 只能通过 <code>sched_setattr()</code> 设置。用 <code>sched_setscheduler()</code> 传 <code>SCHED_DEADLINE</code> 会失败，因为 <code>sched_param</code> 里装不下三个时间参数。</p>
+<p>实时策略上了台就没有保险丝。给线程设 <code>SCHED_FIFO</code> 之后如果它一直不阻塞，那个核就交给它了。所以：</p>
+<ul>
+<li>上实时策略之后，线程必须有明确的阻塞点或让出点。循环里放 <code>sched_yield()</code>，或者 <code>nanosleep()</code>。</li>
+<li>万一卡死，从另一个终端用 <code>chrt -o 0 -p &lt;pid&gt;</code> 把它打回 <code>SCHED_OTHER</code>。前提是你能拿到 shell。</li>
+<li>更稳的做法是给实时线程配上 <code>RLIMIT_RTTIME</code>，让内核在它连续霸占 CPU 超时后发 <code>SIGXCPU</code> 砍掉它。</li>
+</ul>
+<h2 id="十二查询接口与权限要求" tabindex="-1">十二、查询接口与权限要求 <a class="header-anchor" href="#十二查询接口与权限要求"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1查询清单" tabindex="-1">1、查询清单 <a class="header-anchor" href="#1查询清单"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>想查什么</th>
+<th>接口</th>
+<th><code>pid</code> 传 0</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调度策略</td>
+<td><code>sched_getscheduler(pid)</code></td>
+<td>查自己</td>
+</tr>
+<tr>
+<td>该策略下的参数</td>
+<td><code>sched_getparam(pid, &amp;param)</code></td>
+<td>查自己</td>
+</tr>
+<tr>
+<td>策略的 rt priority 下界</td>
+<td><code>sched_get_priority_min(policy)</code></td>
+<td>无 pid 参数</td>
+</tr>
+<tr>
+<td>策略的 rt priority 上界</td>
+<td><code>sched_get_priority_max(policy)</code></td>
+<td>无 pid 参数</td>
+</tr>
+<tr>
+<td>nice 值</td>
+<td><code>getpriority(which, who)</code></td>
+<td><code>who</code> 传 0 查自己</td>
+</tr>
+<tr>
+<td>全部调度属性</td>
+<td><code>sched_getattr(pid, &amp;attr, size, flags)</code></td>
+<td>查自己</td>
+</tr>
+<tr>
+<td>CPU 亲和性</td>
+<td><code>sched_getaffinity(pid, size, &amp;mask)</code></td>
+<td>查自己</td>
+</tr>
+</tbody>
+</table></div><p><code>sched_getscheduler()</code> 成功时返回策略常量，失败返回 -1。注意它返回 -1 时也是错误，而 -1 不是合法策略值，所以这里没有 <code>getpriority()</code> 那种歧义。</p>
+<p><code>sched_getattr()</code> 用法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/sched/types.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/syscall.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sched_attr</span> <span class="hljs-title">attr</span>;</span>
+
+    <span class="hljs-built_in">memset</span>(&amp;attr, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(attr));
+    attr.size = <span class="hljs-keyword">sizeof</span>(attr);
+    <span class="hljs-keyword">if</span> (syscall(__NR_sched_getattr, <span class="hljs-number">0</span>, &amp;attr, <span class="hljs-keyword">sizeof</span>(attr), <span class="hljs-number">0</span>) != <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;sched_getattr&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+    }
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;policy=%u nice=%d rt_prio=%u\n&quot;</span>,
+           attr.sched_policy, attr.sched_nice, attr.sched_priority);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;runtime=%llu deadline=%llu period=%llu\n&quot;</span>,
+           (<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-type">long</span>)attr.sched_runtime,
+           (<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-type">long</span>)attr.sched_deadline,
+           (<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-type">long</span>)attr.sched_period);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>sched_getattr()</code> 的原型里 <code>attr</code> 是 <code>const struct sched_attr *</code>，这是历史遗留的写法，实际是输出参数，需要转型或直接传非 const 指针。</p>
+<p>命令行速查：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>chrt -p 1234                      <span class="hljs-comment"># 策略 + rt priority</span>
+chrt -m                           <span class="hljs-comment"># 列出本机各策略的优先级范围</span>
+ps -o pid,ni,pri,psr,cls,<span class="hljs-built_in">comm</span> -p 1234
+taskset -pc 1234                  <span class="hljs-comment"># 亲和性（同目录另一篇细讲）</span>
+</code></pre></div></code></pre>
+<h3 id="2权限cap_sys_nice" tabindex="-1">2、权限：CAP_SYS_NICE <a class="header-anchor" href="#2权限cap_sys_nice"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这块是硬门槛。规则来自内核的安全检查，用户态看下来是这样的：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>操作</th>
+<th>无 <code>CAP_SYS_NICE</code></th>
+<th>有 <code>CAP_SYS_NICE</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>调大 nice 值（降优先级）</td>
+<td>允许</td>
+<td>允许</td>
+</tr>
+<tr>
+<td>调小 nice 值（升优先级）</td>
+<td>拒绝，<code>EACCES</code></td>
+<td>允许</td>
+</tr>
+<tr>
+<td><code>SCHED_OTHER</code> → <code>SCHED_FIFO</code>/<code>RR</code></td>
+<td>拒绝，<code>EPERM</code></td>
+<td>允许</td>
+</tr>
+<tr>
+<td><code>SCHED_FIFO</code> → <code>SCHED_OTHER</code></td>
+<td>允许（降级）</td>
+<td>允许</td>
+</tr>
+<tr>
+<td>提升 rt priority</td>
+<td>拒绝，<code>EPERM</code></td>
+<td>允许</td>
+</tr>
+<tr>
+<td>降低 rt priority</td>
+<td>允许（降级）</td>
+<td>允许</td>
+</tr>
+<tr>
+<td>设置 <code>SCHED_IDLE</code></td>
+<td>允许（降级）</td>
+<td>允许</td>
+</tr>
+<tr>
+<td>设置 <code>SCHED_BATCH</code></td>
+<td>允许</td>
+<td>允许</td>
+</tr>
+<tr>
+<td>设置 <code>SCHED_DEADLINE</code></td>
+<td>拒绝，<code>EPERM</code></td>
+<td>允许，受准入控制</td>
+</tr>
+<tr>
+<td>操作别人的线程</td>
+<td>同用户同会话限制</td>
+<td>允许</td>
+</tr>
+</tbody>
+</table></div><p>核心原则一句话：<strong>没有 <code>CAP_SYS_NICE</code> 时，你能做的只有降级</strong>。策略从 FIFO 降到 NORMAL 行，nice 从 0 调到 10 行，反过来全不行。</p>
+<p>还有一层限制：没有 <code>CAP_SYS_NICE</code> 时，即使只是降级，操作对象也必须是同一登录用户的线程，否则 <code>EPERM</code>。</p>
+<p><code>CAP_SYS_NICE</code> 的常见获取方式：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">sudo</span> <span class="hljs-built_in">setcap</span> cap_sys_nice+ep ./your-daemon     <span class="hljs-comment"># 给二进制加能力</span>
+<span class="hljs-built_in">getcap</span> ./your-daemon                          <span class="hljs-comment"># 确认</span>
+<span class="hljs-built_in">sudo</span> chrt -f 50 ./server                      <span class="hljs-comment"># 直接用 root 起</span>
+</code></pre></div></code></pre>
+<p>在容器里，默认的 <code>docker run</code> 会丢掉 <code>CAP_SYS_NICE</code>，得显式加 <code>--cap-add=SYS_NICE</code>。Kubernetes 里对应 <code>securityContext.capabilities.add</code>。改了没生效，先查这个。</p>
+<p><code>RLIMIT_RTPRIO</code> 是另一条路：它允许非特权进程把 rt priority 提到资源限制允许的上限以内。软硬限制都可设，值 0 表示不允许任何实时优先级。有些发行版的 <code>rtprio</code> PAM 限制配合 <code>@realtime</code> 用户组用的就是它。</p>
+<p><code>RLIMIT_RTTIME</code> 则是给实时线程兜底的：线程连续占用 CPU 超过这个微秒数且没有发起阻塞调用时，内核发 <code>SIGXCPU</code>。默认值多为 <code>unlimited</code>，但容器与 systemd 服务常会设。</p>
+<h2 id="十三实时进程的坑饿死与优先级反转" tabindex="-1">十三、实时进程的坑：饿死与优先级反转 <a class="header-anchor" href="#十三实时进程的坑饿死与优先级反转"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="1饿死" tabindex="-1">1、饿死 <a class="header-anchor" href="#1饿死"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>实时线程如果写成一个不阻塞的死循环：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 反面教材 */</span>
+<span class="hljs-keyword">for</span> (;;) {
+    <span class="hljs-comment">/* 纯计算，没有 sleep，没有 I/O，没有 sched_yield */</span>
+}
+</code></pre></div></code></pre>
+<p>它就是那个核上的永久占领者。同核上所有 <code>SCHED_OTHER</code> 线程永远拿不到 CPU，看门狗线程、日志线程、心跳线程全部停摆。表现是：SSH 连上去了但敲命令没反应，串口能进，<code>top</code> 里那几个 <code>SCHED_OTHER</code> 线程的 CPU 时间不再增长。</p>
+<p>更隐蔽的一种：实时线程每轮都做了 I/O，但 I/O 立刻返回（命中页缓存、写内存文件系统），于是它从技术上讲「没睡眠」，照样饿死别人。判断标准不是有没有 I/O，是有没有真正阻塞。</p>
+<p>防饿死的三件事：</p>
+<ul>
+<li>每个实时线程的循环里都要有一个明确的让出点。<code>sched_yield()</code> 只让给同优先级的，所以要真让路得用 <code>nanosleep()</code>。</li>
+<li>给实时线程设 <code>RLIMIT_RTTIME</code>，超了就被 <code>SIGXCPU</code> 干掉，别让它拖死整机。</li>
+<li>实时线程的 rt priority 不要随便用 99。留出高档位给真正必须最紧急的线程，比如内核线程和看门狗。</li>
+</ul>
+<h3 id="2优先级反转" tabindex="-1">2、优先级反转 <a class="header-anchor" href="#2优先级反转"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>经典三方场景：低优先级线程 L 持有锁，高优先级线程 H 等这把锁被阻塞，中优先级线程 M 抢占 L 让 L 迟迟不释放锁。结果是 H 被 M 间接堵住。</p>
+<p>对 <code>SCHED_FIFO</code> 尤其致命。L 一旦被 M 抢走，M 又是无限跑的，H 就无限期卡在锁上。</p>
+<p>用户态能做的是用带优先级继承的锁：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+
+<span class="hljs-type">pthread_mutexattr_t</span> attr;
+<span class="hljs-type">pthread_mutex_t</span> lock;
+
+pthread_mutexattr_init(&amp;attr);
+<span class="hljs-comment">/* 优先级继承协议 */</span>
+pthread_mutexattr_setprotocol(&amp;attr, PTHREAD_PRIO_INHERIT);
+pthread_mutex_init(&amp;lock, &amp;attr);
+</code></pre></div></code></pre>
+<p>两种协议的差别：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>协议</th>
+<th>行为</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PTHREAD_PRIO_INHERIT</code></td>
+<td>持锁线程临时提升到所有等待者中的最高优先级</td>
+<td>每次加解锁多一次优先级计算</td>
+</tr>
+<tr>
+<td><code>PTHREAD_PRIO_PROTECT</code></td>
+<td>持锁线程直接提升到锁的优先级上限</td>
+<td>需要正确设定这个上限值，设错会拖慢别人</td>
+</tr>
+</tbody>
+</table></div><p><code>PTHREAD_PRIO_INHERIT</code> 要 <code>_GNU_SOURCE</code>。<code>PTHREAD_PRIO_PROTECT</code> 只有少数实现支持，用前先测。</p>
+<p>一个更省事的建议：实时线程之间的共享数据，尽量用无锁结构或干脆不共享，别在这条路径上赌锁的公平性。</p>
+<h3 id="3别顺手改-nice-当修复" tabindex="-1">3、别顺手改 nice 当「修复」 <a class="header-anchor" href="#3别顺手改-nice-当修复"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>很多人碰到实时线程抢不到 CPU，第一反应是给别的线程调 nice。没用。nice 只在 <code>SCHED_OTHER</code> 类内部起作用，对实时线程的排队没有任何影响。要调实时线程，动的是 rt priority，那是另一个数轴。</p>
+<p>反过来也是：给一个 <code>SCHED_FIFO</code> 线程设 nice 值，内核会把这个值存下来，但调度行为一点不变。这个 nice 值只在你把它改回 <code>SCHED_OTHER</code> 之后才开始生效。</p>
+<h2 id="十四策略怎么选" tabindex="-1">十四、策略怎么选 <a class="header-anchor" href="#十四策略怎么选"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>按任务性质对号入座：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>你的线程在做什么</th>
+<th>选什么</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>普通前台服务、Web 请求处理</td>
+<td><code>SCHED_OTHER</code></td>
+<td>默认值，不用动</td>
+</tr>
+<tr>
+<td>编译、转码、批量计算</td>
+<td><code>SCHED_BATCH</code></td>
+<td>配合 nice 5 ～ 10</td>
+</tr>
+<tr>
+<td>日志清理、索引重建、冷数据搬运</td>
+<td><code>SCHED_IDLE</code></td>
+<td>只在机器闲着时跑</td>
+</tr>
+<tr>
+<td>中断下半部的用户态替代、低延迟采集</td>
+<td><code>SCHED_FIFO</code> + 中等 rt priority</td>
+<td>必须有让出点</td>
+</tr>
+<tr>
+<td>多个同优先级要公平轮转的实时线程</td>
+<td><code>SCHED_RR</code></td>
+<td>时间片 100 ms</td>
+</tr>
+<tr>
+<td>有明确周期和截止期的控制回路</td>
+<td><code>SCHED_DEADLINE</code></td>
+<td>需要实测 runtime</td>
+</tr>
+</tbody>
+</table></div><p>优先级数值怎么定：</p>
+<ul>
+<li>**实时优先级从低往高试，不要一上来给 99。**先用 10 到 20 之间，量出延迟，不够再往上加。留下一段高档位给系统。</li>
+<li><strong>同一组实时线程用同一个 rt priority</strong>，靠 <code>SCHED_RR</code> 分时间片，而不是靠不同数值制造不公平。</li>
+<li><strong>普通线程的 nice 差值控制在 10 以内</strong>。差 10 已经是 9 倍差距，差 20 就是 8800 倍，除了「让路」之外没有别的解释。</li>
+<li><strong><code>SCHED_BATCH</code> 不要单独用</strong>，配上 nice 才有明显效果。</li>
+</ul>
+<p>上线前的检查清单：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 1. 实时线程数量是否合理</span>
+ps -eLo pid,tid,cls,rtprio,<span class="hljs-built_in">comm</span> | awk <span class="hljs-string">&#x27;$3==&quot;FF&quot;||$3==&quot;RR&quot;{c++} END{print &quot;rt threads:&quot;, c+0}&#x27;</span>
+
+<span class="hljs-comment"># 2. 实时带宽是否接近饱和</span>
+<span class="hljs-built_in">cat</span> /proc/sys/kernel/sched_rt_runtime_us
+<span class="hljs-built_in">cat</span> /proc/sys/kernel/sched_rt_period_us
+
+<span class="hljs-comment"># 3. 有没有线程在饿死别人</span>
+pidstat -u -t -p &lt;pid&gt; 1
+</code></pre></div></code></pre>
+<p><code>sched_rt_runtime_us</code> 与 <code>sched_rt_period_us</code> 这一对是实时带宽的全局上限，缺省是 950000 / 1000000，也就是最多 95% 的 CPU 时间可以给实时线程，剩下 5% 留给普通线程保命。把这个值调到 1000000 等于取消保险，整机可以被实时线程彻底锁死。除非你非常确定，别动它。</p>
+<h2 id="十五易错点速查" tabindex="-1">十五、易错点速查 <a class="header-anchor" href="#十五易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>坑</th>
+<th>表现</th>
+<th>正解</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>把 nice 值方向记反</td>
+<td>想让服务更快，<code>nice(10)</code> 之后更慢了</td>
+<td>nice 数值大 = 优先级低。提速要 <code>nice(-10)</code></td>
+</tr>
+<tr>
+<td>以为 nice 是 per process</td>
+<td>多线程里只影响了主线程，其他线程照跑</td>
+<td>Linux 里 nice 是 per-thread。用 <code>setpriority(PRIO_PROCESS, tid, ...)</code> 逐个改</td>
+</tr>
+<tr>
+<td>用 <code>sched_setscheduler()</code> 设 <code>SCHED_DEADLINE</code></td>
+<td>返回 <code>EINVAL</code></td>
+<td>只能走 <code>sched_setattr()</code></td>
+</tr>
+<tr>
+<td>普通策略传非 0 优先级</td>
+<td>返回 <code>EINVAL</code></td>
+<td><code>SCHED_OTHER</code>/<code>BATCH</code>/<code>IDLE</code> 的 <code>sched_priority</code> 必须是 0</td>
+</tr>
+<tr>
+<td><code>getpriority()</code> 返回 -1 就判失败</td>
+<td>把合法的 nice -1 当成错误</td>
+<td>调用前 <code>errno = 0</code>，返回 -1 且 <code>errno</code> 仍为 0 才算成功</td>
+</tr>
+<tr>
+<td>以为 <code>nice()</code> 能拿到新值</td>
+<td>拿到 0，不知道怎么判断</td>
+<td>Linux 上成功返回 0。查值用 <code>getpriority()</code></td>
+</tr>
+<tr>
+<td>无权限时 <code>nice()</code> 静默失败</td>
+<td>调小 nice 后值没变，也没报错</td>
+<td>这是「裁剪」行为，不置错误。要报错就用 <code>setpriority()</code>，它给 <code>EACCES</code></td>
+</tr>
+<tr>
+<td>给实时线程调 nice</td>
+<td>值变了，调度行为没变</td>
+<td>实时线程按 rt priority 排队，nice 不参与</td>
+</tr>
+<tr>
+<td>实时线程里不阻塞</td>
+<td>整核卡死，SSH 无响应</td>
+<td>循环里放 <code>nanosleep()</code>；配 <code>RLIMIT_RTTIME</code>；用 <code>chrt -o 0 -p &lt;pid&gt;</code> 救场</td>
+</tr>
+<tr>
+<td>容器里设实时策略失败</td>
+<td><code>EPERM</code>，宿主机上同样代码却是好的</td>
+<td>容器默认丢 <code>CAP_SYS_NICE</code>，加 <code>--cap-add=SYS_NICE</code></td>
+</tr>
+<tr>
+<td>线程创建后忘了继承规则</td>
+<td>子线程策略和预期不符</td>
+<td><code>pthread_create</code> 的 attr 里设 <code>sched_policy</code>，否则继承创建者</td>
+</tr>
+<tr>
+<td>用 <code>fork()</code> 期待子进程继承实时策略</td>
+<td>子进程回到 <code>SCHED_OTHER</code></td>
+<td>设了 <code>sched_reset_on_fork</code> 就会重置为默认策略和 nice 0</td>
+</tr>
+<tr>
+<td>拿 <code>sched_priority</code> 当 nice 用</td>
+<td>传负数，返回 <code>EINVAL</code></td>
+<td>两个数轴：rt priority 1 ～ 99，nice -20 ～ 19</td>
+</tr>
+<tr>
+<td>把 <code>SCHED_RR</code> 的时间片当调优手段</td>
+<td>改了 <code>sched_rr_timeslice_ms</code> 没感觉</td>
+<td>只有在同 rt priority 有多个线程时才起作用</td>
+</tr>
+<tr>
+<td>忽略 deadline 准入控制</td>
+<td>设置时好时坏，偶发 <code>EBUSY</code></td>
+<td>带宽被占了。减少 runtime 或加大 period</td>
+</tr>
+</tbody>
+</table></div>
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一调度器在做什么" data-toc-target="一调度器在做什么">一、调度器在做什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二nice-值-20-到-19" data-toc-target="二nice-值-20-到-19">二、nice 值：-20 到 19</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三nice-与权重的换算" data-toc-target="三nice-与权重的换算">三、nice 与权重的换算</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四实时优先级0-到-99" data-toc-target="四实时优先级0-到-99">四、实时优先级：0 到 99</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五六种调度策略" data-toc-target="五六种调度策略">五、六种调度策略</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六sched_other普通分时" data-toc-target="六sched_other普通分时">六、SCHED_OTHER：普通分时</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七sched_fifo-与-sched_rr实时策略" data-toc-target="七sched_fifo-与-sched_rr实时策略">七、SCHED_FIFO 与 SCHED_RR：实时策略</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八sched_batch-与-sched_idle" data-toc-target="八sched_batch-与-sched_idle">八、SCHED_BATCH 与 SCHED_IDLE</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九sched_deadline截止期调度" data-toc-target="九sched_deadline截止期调度">九、SCHED_DEADLINE：截止期调度</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十调整-nice-值nice-与-setpriority" data-toc-target="十调整-nice-值nice-与-setpriority">十、调整 nice 值：nice 与 setpriority</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1nice" data-toc-target="1nice">1、nice()</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2getpriority--setpriority" data-toc-target="2getpriority--setpriority">2、getpriority() / setpriority()</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3命令行工具" data-toc-target="3命令行工具">3、命令行工具</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一设置调度策略sched_setscheduler" data-toc-target="十一设置调度策略sched_setscheduler">十一、设置调度策略：sched_setscheduler</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二查询接口与权限要求" data-toc-target="十二查询接口与权限要求">十二、查询接口与权限要求</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1查询清单" data-toc-target="1查询清单">1、查询清单</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2权限cap_sys_nice" data-toc-target="2权限cap_sys_nice">2、权限：CAP_SYS_NICE</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三实时进程的坑饿死与优先级反转" data-toc-target="十三实时进程的坑饿死与优先级反转">十三、实时进程的坑：饿死与优先级反转</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1饿死" data-toc-target="1饿死">1、饿死</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2优先级反转" data-toc-target="2优先级反转">2、优先级反转</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3别顺手改-nice-当修复" data-toc-target="3别顺手改-nice-当修复">3、别顺手改 nice 当「修复」</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四策略怎么选" data-toc-target="十四策略怎么选">十四、策略怎么选</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十五易错点速查" data-toc-target="十五易错点速查">十五、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/D.操作系统/04-调度与亲和性/调度器与优先级：从-nice-到-sched_/","title":"调度器与优先级：从 nice 到 sched_","url":"/D.操作系统/04-调度与亲和性/调度器与优先级：从-nice-到-sched_/","type":"current"},{"id":"/D.操作系统/04-调度与亲和性/CPU-亲和性与绑核实战/","title":"CPU 亲和性与绑核实战","url":"/D.操作系统/04-调度与亲和性/CPU-亲和性与绑核实战/","type":"neighbor"},{"id":"/D.操作系统/04-调度与亲和性/抢占：用户抢占、内核抢占与调度时机/","title":"抢占：用户抢占、内核抢占与调度时机","url":"/D.操作系统/04-调度与亲和性/抢占：用户抢占、内核抢占与调度时机/","type":"neighbor"}],"links":[{"source":"/D.操作系统/04-调度与亲和性/调度器与优先级：从-nice-到-sched_/","target":"/D.操作系统/04-调度与亲和性/CPU-亲和性与绑核实战/","type":"neighbor"},{"source":"/D.操作系统/04-调度与亲和性/调度器与优先级：从-nice-到-sched_/","target":"/D.操作系统/04-调度与亲和性/抢占：用户抢占、内核抢占与调度时机/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

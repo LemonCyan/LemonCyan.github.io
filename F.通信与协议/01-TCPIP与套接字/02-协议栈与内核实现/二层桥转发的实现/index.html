@@ -1,0 +1,1759 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>二层桥转发的实现 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">二层桥转发的实现</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/二层桥转发的实现/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">二层桥转发的实现</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">二层桥转发的实现</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <p>网桥转发落到内核代码里是一条很短的链。一个帧从端口进来，先记下源 MAC，再拿目的 MAC 去查表，查到就从对应端口发出去，查不到就往别的端口各送一份。这条链一句话说完：学源、查目的、查不到就泛洪。</p>
+<p>本篇只讲这条链怎么跑起来：函数从哪进、表在哪查、帧往哪送、哪一步被丢掉。</p>
+<p><strong>讲什么</strong></p>
+<ul>
+<li>网桥怎么把端口的收包流劫持进 <code>br_handle_frame</code></li>
+<li>三个结构体：<code>net_bridge</code>、<code>net_bridge_port</code>、<code>net_bridge_fdb_entry</code></li>
+<li>主线函数链：<code>br_handle_frame</code> → <code>br_handle_frame_finish</code> → <code>br_forward</code> / <code>br_flood_forward</code> / <code>br_pass_frame_up</code></li>
+<li>FDB 的学、查、老化</li>
+<li>转发决策的每个分支和判据</li>
+</ul>
+<p><strong>不讲什么</strong></p>
+<ul>
+<li>网桥是什么、学习/转发/泛洪三个动作的概念、FDB 表怎么读，去《链路层与网桥基础》</li>
+<li>802.1Q 帧格式、PVID、tagged/untagged 规则，去《VLAN 原理》和《VLAN 源码》</li>
+<li>STP 状态机、BPDU 字段、根桥选举，本篇只在代码里撞见 <code>p-&gt;state</code> 时交代一句</li>
+<li>驱动到 <code>netif_receive_skb</code> 的完整路径，去《数据收发路径》</li>
+<li>本地发出的帧走 <code>NF_BR_LOCAL_OUT</code>，本篇只标位置</li>
+</ul>
+<h2 id="一从收包到转发" tabindex="-1">一、从收包到转发 <a class="header-anchor" href="#一从收包到转发"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先看全景。这张图只画主干，中途被丢弃的帧不标——我们约定帧一路发成功，先把链路跑通。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>驱动 → netif_receive_skb() → __netif_receive_skb_core()
+  ├─ skb-&gt;dev-&gt;rx_handler 存在?
+  │    └─ 是 → br_handle_frame()
+  │         ├─ 保留地址 → NF_BR_LOCAL_IN → __br_handle_local_finish()
+  │         └─ 普通帧，看 p-&gt;state → NF_BR_PRE_ROUTING
+  │              └─ br_handle_frame_finish()
+  │                   ├─ 学源   br_fdb_update()
+  │                   ├─ 查目的 __br_fdb_get()
+  │                   ├─ 命中 → br_forward() → __br_forward()
+  │                   │    └─ NF_BR_FORWARD → br_forward_finish()
+  │                   │         └─ NF_BR_POST_ROUTING
+  │                   │              └─ br_dev_queue_push_xmit() → dev_queue_xmit()
+  │                   ├─ 未命中 → br_flood_forward() → br_flood() → __br_forward() ×N
+  │                   └─ 目的为本机 → br_pass_frame_up()
+  │                        └─ NF_BR_LOCAL_IN → br_netif_receive_skb()
+  │                             └─ netif_receive_skb()
+  └─ 否 → 按 skb-&gt;protocol 交给 ip_rcv 等协议处理函数
+</code></pre></div></code></pre>
+<p>从上往下走一遍。</p>
+<p>第一步，skb 从驱动出来，进到 <code>__netif_receive_skb_core</code> 撞上第一个岔路口：看自己身上有没有 <code>skb-&gt;dev-&gt;rx_handler</code>。有，就进 <code>br_handle_frame</code>；没有，直接按协议号上交协议栈。</p>
+<p>第二步，<code>br_handle_frame</code> 里还有岔路。这个函数只干一件事——判断这一帧该走哪条路，然后把它塞进对应的 netfilter 钩子点。两条路是 <code>NF_BR_PRE_ROUTING</code> 和 <code>NF_BR_LOCAL_IN</code>。链路本地地址（BPDU、LLDP 这类）走本地那条；判断不了去处的普通帧先走 <code>NF_BR_PRE_ROUTING</code>。</p>
+<p>第三步，<code>NF_BR_PRE_ROUTING</code> 后面的函数是 <code>br_handle_frame_finish</code>。这一帧的命运在这里定：转发、泛洪、还是上交本机。</p>
+<p>第四步，转发分支要再过 <code>NF_BR_FORWARD</code>、<code>NF_BR_POST_ROUTING</code>，最后 <code>dev_queue_xmit</code> 出网卡。上交本机的分支重新进 <code>NF_BR_LOCAL_IN</code>，回到 <code>netif_receive_skb</code> 让上层协议处理。本机发出的帧走另一条路：<code>NF_BR_LOCAL_OUT</code> → <code>NF_BR_POST_ROUTING</code> → 发出。</p>
+<p><strong>五个钩子点的位置</strong></p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>钩子点</th>
+<th>代码里的位置</th>
+<th>谁在用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NF_BR_PRE_ROUTING</code></td>
+<td><code>br_handle_frame</code> → <code>br_handle_frame_finish</code> 之间</td>
+<td>ebtables prerouting 链；<code>br_netfilter</code> 加载后是 IP 层第一道门</td>
+</tr>
+<tr>
+<td><code>NF_BR_LOCAL_IN</code></td>
+<td><code>br_handle_frame</code> 本地分支；<code>br_pass_frame_up</code> 里</td>
+<td>ebtables input 链</td>
+</tr>
+<tr>
+<td><code>NF_BR_FORWARD</code></td>
+<td><code>__br_forward</code> → <code>br_forward_finish</code> 之间</td>
+<td>ebtables forward 链</td>
+</tr>
+<tr>
+<td><code>NF_BR_POST_ROUTING</code></td>
+<td><code>br_forward_finish</code> → <code>br_dev_queue_push_xmit</code> 之间</td>
+<td>ebtables postrouting 链</td>
+</tr>
+<tr>
+<td><code>NF_BR_LOCAL_OUT</code></td>
+<td>本机发包路径</td>
+<td>ebtables output 链</td>
+</tr>
+</tbody>
+</table></div><p><code>NFPROTO_BRIDGE</code> 这一族钩子是给 ebtables 用的。ebtables 能过滤和改写任意类型的以太帧，不限于带 IP 头的那些。<code>br_handle_frame</code> 和 <code>br_handle_frame_finish</code> 这两个回调，只在 netfilter 没有把帧丢掉或吃掉时才会被执行。</p>
+<p>一个容易看漏的点：<code>NF_BR_PRE_ROUTING</code> 上挂的函数不一定是 <code>br_handle_frame_finish</code> 本身。装了 <code>br_netfilter</code> 之后，这一位是 <code>br_nf_pre_routing</code>，它做完 IP 层的 conntrack 和 NAT 前置检查，再回调 <code>br_nf_pre_routing_finish</code>，最后才走到 <code>br_handle_frame_finish</code>。</p>
+<h2 id="二网桥的数据结构" tabindex="-1">二、网桥的数据结构 <a class="header-anchor" href="#二网桥的数据结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>转发状态全挂在三个结构体上。看代码之前先把它们认全，后面每个函数都在这些字段上取东西。</p>
+<h3 id="2.1-skb-里跟桥有关的字段" tabindex="-1">2.1 skb 里跟桥有关的字段 <a class="header-anchor" href="#2.1-skb-里跟桥有关的字段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>桥怎么用它</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>skb-&gt;dev</code></td>
+<td>这一帧属于哪个设备。进桥时是物理端口，<code>br_pass_frame_up</code> 里被换成桥设备</td>
+</tr>
+<tr>
+<td><code>skb-&gt;protocol</code></td>
+<td>以太类型。<code>br_handle_frame_finish</code> 用它判 ARP，决定要不要走 proxy ARP</td>
+</tr>
+<tr>
+<td><code>skb-&gt;pkt_type</code></td>
+<td>目的 MAC 等于桥自己的 MAC 时被改成 <code>PACKET_HOST</code></td>
+</tr>
+<tr>
+<td><code>skb-&gt;data</code></td>
+<td>指向以太头，<code>h_source</code> / <code>h_dest</code> 从这里取</td>
+</tr>
+<tr>
+<td><code>skb-&gt;vlan_tci</code></td>
+<td>携带的 VLAN tag，<code>br_handle_vlan</code> 决定清不清</td>
+</tr>
+<tr>
+<td><code>BR_INPUT_SKB_CB(skb)-&gt;brdev</code></td>
+<td>桥的私有控制块，存桥设备指针</td>
+</tr>
+<tr>
+<td><code>BR_INPUT_SKB_CB(skb)-&gt;vlan_filtered</code></td>
+<td>入口做没做过 VLAN 过滤</td>
+</tr>
+</tbody>
+</table></div><p><code>BR_INPUT_SKB_CB</code> 挂在 <code>skb-&gt;cb</code> 上，只有 <code>brdev</code> 和 <code>vlan_filtered</code> 两个字段有用。</p>
+<h3 id="2.2-net_bridge" tabindex="-1">2.2 net_bridge <a class="header-anchor" href="#2.2-net_bridge"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一个网桥一个 <code>net_bridge</code>，放在桥设备的私有区，<code>netdev_priv(br0)</code> 拿到。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge</span> {</span>
+    <span class="hljs-type">spinlock_t</span>              lock;
+    <span class="hljs-type">spinlock_t</span>              hash_lock;          <span class="hljs-comment">/* 保护 FDB 哈希表 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span>        <span class="hljs-title">port_list</span>;</span>          <span class="hljs-comment">/* 所有端口 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span>       *<span class="hljs-title">dev</span>;</span>               <span class="hljs-comment">/* 桥设备，比如 br0 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">pcpu_sw_netstats</span> __<span class="hljs-title">percpu</span> *<span class="hljs-title">stats</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_head</span>       <span class="hljs-title">hash</span>[<span class="hljs-title">BR_HASH_SIZE</span>];</span> <span class="hljs-comment">/* FDB 哈希桶，256 个 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>           ageing_time;        <span class="hljs-comment">/* 老化时间，默认 300 秒 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">delayed_work</span>     <span class="hljs-title">gc_work</span>;</span>            <span class="hljs-comment">/* 老化定时器载体 */</span>
+    u16                     group_fwd_mask;          <span class="hljs-comment">/* 允许放行的保留地址位 */</span>
+    u16                     group_fwd_mask_required; <span class="hljs-comment">/* 内核强制放行位 */</span>
+    bridge_id               designated_root;
+    bridge_id               bridge_id;
+    <span class="hljs-type">unsigned</span>                root_path_cost;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>           stp_enabled;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>           forward_delay;      <span class="hljs-comment">/* 默认 15 秒 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_vlan_group</span> *<span class="hljs-title">vlgrp</span>;</span>
+    u16                     default_pvid;
+    <span class="hljs-type">bool</span>                    vlan_enabled;
+    <span class="hljs-type">bool</span>                    multicast_enabled;
+    <span class="hljs-type">bool</span>                    vlan_stats_enabled;
+    <span class="hljs-comment">/* ... */</span>
+};
+</code></pre></div></code></pre>
+<p><code>hash</code> 是转发性能的关键。查表就是拿目的 MAC 算个哈希值，落到 256 个桶里的一个，桶内链表大多只有两三个元素，所以查表是常数级操作，不随端口数增长。</p>
+<p><code>ageing_time</code> 和 <code>gc_work</code> 决定表项能活多久、谁去清理。默认 300 秒，也就是 5 分钟。</p>
+<p><code>group_fwd_mask</code> 决定哪些该被本地吃掉的保留地址可以破例转发出去。默认只放行 802.1X 需要的位。</p>
+<h3 id="2.3-net_bridge_port" tabindex="-1">2.3 net_bridge_port <a class="header-anchor" href="#2.3-net_bridge_port"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一个端口一个 <code>net_bridge_port</code>，是桥和物理设备之间的粘合层。<code>br_add_if</code> 时分配，<code>br_del_if</code> 时释放。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_port</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge</span>       *<span class="hljs-title">br</span>;</span>        <span class="hljs-comment">/* 属于哪个桥 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span>       *<span class="hljs-title">dev</span>;</span>       <span class="hljs-comment">/* 物理设备，比如 eth0 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span>        <span class="hljs-title">list</span>;</span>       <span class="hljs-comment">/* 挂在 br-&gt;port_list 上 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>           flags;      <span class="hljs-comment">/* BR_LEARNING / BR_FLOOD / BR_HAIRPIN_MODE */</span>
+    u16                     port_no;    <span class="hljs-comment">/* 端口号，STP 用 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>           state;      <span class="hljs-comment">/* DISABLED / BLOCKING / LISTENING /
+                                           LEARNING / FORWARDING */</span>
+    u16                     priority;
+    u32                     path_cost;
+    u16                     group_fwd_mask;  <span class="hljs-comment">/* 端口级放行位，和桥级取或 */</span>
+    bridge_id               designated_root;
+    bridge_id               designated_bridge;
+    u16                     designated_port;
+    u32                     designated_cost;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>           designated_age;
+    <span class="hljs-type">bool</span>                    topology_change_ack;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timer_list</span>       <span class="hljs-title">message_age_timer</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timer_list</span>       <span class="hljs-title">forward_delay_timer</span>;</span>
+    u8                      multicast_router;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_head</span>         <span class="hljs-title">rcu</span>;</span>
+    <span class="hljs-comment">/* ... */</span>
+};
+</code></pre></div></code></pre>
+<p>三个字段要盯住。</p>
+<p><code>state</code> 是端口的 STP 状态，转发决策里出现频率最高。<code>BR_STATE_FORWARDING</code> 才允许转发，<code>BR_STATE_LEARNING</code> 只学不发，<code>BR_STATE_DISABLED</code> 直接丢。</p>
+<p><code>flags</code> 是功能开关，和 <code>state</code> 完全两码事。<code>state</code> 说端口处在哪个 STP 阶段，<code>flags</code> 说这个端口被允许干哪些事。<code>BR_LEARNING</code> 没置位就不学源 MAC；<code>BR_FLOOD</code> 没置位，单播泛洪时跳过它。</p>
+<p><code>port_no</code> 只在 STP 和日志里有意义，转发路径不看它。</p>
+<h3 id="2.4-net_bridge_fdb_entry" tabindex="-1">2.4 net_bridge_fdb_entry <a class="header-anchor" href="#2.4-net_bridge_fdb_entry"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>FDB 表项，一个 MAC 一条。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_fdb_entry</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span>       <span class="hljs-title">hlist</span>;</span>      <span class="hljs-comment">/* 挂在 br-&gt;hash[hash] 桶上 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_port</span>  *<span class="hljs-title">dst</span>;</span>       <span class="hljs-comment">/* 这个 MAC 在哪个端口后面 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>           updated;    <span class="hljs-comment">/* 最后一次刷新，老化靠它 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>           used;       <span class="hljs-comment">/* 最后一次被转发命中，统计用 */</span>
+    mac_addr                addr;
+    __u16                   vid;        <span class="hljs-comment">/* 属于哪个 VLAN，0 表示不过滤 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>           is_local:<span class="hljs-number">1</span>,       <span class="hljs-comment">/* 桥自己的 MAC */</span>
+                            is_static:<span class="hljs-number">1</span>,      <span class="hljs-comment">/* 手工配置，不老化 */</span>
+                            added_by_user:<span class="hljs-number">1</span>,
+                            added_by_external_learn:<span class="hljs-number">1</span>;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rcu_head</span>         <span class="hljs-title">rcu</span>;</span>
+};
+</code></pre></div></code></pre>
+<p><code>dst</code> 是转发落点，<code>br_forward(dst-&gt;dst, skb, skb2)</code> 里那个参数就是它。<code>is_local</code> 标记桥自己的地址，这类表项查到时不该转发、该上交。<code>is_static</code> 是 <code>bridge fdb add ... static</code> 配出来的，永不过期。</p>
+<p>老内核里两个时间字段叫 <code>ageing</code> 和 <code>used</code>，字段名统一成 <code>updated</code> / <code>used</code> 是新一点的内核干的事。你手上的代码如果写的是 <code>dst-&gt;used = jiffies</code>，那是老内核。</p>
+<h3 id="2.5-三个结构体的关系" tabindex="-1">2.5 三个结构体的关系 <a class="header-anchor" href="#2.5-三个结构体的关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>net_bridge (br0)
+ ├── dev ──────────────→ net_device (br0 这个虚拟设备)
+ ├── port_list
+ │    ├── net_bridge_port (port_no=1) ── dev ──→ net_device (eth0)
+ │    ├── net_bridge_port (port_no=2) ── dev ──→ net_device (eth1)
+ │    └── net_bridge_port (port_no=3) ── dev ──→ net_device (eth2)
+ └── hash[256]
+      ├── fdb_entry: 52:54:00:aa:bb:cc → dst = port(eth0)
+      ├── fdb_entry: br0 自己的 MAC     → dst = NULL, is_local=1
+      └── fdb_entry: 52:54:00:dd:ee:ff → dst = port(eth2)
+</code></pre></div></code></pre>
+<p>两条连线：端口结构体单向指向桥，FDB 表项单向指向端口。查表拿到表项，表项里的 <code>dst</code> 就是出口端口。</p>
+<p><code>is_local</code> 的表项 <code>dst</code> 是 NULL，因为没有「去哪个端口」这回事，它代表桥自己。代码里判的是 <code>dst-&gt;is_local</code>，不是 <code>dst</code> 是否为空。</p>
+<h2 id="三net_bridge-与-net_bridge_port" tabindex="-1">三、net_bridge 与 net_bridge_port <a class="header-anchor" href="#三net_bridge-与-net_bridge_port"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>结构体是死的，把 <code>eth0</code> 加进 <code>br0</code> 的那一刻才被串起来。这一步在 <code>br_add_if</code> 里做完，转发链的起点也在这里埋下。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">br_add_if</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net_bridge *br, <span class="hljs-keyword">struct</span> net_device *dev)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_port</span> *<span class="hljs-title">p</span>;</span>
+    <span class="hljs-type">int</span> err = <span class="hljs-number">0</span>;
+    <span class="hljs-comment">/* 只允许以太网设备，回环口、非 6 字节地址一律拒绝 */</span>
+    <span class="hljs-keyword">if</span> ((dev-&gt;flags &amp; IFF_LOOPBACK) || dev-&gt;type != ARPHRD_ETHER ||
+        dev-&gt;addr_len != ETH_ALEN || !is_valid_ether_addr(dev-&gt;dev_addr))
+        <span class="hljs-keyword">return</span> -EINVAL;
+    <span class="hljs-keyword">if</span> (dev-&gt;netdev_ops-&gt;ndo_start_xmit == br_dev_xmit)
+        <span class="hljs-keyword">return</span> -ELOOP;                       <span class="hljs-comment">/* 不许桥套桥 */</span>
+    <span class="hljs-keyword">if</span> (br_port_exists(dev))
+        <span class="hljs-keyword">return</span> -EBUSY;                       <span class="hljs-comment">/* 已经是某个桥的端口了 */</span>
+    <span class="hljs-keyword">if</span> (dev-&gt;priv_flags &amp; IFF_DONT_BRIDGE)
+        <span class="hljs-keyword">return</span> -EOPNOTSUPP;                  <span class="hljs-comment">/* 部分无线驱动声明不可桥接 */</span>
+    p = new_nbp(br, dev);                    <span class="hljs-comment">/* 分配并初始化端口结构体 */</span>
+    <span class="hljs-keyword">if</span> (IS_ERR(p))
+        <span class="hljs-keyword">return</span> PTR_ERR(p);
+    call_netdevice_notifiers(NETDEV_JOIN, dev);
+    <span class="hljs-comment">/* 端口设备被强制拉进混杂模式 */</span>
+    err = dev_set_promiscuity(dev, <span class="hljs-number">1</span>);
+    <span class="hljs-keyword">if</span> (err)
+        <span class="hljs-keyword">goto</span> put_back;
+    err = br_sysfs_addif(p);                 <span class="hljs-comment">/* /sys/class/net/eth0/brport/ */</span>
+    <span class="hljs-keyword">if</span> (err)
+        <span class="hljs-keyword">goto</span> err2;
+    <span class="hljs-comment">/* 先把端口自己的 MAC 作为 local 表项塞进 FDB */</span>
+    err = br_fdb_insert(br, p, dev-&gt;dev_addr, <span class="hljs-number">0</span>);
+    <span class="hljs-keyword">if</span> (err)
+        <span class="hljs-keyword">goto</span> err3;
+    <span class="hljs-comment">/* 注册设备接收帧函数：把 eth0 的收包流交给 br_handle_frame */</span>
+    err = netdev_rx_handler_register(dev, br_handle_frame, p);
+    <span class="hljs-keyword">if</span> (err)
+        <span class="hljs-keyword">goto</span> err4;
+    dev-&gt;priv_flags |= IFF_BRIDGE_PORT;
+    <span class="hljs-comment">/* 挂到桥的端口链表，到这一步它才真的属于这个桥 */</span>
+    list_add_rcu(&amp;p-&gt;<span class="hljs-built_in">list</span>, &amp;br-&gt;port_list);
+    br_stp_recalculate_bridge_id(br);        <span class="hljs-comment">/* 桥 MAC 取端口里最小的那个 */</span>
+    br_fdb_update(br, p, dev-&gt;dev_addr, <span class="hljs-number">0</span>, <span class="hljs-literal">false</span>);
+    netdev_update_features(br-&gt;dev);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+    <span class="hljs-comment">/* ... 错误回滚 ... */</span>
+}
+</code></pre></div></code></pre>
+<p>顺序有讲究，四步是关键。</p>
+<p><code>dev_set_promiscuity(dev, 1)</code> 让端口进混杂模式。网桥必须这样：端口要收所有目的 MAC 的帧，否则目的 MAC 不是它自己的帧在网卡那一层就被丢了，桥根本没有机会学到东西。所以桥下所有设备都是混杂模式。桥设备 <code>br0</code> 自己不是——只有用户明确 <code>ip link set br0 promisc on</code> 才进。</p>
+<p><code>br_fdb_insert(br, p, dev-&gt;dev_addr, 0)</code> 把端口 MAC 登记成 <code>is_local</code> 表项。作用很直接：别人发帧给 <code>eth0</code> 的 MAC，桥知道这是本机地址，该上交而不是转发。</p>
+<p><code>netdev_rx_handler_register</code> 换掉收包入口。这是全篇的枢纽。</p>
+<p><code>list_add_rcu(&amp;p-&gt;list, &amp;br-&gt;port_list)</code> 之后，泛洪时才会遍历到这个端口。</p>
+<h3 id="3.1-netdev_rx_handler_register-逐行" tabindex="-1">3.1 netdev_rx_handler_register 逐行 <a class="header-anchor" href="#3.1-netdev_rx_handler_register-逐行"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">netdev_rx_handler_register</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net_device *dev,
+                               <span class="hljs-type">rx_handler_func_t</span> *rx_handler,
+                               <span class="hljs-type">void</span> *rx_handler_data)</span>
+{
+    ASSERT_RTNL();
+    <span class="hljs-keyword">if</span> (dev-&gt;rx_handler)
+        <span class="hljs-keyword">return</span> -EBUSY;
+    <span class="hljs-comment">/* Note: rx_handler_data must be set before rx_handler */</span>
+    <span class="hljs-comment">/* 把 rx_handler_data 指向第三个参数，在 br_add_if 里就是 p，端口结构体 */</span>
+    rcu_assign_pointer(dev-&gt;rx_handler_data, rx_handler_data);
+    <span class="hljs-comment">/* 把 dev-&gt;rx_handler 指向 br_handle_frame */</span>
+    rcu_assign_pointer(dev-&gt;rx_handler, rx_handler);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>两行赋值，一个 <code>-EBUSY</code>。<code>-EBUSY</code> 的意思是「一个设备只能有一个 rx_handler」，所以同一个网口不能被两个网桥抢，也不能同时挂给 bridge 和 macvlan 抢收包权。</p>
+<p>顺序注释说的是：<code>rx_handler_data</code> 必须先写。<code>rx_handler</code> 一旦可见，别的 CPU 立刻就会通过 <code>br_handle_frame</code> 去读 <code>rx_handler_data</code>，读到 NULL 就崩了。<code>rcu_assign_pointer</code> 保证写指针的动作对其他 CPU 要么完全可见要么完全不可见，配合读侧的 <code>rcu_dereference</code> 就能安全并发。</p>
+<h3 id="3.2-rx_handler_data-指向谁" tabindex="-1">3.2 rx_handler_data 指向谁 <a class="header-anchor" href="#3.2-rx_handler_data-指向谁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这一条最容易搞混。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>指针</th>
+<th>指向</th>
+<th>谁写</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>eth0-&gt;rx_handler</code></td>
+<td><code>br_handle_frame</code> 函数</td>
+<td><code>br_add_if</code></td>
+</tr>
+<tr>
+<td><code>eth0-&gt;rx_handler_data</code></td>
+<td><code>eth0</code> 的 <code>net_bridge_port</code></td>
+<td><code>br_add_if</code></td>
+</tr>
+<tr>
+<td><code>br0-&gt;rx_handler</code></td>
+<td>NULL</td>
+<td>没人写</td>
+</tr>
+</tbody>
+</table></div><p>所以 <code>br_handle_frame</code> 里那句 <code>p = br_port_get_rcu(skb-&gt;dev)</code> 就是读 <code>skb-&gt;dev-&gt;rx_handler_data</code>，拿到的是入帧那个物理端口的 <code>net_bridge_port</code>，不是桥的。有了 <code>p</code>，<code>p-&gt;br</code> 就是桥，<code>p-&gt;state</code> 是端口状态，<code>p-&gt;flags</code> 是端口功能位。</p>
+<p>注册 <code>rx_handler</code> 的是桥下的设备，不是桥设备。<code>br0</code> 自己没有注册过 <code>rx_handler</code>——这一条在后面「不二次进桥」里还会用到。</p>
+<h3 id="3.3-br_del_if-的反向拆解" tabindex="-1">3.3 br_del_if 的反向拆解 <a class="header-anchor" href="#3.3-br_del_if-的反向拆解"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>反向操作是 <code>br_del_if</code>：<code>br_fdb_delete_by_port</code> 删掉指向这个端口的表项，<code>netdev_rx_handler_unregister</code> 把 <code>rx_handler</code> 置空，<code>dev_set_promiscuity(dev, -1)</code> 退出混杂模式，<code>list_del_rcu</code> 摘下链表。</p>
+<p><code>br_fdb_delete_by_port</code> 必须做。端口拔掉以后，指向它的表项全是黑洞——查表命中、转发时端口已不存在，帧直接进坑。顺序也要注意：先删表项再注销 <code>rx_handler</code>，否则中间那一小段时间里还有帧在往这个端口查表。</p>
+<h2 id="四br_handle_frame" tabindex="-1">四、br_handle_frame <a class="header-anchor" href="#四br_handle_frame"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>br_handle_frame</code> 是帧进入网桥的总入口。它干两件事：分拣、塞进钩子点。分拣的判据全写在代码里。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* note: already called with rcu_read_lock */</span>
+<span class="hljs-type">rx_handler_result_t</span> <span class="hljs-title function_">br_handle_frame</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff **pskb)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_port</span> *<span class="hljs-title">p</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sk_buff</span> *<span class="hljs-title">skb</span> =</span> *pskb;
+    <span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *dest = eth_hdr(skb)-&gt;h_dest;
+    <span class="hljs-type">br_should_route_hook_t</span> *rhook;
+    <span class="hljs-comment">/* 回环包不归桥管，原样放行 */</span>
+    <span class="hljs-keyword">if</span> (unlikely(skb-&gt;pkt_type == PACKET_LOOPBACK))
+        <span class="hljs-keyword">return</span> RX_HANDLER_PASS;
+    <span class="hljs-comment">/* 源 MAC 是否合法：不是组播地址，也不是全 0 地址 */</span>
+    <span class="hljs-keyword">if</span> (!is_valid_ether_addr(eth_hdr(skb)-&gt;h_source))
+        <span class="hljs-keyword">goto</span> drop;
+    <span class="hljs-comment">/* 共享 skb 先克隆，因为后面既要转发又要上交 */</span>
+    skb = skb_share_check(skb, GFP_ATOMIC);
+    <span class="hljs-keyword">if</span> (!skb)
+        <span class="hljs-keyword">return</span> RX_HANDLER_CONSUMED;
+    <span class="hljs-comment">/* 取入帧端口的信息 */</span>
+    p = br_port_get_rcu(skb-&gt;dev);
+    <span class="hljs-comment">/* BPDU 这类保留地址，目标 MAC 落在 01:80:C2:00:00:0x */</span>
+    <span class="hljs-keyword">if</span> (unlikely(is_link_local_ether_addr(dest))) {
+        u16 fwd_mask = p-&gt;br-&gt;group_fwd_mask_required;
+        <span class="hljs-keyword">switch</span> (dest[<span class="hljs-number">5</span>]) {
+        <span class="hljs-keyword">case</span> <span class="hljs-number">0x00</span>:  <span class="hljs-comment">/* Bridge Group Address，也就是 STP 的 BPDU */</span>
+            <span class="hljs-comment">/* 关掉 STP 时必须转发，否则环路检测没戏 */</span>
+            <span class="hljs-keyword">if</span> (p-&gt;br-&gt;stp_enabled == BR_NO_STP ||
+                fwd_mask &amp; (<span class="hljs-number">1u</span> &lt;&lt; dest[<span class="hljs-number">5</span>]))
+                <span class="hljs-keyword">goto</span> forward;
+            *pskb = skb;
+            __br_handle_local_finish(skb);
+            <span class="hljs-keyword">return</span> RX_HANDLER_PASS;
+        <span class="hljs-keyword">case</span> <span class="hljs-number">0x01</span>:  <span class="hljs-comment">/* IEEE MAC (Pause)，802.3 流控帧 */</span>
+            <span class="hljs-keyword">goto</span> drop;
+        <span class="hljs-keyword">case</span> <span class="hljs-number">0x0E</span>:  <span class="hljs-comment">/* 802.1AB LLDP */</span>
+            fwd_mask |= p-&gt;br-&gt;group_fwd_mask;
+            <span class="hljs-keyword">if</span> (fwd_mask &amp; (<span class="hljs-number">1u</span> &lt;&lt; dest[<span class="hljs-number">5</span>]))
+                <span class="hljs-keyword">goto</span> forward;
+            *pskb = skb;
+            __br_handle_local_finish(skb);
+            <span class="hljs-keyword">return</span> RX_HANDLER_PASS;
+        <span class="hljs-keyword">default</span>:
+            <span class="hljs-comment">/* 其余保留地址按 group_fwd_mask 选择性转发 */</span>
+            fwd_mask |= p-&gt;br-&gt;group_fwd_mask;
+            <span class="hljs-keyword">if</span> (fwd_mask &amp; (<span class="hljs-number">1u</span> &lt;&lt; dest[<span class="hljs-number">5</span>]))
+                <span class="hljs-keyword">goto</span> forward;
+        }
+        <span class="hljs-comment">/* 只投递给本机，不再转发 */</span>
+        NF_HOOK(NFPROTO_BRIDGE, NF_BR_LOCAL_IN, dev_net(skb-&gt;dev),
+                <span class="hljs-literal">NULL</span>, skb, skb-&gt;dev, <span class="hljs-literal">NULL</span>, br_handle_local_finish);
+        <span class="hljs-keyword">return</span> RX_HANDLER_CONSUMED;
+    }
+forward:
+    <span class="hljs-keyword">switch</span> (p-&gt;state) {
+    <span class="hljs-keyword">case</span> BR_STATE_FORWARDING:
+        <span class="hljs-comment">/* ebtables 拿路由的 hook 点 */</span>
+        rhook = rcu_dereference(br_should_route_hook);
+        <span class="hljs-keyword">if</span> (rhook) {   <span class="hljs-comment">/* 转发状态下先让 hook 表态 */</span>
+            <span class="hljs-keyword">if</span> ((*rhook)(skb)) {
+                *pskb = skb;
+                <span class="hljs-keyword">return</span> RX_HANDLER_PASS;
+            }
+            dest = eth_hdr(skb)-&gt;h_dest;   <span class="hljs-comment">/* hook 改过目的 MAC 的话重新取 */</span>
+        }
+        <span class="hljs-comment">/* fall through */</span>
+    <span class="hljs-keyword">case</span> BR_STATE_LEARNING:
+        <span class="hljs-comment">/* 目的地址是否是桥设备自己的链路层地址 */</span>
+        <span class="hljs-keyword">if</span> (ether_addr_equal(p-&gt;br-&gt;dev-&gt;dev_addr, dest))
+            skb-&gt;pkt_type = PACKET_HOST;
+        <span class="hljs-comment">/* 将数据包送入帧处理函数 br_handle_frame_finish */</span>
+        NF_HOOK(NFPROTO_BRIDGE, NF_BR_PRE_ROUTING,
+                dev_net(skb-&gt;dev), <span class="hljs-literal">NULL</span>, skb, skb-&gt;dev, <span class="hljs-literal">NULL</span>,
+                br_handle_frame_finish);
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">default</span>:
+drop:
+        kfree_skb(skb);
+    }
+    <span class="hljs-keyword">return</span> RX_HANDLER_CONSUMED;
+}
+</code></pre></div></code></pre>
+<h3 id="4.1-返回值" tabindex="-1">4.1 返回值 <a class="header-anchor" href="#4.1-返回值"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>rx_handler</code> 的返回值决定 <code>__netif_receive_skb_core</code> 接下来干什么，所以每个分支都得给一个明确态度。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>返回值</th>
+<th>含义</th>
+<th>内核接下来做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RX_HANDLER_CONSUMED</code></td>
+<td>帧被接手了</td>
+<td>释放 skb 引用，返回</td>
+</tr>
+<tr>
+<td><code>RX_HANDLER_PASS</code></td>
+<td>桥不管，继续走普通流程</td>
+<td>回到主流程，按 ptype 分发</td>
+</tr>
+<tr>
+<td><code>RX_HANDLER_ANOTHER</code></td>
+<td>换个设备重新来一遍</td>
+<td><code>goto another_round</code>，重跑整个 core</td>
+</tr>
+</tbody>
+</table></div><p><code>br_handle_frame</code> 只用前两个。转发、泛洪、上交本机都在函数内部把帧送走了，送完返回 <code>CONSUMED</code>；保留地址放行给上层的情况返回 <code>PASS</code>。另外两个（<code>ANOTHER</code>、<code>EXACT</code>）是 macvlan、bond 这类设备用的，桥不碰。</p>
+<h3 id="4.2-为什么保留地址要先判断" tabindex="-1">4.2 为什么保留地址要先判断 <a class="header-anchor" href="#4.2-为什么保留地址要先判断"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>is_link_local_ether_addr(dest)</code> 判的是 <code>01:80:C2:00:00:00</code> 到 <code>01:80:C2:00:00:0F</code> 这一段，IEEE 802.1D 划的保留地址。桥必须对它们格外小心：BPDU 是 STP 的心跳，不能被当成普通数据帧泛洪出去，也不能被学进 FDB。</p>
+<p>代码按 <code>dest[5]</code> 分情况：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th><code>dest[5]</code></th>
+<th>地址</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0x00</code></td>
+<td>Bridge Group Address（STP BPDU）</td>
+<td>关 STP 或 <code>fwd_mask</code> 对应位为 1 时转发，否则交本机</td>
+</tr>
+<tr>
+<td><code>0x01</code></td>
+<td>MAC Control（802.3 流控 Pause）</td>
+<td>直接丢</td>
+</tr>
+<tr>
+<td><code>0x02</code></td>
+<td>Link Aggregation</td>
+<td>走 <code>default</code>，看 <code>group_fwd_mask</code></td>
+</tr>
+<tr>
+<td><code>0x03</code></td>
+<td>802.1X PAE</td>
+<td>走 <code>default</code></td>
+</tr>
+<tr>
+<td><code>0x0E</code></td>
+<td>802.1AB LLDP</td>
+<td>看 <code>group_fwd_mask</code>，放行就转发，否则交本机</td>
+</tr>
+<tr>
+<td>其他</td>
+<td>保留</td>
+<td>看 <code>group_fwd_mask</code></td>
+</tr>
+</tbody>
+</table></div><p><code>group_fwd_mask</code> 就是给这些地址开的口子。要在桥两边跑 LLDP，就 <code>echo 0x4000 &gt; /sys/class/net/eth0/brport/group_fwd_mask</code>（<code>1 &lt;&lt; 14</code> 对应 <code>0x0E</code>）。不开的话 LLDP 帧全被桥吃掉，邻居看不到。</p>
+<p><code>group_fwd_mask_required</code> 是内核强制的位，用户改不了，和用户配的 <code>group_fwd_mask</code> 取或。</p>
+<h3 id="4.3-state-分支转发学习丢弃" tabindex="-1">4.3 state 分支：转发、学习、丢弃 <a class="header-anchor" href="#4.3-state-分支转发学习丢弃"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>forward</code> 标签之后是 <code>p-&gt;state</code> 的 switch，只有三个出口。</p>
+<p><code>BR_STATE_FORWARDING</code>——正常转发态。先给 <code>br_should_route_hook</code> 一次机会，这是 <code>br_netfilter</code> 装的钩子，让桥接的 IP 帧走一遍 IP 路由。hook 返回真表示它自己处理了，帧返回 <code>PASS</code>；返回假表示照样走桥的路径。hook 之后重新取一次 <code>dest</code>，因为 hook 改过目的 MAC 的话，原先那个指针就指向旧内容了。</p>
+<p><code>BR_STATE_LEARNING</code>——只学不发。代码里和 FORWARDING 走同一段 <code>fall through</code>，靠 <code>br_handle_frame_finish</code> 里那句 <code>if (p-&gt;state == BR_STATE_LEARNING) goto drop;</code> 把转发拦下。学习态的帧能学到源 MAC，但不会转发出去。</p>
+<p><code>default</code>——<code>DISABLED</code>、<code>BLOCKING</code>、<code>LISTENING</code> 全落到 <code>drop</code>，<code>kfree_skb</code>。这三个状态在 STP 里各有含义，对转发路径来说结果一样：不发。</p>
+<p>进 <code>br_handle_frame_finish</code> 之前还有一句 <code>ether_addr_equal(p-&gt;br-&gt;dev-&gt;dev_addr, dest)</code>。目的 MAC 等于桥自己的 MAC 时把 <code>pkt_type</code> 改成 <code>PACKET_HOST</code>，上层协议栈收到的就是一个「发给我」的帧。这一句不改，桥设备上的 IP 收不到直连广播以外的单播。</p>
+<h3 id="4.4-两个-finish-回调" tabindex="-1">4.4 两个 finish 回调 <a class="header-anchor" href="#4.4-两个-finish-回调"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>保留地址分支走 <code>__br_handle_local_finish</code>，它是不经过钩子点的内部版本，负责把 BPDU、LLDP 这类本地帧喂给 STP 状态机。普通帧分支走 <code>br_handle_frame_finish</code>，负责学源、查目的、决定去向。带不带钩子的版本区别只有一个：<code>br_handle_local_finish</code> 挂在 <code>NF_BR_LOCAL_IN</code> 后面，<code>__br_handle_local_finish</code> 不走 netfilter。这两个回调只在 netfilter 没把帧丢掉或吃掉时才执行。</p>
+<h2 id="五收包路径的入口" tabindex="-1">五、收包路径的入口 <a class="header-anchor" href="#五收包路径的入口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>br_handle_frame</code> 是怎么被调到的？答案在 <code>__netif_receive_skb_core</code>。它是收包后半段的总调度，每个帧都要过一遍，网桥就在这儿插了一脚。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> __netif_receive_skb_core(<span class="hljs-keyword">struct</span> sk_buff **pskb, <span class="hljs-type">bool</span> pfmemalloc)
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sk_buff</span> *<span class="hljs-title">skb</span> =</span> *pskb;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">packet_type</span> *<span class="hljs-title">ptype</span>, *<span class="hljs-title">pt_prev</span> =</span> <span class="hljs-literal">NULL</span>;
+    <span class="hljs-type">rx_handler_func_t</span> *rx_handler;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *<span class="hljs-title">orig_dev</span> =</span> skb-&gt;dev;
+another_round:
+    <span class="hljs-comment">/* 抓包钩子：AF_PACKET 的 ptype_all 先拿一份，tcpdump 靠这一段 */</span>
+    list_for_each_entry_rcu(ptype, &amp;ptype_all, <span class="hljs-built_in">list</span>) { <span class="hljs-comment">/* ... */</span> }
+    list_for_each_entry_rcu(ptype, &amp;skb-&gt;dev-&gt;ptype_all, <span class="hljs-built_in">list</span>) { <span class="hljs-comment">/* ... */</span> }
+    <span class="hljs-comment">/* 剥 802.1Q 头，把 VID 塞进 skb-&gt;vlan_tci */</span>
+    <span class="hljs-keyword">if</span> (skb-&gt;protocol == htons(ETH_P_8021Q) || <span class="hljs-comment">/* ... */</span>) { <span class="hljs-comment">/* ... */</span> }
+    <span class="hljs-comment">/* 桥的落脚点就在这几行 */</span>
+    rx_handler = rcu_dereference(skb-&gt;dev-&gt;rx_handler);
+    <span class="hljs-keyword">if</span> (rx_handler) {
+        <span class="hljs-keyword">if</span> (pt_prev) {
+            deliver_skb(skb, pt_prev, orig_dev);
+            pt_prev = <span class="hljs-literal">NULL</span>;
+        }
+        <span class="hljs-keyword">switch</span> (rx_handler(&amp;skb)) {
+        <span class="hljs-keyword">case</span> RX_HANDLER_CONSUMED:
+            ret = NET_RX_SUCCESS;
+            <span class="hljs-keyword">goto</span> unlock;          <span class="hljs-comment">/* 桥吃掉了，后面全跳过 */</span>
+        <span class="hljs-keyword">case</span> RX_HANDLER_ANOTHER:
+            <span class="hljs-keyword">goto</span> another_round;   <span class="hljs-comment">/* 换设备从头再来 */</span>
+        <span class="hljs-keyword">case</span> RX_HANDLER_EXACT:
+            deliver_exact = <span class="hljs-literal">true</span>;
+            <span class="hljs-comment">/* fall through */</span>
+        <span class="hljs-keyword">case</span> RX_HANDLER_PASS:
+            <span class="hljs-keyword">break</span>;                <span class="hljs-comment">/* 继续往下走 */</span>
+        }
+    }
+    <span class="hljs-comment">/* 按 skb-&gt;protocol 查 ptype_base 哈希表，分发给 ip_rcv、arp_rcv 等 */</span>
+    list_for_each_entry_rcu(ptype, &amp;ptype_base[ntohs(skb-&gt;protocol) &amp; PTYPE_HASH_MASK], <span class="hljs-built_in">list</span>) {
+        ret = deliver_skb(skb, ptype, orig_dev);
+    }
+    <span class="hljs-comment">/* ... */</span>
+}
+</code></pre></div></code></pre>
+<p>关键在位置：<code>rx_handler</code> 的调用在 ptype 分发之前。这一段顺序决定了很多现象。</p>
+<h3 id="5.1-顺序带来的三个推论" tabindex="-1">5.1 顺序带来的三个推论 <a class="header-anchor" href="#5.1-顺序带来的三个推论"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>第一，端口上配的 IP 收不到包。<code>ip_rcv</code> 挂在 <code>ptype_base</code> 上，只有走到函数尾部才被调用。桥返回 <code>CONSUMED</code> 就 <code>goto unlock</code> 了，<code>ip_rcv</code> 一次都不执行。</p>
+<p>第二，<code>tcpdump -i eth0</code> 还能看到帧。抓包钩子在 <code>rx_handler</code> 之前就把副本投出去了，拿到的是还没进桥的那份。想看桥处理完的结果，抓 <code>br0</code> 或者出方向的端口。</p>
+<p>第三，<code>skb-&gt;dev</code> 一换，后面的逻辑全跟着换。桥在 <code>br_pass_frame_up</code> 里把 <code>skb-&gt;dev</code> 从 <code>eth0</code> 改成 <code>br0</code>，然后重新调 <code>netif_receive_skb</code>。这一趟 <code>__netif_receive_skb_core</code> 看到的是 <code>br0</code>，而 <code>br0-&gt;rx_handler</code> 是 NULL，所以不会再进 <code>br_handle_frame</code>，直接走到 ptype 分发交给 <code>ip_rcv</code>。</p>
+<p>这就是「不二次进桥」的机制。不是靠标志位防重入，是靠桥设备本身没有注册 <code>rx_handler</code>。</p>
+<h3 id="5.2-为什么网口加进网桥后就不能再用-ip" tabindex="-1">5.2 为什么网口加进网桥后就不能再用 IP <a class="header-anchor" href="#5.2-为什么网口加进网桥后就不能再用-ip"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>把 <code>eth0</code> 加进 <code>br0</code> 之后，在 <code>eth0</code> 上配 IP 是能配上的，命令行不报错，<code>ip addr</code> 也看得见，但流量不通。原因有三层：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层级</th>
+<th>发生了什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>收包方向</td>
+<td><code>eth0-&gt;rx_handler</code> 被换成 <code>br_handle_frame</code>，所有帧在 <code>ip_rcv</code> 之前被截走，返回 <code>CONSUMED</code>。<code>eth0</code> 的 IP 等不到自己的包</td>
+</tr>
+<tr>
+<td><code>skb-&gt;dev</code></td>
+<td>桥要上交本机时先把 <code>skb-&gt;dev</code> 改成 <code>br0</code> 再调协议栈，IP 层认的是 <code>br0</code> 的地址</td>
+</tr>
+<tr>
+<td>ARP 方向</td>
+<td>对端 ARP 请求的是 <code>br0</code> 的 MAC，因为桥才是对外那张脸。<code>eth0</code> 自己的 MAC 只在 FDB 里作为 local 表项存在</td>
+</tr>
+</tbody>
+</table></div><p>规矩很直白：IP 配在 <code>br0</code> 上，端口上不配。加桥之前先把端口 IP 删掉。</p>
+<p><code>eth0</code> 的 MAC 没有消失。它在 <code>br_add_if</code> 里被登记成 <code>is_local</code> 表项，同时 <code>br_stp_recalculate_bridge_id</code> 会把 <code>br0</code> 的 MAC 改成所有端口里最小的那个。默认配置下，<code>br0</code> 的 MAC 就是第一个加入的端口的 MAC。</p>
+<p>收包路径上出问题，按这个顺序问自己：帧到网卡了吗（<code>ethtool -S eth0</code> 的 rx 计数）→ <code>tcpdump -i eth0</code> 有没有 → <code>/sys/class/net/eth0/brport</code> 在不在 → <code>bridge link show</code> 里 state 是不是 FORWARDING → <code>bridge fdb show</code> 里有没有这个源 MAC。五步里任何一步断了，后面的都看不到。</p>
+<p><code>tcpdump -i eth0</code> 有包但 <code>bridge fdb show</code> 没记录，说明帧进了 <code>br_handle_frame</code> 但在学源之前被丢了——回头查 <code>is_valid_ether_addr(h_source)</code> 和 <code>br_allowed_ingress</code>。</p>
+<h2 id="六fdb-的查找与更新" tabindex="-1">六、FDB 的查找与更新 <a class="header-anchor" href="#六fdb-的查找与更新"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>FDB 是网桥唯一的记忆。学是往里写，查是从里读，老化是往外删，三个动作围绕同一张哈希表。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> BR_HASH_SIZE 256</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-keyword">struct</span> hlist_head *<span class="hljs-title function_">br_hash</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net_bridge *br,
+                                         <span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *addr, __u16 vid)</span>
+{
+    <span class="hljs-keyword">return</span> &amp;br-&gt;hash[br_mac_hash(addr, vid)];
+}
+</code></pre></div></code></pre>
+<p><code>br_mac_hash</code> 把 6 字节 MAC 和 <code>vid</code> 混成一个 0 到 255 的索引。同一个 MAC 在 <code>vid=10</code> 和 <code>vid=20</code> 下算出不同的桶，所以是两条独立表项。桶用 <code>hlist_head</code>，桶内是 <code>hlist_node</code> 串的链表。表项带 <code>struct rcu_head</code> 延迟释放，读侧走 RCU 不加锁。</p>
+<h3 id="6.1-查表__br_fdb_get" tabindex="-1">6.1 查表：__br_fdb_get <a class="header-anchor" href="#6.1-查表__br_fdb_get"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>br_handle_frame_finish</code> 里那句 <code>__br_fdb_get(br, dest, vid)</code> 就是查表。它是 <code>br_fdb_find</code> 的内部版本，外面看到的名字是 <code>br_fdb_find_rcu</code>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_fdb_entry</span> *__<span class="hljs-title">br_fdb_get</span>(<span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge</span> *<span class="hljs-title">br</span>,
+                                          <span class="hljs-title">const</span> <span class="hljs-title">unsigned</span> <span class="hljs-title">char</span> *<span class="hljs-title">addr</span>, __<span class="hljs-title">u16</span> <span class="hljs-title">vid</span>)
+{</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_fdb_entry</span> *<span class="hljs-title">fdb</span>;</span>
+    hlist_for_each_entry_rcu(fdb, br_hash(br, addr, vid), hlist) {
+        <span class="hljs-keyword">if</span> (fdb-&gt;vid == vid &amp;&amp; ether_addr_equal(fdb-&gt;addr.addr, addr))
+            <span class="hljs-keyword">return</span> fdb;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p><code>vid</code> 要一起比。桶是按 <code>(MAC, vid)</code> 算的，但哈希有碰撞，桶里会躺着别的 MAC，所以桶内还得逐个比 MAC 和 vid。</p>
+<p>对外的封装是 <code>br_fdb_find_rcu</code>。名字带 <code>_rcu</code> 的函数要求调用方已经处在 RCU 读临界区里——<code>br_handle_frame</code> 是在 <code>__netif_receive_skb_core</code> 的 <code>rcu_read_lock</code> 里被调的，整条链都安全。</p>
+<h3 id="6.2-表项的五种身份" tabindex="-1">6.2 表项的五种身份 <a class="header-anchor" href="#6.2-表项的五种身份"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>判定字段</th>
+<th>怎么来的</th>
+<th>会不会老化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>动态表项</td>
+<td>全 0</td>
+<td>从源 MAC 学到</td>
+<td>会</td>
+</tr>
+<tr>
+<td>本地表项</td>
+<td><code>is_local=1</code></td>
+<td><code>br_add_if</code> 登记端口 MAC，桥自己的 MAC</td>
+<td>不会</td>
+</tr>
+<tr>
+<td>静态表项</td>
+<td><code>is_static=1</code></td>
+<td><code>bridge fdb add &lt;MAC&gt; dev eth0 static</code></td>
+<td>不会</td>
+</tr>
+<tr>
+<td>用户态表项</td>
+<td><code>added_by_user=1</code></td>
+<td><code>bridge fdb add</code> 加的非静态项</td>
+<td>会</td>
+</tr>
+<tr>
+<td>外部学习表项</td>
+<td><code>added_by_external_learn=1</code></td>
+<td>驱动或用户态通过 netlink 塞进来</td>
+<td>会</td>
+</tr>
+</tbody>
+</table></div><p><code>is_local</code> 最容易忽略。桥自己的 MAC、每个端口的 MAC，都以 <code>is_local=1</code> 躺在表里。查表命中这类表项时 <code>dst</code> 是 NULL，代码走 <code>br_pass_frame_up</code> 而不是 <code>br_forward</code>。</p>
+<h3 id="6.3-查表之后的三条路" tabindex="-1">6.3 查表之后的三条路 <a class="header-anchor" href="#6.3-查表之后的三条路"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th><code>dst</code> 的情况</th>
+<th>动作</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>非空且 <code>!is_local</code></td>
+<td><code>br_forward(dst-&gt;dst, skb, skb2)</code></td>
+<td>单播，从一个口出去</td>
+</tr>
+<tr>
+<td>非空且 <code>is_local</code></td>
+<td><code>skb2 = skb; skb = NULL</code></td>
+<td>目的就是本机，只上交不转发</td>
+</tr>
+<tr>
+<td>空</td>
+<td><code>br_flood_forward(br, skb, skb2, unicast)</code></td>
+<td>查不到，泛洪</td>
+</tr>
+</tbody>
+</table></div><p>第三种不是异常处理，是网桥的设计。表里没有的目的地，桥只知道「它在别的某个口后面」，唯一能做的就是每个口试一遍。泛洪出去的那份被别人回过来时，回程的源 MAC 就学到了，下一次就能直达。</p>
+<p>转发命中时那句 <code>dst-&gt;used = jiffies;</code> 只记「最后一次被转发用到」，是老化和统计之外的第三个时间戳。老化看的始终是 <code>updated</code>。</p>
+<p><code>br-&gt;dev-&gt;stats.multicast++</code> 只在组播分支里加，单播和广播都不加这个计数。</p>
+<h2 id="七br_fdb_update-与老化" tabindex="-1">七、br_fdb_update 与老化 <a class="header-anchor" href="#七br_fdb_update-与老化"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>学源只有一个函数：<code>br_fdb_update</code>。它被 <code>br_handle_frame_finish</code> 在 VLAN 过滤之后、组播处理之前调用。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">br_fdb_update</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net_bridge *br, <span class="hljs-keyword">struct</span> net_bridge_port *source,
+                   <span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *addr, u16 vid, <span class="hljs-type">bool</span> added_by_user)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_fdb_entry</span> *<span class="hljs-title">fdb</span>;</span>
+    <span class="hljs-comment">/* 老化时间为 0 的用户就是想一直泛洪 */</span>
+    <span class="hljs-keyword">if</span> (hold_time(br) == <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">return</span>;
+    <span class="hljs-comment">/* 只有学习和转发状态的端口才学 */</span>
+    <span class="hljs-keyword">if</span> (!(source-&gt;state == BR_STATE_LEARNING ||
+          source-&gt;state == BR_STATE_FORWARDING))
+        <span class="hljs-keyword">return</span>;
+    fdb = br_fdb_find(br, addr, vid);
+    <span class="hljs-keyword">if</span> (unlikely(fdb)) {
+        <span class="hljs-keyword">if</span> (unlikely(fdb-&gt;is_local)) {
+            <span class="hljs-comment">/* 撞上本机地址：有人冒用，或者环路 */</span>
+            <span class="hljs-keyword">if</span> (net_ratelimit())
+                br_warn(br, <span class="hljs-string">&quot;received packet on %s with own address as source address\n&quot;</span>,
+                        source-&gt;dev-&gt;name);
+        } <span class="hljs-keyword">else</span> {
+            fdb-&gt;dst = source;        <span class="hljs-comment">/* 端口变了就改，这就是 MAC 漂移 */</span>
+            fdb-&gt;updated = jiffies;   <span class="hljs-comment">/* 同一端口只刷新存活时间 */</span>
+        }
+    } <span class="hljs-keyword">else</span> {
+        spin_lock(&amp;br-&gt;hash_lock);
+        <span class="hljs-keyword">if</span> (likely(!br_fdb_find(br, addr, vid)))
+            fdb_create(br, source, addr, vid, <span class="hljs-number">0</span>);   <span class="hljs-comment">/* 新表项 */</span>
+        spin_unlock(&amp;br-&gt;hash_lock);
+    }
+}
+</code></pre></div></code></pre>
+<h3 id="7.1-三个提前返回" tabindex="-1">7.1 三个提前返回 <a class="header-anchor" href="#7.1-三个提前返回"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>第一个是 <code>hold_time(br) == 0</code>，回来得最早。<code>hold_time</code> 的定义：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-title function_">hold_time</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> net_bridge *br)</span>
+{
+    <span class="hljs-keyword">return</span> br-&gt;topology_change ? br-&gt;forward_delay : br-&gt;ageing_time;
+}
+</code></pre></div></code></pre>
+<p><code>ageing_time</code> 设成 0，<code>br_fdb_update</code> 直接返回，什么也学不到。效果是全表空、全流量泛洪。有人用这招排查「是不是 FDB 学错了」，代价是带宽顶满。</p>
+<p>第二个看端口状态。<code>DISABLED</code>、<code>BLOCKING</code>、<code>LISTENING</code> 的端口不学。这和 <code>br_handle_frame</code> 的 state 分支是两道独立的闸，那儿拦整帧，这儿只拦学源。</p>
+<p>第三个由 <code>br_fdb_find</code> 的结果决定，命中就更新，没命中就新建。</p>
+<h3 id="7.2-mac-漂移" tabindex="-1">7.2 MAC 漂移 <a class="header-anchor" href="#7.2-mac-漂移"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>同一个 MAC 在 <code>eth0</code> 出现过又在 <code>eth1</code> 出现，<code>fdb-&gt;dst</code> 从 <code>eth0</code> 的端口改成 <code>eth1</code> 的端口，代码里就是一行 <code>fdb-&gt;dst = source</code>。漂移本身不是错误，虚拟机迁移、bond 主备切换都会让它正常发生。漂移频率是拓扑健康的体温计：<code>bridge fdb show</code> 连着看几遍，同一 MAC 在两端来回跳，多半是二层环路，或者 STP 没把其中一个口堵住。</p>
+<p><code>is_local</code> 那条分支是另一个信号。源 MAC 等于桥自己或某个端口的 MAC，说明有人在冒用，或者你把两块同 MAC 的网卡接进了同一个桥。<code>net_ratelimit()</code> 限速是为了不把日志刷爆。</p>
+<h3 id="7.3-老化br_fdb_cleanup" tabindex="-1">7.3 老化：br_fdb_cleanup <a class="header-anchor" href="#7.3-老化br_fdb_cleanup"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>表项不会自己消失，得靠定时器扫。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">br_fdb_cleanup</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> work_struct *work)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge</span> *<span class="hljs-title">br</span> =</span> container_of(work, <span class="hljs-keyword">struct</span> net_bridge, gc_work.work);
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> delay = hold_time(br);
+    <span class="hljs-type">int</span> i;
+    spin_lock_bh(&amp;br-&gt;hash_lock);
+    <span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; BR_HASH_SIZE; i++) {
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_fdb_entry</span> *<span class="hljs-title">f</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> *<span class="hljs-title">h</span>, *<span class="hljs-title">n</span>;</span>
+        hlist_for_each_entry_safe(f, h, n, &amp;br-&gt;hash[i], hlist) {
+            <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> this_timer;
+            <span class="hljs-keyword">if</span> (f-&gt;is_static)
+                <span class="hljs-keyword">continue</span>;                  <span class="hljs-comment">/* 静态表项跳过 */</span>
+            this_timer = f-&gt;updated + delay;
+            <span class="hljs-keyword">if</span> (time_after_eq(jiffies, this_timer)) {
+                <span class="hljs-keyword">if</span> (f-&gt;is_local)           <span class="hljs-comment">/* 本地表项不删 */</span>
+                    <span class="hljs-keyword">continue</span>;
+                br_fdb_delete(br, f);      <span class="hljs-comment">/* 超时，删 */</span>
+            }
+        }
+    }
+    spin_unlock_bh(&amp;br-&gt;hash_lock);
+    <span class="hljs-comment">/* ... 排下一次 gc_work ... */</span>
+}
+</code></pre></div></code></pre>
+<p>判据是 <code>f-&gt;updated + delay</code> 和当前 <code>jiffies</code> 比。<code>updated</code> 只在 <code>br_fdb_update</code> 里刷新，也就是只有这个 MAC 再发帧才续命。老化时间的真实含义是「这个 MAC 沉默多久后从表里消失」。</p>
+<p>默认 <code>BR_DEFAULT_AGEING_TIME = 300 * HZ</code>，300 秒。<code>delay = hold_time(br)</code>，拓扑变化时 <code>hold_time</code> 变成 <code>forward_delay</code>（默认 15 秒）。STP 一抖，整张表的老化速度快 20 倍。</p>
+<p><code>is_static</code> 和 <code>is_local</code> 两类表项永远不删。前者是手工配的，后者是桥和端口的自身地址。</p>
+<h3 id="7.4-表项过期后会发生什么" tabindex="-1">7.4 表项过期后会发生什么 <a class="header-anchor" href="#7.4-表项过期后会发生什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这是网络抖动的一个常见来源，单独说清。</p>
+<p>一个 MAC 沉默超过 300 秒，表项被删。下一帧发给它时 <code>__br_fdb_get</code> 返回 NULL，<code>br_handle_frame_finish</code> 走 <code>br_flood_forward</code>，往所有端口各发一份——包括那个原本不该收到它的端口。表项重新学到之后泛洪停止，整个过程持续到下一帧回来为止，短则几十毫秒，长则几秒。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>闲时正常，一有交互就短暂延迟抖动</td>
+<td>表项过期后首包触发泛洪，泛洪经过的口多</td>
+</tr>
+<tr>
+<td>单向大流量里突然出现重复包</td>
+<td>泛洪到不该去的口，被上游设备又送回来</td>
+</tr>
+<tr>
+<td>抓包看到同一帧出现在多个口</td>
+<td>表项不存在，泛洪的正常表现</td>
+</tr>
+<tr>
+<td>交互越稀疏越抖</td>
+<td>沉默时间越接近 300 秒越容易踩线</td>
+</tr>
+</tbody>
+</table></div><p>调法有两个方向。一是把 <code>ageing_time</code> 调大，让表项活得久一点：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ip <span class="hljs-built_in">link</span> <span class="hljs-built_in">set</span> dev br0 <span class="hljs-built_in">type</span> bridge ageing_time 6000   <span class="hljs-comment"># 单位 1/100 秒，6000 即 60 秒</span>
+bridge fdb show | <span class="hljs-built_in">wc</span> -l
+</code></pre></div></code></pre>
+<p>单位要盯住。netlink 接口里 <code>ageing_time</code> 是百分之一秒，300 秒写成 30000。sysfs 的 <code>/sys/class/net/br0/bridge/ageing_time</code> 也是这个单位，直接把 300 写进去等于 3 秒，越调越糟。</p>
+<p>二是让关键 MAC 变静态，谁不老化谁就不抖：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>bridge fdb add 52:54:00:aa:bb:cc dev eth0 static
+bridge fdb show | grep -i static
+</code></pre></div></code></pre>
+<p>静态表项不参与老化，代价是拓扑变了它也不跟着变。用在固定的服务器和网关 MAC 上合适，用在会漂的虚拟机上更难受。</p>
+<h2 id="八转发决策br_forward" tabindex="-1">八、转发决策：br_forward <a class="header-anchor" href="#八转发决策br_forward"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>决策在 <code>br_handle_frame_finish</code> 里做完，<code>br_forward</code> 只负责执行。两个函数连着看才完整。<code>br_handle_frame_finish</code> 的作用是把不同类别的帧分发到不同路径。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* note: already called with rcu_read_lock */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">br_handle_frame_finish</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net *net, <span class="hljs-keyword">struct</span> sock *sk, <span class="hljs-keyword">struct</span> sk_buff *skb)</span>
+{
+    <span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *dest = eth_hdr(skb)-&gt;h_dest;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_port</span> *<span class="hljs-title">p</span> =</span> br_port_get_rcu(skb-&gt;dev);
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge</span> *<span class="hljs-title">br</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_fdb_entry</span> *<span class="hljs-title">dst</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_mdb_entry</span> *<span class="hljs-title">mdst</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sk_buff</span> *<span class="hljs-title">skb2</span>;</span>
+    <span class="hljs-type">bool</span> unicast = <span class="hljs-literal">true</span>;
+    u16 vid = <span class="hljs-number">0</span>;
+    <span class="hljs-comment">/* 端口不存在或已关闭，直接丢 */</span>
+    <span class="hljs-keyword">if</span> (!p || p-&gt;state == BR_STATE_DISABLED)
+        <span class="hljs-keyword">goto</span> drop;
+    <span class="hljs-comment">/* 判断是否允许进入桥内：没开 vlan 全部放行，开了就按 vlan 规则 */</span>
+    <span class="hljs-keyword">if</span> (!br_allowed_ingress(p-&gt;br, nbp_vlan_group_rcu(p), skb, &amp;vid))
+        <span class="hljs-keyword">goto</span> out;
+    <span class="hljs-comment">/* insert into forwarding database after filtering to avoid spoofing */</span>
+    br = p-&gt;br;
+    <span class="hljs-comment">/* 可以学习就学源 MAC —— 整条链的第一步「学源」 */</span>
+    <span class="hljs-keyword">if</span> (p-&gt;flags &amp; BR_LEARNING)
+        br_fdb_update(br, p, eth_hdr(skb)-&gt;h_source, vid, <span class="hljs-literal">false</span>);
+    <span class="hljs-keyword">if</span> (!is_broadcast_ether_addr(dest) &amp;&amp; is_multicast_ether_addr(dest) &amp;&amp;
+        br_multicast_rcv(br, p, skb, vid))
+        <span class="hljs-keyword">goto</span> drop;
+    <span class="hljs-comment">/* 学习态只学不发 */</span>
+    <span class="hljs-keyword">if</span> (p-&gt;state == BR_STATE_LEARNING)
+        <span class="hljs-keyword">goto</span> drop;
+    BR_INPUT_SKB_CB(skb)-&gt;brdev = br-&gt;dev;
+    <span class="hljs-comment">/* The packet skb2 goes to the local host (NULL to skip). */</span>
+    skb2 = <span class="hljs-literal">NULL</span>;
+    <span class="hljs-keyword">if</span> (br-&gt;dev-&gt;flags &amp; IFF_PROMISC)
+        skb2 = skb;
+    dst = <span class="hljs-literal">NULL</span>;
+    <span class="hljs-keyword">if</span> (IS_ENABLED(CONFIG_INET) &amp;&amp; skb-&gt;protocol == htons(ETH_P_ARP))
+        br_do_proxy_arp(skb, br, vid, p);
+    <span class="hljs-keyword">if</span> (is_broadcast_ether_addr(dest)) {
+        skb2 = skb;
+        unicast = <span class="hljs-literal">false</span>;
+    } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (is_multicast_ether_addr(dest)) {
+        mdst = br_mdb_get(br, skb, vid);
+        <span class="hljs-keyword">if</span> ((mdst || BR_INPUT_SKB_CB_MROUTERS_ONLY(skb)) &amp;&amp;
+            br_multicast_querier_exists(br, eth_hdr(skb))) {
+            <span class="hljs-keyword">if</span> ((mdst &amp;&amp; mdst-&gt;mglist) || br_multicast_is_router(br))
+                skb2 = skb;
+            br_multicast_forward(mdst, skb, skb2);
+            skb = <span class="hljs-literal">NULL</span>;
+            <span class="hljs-keyword">if</span> (!skb2)
+                <span class="hljs-keyword">goto</span> out;
+        } <span class="hljs-keyword">else</span>
+            skb2 = skb;
+        unicast = <span class="hljs-literal">false</span>;
+        br-&gt;dev-&gt;stats.multicast++;
+    } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> ((dst = __br_fdb_get(br, dest, vid)) &amp;&amp; dst-&gt;is_local) {
+        skb2 = skb;
+        <span class="hljs-comment">/* 目的就是本机，不转发 */</span>
+        skb = <span class="hljs-literal">NULL</span>;
+    }
+    <span class="hljs-keyword">if</span> (skb) {
+        <span class="hljs-keyword">if</span> (dst) {
+            dst-&gt;used = jiffies;
+            br_forward(dst-&gt;dst, skb, skb2);          <span class="hljs-comment">/* 查到，单播 */</span>
+        } <span class="hljs-keyword">else</span>
+            br_flood_forward(br, skb, skb2, unicast); <span class="hljs-comment">/* 查不到，泛洪 */</span>
+    }
+    <span class="hljs-comment">/* 副本上交本机 */</span>
+    <span class="hljs-keyword">if</span> (skb2)
+        <span class="hljs-keyword">return</span> br_pass_frame_up(skb2);
+out:
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+drop:
+    kfree_skb(skb);
+    <span class="hljs-keyword">goto</span> out;
+}
+</code></pre></div></code></pre>
+<p>九段各有分工，按顺序记：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>段</th>
+<th>代码</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>① 端口校验</td>
+<td><code>!p || p-&gt;state == BR_STATE_DISABLED</code></td>
+<td>端口不存在或关闭，丢</td>
+</tr>
+<tr>
+<td>② VLAN 入口</td>
+<td><code>br_allowed_ingress(...)</code></td>
+<td>这帧能不能从这个口进来，顺带算出 <code>vid</code></td>
+</tr>
+<tr>
+<td>③ 学源</td>
+<td><code>br_fdb_update(...)</code></td>
+<td>记下源 MAC 和入端口</td>
+</tr>
+<tr>
+<td>④ 组播预处理</td>
+<td><code>br_multicast_rcv(...)</code></td>
+<td>IGMP/MLD 报文在这儿被消化，返回真就丢</td>
+</tr>
+<tr>
+<td>⑤ 学习态拦截</td>
+<td><code>p-&gt;state == BR_STATE_LEARNING</code></td>
+<td>只学不发</td>
+</tr>
+<tr>
+<td>⑥ 混杂备份</td>
+<td><code>IFF_PROMISC</code> → <code>skb2 = skb</code></td>
+<td>给本机留一份</td>
+</tr>
+<tr>
+<td>⑦ proxy ARP</td>
+<td><code>br_do_proxy_arp(...)</code></td>
+<td>桥替 ARP 代答</td>
+</tr>
+<tr>
+<td>⑧ 目的分支</td>
+<td>广播 / 组播 / 单播</td>
+<td>定 <code>skb</code> 和 <code>skb2</code> 两个指针</td>
+</tr>
+<tr>
+<td>⑨ 执行</td>
+<td><code>br_forward</code> / <code>br_flood_forward</code> / <code>br_pass_frame_up</code></td>
+<td>三个出口</td>
+</tr>
+</tbody>
+</table></div><p>核心就一句话：学源、查目的、查到就 <code>br_forward</code> 单播、查不到就 <code>br_flood</code> 泛洪、目的就是本机就 <code>br_pass_frame_up</code> 上交。其余全是这句的边界条件。</p>
+<p><code>skb</code> 和 <code>skb2</code> 是两个指针，别当副本理解。<code>skb</code> 是要转发出去的那份，<code>skb2</code> 是要上交本机的那份，两者可以为同一个 skb（这时 <code>br_forward</code> 内部会克隆）。</p>
+<h3 id="8.1-br_forward" tabindex="-1">8.1 br_forward <a class="header-anchor" href="#8.1-br_forward"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">br_forward</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> net_bridge_port *to, <span class="hljs-keyword">struct</span> sk_buff *skb,
+                <span class="hljs-keyword">struct</span> sk_buff *skb0)</span>
+{
+    <span class="hljs-keyword">if</span> (should_deliver(to, skb)) {
+        <span class="hljs-keyword">if</span> (skb0)
+            deliver_clone(to, skb, __br_forward);   <span class="hljs-comment">/* 还要上交本机，先克隆 */</span>
+        <span class="hljs-keyword">else</span>
+            __br_forward(to, skb);                  <span class="hljs-comment">/* 直接发 */</span>
+        <span class="hljs-keyword">return</span>;
+    }
+    <span class="hljs-keyword">if</span> (skb0)
+        kfree_skb(skb0);   <span class="hljs-comment">/* 端口不发，那份本机副本也没人管了 */</span>
+}
+</code></pre></div></code></pre>
+<p>三个参数：<code>to</code> 是出口端口，<code>skb</code> 要发的帧，<code>skb0</code> 要上交本机的副本（NULL 表示本机不需要）。</p>
+<p><code>should_deliver</code> 管两件事：端口得是 <code>BR_STATE_FORWARDING</code>（单播命中一个 BLOCKING 的口，帧直接不发，也不退回去泛洪，就这么丢了——这是 STP 挡环路的代价），出接口不能等于入接口（除非开了 <code>BR_HAIRPIN_MODE</code>）。</p>
+<p><code>skb0</code> 非空时克隆，场景是桥设备处在混杂模式、<code>skb2 = skb</code>，一份 skb 不能同时进两个方向。桥设备开混杂模式带来的 skb 复制开销就在这里。</p>
+<h3 id="8.2-__br_forward" tabindex="-1">8.2 __br_forward <a class="header-anchor" href="#8.2-__br_forward"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> __br_forward(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> net_bridge_port *to, <span class="hljs-keyword">struct</span> sk_buff *skb)
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_vlan_group</span> *<span class="hljs-title">vg</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *<span class="hljs-title">indev</span>;</span>
+    <span class="hljs-comment">/* LRO 聚合过的帧不能转发，聚合后校验和语义变了 */</span>
+    <span class="hljs-keyword">if</span> (skb_warn_if_lro(skb)) {
+        kfree_skb(skb);
+        <span class="hljs-keyword">return</span>;
+    }
+    <span class="hljs-comment">/* 取出出口端口的 vlan 组，br_handle_vlan 要在里面找自己的 vid */</span>
+    vg = nbp_vlan_group_rcu(to);
+    <span class="hljs-comment">/* 按出口配置决定打不打 tag */</span>
+    skb = br_handle_vlan(to-&gt;br, vg, skb);
+    <span class="hljs-keyword">if</span> (!skb)
+        <span class="hljs-keyword">return</span>;
+    indev = skb-&gt;dev;      <span class="hljs-comment">/* 入接口，记下来给 netfilter 用 */</span>
+    skb-&gt;dev = to-&gt;dev;    <span class="hljs-comment">/* 换成出接口 */</span>
+    skb_forward_csum(skb);
+    NF_HOOK(NFPROTO_BRIDGE, NF_BR_FORWARD,
+            dev_net(indev), <span class="hljs-literal">NULL</span>, skb, indev, skb-&gt;dev,
+            br_forward_finish);
+}
+</code></pre></div></code></pre>
+<p>四件事：LRO 检查、VLAN 出口处理、<code>skb-&gt;dev</code> 切换到出接口、进 <code>NF_BR_FORWARD</code>。</p>
+<p><code>skb_warn_if_lro</code> 容易被忽略。LRO 把多个小帧聚合成一个大 skb，带着 GRO 的元数据，直接转发出去对端会解错。所以桥在转发路径上必须拦下来。开着 LRO 的网卡加进桥之后性能不如预期，原因就在这里，帧被丢了一批。</p>
+<p><code>skb-&gt;dev = to-&gt;dev</code> 是转发的核心动作。之前 <code>skb-&gt;dev</code> 一直是入接口，从这一句开始变成出接口，后面 <code>dev_queue_xmit</code> 才知道往哪张网卡发。</p>
+<p><code>NF_HOOK</code> 的第五、六个参数是 <code>indev</code> 和 <code>skb-&gt;dev</code>，也就是「从哪进、往哪出」，ebtables 的 forward 链靠这两个参数做过滤。</p>
+<h3 id="8.3-最后一站" tabindex="-1">8.3 最后一站 <a class="header-anchor" href="#8.3-最后一站"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">br_forward_finish</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net *net, <span class="hljs-keyword">struct</span> sock *sk, <span class="hljs-keyword">struct</span> sk_buff *skb)</span>
+{
+    <span class="hljs-keyword">return</span> NF_HOOK(NFPROTO_BRIDGE, NF_BR_POST_ROUTING,
+                   net, sk, skb, <span class="hljs-literal">NULL</span>, skb-&gt;dev,
+                   br_dev_queue_push_xmit);
+}
+</code></pre></div></code></pre>
+<p><code>NF_BR_POST_ROUTING</code> 之后再走 <code>br_dev_queue_push_xmit</code>：检查 <code>is_skb_forwardable</code>（设备还开着、MTU 够用），<code>skb_push(skb, ETH_HLEN)</code> 把 <code>br_netfilter</code> 剥掉的以太头补回去，<code>br_drop_fake_rtable</code> 扔掉那个模块挂上的假 <code>dst_entry</code>，最后 <code>dev_queue_xmit</code> 交给队列规则出网卡。</p>
+<p>到这里，帧从 <code>eth0</code> 进、<code>br0</code> 处理、<code>eth1</code> 出，整条路走完。</p>
+<h2 id="九本机投递与转发到其他口" tabindex="-1">九、本机投递与转发到其他口 <a class="header-anchor" href="#九本机投递与转发到其他口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>转发出去和上交本机是两条平行的路。前面那条走 <code>br_forward</code>，这条走 <code>br_pass_frame_up</code>。两条都在 <code>br_handle_frame_finish</code> 尾部按 <code>skb</code> 和 <code>skb2</code> 分派。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">br_pass_frame_up</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff *skb)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *<span class="hljs-title">indev</span>, *<span class="hljs-title">brdev</span> =</span> BR_INPUT_SKB_CB(skb)-&gt;brdev;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge</span> *<span class="hljs-title">br</span> =</span> netdev_priv(brdev);
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_vlan_group</span> *<span class="hljs-title">vg</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">pcpu_sw_netstats</span> *<span class="hljs-title">brstats</span> =</span> this_cpu_ptr(br-&gt;stats);
+    <span class="hljs-comment">/* 统计该桥上的流量 */</span>
+    u64_stats_update_begin(&amp;brstats-&gt;syncp);
+    brstats-&gt;rx_packets++;
+    brstats-&gt;rx_bytes += skb-&gt;len;
+    u64_stats_update_end(&amp;brstats-&gt;syncp);
+    <span class="hljs-comment">/* 获取该桥上的 vlan 组 */</span>
+    vg = br_vlan_group_rcu(br);
+    <span class="hljs-comment">/* 桥和其他端口一样，出口也要过 VLAN 检查。混杂模式下有人抓包就放行 */</span>
+    <span class="hljs-keyword">if</span> (!(brdev-&gt;flags &amp; IFF_PROMISC) &amp;&amp; !br_allowed_egress(vg, skb)) {
+        kfree_skb(skb);
+        <span class="hljs-keyword">return</span> NET_RX_DROP;
+    }
+    indev = skb-&gt;dev;      <span class="hljs-comment">/* 入帧设备，给 netfilter 用 */</span>
+    skb-&gt;dev = brdev;      <span class="hljs-comment">/* 替换掉数据包中的设备信息，改为桥设备 */</span>
+    <span class="hljs-comment">/* 配置数据包 vlan 的相关信息 */</span>
+    skb = br_handle_vlan(br, vg, skb);
+    <span class="hljs-keyword">if</span> (!skb)
+        <span class="hljs-keyword">return</span> NET_RX_DROP;
+    <span class="hljs-comment">/* 进入 NF_BR_LOCAL_IN */</span>
+    <span class="hljs-keyword">return</span> NF_HOOK(NFPROTO_BRIDGE, NF_BR_LOCAL_IN,
+                   dev_net(indev), <span class="hljs-literal">NULL</span>, skb, indev, <span class="hljs-literal">NULL</span>,
+                   br_netif_receive_skb);
+}
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">br_netif_receive_skb</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net *net, <span class="hljs-keyword">struct</span> sock *sk, <span class="hljs-keyword">struct</span> sk_buff *skb)</span>
+{
+    <span class="hljs-keyword">return</span> netif_receive_skb(skb);
+}
+</code></pre></div></code></pre>
+<p>四件事：记统计、查出口 VLAN 权限、把 <code>skb-&gt;dev</code> 换成桥设备、进 <code>NF_BR_LOCAL_IN</code>。</p>
+<p><code>indev</code> 那一步很关键。<code>skb-&gt;dev</code> 已经被改成 <code>br0</code>，如果不另存一份入帧设备，netfilter 就不知道这帧从哪个物理口进来。所以先 <code>indev = skb-&gt;dev</code>，再换 <code>skb-&gt;dev</code>，最后 <code>NF_HOOK</code> 里两个分开传。</p>
+<p><code>br_netif_receive_skb</code> 只是一层壳，里面调 <code>netif_receive_skb</code>，等于把帧重新塞回收包流程。这一趟 <code>skb-&gt;dev</code> 是 <code>br0</code>，<code>br0-&gt;rx_handler</code> 是 NULL，所以不会再进桥，直接走到 ptype 分发交给 <code>ip_rcv</code>。</p>
+<h3 id="9.1-br_handle_vlan两条路共用" tabindex="-1">9.1 br_handle_vlan：两条路共用 <a class="header-anchor" href="#9.1-br_handle_vlan两条路共用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>转发和上交本机都要调 <code>br_handle_vlan</code>，区别只在传进去的 VLAN 组——转发传出口端口的 <code>nbp_vlan_group_rcu(to)</code>，上交本机传桥的 <code>br_vlan_group_rcu(br)</code>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">struct</span> sk_buff *<span class="hljs-title function_">br_handle_vlan</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net_bridge *br,
+                               <span class="hljs-keyword">struct</span> net_bridge_vlan_group *vg,
+                               <span class="hljs-keyword">struct</span> sk_buff *skb)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_bridge_vlan</span> *<span class="hljs-title">v</span>;</span>
+    u16 vid;
+    <span class="hljs-comment">/* 入口没做过滤，这帧不归 VLAN 管，原样放行 */</span>
+    <span class="hljs-keyword">if</span> (!BR_INPUT_SKB_CB(skb)-&gt;vlan_filtered)
+        <span class="hljs-keyword">goto</span> out;
+    <span class="hljs-comment">/* 走到这里说明帧被过滤过，带合法 vlan id */</span>
+    br_vlan_get_tag(skb, &amp;vid);
+    <span class="hljs-comment">/* 在 vlan 组里找自己所属的 vid */</span>
+    v = br_vlan_find(vg, vid);
+    <span class="hljs-comment">/* 这个 vid 必须配过。唯一例外是桥在混杂模式且帧的目的就是桥 */</span>
+    <span class="hljs-keyword">if</span> (!v || !br_vlan_should_use(v)) {
+        <span class="hljs-keyword">if</span> ((br-&gt;dev-&gt;flags &amp; IFF_PROMISC) &amp;&amp; skb-&gt;dev == br-&gt;dev) {
+            <span class="hljs-keyword">goto</span> out;
+        } <span class="hljs-keyword">else</span> {
+            kfree_skb(skb);
+            <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+        }
+    }
+    <span class="hljs-comment">/* vlan 统计，只有 vlan_stats_enabled 才记 */</span>
+    <span class="hljs-keyword">if</span> (br-&gt;vlan_stats_enabled) { <span class="hljs-comment">/* stats-&gt;tx_bytes / tx_packets 累加 */</span> }
+    <span class="hljs-comment">/* 出口配了 untagged，把 tag 清掉 */</span>
+    <span class="hljs-keyword">if</span> (v-&gt;flags &amp; BRIDGE_VLAN_INFO_UNTAGGED)
+        skb-&gt;vlan_tci = <span class="hljs-number">0</span>;
+out:
+    <span class="hljs-keyword">return</span> skb;
+}
+</code></pre></div></code></pre>
+<p>逻辑很短：在传进来的 VLAN 组里找自己所属的 vid；找不到就看是不是混杂模式加本机投递，是就放行，不是就丢；找到且 VLAN 启用，统计出口流量，最后按 <code>BRIDGE_VLAN_INFO_UNTAGGED</code> 位决定清不清 <code>skb-&gt;vlan_tci</code>。</p>
+<p><code>vlan_filtered</code> 是入口留下的记号。<code>br_allowed_ingress</code> 在 <code>br_handle_frame_finish</code> 开头已经跑过，它判断这一帧能不能从该端口进来、属于哪个 vid。入口没做过滤的帧，出口也不处理 tag。</p>
+<h3 id="9.2-泛洪br_flood" tabindex="-1">9.2 泛洪：br_flood <a class="header-anchor" href="#9.2-泛洪br_flood"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>查不到目的时走 <code>br_flood_forward</code>，它是个薄壳，直接调 <code>br_flood</code>，后者遍历 <code>br-&gt;port_list</code>，对每个端口调 <code>br_forward</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>list_for_each_entry_rcu(p, &amp;br-&gt;port_list, <span class="hljs-built_in">list</span>) {
+    <span class="hljs-comment">/* 单播泛洪可以通过 BR_FLOOD 关掉 */</span>
+    <span class="hljs-keyword">if</span> (unicast &amp;&amp; !(p-&gt;flags &amp; BR_FLOOD))
+        <span class="hljs-keyword">continue</span>;
+    <span class="hljs-comment">/* 开了 proxy ARP 的口不参与泛洪 */</span>
+    <span class="hljs-keyword">if</span> (p-&gt;flags &amp; BR_PROXYARP)
+        <span class="hljs-keyword">continue</span>;
+    br_forward(p, skb, skb2);
+    skb2 = <span class="hljs-literal">NULL</span>;   <span class="hljs-comment">/* 副本只发一次，发完置空 */</span>
+}
+<span class="hljs-keyword">if</span> (skb2)
+    kfree_skb(skb2);
+</code></pre></div></code></pre>
+<p><code>should_deliver</code> 在里面再挡掉状态不对的端口和入接口。<code>skb2</code> 在第一个端口就被消耗掉，之后都传 NULL。</p>
+<p><code>unicast</code> 区分两种泛洪：广播和组播的泛洪（<code>false</code>）不看 <code>BR_FLOOD</code>，单播查不到时的泛洪（<code>true</code>）要看。关掉某个口的单播泛洪，能让未知单播不进这个口，代价是这个口后面的新 MAC 学不到。</p>
+<h3 id="9.3-两条路的分水岭" tabindex="-1">9.3 两条路的分水岭 <a class="header-anchor" href="#9.3-两条路的分水岭"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>转发和上交的骨架一样：都是先查 VLAN 出口权限（转发用出口端口的 <code>nbp_vlan_group_rcu(to)</code>，上交用桥的 <code>br_vlan_group_rcu(br)</code>），都调 <code>br_handle_vlan</code>，都要过一道 netfilter，最后才落地。</p>
+<p>分水岭只有三处。<code>skb-&gt;dev</code> 的目标不同：转发指向物理口 <code>to-&gt;dev</code>，上交指向桥设备 <code>br-&gt;dev</code>。钩子点不同：转发走 <code>NF_BR_FORWARD</code> 加 <code>NF_BR_POST_ROUTING</code>，上交走 <code>NF_BR_LOCAL_IN</code>。最终落点不同：转发进 <code>dev_queue_xmit</code> 出网卡，上交进 <code>netif_receive_skb</code> 回协议栈。统计也分两处记，转发记出口端口的 <code>dev-&gt;stats</code>，上交记 <code>br-&gt;stats</code>。</p>
+<p>记住这三处，看任何桥转发问题都能先定位在「哪条路上」。</p>
+<h2 id="十组播与广播的处理" tabindex="-1">十、组播与广播的处理 <a class="header-anchor" href="#十组播与广播的处理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>br_handle_frame_finish</code> 在查单播表之前，先把广播和组播分了出去。代码在上面已经贴过，这里只拆判断。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>目的地址</th>
+<th>判断函数</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>广播 <code>ff:ff:ff:ff:ff:ff</code></td>
+<td><code>is_broadcast_ether_addr</code></td>
+<td><code>skb2 = skb</code>，<code>unicast = false</code>，泛洪 + 上交本机</td>
+</tr>
+<tr>
+<td>组播</td>
+<td><code>is_multicast_ether_addr</code></td>
+<td>查 MDB 按表送，<code>unicast = false</code>，<code>multicast++</code></td>
+</tr>
+<tr>
+<td>单播</td>
+<td>剩下都是</td>
+<td>查 FDB，命中转发，未命中泛洪</td>
+</tr>
+</tbody>
+</table></div><p>广播分支只有两行。<code>skb2 = skb</code> 表示这份帧同时也要给本机，<code>br_forward</code> 里会 <code>deliver_clone</code> 克隆一份。<code>unicast = false</code> 是告诉 <code>br_flood</code> 别拿 <code>BR_FLOOD</code> 挡端口，广播必须发到所有口。</p>
+<h3 id="10.1-组播分支逐句" tabindex="-1">10.1 组播分支逐句 <a class="header-anchor" href="#10.1-组播分支逐句"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>mdst = br_mdb_get(br, skb, vid);</code> 查组播转发表。MDB 是 IGMP/MLD snooping 学出来的「哪个组播组在哪几个口后面」。</p>
+<p><code>br_multicast_querier_exists(br, eth_hdr(skb))</code> 判断当前有没有 IGMP querier。没有 querier 就不做 snooping 决策，直接走 <code>else</code> 分支 <code>skb2 = skb</code>，按泛洪处理——没人管成员关系，桥不敢自己裁。</p>
+<p><code>mdst-&gt;mglist</code> 表示这个组还有成员口在听；<code>br_multicast_is_router(br)</code> 表示桥自己就是组播路由口。两种情况都要留一份给本机。</p>
+<p><code>br_multicast_forward(mdst, skb, skb2)</code> 按 MDB 精确送，不是泛洪。送完 <code>skb = NULL</code>，帧的所有权转移给它了。</p>
+<p><code>if (!skb2) goto out;</code> 判的是「本机需不需要这一份」。不需要就直接返回，<code>skb</code> 已经是 NULL，没什么可做的。</p>
+<h3 id="10.2-六种落地差异" tabindex="-1">10.2 六种落地差异 <a class="header-anchor" href="#10.2-六种落地差异"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>分支</th>
+<th><code>skb</code></th>
+<th><code>skb2</code></th>
+<th>最后发生什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>广播</td>
+<td>保留</td>
+<td><code>= skb</code></td>
+<td><code>skb</code> 泛洪，<code>skb2</code> 上交</td>
+</tr>
+<tr>
+<td>组播，有 querier 且有 MDB</td>
+<td><code>NULL</code></td>
+<td>按需</td>
+<td><code>br_multicast_forward</code> 送完，<code>skb2</code> 上交或释放</td>
+</tr>
+<tr>
+<td>组播，无 querier</td>
+<td>保留</td>
+<td><code>= skb</code></td>
+<td>走泛洪</td>
+</tr>
+<tr>
+<td>单播，命中非本机</td>
+<td>保留</td>
+<td>NULL</td>
+<td><code>br_forward</code> 单播发出</td>
+</tr>
+<tr>
+<td>单播，命中本机</td>
+<td><code>NULL</code></td>
+<td><code>= skb</code></td>
+<td>只上交，不转发</td>
+</tr>
+<tr>
+<td>单播，未命中</td>
+<td>保留</td>
+<td>NULL（非混杂）</td>
+<td><code>br_flood_forward</code> 泛洪</td>
+</tr>
+</tbody>
+</table></div><p>单播命中本机那一行是 <code>skb2 = skb; skb = NULL;</code>，两个指针互换内容，结果是「只上交、不转发」。源码注释写得直白：<code>Do not forward the packet since it's local.</code></p>
+<p>单播未命中那一行，非混杂模式下 <code>skb2</code> 一直是 NULL，泛洪出去时没有 <code>deliver_clone</code> 的开销，本机也收不到这份帧。桥不会因为「不知道目的在哪」就顺手给自己一份。</p>
+<h3 id="10.3-proxy-arp-与混杂模式备份" tabindex="-1">10.3 proxy ARP 与混杂模式备份 <a class="header-anchor" href="#10.3-proxy-arp-与混杂模式备份"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>三个分支之前有两段准备。第一段是混杂模式备份：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>skb2 = <span class="hljs-literal">NULL</span>;
+<span class="hljs-keyword">if</span> (br-&gt;dev-&gt;flags &amp; IFF_PROMISC)
+    skb2 = skb;
+dst = <span class="hljs-literal">NULL</span>;
+</code></pre></div></code></pre>
+<p>桥设备处不处在混杂模式，直接决定 <code>skb2</code> 的初值，也决定后面每次转发要不要克隆。桥设备默认不进混杂模式，端口设备必然进——这个区别同时影响收包（端口必须收全）和克隆开销（桥设备混杂才需要复制）。</p>
+<p>第二段是 proxy ARP：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (IS_ENABLED(CONFIG_INET) &amp;&amp; skb-&gt;protocol == htons(ETH_P_ARP))
+    br_do_proxy_arp(skb, br, vid, p);
+</code></pre></div></code></pre>
+<p>开了 <code>BR_PROXYARP</code> 的口，遇到 ARP 帧由桥代答。它在查表之前动手，代答完这个帧就不再往下走了。典型用途是让一个子网跨网桥延伸，两端互相以为对方在同一条线上。</p>
+<h2 id="十一内核代码的关键函数链" tabindex="-1">十一、内核代码的关键函数链 <a class="header-anchor" href="#十一内核代码的关键函数链"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把前面散落的函数按层归位，一条链看全。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层</th>
+<th>函数</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>收包调度</td>
+<td><code>__netif_receive_skb_core</code></td>
+<td>看 <code>skb-&gt;dev-&gt;rx_handler</code>，有就交给桥</td>
+</tr>
+<tr>
+<td>入桥</td>
+<td><code>br_handle_frame</code></td>
+<td>分拣保留地址，按 <code>p-&gt;state</code> 决定去向</td>
+</tr>
+<tr>
+<td>决策</td>
+<td><code>br_handle_frame_finish</code></td>
+<td>学源、查目的、定三个出口</td>
+</tr>
+<tr>
+<td>学源</td>
+<td><code>br_fdb_update</code></td>
+<td>新 MAC 建表项，旧 MAC 刷新 <code>updated</code></td>
+</tr>
+<tr>
+<td>查表</td>
+<td><code>__br_fdb_get</code></td>
+<td>按 <code>(MAC, vid)</code> 哈希，桶内比对</td>
+</tr>
+<tr>
+<td>单播出</td>
+<td><code>br_forward</code> → <code>__br_forward</code></td>
+<td>判 <code>should_deliver</code>，换 <code>skb-&gt;dev</code>，进 <code>NF_BR_FORWARD</code></td>
+</tr>
+<tr>
+<td>泛洪</td>
+<td><code>br_flood_forward</code> → <code>br_flood</code></td>
+<td>遍历端口，逐口 <code>br_forward</code></td>
+</tr>
+<tr>
+<td>上交</td>
+<td><code>br_pass_frame_up</code></td>
+<td>换 <code>skb-&gt;dev</code> 为 <code>br0</code>，进 <code>NF_BR_LOCAL_IN</code></td>
+</tr>
+<tr>
+<td>VLAN 出口</td>
+<td><code>br_handle_vlan</code></td>
+<td>按出口配置打 tag 或清 tag</td>
+</tr>
+<tr>
+<td>收尾</td>
+<td><code>br_forward_finish</code> → <code>br_dev_queue_push_xmit</code></td>
+<td>过 <code>NF_BR_POST_ROUTING</code>，<code>dev_queue_xmit</code></td>
+</tr>
+<tr>
+<td>绕回</td>
+<td><code>br_netif_receive_skb</code></td>
+<td>壳函数，调 <code>netif_receive_skb</code></td>
+</tr>
+<tr>
+<td>老化</td>
+<td><code>br_fdb_cleanup</code></td>
+<td><code>gc_work</code> 定时扫表，删超时表项</td>
+</tr>
+</tbody>
+</table></div><p>调用顺序收成一行：<code>__netif_receive_skb_core</code> → <code>br_handle_frame</code> → <code>br_handle_frame_finish</code>，然后分三路——<code>br_forward</code> → <code>__br_forward</code> → <code>br_handle_vlan</code> → <code>NF_BR_FORWARD</code> → <code>br_forward_finish</code> → <code>NF_BR_POST_ROUTING</code> → <code>br_dev_queue_push_xmit</code> → <code>dev_queue_xmit</code>；<code>br_flood_forward</code> → <code>br_flood</code> → <code>br_forward × N</code>；<code>br_pass_frame_up</code> → <code>br_handle_vlan</code> → <code>NF_BR_LOCAL_IN</code> → <code>br_netif_receive_skb</code> → <code>netif_receive_skb</code> → <code>ip_rcv</code>。</p>
+<p><code>br_handle_frame</code> 里的两个 <code>NF_HOOK</code> 决定了入口之后分两条：保留地址走 <code>NF_BR_LOCAL_IN</code> 加 <code>br_handle_local_finish</code>，普通帧走 <code>NF_BR_PRE_ROUTING</code> 加 <code>br_handle_frame_finish</code>。<code>br_handle_frame_finish</code> 尾部的三个出口决定了出口之前分三条：<code>br_forward</code>、<code>br_flood_forward</code>、<code>br_pass_frame_up</code>。</p>
+<h2 id="十二易错点速查" tabindex="-1">十二、易错点速查 <a class="header-anchor" href="#十二易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>症状</th>
+<th>根因</th>
+<th>去哪儿看</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>端口配了 IP 但 ping 不通</td>
+<td><code>rx_handler</code> 把收包截走了，<code>ip_rcv</code> 不执行</td>
+<td>本篇第 5.2 节</td>
+</tr>
+<tr>
+<td><code>tcpdump -i eth0</code> 有包，FDB 没记录</td>
+<td>帧在学源之前被丢：源 MAC 非法或 VLAN 入口不过</td>
+<td><code>is_valid_ether_addr</code>、<code>br_allowed_ingress</code></td>
+</tr>
+<tr>
+<td>端口 state 是 FORWARDING 但不转发</td>
+<td>或者 <code>should_deliver</code> 判出接口等于入接口，或者没开 hairpin</td>
+<td><code>should_deliver</code></td>
+</tr>
+<tr>
+<td>帧发了但没到对端</td>
+<td>出口端口没在 <code>br-&gt;port_list</code> 上，<code>br_forward</code> 走空</td>
+<td><code>br_add_if</code> 是否成功</td>
+</tr>
+<tr>
+<td>闲时正常，一交互就抖</td>
+<td>FDB 表项过期，首包泛洪</td>
+<td><code>ageing_time</code>、<code>bridge fdb show</code></td>
+</tr>
+<tr>
+<td>同一 MAC 在两个口来回跳</td>
+<td>二层环路，或 STP 没堵住一个口</td>
+<td><code>bridge fdb show</code> 连看几次</td>
+</tr>
+<tr>
+<td>日志刷 <code>own address as source address</code></td>
+<td>有人冒用桥或端口 MAC，或同 MAC 双网卡入桥</td>
+<td><code>br_fdb_update</code> 的 <code>is_local</code> 分支</td>
+</tr>
+<tr>
+<td>LLDP 邻居看不到</td>
+<td>保留地址被桥吃掉，<code>group_fwd_mask</code> 没开</td>
+<td><code>brport/group_fwd_mask</code></td>
+</tr>
+<tr>
+<td>桥间 BPDU 不互通</td>
+<td>端口 state 不是 FORWARDING，或 <code>stp_enabled == BR_NO_STP</code> 时帧走了转发</td>
+<td><code>br_handle_frame</code> 的 <code>case 0x00</code></td>
+</tr>
+<tr>
+<td>桥设备混杂模式后 CPU 变高</td>
+<td><code>skb2 = skb</code> 触发每次转发都克隆</td>
+<td><code>IFF_PROMISC</code>、<code>deliver_clone</code></td>
+</tr>
+<tr>
+<td>转发吞吐只有线速的一半</td>
+<td>端口开了 LRO，<code>skb_warn_if_lro</code> 丢帧</td>
+<td><code>ethtool -k eth0</code> 看 lro</td>
+</tr>
+<tr>
+<td>拔了网线还在往那个口发</td>
+<td>端口删了但 FDB 表项还在</td>
+<td><code>br_fdb_delete_by_port</code></td>
+</tr>
+</tbody>
+</table></div><p>几条压舱的判断。<code>skb-&gt;dev</code> 是桥梁代码里最会骗人的一个字段。同一帧在 <code>br_handle_frame</code> 里指向 <code>eth0</code>，到 <code>br_pass_frame_up</code> 里指向 <code>br0</code>，在 <code>__br_forward</code> 里指向 <code>eth1</code>。调试时先确认「此刻 skb-&gt;dev 是谁」，一半的问题当场就清楚了。</p>
+<p><code>state</code> 和 <code>flags</code> 别混，<code>is_local</code> 决定「转发还是上交」——查表命中的表项带 <code>is_local</code> 就别指望 <code>br_forward</code>，<code>br_handle_frame_finish</code> 里已经把 <code>skb</code> 置 NULL 了。</p>
+<p>老化时间和拓扑变化联动。<code>hold_time</code> 在 <code>topology_change</code> 为真时返回 <code>forward_delay</code>（15 秒）而不是 <code>ageing_time</code>（300 秒）。STP 抖动期间 FDB 清得比平时快得多，泛洪量跟着上来，这就是「一改网络配置就抖一阵」的来源。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一从收包到转发" data-toc-target="一从收包到转发">一、从收包到转发</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二网桥的数据结构" data-toc-target="二网桥的数据结构">二、网桥的数据结构</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.1-skb-里跟桥有关的字段" data-toc-target="2.1-skb-里跟桥有关的字段">2.1 skb 里跟桥有关的字段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.2-net_bridge" data-toc-target="2.2-net_bridge">2.2 net_bridge</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.3-net_bridge_port" data-toc-target="2.3-net_bridge_port">2.3 net_bridge_port</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.4-net_bridge_fdb_entry" data-toc-target="2.4-net_bridge_fdb_entry">2.4 net_bridge_fdb_entry</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.5-三个结构体的关系" data-toc-target="2.5-三个结构体的关系">2.5 三个结构体的关系</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三net_bridge-与-net_bridge_port" data-toc-target="三net_bridge-与-net_bridge_port">三、net_bridge 与 net_bridge_port</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.1-netdev_rx_handler_register-逐行" data-toc-target="3.1-netdev_rx_handler_register-逐行">3.1 netdev_rx_handler_register 逐行</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.2-rx_handler_data-指向谁" data-toc-target="3.2-rx_handler_data-指向谁">3.2 rx_handler_data 指向谁</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.3-br_del_if-的反向拆解" data-toc-target="3.3-br_del_if-的反向拆解">3.3 br_del_if 的反向拆解</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四br_handle_frame" data-toc-target="四br_handle_frame">四、br_handle_frame</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.1-返回值" data-toc-target="4.1-返回值">4.1 返回值</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.2-为什么保留地址要先判断" data-toc-target="4.2-为什么保留地址要先判断">4.2 为什么保留地址要先判断</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.3-state-分支转发学习丢弃" data-toc-target="4.3-state-分支转发学习丢弃">4.3 state 分支：转发、学习、丢弃</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.4-两个-finish-回调" data-toc-target="4.4-两个-finish-回调">4.4 两个 finish 回调</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五收包路径的入口" data-toc-target="五收包路径的入口">五、收包路径的入口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.1-顺序带来的三个推论" data-toc-target="5.1-顺序带来的三个推论">5.1 顺序带来的三个推论</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.2-为什么网口加进网桥后就不能再用-ip" data-toc-target="5.2-为什么网口加进网桥后就不能再用-ip">5.2 为什么网口加进网桥后就不能再用 IP</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六fdb-的查找与更新" data-toc-target="六fdb-的查找与更新">六、FDB 的查找与更新</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.1-查表__br_fdb_get" data-toc-target="6.1-查表__br_fdb_get">6.1 查表：__br_fdb_get</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.2-表项的五种身份" data-toc-target="6.2-表项的五种身份">6.2 表项的五种身份</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.3-查表之后的三条路" data-toc-target="6.3-查表之后的三条路">6.3 查表之后的三条路</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七br_fdb_update-与老化" data-toc-target="七br_fdb_update-与老化">七、br_fdb_update 与老化</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.1-三个提前返回" data-toc-target="7.1-三个提前返回">7.1 三个提前返回</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.2-mac-漂移" data-toc-target="7.2-mac-漂移">7.2 MAC 漂移</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.3-老化br_fdb_cleanup" data-toc-target="7.3-老化br_fdb_cleanup">7.3 老化：br_fdb_cleanup</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.4-表项过期后会发生什么" data-toc-target="7.4-表项过期后会发生什么">7.4 表项过期后会发生什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八转发决策br_forward" data-toc-target="八转发决策br_forward">八、转发决策：br_forward</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.1-br_forward" data-toc-target="8.1-br_forward">8.1 br_forward</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.2-__br_forward" data-toc-target="8.2-__br_forward">8.2 __br_forward</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.3-最后一站" data-toc-target="8.3-最后一站">8.3 最后一站</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九本机投递与转发到其他口" data-toc-target="九本机投递与转发到其他口">九、本机投递与转发到其他口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.1-br_handle_vlan两条路共用" data-toc-target="9.1-br_handle_vlan两条路共用">9.1 br_handle_vlan：两条路共用</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.2-泛洪br_flood" data-toc-target="9.2-泛洪br_flood">9.2 泛洪：br_flood</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.3-两条路的分水岭" data-toc-target="9.3-两条路的分水岭">9.3 两条路的分水岭</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十组播与广播的处理" data-toc-target="十组播与广播的处理">十、组播与广播的处理</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.1-组播分支逐句" data-toc-target="10.1-组播分支逐句">10.1 组播分支逐句</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.2-六种落地差异" data-toc-target="10.2-六种落地差异">10.2 六种落地差异</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.3-proxy-arp-与混杂模式备份" data-toc-target="10.3-proxy-arp-与混杂模式备份">10.3 proxy ARP 与混杂模式备份</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一内核代码的关键函数链" data-toc-target="十一内核代码的关键函数链">十一、内核代码的关键函数链</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二易错点速查" data-toc-target="十二易错点速查">十二、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/二层桥转发的实现/","title":"二层桥转发的实现","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/二层桥转发的实现/","type":"current"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","title":"Linux 网络协议栈的架构与分层","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","title":"NAT 原理与实现","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","title":"Netfilter 与 hook 点","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","title":"Netlink：内核态与用户态通信","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","type":"neighbor"}],"links":[{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/二层桥转发的实现/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/二层桥转发的实现/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/二层桥转发的实现/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/二层桥转发的实现/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

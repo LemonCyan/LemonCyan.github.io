@@ -1,0 +1,2060 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>libusb 编程：从同步到异步 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">libusb 编程：从同步到异步</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/F.通信与协议/02-USB/03-libusb与无驱方案/libusb-编程：从同步到异步/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">libusb 编程：从同步到异步</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">libusb 编程：从同步到异步</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>这篇只讲一件事：怎么在用户态直接跟一个 USB 设备说话，全程不写内核驱动。</p>
+<p><strong>讲什么</strong>：libusb 的编程模型、初始化与枚举、打开与声明接口、同步传输（批量/控制/中断）、异步传输、事件循环、资源释放、无驱方案的边界，结尾给一份能对着改的完整例子。</p>
+<p><strong>不讲什么</strong>：USB 协议本身的字段细节（描述符布局、令牌包、握手包怎么走线）；libusb 的编译与交叉编译（同目录另一篇专讲）；内核驱动怎么写（那是《编写一个 USB 驱动》的地盘）。</p>
+<p><strong>跨篇指路</strong>：装库、编库、交叉编译看《libusb 安装与交叉编译》；想看真实设备跑通的案例看《libusb 实战》；串不上就抓包，看《usbmon 抓包》。</p>
+</blockquote>
+<h2 id="一libusb-的编程模型" tabindex="-1">一、libusb 的编程模型 <a class="header-anchor" href="#一libusb-的编程模型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先把定位说清。同一个 USB 设备，两条路可以走。</p>
+<p><strong>走内核驱动</strong>：你写一个 <code>.ko</code>，注册 <code>usb_driver</code> 结构，实现 <code>probe</code>/<code>disconnect</code>，把设备挂到某个子系统上（tty、net、input、v4l2……）。系统认可它，别的程序通过标准设备节点就能用。代价是你得编进内核树，跟着内核版本跑，<code>insmod</code> 还得有权限。</p>
+<p><strong>走 libusb</strong>：不注册任何东西。库在用户态拿 <code>/dev/bus/usb/BBB/DDD</code>，用 <code>ioctl(USBDEVFS_*)</code> 把 URB 递给内核的 usbfs 层，数据到了再收回来。你的程序就是一个普通进程，<code>make</code> 完就能跑，不需要 root 装模块（只需要设备节点的读写权限）。</p>
+<p>两条路的根本差别就一句：<strong>内核驱动让设备变成系统的一部分，libusb 只是让进程占用设备</strong>。</p>
+<h3 id="1.1-固定六步" tabindex="-1">1.1 固定六步 <a class="header-anchor" href="#1.1-固定六步"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>libusb 把一次设备访问拆成六步，顺序不能乱。后面所有 API 都只是往这六步里填内容。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>步骤</th>
+<th>函数</th>
+<th>你拿到什么</th>
+<th>漏了会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 初始化</td>
+<td><code>libusb_init()</code></td>
+<td><code>libusb_context</code></td>
+<td>后面每个调用都返回 <code>LIBUSB_ERROR_NOT_INITIALIZED</code></td>
+</tr>
+<tr>
+<td>2 枚举</td>
+<td><code>libusb_get_device_list()</code></td>
+<td><code>libusb_device**</code> 数组</td>
+<td>没有设备指针，打不开</td>
+</tr>
+<tr>
+<td>3 打开</td>
+<td><code>libusb_open()</code></td>
+<td><code>libusb_device_handle</code></td>
+<td>没有句柄，发不了传输</td>
+</tr>
+<tr>
+<td>4 声明接口</td>
+<td><code>libusb_claim_interface()</code></td>
+<td>该接口的独占使用权</td>
+<td>内核驱动还占着，传输报 <code>LIBUSB_ERROR_BUSY</code></td>
+</tr>
+<tr>
+<td>5 传输</td>
+<td><code>libusb_bulk_transfer()</code> / <code>libusb_submit_transfer()</code> 等</td>
+<td>数据</td>
+<td>——</td>
+</tr>
+<tr>
+<td>6 释放</td>
+<td><code>libusb_release_interface()</code> / <code>libusb_close()</code> / <code>libusb_free_device_list()</code> / <code>libusb_exit()</code></td>
+<td>资源归还</td>
+<td>句柄泄漏、设备下次打不开</td>
+</tr>
+</tbody>
+</table></div><p>写成代码骨架：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>libusb_context       *ctx  = <span class="hljs-literal">NULL</span>;
+libusb_device       **<span class="hljs-built_in">list</span> = <span class="hljs-literal">NULL</span>;
+libusb_device_handle *h    = <span class="hljs-literal">NULL</span>;
+libusb_init(&amp;ctx);                                <span class="hljs-comment">/* 1 初始化 */</span>
+libusb_get_device_list(ctx, &amp;<span class="hljs-built_in">list</span>);               <span class="hljs-comment">/* 2 枚举 */</span>
+<span class="hljs-comment">/* 在 list 里按 vid/pid 挑一个，h 指向它 */</span>
+libusb_open(dev, &amp;h);                             <span class="hljs-comment">/* 3 打开 */</span>
+libusb_claim_interface(h, <span class="hljs-number">0</span>);                     <span class="hljs-comment">/* 4 声明接口，0 是 bInterfaceNumber */</span>
+<span class="hljs-comment">/* 5 传输：同步直接收发，异步 submit + handle_events */</span>
+libusb_release_interface(h, <span class="hljs-number">0</span>);                   <span class="hljs-comment">/* 6 释放，顺序和申请相反 */</span>
+libusb_close(h);
+libusb_free_device_list(<span class="hljs-built_in">list</span>, <span class="hljs-number">1</span>);                 <span class="hljs-comment">/* 1 表示顺便把 device 引用也放掉 */</span>
+libusb_exit(ctx);
+</code></pre></div></code></pre>
+<h3 id="1.2-对象层次" tabindex="-1">1.2 对象层次 <a class="header-anchor" href="#1.2-对象层次"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>libusb_context                一次库会话，管事件循环、管 pollfd 集合
+  └── libusb_device           设备本身，只读的描述信息 + 引用计数
+        └── libusb_device_handle    打开后的句柄，能发起传输
+              └── interface        接口，必须 claim 才能用
+                    └── endpoint    端点，地址最高位决定方向
+</code></pre></div></code></pre>
+<p>两个容易混的点：</p>
+<ul>
+<li><code>libusb_device</code> 不等于句柄。它只代表「系统里有这么个设备」，可以读描述符，但不能收发数据。要收发就得 <code>libusb_open</code> 出 handle。</li>
+<li>端点地址 <code>bEndpointAddress</code> 的 bit7 是方向位。<code>0x81</code> 是 IN 端点 1，<code>0x01</code> 是 OUT 端点 1。填传输函数时别让方向位和函数参数打架。</li>
+</ul>
+<h3 id="1.3-claim_interface-为什么是关键" tabindex="-1">1.3 <code>claim_interface</code> 为什么是关键 <a class="header-anchor" href="#1.3-claim_interface-为什么是关键"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>六步里第 4 步最容易被忽略，但它决定了「无驱」能不能成立。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> r = libusb_claim_interface(h, <span class="hljs-number">0</span>);
+</code></pre></div></code></pre>
+<p>这一句是向内核申请接口 0 的独占权。申请成功以后，<strong>内核里原本绑在这个接口上的驱动就不能再碰它了</strong>——<code>usbfs</code> 会把该接口从原驱动手里摘下来，之后的传输全部由你的进程发起。</p>
+<p>所以：</p>
+<ul>
+<li>你 <code>claim</code> 过的接口，内核驱动那边就哑了。这也是为什么对 HID 键盘做实验会把手边的输入设备停掉。</li>
+<li><code>claim</code> 之前别的驱动（或另一个进程）正在用这个接口，会返回 <code>LIBUSB_ERROR_BUSY</code>。</li>
+<li>想从已被内核驱动占用的接口上抢过来，得先 <code>libusb_detach_kernel_driver(h, 0)</code>，或者一开始就 <code>libusb_set_auto_detach_kernel_driver(h, 1)</code> 让库自动摘。</li>
+<li>一个设备可以有多个接口。你只需要 <code>claim</code> 自己要用的那个，别的接口留给系统，互不影响。复合设备（键盘上带个音量旋钮）就是靠这个共存的。</li>
+</ul>
+<p>释放时对称：<code>libusb_release_interface()</code> 之后内核驱动可以重新绑回去。</p>
+<h3 id="1.4-老-api-与新-api-的对应" tabindex="-1">1.4 老 API 与新 API 的对应 <a class="header-anchor" href="#1.4-老-api-与新-api-的对应"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>网上流传的 libusb 教程一大半是 0.1 时代的，函数名是 <code>usb_*</code>，没有 context 概念，设备用两条链表遍历。1.0 改成了 <code>libusb_*</code>，链表换数组。看到老代码别慌，对着表改名就行。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>libusb 0.1</th>
+<th>libusb 1.0</th>
+<th>差别</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>usb_init()</code></td>
+<td><code>libusb_init(&amp;ctx)</code></td>
+<td>0.1 是全局状态，1.0 有 context 可多实例</td>
+</tr>
+<tr>
+<td><code>usb_find_busses()</code> + <code>usb_find_devices()</code></td>
+<td><code>libusb_get_device_list(ctx, &amp;list)</code></td>
+<td>两次扫描变一次取全表</td>
+</tr>
+<tr>
+<td><code>usb_get_busses()</code> / 全局 <code>usb_busses</code></td>
+<td>直接遍历 list 数组</td>
+<td>链表换数组，<code>-&gt;next</code> 变下标</td>
+</tr>
+<tr>
+<td><code>usb_open(dev)</code></td>
+<td><code>libusb_open(dev, &amp;h)</code></td>
+<td>返回值改成出参 + 错误码</td>
+</tr>
+<tr>
+<td><code>usb_set_altinterface(h, alt)</code></td>
+<td><code>libusb_set_interface_alt_setting(h, if, alt)</code></td>
+<td>1.0 多要一个接口号</td>
+</tr>
+<tr>
+<td><code>usb_resetep(h, ep)</code></td>
+<td>无</td>
+<td>已被 <code>clear_halt</code> 取代</td>
+</tr>
+<tr>
+<td><code>usb_reset(h)</code></td>
+<td><code>libusb_reset_device(h)</code></td>
+<td>改名</td>
+</tr>
+<tr>
+<td><code>usb_control_msg(...)</code></td>
+<td><code>libusb_control_transfer(...)</code></td>
+<td>参数表一致</td>
+</tr>
+<tr>
+<td><code>usb_bulk_write/read</code></td>
+<td><code>libusb_bulk_transfer(..., 方向, &amp;n, t)</code></td>
+<td>写读合一，方向靠标志</td>
+</tr>
+<tr>
+<td><code>usb_interrupt_write/read</code></td>
+<td><code>libusb_interrupt_transfer(..., &amp;n, t)</code></td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>usb_get_string_simple(h, idx, buf, len)</code></td>
+<td><code>libusb_get_string_descriptor_ascii()</code></td>
+<td>自动挑语言 ID</td>
+</tr>
+<tr>
+<td><code>usb_get_descriptor(h, type, idx, ...)</code></td>
+<td><code>libusb_get_descriptor(h, type, idx, ...)</code></td>
+<td>同名同义</td>
+</tr>
+<tr>
+<td><code>usb_get_descriptor_by_endpoint(...)</code></td>
+<td>无便捷函数</td>
+<td>用 <code>control_transfer</code> 手搓</td>
+</tr>
+<tr>
+<td>无</td>
+<td><code>libusb_detach_kernel_driver()</code></td>
+<td>1.0 新增，无驱方案的门票</td>
+</tr>
+<tr>
+<td>无</td>
+<td><code>libusb_hotplug_register_callback()</code></td>
+<td>1.0.16 起支持热插拔</td>
+</tr>
+<tr>
+<td>无</td>
+<td><code>libusb_alloc_transfer()</code> / <code>libusb_submit_transfer()</code></td>
+<td>1.0 才有异步框架</td>
+</tr>
+</tbody>
+</table></div><p>老文档里两个坑：<code>usb_bulk_write</code> 和 <code>usb_interrupt_read</code> 被反复抄串行，批传输小节写的是中断读，中断传输小节还是中断读。真实签名是 <code>usb_bulk_write</code> / <code>usb_bulk_read</code> / <code>usb_interrupt_write</code> / <code>usb_interrupt_read</code> 四个，读写成对。看到哪份教程只列了两个，别跟着抄。</p>
+<h2 id="二初始化与设备枚举" tabindex="-1">二、初始化与设备枚举 <a class="header-anchor" href="#二初始化与设备枚举"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="2.1-初始化-context" tabindex="-1">2.1 初始化 context <a class="header-anchor" href="#2.1-初始化-context"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>libusb_context *ctx = <span class="hljs-literal">NULL</span>;
+<span class="hljs-type">int</span> r = libusb_init(&amp;ctx);
+<span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>) {
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;libusb_init: %s\n&quot;</span>, libusb_error_name(r));
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p>三件事值得说：</p>
+<ul>
+<li><code>ctx</code> 是库会话。单设备、单线程的程序直接传 <code>NULL</code>，库内部用一个默认 context，后面所有调用也都能传 <code>NULL</code>。省事。</li>
+<li>只有要多个线程各用一套 context 才需要自己申请。多数程序不需要。</li>
+<li>初始化之后建议开日志，出问题时能看见库在干什么：</li>
+</ul>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>libusb_set_option(ctx, LIBUSB_OPTION_LOG_LEVEL, LIBUSB_LOG_LEVEL_WARNING);
+<span class="hljs-comment">/* 1.0.22 之前的老写法：libusb_set_debug(ctx, 3); */</span>
+</code></pre></div></code></pre>
+<p>结束时 <code>libusb_exit(ctx)</code>。传 <code>NULL</code> 清默认 context。调用它之前所有 handle 都得已经 <code>libusb_close</code>，所有 device list 都得已经 free。</p>
+<h3 id="2.2-取设备列表" tabindex="-1">2.2 取设备列表 <a class="header-anchor" href="#2.2-取设备列表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>libusb_device **<span class="hljs-built_in">list</span> = <span class="hljs-literal">NULL</span>;
+<span class="hljs-type">ssize_t</span> cnt = libusb_get_device_list(ctx, &amp;<span class="hljs-built_in">list</span>);
+<span class="hljs-keyword">if</span> (cnt &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+</code></pre></div></code></pre>
+<p><code>cnt</code> 是设备个数，<code>list</code> 是以 <code>NULL</code> 结尾的指针数组。数组里每个 <code>libusb_device*</code> 的引用计数都被加过，用完必须这样收：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>libusb_free_device_list(<span class="hljs-built_in">list</span>, <span class="hljs-number">1</span>);   <span class="hljs-comment">/* unref_devices=1：连设备引用一起放 */</span>
+</code></pre></div></code></pre>
+<p>第二个参数填 <code>1</code>，等于对数组里每个设备都做一次 <code>libusb_unref_device</code>。填 <code>0</code> 的话，你打算留着的设备得自己 <code>libusb_ref_device</code>，否则数组一释放指针就悬空。</p>
+<h3 id="2.3-按-vidpid-挑设备" tabindex="-1">2.3 按 VID/PID 挑设备 <a class="header-anchor" href="#2.3-按-vidpid-挑设备"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> VENDOR_ID   0x1234</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> PRODUCT_ID  0x5678</span>
+libusb_device *target = <span class="hljs-literal">NULL</span>;
+<span class="hljs-keyword">for</span> (<span class="hljs-type">ssize_t</span> i = <span class="hljs-number">0</span>; i &lt; cnt; i++) {
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">libusb_device_descriptor</span> <span class="hljs-title">d</span>;</span>
+    <span class="hljs-keyword">if</span> (libusb_get_device_descriptor(<span class="hljs-built_in">list</span>[i], &amp;d) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">continue</span>;
+    <span class="hljs-keyword">if</span> (d.idVendor == VENDOR_ID &amp;&amp; d.idProduct == PRODUCT_ID) {
+        target = <span class="hljs-built_in">list</span>[i];
+        <span class="hljs-keyword">break</span>;
+    }
+}
+<span class="hljs-keyword">if</span> (!target) {
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;device %04x:%04x not found\n&quot;</span>, VENDOR_ID, PRODUCT_ID);
+    libusb_free_device_list(<span class="hljs-built_in">list</span>, <span class="hljs-number">1</span>);
+    libusb_exit(ctx);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p><code>libusb_get_device_descriptor</code> 只读缓存在 <code>libusb_device</code> 里的那 18 字节，不产生 USB 流量，循环里放心调。</p>
+<p>描述符里几个字段够你判断设备：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>idVendor</code> / <code>idProduct</code></td>
+<td>厂商号 / 产品号</td>
+<td>最常用的匹配条件</td>
+</tr>
+<tr>
+<td><code>bcdUSB</code></td>
+<td>支持的 USB 版本（BCD 编码）</td>
+<td>分清 1.1 / 2.0 / 3.0</td>
+</tr>
+<tr>
+<td><code>bDeviceClass</code></td>
+<td>设备类</td>
+<td><code>0x00</code> 表示类信息在接口描述符里</td>
+</tr>
+<tr>
+<td><code>bNumConfigurations</code></td>
+<td>配置数</td>
+<td>大于 1 时要选配置</td>
+</tr>
+<tr>
+<td><code>iManufacturer</code> / <code>iProduct</code> / <code>iSerialNumber</code></td>
+<td>字符串索引</td>
+<td>0 表示没有，非 0 要再发请求取</td>
+</tr>
+</tbody>
+</table></div><p>只靠 VID/PID 不够时，还有这些定位手段：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">uint8_t</span> bus  = libusb_get_bus_number(dev);       <span class="hljs-comment">/* 总线号 */</span>
+<span class="hljs-type">uint8_t</span> addr = libusb_get_device_address(dev);   <span class="hljs-comment">/* 设备地址 */</span>
+<span class="hljs-type">uint8_t</span> port = libusb_get_port_number(dev);      <span class="hljs-comment">/* 挂在哪号口 */</span>
+</code></pre></div></code></pre>
+<p><code>总线号 + 设备地址</code> 就是 <code>/dev/bus/usb/BBB/DDD</code> 里的那两个数，插拔一次就变。设备序列号才是不变的身份，但取序列号要发控制传输，得先打开设备。</p>
+<h3 id="2.4-取字符串描述符" tabindex="-1">2.4 取字符串描述符 <a class="header-anchor" href="#2.4-取字符串描述符"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>libusb_device_handle *h = <span class="hljs-literal">NULL</span>;
+libusb_open(target, &amp;h);
+<span class="hljs-type">char</span> manu[<span class="hljs-number">128</span>] = {<span class="hljs-number">0</span>}, prod[<span class="hljs-number">128</span>] = {<span class="hljs-number">0</span>}, sn[<span class="hljs-number">128</span>] = {<span class="hljs-number">0</span>};
+<span class="hljs-keyword">if</span> (d.iManufacturer)
+    libusb_get_string_descriptor_ascii(h, d.iManufacturer, (<span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *)manu, <span class="hljs-keyword">sizeof</span>(manu));
+<span class="hljs-keyword">if</span> (d.iProduct)
+    libusb_get_string_descriptor_ascii(h, d.iProduct, (<span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *)prod, <span class="hljs-keyword">sizeof</span>(prod));
+<span class="hljs-keyword">if</span> (d.iSerialNumber)
+    libusb_get_string_descriptor_ascii(h, d.iSerialNumber, (<span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *)sn, <span class="hljs-keyword">sizeof</span>(sn));
+</code></pre></div></code></pre>
+<p><code>libusb_get_string_descriptor_ascii</code> 内部先读语言 ID 表，再按第一个语言 ID 取值，最后把 UTF-16 转成 ASCII。所以非 ASCII 字符（比如中文厂商名）会被替换掉，要原始内容就得自己走 <code>libusb_get_string_descriptor</code> 拿 UTF-16 再转。</p>
+<h3 id="2.5-遍历配置接口端点" tabindex="-1">2.5 遍历配置、接口、端点 <a class="header-anchor" href="#2.5-遍历配置接口端点"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>光有设备描述符不够，传输要用到接口号和端点地址，这些在配置描述符里。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">libusb_config_descriptor</span> *<span class="hljs-title">cfg</span>;</span>
+<span class="hljs-keyword">if</span> (libusb_get_config_descriptor(target, <span class="hljs-number">0</span>, &amp;cfg) == <span class="hljs-number">0</span>) {   <span class="hljs-comment">/* 0 = 第 0 个配置 */</span>
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; cfg-&gt;bNumInterfaces; i++) {
+        <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">libusb_interface</span> *<span class="hljs-title">itf</span> =</span> &amp;cfg-&gt;interface[i];
+        <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> a = <span class="hljs-number">0</span>; a &lt; itf-&gt;num_altsetting; a++) {
+            <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">libusb_interface_descriptor</span> *<span class="hljs-title">id</span> =</span> &amp;itf-&gt;altsetting[a];
+            <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;itf %d alt %d class %02x eps %d\n&quot;</span>,
+                   id-&gt;bInterfaceNumber, id-&gt;bAlternateSetting,
+                   id-&gt;bInterfaceClass, id-&gt;bNumEndpoints);
+            <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> e = <span class="hljs-number">0</span>; e &lt; id-&gt;bNumEndpoints; e++) {
+                <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">libusb_endpoint_descriptor</span> *<span class="hljs-title">ep</span> =</span> &amp;id-&gt;endpoint[e];
+                <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;  ep %02x attr %02x maxpkt %u interval %u\n&quot;</span>,
+                       ep-&gt;bEndpointAddress, ep-&gt;bmAttributes,
+                       ep-&gt;wMaxPacketSize, ep-&gt;bInterval);
+            }
+        }
+    }
+    libusb_free_config_descriptor(cfg);
+}
+</code></pre></div></code></pre>
+<p>这段输出就是你的「设备地图」。拿到之后，接口号填 <code>claim_interface</code>，端点地址填传输函数。</p>
+<p>端点的 <code>bmAttributes</code> 低两位决定传输类型，选哪个 API 全看它：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th><code>bmAttributes &amp; 0x03</code></th>
+<th>类型</th>
+<th>用哪个 API</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>控制</td>
+<td><code>libusb_control_transfer</code>（端点 0，不在接口里列）</td>
+</tr>
+<tr>
+<td><code>1</code></td>
+<td>同步（isochronous）</td>
+<td><code>libusb_alloc_transfer(LIBUSB_TRANSFER_TYPE_ISOCHRONOUS)</code></td>
+</tr>
+<tr>
+<td><code>2</code></td>
+<td>批量（bulk）</td>
+<td><code>libusb_bulk_transfer</code></td>
+</tr>
+<tr>
+<td><code>3</code></td>
+<td>中断（interrupt）</td>
+<td><code>libusb_interrupt_transfer</code></td>
+</tr>
+</tbody>
+</table></div><h3 id="2.6-老-api-的枚举写法" tabindex="-1">2.6 老 API 的枚举写法 <a class="header-anchor" href="#2.6-老-api-的枚举写法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_bus</span> *<span class="hljs-title">bus</span>;</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device</span> *<span class="hljs-title">dev</span>;</span>
+<span class="hljs-type">int</span> device_num = <span class="hljs-number">0</span>;
+usb_init();            <span class="hljs-comment">/* 初始化，必须先调 */</span>
+usb_find_busses();     <span class="hljs-comment">/* 扫系统上的 USB 总线，返回总线数 */</span>
+usb_find_devices();    <span class="hljs-comment">/* 扫每条总线上的设备，必须在 find_busses 之后 */</span>
+<span class="hljs-keyword">for</span> (bus = usb_busses; bus; bus = bus-&gt;next) {
+    <span class="hljs-keyword">for</span> (dev = bus-&gt;devices; dev; dev = dev-&gt;next) {
+        <span class="hljs-keyword">if</span> (dev-&gt;descriptor.idVendor  == VENDOR_ID &amp;&amp;
+            dev-&gt;descriptor.idProduct == PRODUCT_ID)
+            device_num++;
+    }
+}
+</code></pre></div></code></pre>
+<p>两个细节：早期版本要用 <code>usb_get_busses()</code> 拿链表头，后来的版本直接暴露全局变量 <code>usb_busses</code>（在 <code>usb.h</code> 里声明为 <code>extern</code>），函数就没用了。另外 <code>usb_find_devices()</code> 依赖 <code>usb_find_busses()</code> 的结果，顺序反了扫到零个设备。</p>
+<h3 id="2.7-一定要认接口类" tabindex="-1">2.7 一定要认接口类 <a class="header-anchor" href="#2.7-一定要认接口类"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>光凭 VID/PID 打开设备时，设备若是复合设备，你操作的接口未必是想要的那个。稳妥做法是匹配接口类：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 找 bInterfaceClass == 0xFF（厂商自定义）的接口 */</span>
+<span class="hljs-type">int</span> want_if = <span class="hljs-number">-1</span>;
+<span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; cfg-&gt;bNumInterfaces &amp;&amp; want_if &lt; <span class="hljs-number">0</span>; i++) {
+    <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">libusb_interface_descriptor</span> *<span class="hljs-title">d</span> =</span> &amp;cfg-&gt;interface[i].altsetting[<span class="hljs-number">0</span>];
+    <span class="hljs-keyword">if</span> (d-&gt;bInterfaceClass == <span class="hljs-number">0xFF</span>)
+        want_if = d-&gt;bInterfaceNumber;
+}
+</code></pre></div></code></pre>
+<p>常见类码：<code>0x03</code> HID、<code>0x08</code> 大容量存储、<code>0x0A</code> CDC 通信、<code>0x0E</code> 视频、<code>0xE0</code> 无线、<code>0xFF</code> 厂商自定义。自己设计的板子基本都落在 <code>0xFF</code>。</p>
+<h2 id="三打开设备与声明接口" tabindex="-1">三、打开设备与声明接口 <a class="header-anchor" href="#三打开设备与声明接口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="3.1-打开" tabindex="-1">3.1 打开 <a class="header-anchor" href="#3.1-打开"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>libusb_device_handle *h = <span class="hljs-literal">NULL</span>;
+<span class="hljs-type">int</span> r = libusb_open(target, &amp;h);
+<span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>) {
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;open: %s\n&quot;</span>, libusb_error_name(r));
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p><code>libusb_open</code> 只做两件事：打开设备节点，读一遍设备描述符。它不碰接口，不动驱动，所以即使设备正被内核驱动用着，open 也能成功。</p>
+<p>失败常见原因：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>返回码</th>
+<th>原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LIBUSB_ERROR_ACCESS</code></td>
+<td>设备节点权限不够</td>
+<td>加 udev 规则，或临时 <code>sudo</code></td>
+</tr>
+<tr>
+<td><code>LIBUSB_ERROR_NO_DEVICE</code></td>
+<td>设备已经拔了</td>
+<td>回枚举重来</td>
+</tr>
+<tr>
+<td><code>LIBUSB_ERROR_BUSY</code></td>
+<td>少见，多为别的进程 open 了同一个</td>
+<td>查进程</td>
+</tr>
+<tr>
+<td><code>LIBUSB_ERROR_NO_MEM</code></td>
+<td>内核 usbfs 内存不足</td>
+<td>查有没有泄漏的 URB</td>
+</tr>
+</tbody>
+</table></div><p>权限问题的正解是 udev 规则，别一直用 root 跑程序：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>/etc/udev/rules.d/50-myusb.rules
+SUBSYSTEM==&quot;usb&quot;, ATTR{idVendor}==&quot;1234&quot;, ATTR{idProduct}==&quot;5678&quot;, MODE=&quot;0666&quot;
+</code></pre></div></code></pre>
+<p>改完 <code>sudo udevadm control --reload-rules &amp;&amp; sudo udevadm trigger</code>，重新插拔。</p>
+<h3 id="3.2-设配置与备用设置" tabindex="-1">3.2 设配置与备用设置 <a class="header-anchor" href="#3.2-设配置与备用设置"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一个设备能有多个配置（configuration）。默认是 1 号，多数设备不用管。需要切的时候：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> cur = <span class="hljs-number">-1</span>;
+libusb_get_configuration(h, &amp;cur);          <span class="hljs-comment">/* 先读当前的，方便以后还原 */</span>
+<span class="hljs-keyword">if</span> (cur != <span class="hljs-number">1</span>) {
+    r = libusb_set_configuration(h, <span class="hljs-number">1</span>);     <span class="hljs-comment">/* 参数是 bConfigurationValue */</span>
+    <span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;set_configuration: %s\n&quot;</span>, libusb_error_name(r));
+}
+</code></pre></div></code></pre>
+<p><code>libusb_set_configuration</code> 必须在 <code>claim_interface</code> 之前调，而且切换配置会把已经 claim 的接口全断掉。设配置会重新枚举该设备的所有接口，代价不小，不要放进循环。</p>
+<p>一个接口还可以有好几个 alt setting，用不同的带宽/端点组合，默认 <code>bAlternateSetting = 0</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>r = libusb_set_interface_alt_setting(h, <span class="hljs-number">0</span>, <span class="hljs-number">1</span>);   <span class="hljs-comment">/* 接口 0 切到 alt 1 */</span>
+</code></pre></div></code></pre>
+<p>注意顺序：<code>claim_interface</code> 之后才能设 alt setting。</p>
+<h3 id="3.3-摘内核驱动" tabindex="-1">3.3 摘内核驱动 <a class="header-anchor" href="#3.3-摘内核驱动"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这是无驱方案的入场券。设备被内核驱动（<code>usbhid</code>、<code>usb-storage</code>、<code>cdc_acm</code>……）绑着时，直接 claim 会返回 <code>LIBUSB_ERROR_BUSY</code>。两种解法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 手动摘，记得用完挂回去 */</span>
+<span class="hljs-keyword">if</span> (libusb_kernel_driver_active(h, <span class="hljs-number">0</span>) == <span class="hljs-number">1</span>)
+    libusb_detach_kernel_driver(h, <span class="hljs-number">0</span>);
+libusb_claim_interface(h, <span class="hljs-number">0</span>);
+<span class="hljs-comment">/* ... 干活 ... */</span>
+libusb_release_interface(h, <span class="hljs-number">0</span>);
+libusb_attach_kernel_driver(h, <span class="hljs-number">0</span>);        <span class="hljs-comment">/* 挂回去，让系统恢复原样 */</span>
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 自动挡：让库在 claim 时自己摘，release 时自己挂 */</span>
+libusb_set_auto_detach_kernel_driver(h, <span class="hljs-number">1</span>);
+libusb_claim_interface(h, <span class="hljs-number">0</span>);
+</code></pre></div></code></pre>
+<p>手动挡能控制归还时机，自动挡代码短。做产品用手动挡，调试用自动挡。<code>libusb_kernel_driver_active</code> 在部分平台永远返回 0（比如 Windows 的 WinUSB 后端），别依赖它判断设备状态。</p>
+<h3 id="3.4-claim-的语义再确认" tabindex="-1">3.4 claim 的语义再确认 <a class="header-anchor" href="#3.4-claim-的语义再确认"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>r = libusb_claim_interface(h, <span class="hljs-number">0</span>);
+<span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>) {
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;claim: %s\n&quot;</span>, libusb_error_name(r));
+    libusb_close(h);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<ul>
+<li>参数 <code>0</code> 是 <code>bInterfaceNumber</code>，不是接口下标，也不是端点号。复合设备里这个号是 0、1、2 中的一个，从配置描述符里读。</li>
+<li>同一个 handle 对同一个接口 claim 两次，有的实现返回成功（引用计数），有的返回 busy，别这么写。一个接口 claim 一次。</li>
+<li>一个 handle 可以 claim 多个接口，每个都配对 release。</li>
+<li>claim 是<strong>按接口</strong>独占，不是按设备独占。一个进程聊接口 0，另一个进程聊接口 1，可以共存。</li>
+</ul>
+<p><code>claim</code> 成功那一刻起，这个接口上的传输就归你了。内核里原驱动收不到 URB，也就不会跟你抢数据。</p>
+<h2 id="四同步传输批量与控制" tabindex="-1">四、同步传输：批量与控制 <a class="header-anchor" href="#四同步传输批量与控制"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>同步 API 的心智模型最简单：<strong>调一个函数，线程卡住，等这次传输彻底完成，函数返回</strong>。返回正数表示实际字节数，负数表示错误码。中间没有回调，没有事件循环。</p>
+<p>代价也直白：传输期间这个线程什么也干不了。一次批量读 512 字节，超时给 1000ms，设备不发数据，线程就实打实卡 1000ms。</p>
+<h3 id="4.1-批量传输" tabindex="-1">4.1 批量传输 <a class="header-anchor" href="#4.1-批量传输"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>批量传输用于「数据量大、不要求时间、但要保证不丢」的场合。U 盘、打印机、自定义高速采集板都用它。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> EP_OUT     0x01</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> EP_IN      0x81</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> TIMEOUT_MS 1000</span>
+<span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> buf[<span class="hljs-number">64</span>];
+<span class="hljs-type">int</span> transferred = <span class="hljs-number">0</span>;
+<span class="hljs-comment">/* 写 */</span>
+<span class="hljs-type">int</span> r = libusb_bulk_transfer(h, EP_OUT, buf, <span class="hljs-keyword">sizeof</span>(buf), &amp;transferred, TIMEOUT_MS);
+<span class="hljs-keyword">if</span> (r == <span class="hljs-number">0</span> &amp;&amp; transferred == (<span class="hljs-type">int</span>)<span class="hljs-keyword">sizeof</span>(buf))
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;wrote %d bytes\n&quot;</span>, transferred);
+<span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (r == LIBUSB_ERROR_TIMEOUT)
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;bulk write timeout, %d bytes done\n&quot;</span>, transferred);
+<span class="hljs-keyword">else</span>
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;bulk write: %s\n&quot;</span>, libusb_error_name(r));
+<span class="hljs-comment">/* 读 */</span>
+r = libusb_bulk_transfer(h, EP_IN, buf, <span class="hljs-keyword">sizeof</span>(buf), &amp;transferred, TIMEOUT_MS);
+</code></pre></div></code></pre>
+<p>参数表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>含义</th>
+<th>注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dev_handle</code></td>
+<td>打开的设备句柄</td>
+<td>已 claim 过接口</td>
+</tr>
+<tr>
+<td><code>endpoint</code></td>
+<td><code>bEndpointAddress</code></td>
+<td>bit7 决定方向，<code>0x81</code> 是 IN</td>
+</tr>
+<tr>
+<td><code>data</code></td>
+<td>缓冲区</td>
+<td>长度至少 <code>length</code></td>
+</tr>
+<tr>
+<td><code>length</code></td>
+<td>本次最多要传多少字节</td>
+<td>可大于端点最大包长，底层自动拆包</td>
+</tr>
+<tr>
+<td><code>transferred</code></td>
+<td>出参，实际传了多少</td>
+<td>超时/短包时也要看它</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>毫秒，<code>0</code> 表示不限</td>
+<td>不限很危险，设备一挂线程就永久阻塞</td>
+</tr>
+</tbody>
+</table></div><p>返回值要分三档：</p>
+<ul>
+<li><code>0</code>：传输成功。但不代表 <code>transferred == length</code>，短包在批量传输里是正常现象。</li>
+<li><code>LIBUSB_ERROR_TIMEOUT</code>：超时。此时 <code>transferred</code> 非 0 就说明已经传出去的部分是真的传了。做协议时这里要当心——你发了一半，对端已经在解析。</li>
+<li>其他负值：<code>LIBUSB_ERROR_PIPE</code>（端点 stall）、<code>LIBUSB_ERROR_NO_DEVICE</code>（拔了）、<code>LIBUSB_ERROR_IO</code>。</li>
+</ul>
+<p>端点 stall 的处理：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (r == LIBUSB_ERROR_PIPE) {
+    libusb_clear_halt(h, EP_IN);       <span class="hljs-comment">/* 清 halt，端点恢复可用 */</span>
+    <span class="hljs-comment">/* 然后重试，或者按协议重发整包 */</span>
+}
+</code></pre></div></code></pre>
+<h3 id="4.2-控制传输" tabindex="-1">4.2 控制传输 <a class="header-anchor" href="#4.2-控制传输"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>控制传输走端点 0，是所有 USB 设备都必须支持的那条「管理通道」。发标准请求（取描述符、设地址、设配置）、类请求、厂商自定义请求都走它。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> data[<span class="hljs-number">16</span>] = {<span class="hljs-number">0</span>};
+<span class="hljs-type">int</span> r = libusb_control_transfer(h,
+                               <span class="hljs-number">0x40</span>,        <span class="hljs-comment">/* bmRequestType */</span>
+                               <span class="hljs-number">0x01</span>,        <span class="hljs-comment">/* bRequest */</span>
+                               <span class="hljs-number">0x0000</span>,      <span class="hljs-comment">/* wValue */</span>
+                               <span class="hljs-number">0x0000</span>,      <span class="hljs-comment">/* wIndex */</span>
+                               data, <span class="hljs-keyword">sizeof</span>(data),
+                               TIMEOUT_MS);
+<span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>)
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;ctrl: %s\n&quot;</span>, libusb_error_name(r));
+</code></pre></div></code></pre>
+<p><code>bmRequestType</code> 一个字节塞了三段信息，是最容易填错的参数：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位</th>
+<th>字段</th>
+<th>取值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>bit7</td>
+<td>方向</td>
+<td><code>0x00</code> 主机→设备，<code>0x80</code> 设备→主机</td>
+</tr>
+<tr>
+<td>bit6:5</td>
+<td>类型</td>
+<td><code>0x00</code> 标准，<code>0x20</code> 类，<code>0x40</code> 厂商</td>
+</tr>
+<tr>
+<td>bit4:0</td>
+<td>接收者</td>
+<td><code>0x00</code> 设备，<code>0x01</code> 接口，<code>0x02</code> 端点，<code>0x03</code> 其他</td>
+</tr>
+</tbody>
+</table></div><p>库提供了宏，别手算位：<code>LIBUSB_ENDPOINT_OUT</code>（<code>0x00</code>）、<code>LIBUSB_ENDPOINT_IN</code>（<code>0x80</code>）、<code>LIBUSB_REQUEST_TYPE_STANDARD</code>（<code>0x00</code>）、<code>LIBUSB_REQUEST_TYPE_CLASS</code>（<code>0x20</code>）、<code>LIBUSB_REQUEST_TYPE_VENDOR</code>（<code>0x40</code>）、<code>LIBUSB_RECIPIENT_DEVICE</code>（<code>0x00</code>）、<code>LIBUSB_RECIPIENT_INTERFACE</code>（<code>0x01</code>）、<code>LIBUSB_RECIPIENT_ENDPOINT</code>（<code>0x02</code>）。</p>
+<p>组合出来就是常见请求：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 取设备描述符：标准 + IN + 设备 */</span>
+libusb_control_transfer(h, <span class="hljs-number">0x80</span>, LIBUSB_REQUEST_GET_DESCRIPTOR,
+                        (LIBUSB_DT_DEVICE &lt;&lt; <span class="hljs-number">8</span>) | <span class="hljs-number">0</span>, <span class="hljs-number">0</span>, buf, <span class="hljs-number">18</span>, <span class="hljs-number">1000</span>);
+<span class="hljs-comment">/* 厂商请求，主机发数据给接口 */</span>
+libusb_control_transfer(h, <span class="hljs-number">0x40</span>, <span class="hljs-number">0x05</span>, <span class="hljs-number">0x1234</span>, <span class="hljs-number">0</span>, payload, <span class="hljs-number">8</span>, <span class="hljs-number">1000</span>);
+<span class="hljs-comment">/* 厂商请求，从接口读数据 */</span>
+libusb_control_transfer(h, <span class="hljs-number">0xC0</span>, <span class="hljs-number">0x06</span>, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>, rbuf, <span class="hljs-number">64</span>, <span class="hljs-number">1000</span>);
+</code></pre></div></code></pre>
+<p><code>wValue</code> 和 <code>wIndex</code> 是 16 位字段，含义完全由设备固件定义。做自定义协议时我们习惯把 <code>wValue</code> 当命令码、<code>wIndex</code> 当寄存器地址，这只是约定。</p>
+<p>返回值是实际传输的字节数，负数是错误。方向位和长度写矛盾（比如 IN 请求但长度填 0）会在主机侧就被拒，返回 <code>LIBUSB_ERROR_INVALID_PARAM</code>。</p>
+<h3 id="4.3-同步的坑" tabindex="-1">4.3 同步的坑 <a class="header-anchor" href="#4.3-同步的坑"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li><strong>超时设 0</strong>。<code>timeout</code> 传 0 表示无限等待。设备拔掉之后某些平台上这个调用会一直挂着不返回。跑自己机器上无所谓，做产品必须给有限值。</li>
+<li><strong>忽略 <code>transferred</code></strong>。返回 0 不等于全传了。协议依赖「必须收满 N 字节」时就得自己凑满：</li>
+</ul>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">read_full</span><span class="hljs-params">(libusb_device_handle *h, <span class="hljs-type">uint8_t</span> ep, <span class="hljs-type">uint8_t</span> *buf, <span class="hljs-type">int</span> want, <span class="hljs-type">int</span> tmo)</span>
+{
+    <span class="hljs-type">int</span> got = <span class="hljs-number">0</span>;
+    <span class="hljs-keyword">while</span> (got &lt; want) {
+        <span class="hljs-type">int</span> n = <span class="hljs-number">0</span>;
+        <span class="hljs-type">int</span> r = libusb_bulk_transfer(h, ep, buf + got, want - got, &amp;n, tmo);
+        <span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> r;
+        <span class="hljs-keyword">if</span> (n == <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> LIBUSB_ERROR_IO;   <span class="hljs-comment">/* 设备不回数据了 */</span>
+        got += n;
+    }
+    <span class="hljs-keyword">return</span> got;
+}
+</code></pre></div></code></pre>
+<ul>
+<li><strong>一个线程只能被一次传输占着</strong>。想让 UI 不卡、想让收和发同时进行，只能开线程或改用异步。这就是后面几章要解决的问题。</li>
+</ul>
+<h2 id="五中断传输与轮询" tabindex="-1">五、中断传输与轮询 <a class="header-anchor" href="#五中断传输与轮询"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>中断传输这个名字容易骗人，它跟中断没关系。它是<strong>主机定时来问设备有没有事</strong>，靠的是「保留带宽 + 有界延迟」，不是设备真的发信号过来。</p>
+<p>适合它的场合：数据量小（几个字节到 64 字节）、要求有确定响应时间，比如鼠标、键盘、自定义按键板、状态上报。</p>
+<h3 id="5.1-同步中断传输" tabindex="-1">5.1 同步中断传输 <a class="header-anchor" href="#5.1-同步中断传输"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> EP_INT_IN  0x82</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> EP_INT_OUT 0x02</span>
+<span class="hljs-type">uint8_t</span> buf[<span class="hljs-number">64</span>];
+<span class="hljs-type">int</span> n = <span class="hljs-number">0</span>;
+<span class="hljs-type">int</span> r = libusb_interrupt_transfer(h, EP_INT_IN, buf, <span class="hljs-keyword">sizeof</span>(buf), &amp;n, <span class="hljs-number">500</span>);
+<span class="hljs-keyword">if</span> (r == <span class="hljs-number">0</span>) {
+    <span class="hljs-comment">/* buf[0..n-1] 是设备上报的数据 */</span>
+} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (r == LIBUSB_ERROR_TIMEOUT) {
+    <span class="hljs-comment">/* 这段时间设备没东西上报，正常，继续下一轮 */</span>
+} <span class="hljs-keyword">else</span> {
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;intr: %s\n&quot;</span>, libusb_error_name(r));
+}
+</code></pre></div></code></pre>
+<p>参数和 <code>libusb_bulk_transfer</code> 完全一致，只是底层用的传输类型不同。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>对比项</th>
+<th>批量传输</th>
+<th>中断传输</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>带宽</td>
+<td>抢剩余带宽，设备空闲时能跑满</td>
+<td>主机预留，每帧/微帧固定配额</td>
+</tr>
+<tr>
+<td>延迟</td>
+<td>不保证</td>
+<td>有上界，由 <code>bInterval</code> 决定</td>
+</tr>
+<tr>
+<td>典型包长</td>
+<td>512（HS）/ 64（FS）</td>
+<td>≤64 字节</td>
+</tr>
+<tr>
+<td>超时是否常态</td>
+<td>说明设备没数据，要查</td>
+<td>轮询里超时是常态，别当错误</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>大文件、采集流</td>
+<td>状态上报、按键、小命令</td>
+</tr>
+</tbody>
+</table></div><p><code>bInterval</code> 在端点描述符里，全速设备单位是毫秒（1~255），高速设备是指数编码（<code>2^(bInterval-1)</code> 个微帧）。填 1 表示每个微帧都问一次——此时中断传输的实时性其实比批量还高。</p>
+<h3 id="5.2-轮询循环的写法" tabindex="-1">5.2 轮询循环的写法 <a class="header-anchor" href="#5.2-轮询循环的写法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">volatile</span> <span class="hljs-type">int</span> running = <span class="hljs-number">1</span>;
+<span class="hljs-keyword">while</span> (running) {
+    <span class="hljs-type">uint8_t</span> buf[<span class="hljs-number">64</span>];
+    <span class="hljs-type">int</span> n = <span class="hljs-number">0</span>;
+    <span class="hljs-type">int</span> r = libusb_interrupt_transfer(h, EP_INT_IN, buf, <span class="hljs-keyword">sizeof</span>(buf), &amp;n, <span class="hljs-number">200</span>);
+    <span class="hljs-keyword">if</span> (r == <span class="hljs-number">0</span> &amp;&amp; n &gt; <span class="hljs-number">0</span>) {
+        handle_report(buf, n);
+    } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (r == LIBUSB_ERROR_TIMEOUT) {
+        <span class="hljs-keyword">continue</span>;                          <span class="hljs-comment">/* 没数据，很正常 */</span>
+    } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (r == LIBUSB_ERROR_NO_DEVICE) {
+        <span class="hljs-keyword">break</span>;                             <span class="hljs-comment">/* 设备拔了，退出 */</span>
+    } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (r == LIBUSB_ERROR_PIPE) {
+        libusb_clear_halt(h, EP_INT_IN);   <span class="hljs-comment">/* 端点 stall，复位重来 */</span>
+        <span class="hljs-keyword">continue</span>;
+    } <span class="hljs-keyword">else</span> {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;intr: %s\n&quot;</span>, libusb_error_name(r));
+        <span class="hljs-keyword">break</span>;
+    }
+}
+</code></pre></div></code></pre>
+<p>三点经验：</p>
+<ul>
+<li>超时值别设太大。轮询的意义是「及时拿到」，200ms 超时意味着设备拔了你最多 200ms 后知道。设 5000ms 就等于反应迟钝。</li>
+<li>超时返回不算错误，别 <code>break</code>。很多新手在这里把循环退出了，然后说「设备偶尔失联」。</li>
+<li>这个循环独占一个线程。要同时做别的事，要么再开线程，要么转异步。</li>
+</ul>
+<h3 id="5.3-中断-out-与老-api" tabindex="-1">5.3 中断 OUT 与老 API <a class="header-anchor" href="#5.3-中断-out-与老-api"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>中断 OUT 方向一样能发：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">uint8_t</span> cmd[<span class="hljs-number">8</span>] = {<span class="hljs-number">0x01</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0x00</span>, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>};
+<span class="hljs-type">int</span> n = <span class="hljs-number">0</span>;
+<span class="hljs-type">int</span> r = libusb_interrupt_transfer(h, EP_INT_OUT, cmd, <span class="hljs-keyword">sizeof</span>(cmd), &amp;n, <span class="hljs-number">100</span>);
+</code></pre></div></code></pre>
+<p>有些设备的 OUT 端点不回任何信息，<code>n</code> 就等于 <code>sizeof(cmd)</code>，返回 0。这类设备不需要读回执，发完就走。</p>
+<p>0.1 时代的中断接口是 <code>usb_interrupt_read</code> / <code>usb_interrupt_write</code>，签名和批量那对完全一样：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">usb_interrupt_read</span><span class="hljs-params">(usb_dev_handle *dev, <span class="hljs-type">int</span> ep, <span class="hljs-type">char</span> *bytes, <span class="hljs-type">int</span> size, <span class="hljs-type">int</span> timeout)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">usb_bulk_write</span><span class="hljs-params">(usb_dev_handle *dev, <span class="hljs-type">int</span> ep, <span class="hljs-type">char</span> *bytes, <span class="hljs-type">int</span> size, <span class="hljs-type">int</span> timeout)</span>;
+</code></pre></div></code></pre>
+<p>问题在于当年的教程在「批传输接口」和「中断传输接口」两节里抄了同样的内容，两节都写成 <code>usb_bulk_write</code> + <code>usb_interrupt_read</code>。按那份文档写代码，你会得到一个批写加一个中断读的怪组合。正确的四个函数是 <code>usb_bulk_read</code>、<code>usb_bulk_write</code>、<code>usb_interrupt_read</code>、<code>usb_interrupt_write</code>。</p>
+<h2 id="六异步传输libusb_transfer" tabindex="-1">六、异步传输：libusb_transfer <a class="header-anchor" href="#六异步传输libusb_transfer"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>同步 API 的边界很清楚：一次只能有一个传输在飞，线程被占死。要做到高吞吐或低延迟，就得上异步。</p>
+<p>异步的模型只有一句话：<strong>提交后立刻返回，完成后走回调</strong>。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>libusb_alloc_transfer()      分配一个 transfer 对象
+libusb_fill_bulk_transfer()  填参数，把 buffer 和回调挂上去
+libusb_submit_transfer()     扔给库，立刻返回
+        ↓  （库在后台收数据）
+回调被调用，status / actual_length / buffer 都填好了
+        ↓
+要么处理完释放，要么 re-submit 继续收
+</code></pre></div></code></pre>
+<p><code>submit</code> 返回的时候数据还没到。所以 buffer 不能是栈上的临时数组，必须活到回调执行完。</p>
+<h3 id="6.1-transfer-的关键字段" tabindex="-1">6.1 transfer 的关键字段 <a class="header-anchor" href="#6.1-transfer-的关键字段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">libusb_transfer</span> {</span>
+    libusb_device_handle *dev_handle;
+    <span class="hljs-type">uint8_t</span>              type;          <span class="hljs-comment">/* BULK / INTERRUPT / CONTROL / ISOCHRONOUS */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>       *buffer;        <span class="hljs-comment">/* 数据缓冲区 */</span>
+    <span class="hljs-type">int</span>                  length;        <span class="hljs-comment">/* buffer 有多长 */</span>
+    <span class="hljs-type">int</span>                  actual_length; <span class="hljs-comment">/* 实际传了多少，回调里看这个 */</span>
+    <span class="hljs-type">int</span>                  status;        <span class="hljs-comment">/* 回调里判断成败 */</span>
+    <span class="hljs-type">int</span>                  flags;
+    <span class="hljs-type">int</span>                  timeout;       <span class="hljs-comment">/* 毫秒，0 = 不限 */</span>
+    libusb_transfer_cb_fn callback;
+    <span class="hljs-type">void</span>                 *user_data;    <span class="hljs-comment">/* 状态通道，回调里拿回来 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>        num_iso_packets;
+};
+</code></pre></div></code></pre>
+<p>三个字段是核心：<code>status</code> 判成败，<code>actual_length</code> 取长度，<code>buffer</code> 取数据。<code>user_data</code> 是你唯一的状态通道，把所有上下文塞进去。</p>
+<p><code>status</code> 取值：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>值</th>
+<th>含义</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LIBUSB_TRANSFER_COMPLETED</code></td>
+<td>正常完成</td>
+<td>取数据</td>
+</tr>
+<tr>
+<td><code>LIBUSB_TRANSFER_ERROR</code></td>
+<td>传输出错</td>
+<td>重提交或放弃</td>
+</tr>
+<tr>
+<td><code>LIBUSB_TRANSFER_TIMED_OUT</code></td>
+<td>超时</td>
+<td>看协议，可重提交</td>
+</tr>
+<tr>
+<td><code>LIBUSB_TRANSFER_CANCELLED</code></td>
+<td>被取消</td>
+<td>走清理流程</td>
+</tr>
+<tr>
+<td><code>LIBUSB_TRANSFER_STALL</code></td>
+<td>端点 stall</td>
+<td><code>clear_halt</code> 后重提交</td>
+</tr>
+<tr>
+<td><code>LIBUSB_TRANSFER_NO_DEVICE</code></td>
+<td>设备没了</td>
+<td>退出，别再提交</td>
+</tr>
+<tr>
+<td><code>LIBUSB_TRANSFER_OVERFLOW</code></td>
+<td>数据超过 buffer</td>
+<td>加大 buffer</td>
+</tr>
+</tbody>
+</table></div><h3 id="6.2-批量异步的流程" tabindex="-1">6.2 批量异步的流程 <a class="header-anchor" href="#6.2-批量异步的流程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xfer_ctx</span> {</span> libusb_transfer *t; <span class="hljs-type">int</span> done; };
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> LIBUSB_CALL <span class="hljs-title function_">bulk_cb</span><span class="hljs-params">(libusb_transfer *t)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xfer_ctx</span> *<span class="hljs-title">c</span> =</span> (<span class="hljs-keyword">struct</span> xfer_ctx *)t-&gt;user_data;
+    <span class="hljs-keyword">switch</span> (t-&gt;status) {
+    <span class="hljs-keyword">case</span> LIBUSB_TRANSFER_COMPLETED:
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;got %d bytes\n&quot;</span>, t-&gt;actual_length);   <span class="hljs-comment">/* t-&gt;buffer 里是数据 */</span>
+        c-&gt;done = <span class="hljs-number">1</span>;
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">case</span> LIBUSB_TRANSFER_NO_DEVICE:
+        c-&gt;done = <span class="hljs-number">2</span>;
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">default</span>:
+        c-&gt;done = <span class="hljs-number">2</span>;
+        <span class="hljs-keyword">break</span>;
+    }
+}
+<span class="hljs-type">int</span> <span class="hljs-title function_">async_read_once</span><span class="hljs-params">(libusb_device_handle *h)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">xfer_ctx</span> <span class="hljs-title">c</span> =</span> {<span class="hljs-number">0</span>};
+    c.t = libusb_alloc_transfer(<span class="hljs-number">0</span>);        <span class="hljs-comment">/* 0 = 不分包，批量/中断用 0 */</span>
+    <span class="hljs-keyword">if</span> (!c.t) <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    <span class="hljs-type">uint8_t</span> *buf = <span class="hljs-built_in">malloc</span>(<span class="hljs-number">4096</span>);
+    libusb_fill_bulk_transfer(c.t, h, <span class="hljs-number">0x81</span>, buf, <span class="hljs-number">4096</span>, bulk_cb, &amp;c, <span class="hljs-number">1000</span>);
+    <span class="hljs-type">int</span> r = libusb_submit_transfer(c.t);   <span class="hljs-comment">/* 立刻返回 */</span>
+    <span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>) {
+        libusb_free_transfer(c.t);
+        <span class="hljs-built_in">free</span>(buf);
+        <span class="hljs-keyword">return</span> r;
+    }
+    <span class="hljs-keyword">while</span> (c.done == <span class="hljs-number">0</span>)
+        libusb_handle_events(<span class="hljs-literal">NULL</span>);        <span class="hljs-comment">/* 跑事件循环，等回调 */</span>
+    libusb_free_transfer(c.t);
+    <span class="hljs-built_in">free</span>(buf);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>libusb_fill_bulk_transfer</code> 的签名（1.0.16 之后带 timeout）：<code>fill(transfer, dev_handle, endpoint, buffer, length, callback, user_data, timeout)</code>。更老的版本没有 timeout 参数，得自己写 <code>transfer-&gt;timeout = 1000;</code>。看编译报错就知道是哪个版本。</p>
+<h3 id="6.3-中断与控制异步" tabindex="-1">6.3 中断与控制异步 <a class="header-anchor" href="#6.3-中断与控制异步"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>中断异步只是换个 fill 函数：<code>libusb_fill_interrupt_transfer(t, h, 0x82, buf, sizeof(buf), intr_cb, user_data, 0);</code></p>
+<p>中断端点用 timeout 0 有道理：让它一直躺着，设备一有数据立刻回调，不用反复超时重提交。代价是设备拔掉时收到的是 <code>LIBUSB_TRANSFER_NO_DEVICE</code> 而不是超时，回调里得处理。</p>
+<p>控制异步要把 8 字节 setup 包自己拼好：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> setup[<span class="hljs-number">8</span>];
+setup[<span class="hljs-number">0</span>] = <span class="hljs-number">0xC0</span>;                  <span class="hljs-comment">/* bmRequestType */</span>
+setup[<span class="hljs-number">1</span>] = <span class="hljs-number">0x06</span>;                  <span class="hljs-comment">/* bRequest */</span>
+setup[<span class="hljs-number">2</span>] = <span class="hljs-number">0x00</span>; setup[<span class="hljs-number">3</span>] = <span class="hljs-number">0x03</span>; <span class="hljs-comment">/* wValue，小端 */</span>
+setup[<span class="hljs-number">4</span>] = <span class="hljs-number">0x00</span>; setup[<span class="hljs-number">5</span>] = <span class="hljs-number">0x00</span>; <span class="hljs-comment">/* wIndex */</span>
+setup[<span class="hljs-number">6</span>] = <span class="hljs-number">0x40</span>; setup[<span class="hljs-number">7</span>] = <span class="hljs-number">0x00</span>; <span class="hljs-comment">/* wLength，小端 */</span>
+libusb_fill_control_transfer(t, h, setup, buf, ctrl_cb, user_data, <span class="hljs-number">1000</span>);
+</code></pre></div></code></pre>
+<p><code>buffer</code> 对应 <code>wLength</code> 那段数据区，<code>length</code> 要和 <code>wLength</code> 一致。填错这一处返回 <code>LIBUSB_ERROR_INVALID_PARAM</code>，很难查。</p>
+<h3 id="6.4-同步-vs-异步对照" tabindex="-1">6.4 同步 vs 异步对照 <a class="header-anchor" href="#6.4-同步-vs-异步对照"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>同步 API</th>
+<th>异步 API</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>入口</td>
+<td><code>libusb_bulk_transfer</code> / <code>interrupt_transfer</code> / <code>control_transfer</code></td>
+<td><code>libusb_submit_transfer</code></td>
+</tr>
+<tr>
+<td>阻塞</td>
+<td>阻塞到传输完成</td>
+<td>立即返回</td>
+</tr>
+<tr>
+<td>完成通知</td>
+<td>函数返回值</td>
+<td>回调函数</td>
+</tr>
+<tr>
+<td>数据放哪</td>
+<td>调用者的 buffer，返回即可用</td>
+<td>堆上长期存活，回调里才可用</td>
+</tr>
+<tr>
+<td>事件循环</td>
+<td>不需要</td>
+<td>必须有人跑 <code>libusb_handle_events</code></td>
+</tr>
+<tr>
+<td>并发传输</td>
+<td>一个线程一次一个</td>
+<td>可同时挂几十个</td>
+</tr>
+<tr>
+<td>吞吐</td>
+<td>受线程调度限制，够用</td>
+<td>高，能打满端点带宽</td>
+</tr>
+<tr>
+<td>延迟</td>
+<td>一次传输的 RTT</td>
+<td>低，多个 transfer 排队填满流水线</td>
+</tr>
+<tr>
+<td>代码复杂度</td>
+<td>低，串行思路</td>
+<td>高，要管状态、生命周期、取消</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>命令应答、配置读写、调试</td>
+<td>高速采集、音频流、持续上报</td>
+</tr>
+</tbody>
+</table></div><p>决策一句话：<strong>一秒钟只发几条命令，用同步；设备一直往外吐数据，用异步。</strong></p>
+<h3 id="6.5-用多个-transfer-填满流水线" tabindex="-1">6.5 用多个 transfer 填满流水线 <a class="header-anchor" href="#6.5-用多个-transfer-填满流水线"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>异步值钱的地方在这。同步一次读 4KB，读完再提交下一次，中间的往返延迟是浪费的。开 8 个 4KB 的 transfer 同时在飞，主机侧的 URB 队列始终是满的，吞吐就上去了。异步快的不是单个传输，而是<strong>永远不空窗</strong>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> LIBUSB_CALL <span class="hljs-title function_">stream_cb</span><span class="hljs-params">(libusb_transfer *t)</span>
+{
+    <span class="hljs-keyword">if</span> (t-&gt;status == LIBUSB_TRANSFER_COMPLETED) {
+        consume(t-&gt;buffer, t-&gt;actual_length);
+        libusb_submit_transfer(t);       <span class="hljs-comment">/* 立刻补位，流水线不空 */</span>
+        <span class="hljs-keyword">return</span>;
+    }
+    <span class="hljs-keyword">if</span> (--g_inflight == <span class="hljs-number">0</span>)
+        <span class="hljs-comment">/* 全部收摊 */</span>;
+}
+</code></pre></div></code></pre>
+<p><code>timeout</code> 填 0：持续流用超时没意义。真要看门狗，用独立定时器检查「最近一次收到数据是多少毫秒前」。</p>
+<h3 id="6.6-取消" tabindex="-1">6.6 取消 <a class="header-anchor" href="#6.6-取消"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> r = libusb_cancel_transfer(t);
+<span class="hljs-keyword">if</span> (r == <span class="hljs-number">0</span>) {
+    <span class="hljs-comment">/* 请求已接受，但回调还没跑 */</span>
+    <span class="hljs-keyword">while</span> (!cancelled)
+        libusb_handle_events(<span class="hljs-literal">NULL</span>);
+}
+</code></pre></div></code></pre>
+<p>这一步没法省。<code>libusb_cancel_transfer</code> 只是「请取消」，内核把 URB 撤回来的过程中还会回调一次，<code>status = LIBUSB_TRANSFER_CANCELLED</code>。<strong>在回调之前就 <code>libusb_free_transfer</code> 是经典 use-after-free</strong>。退出前把在飞的 transfer 都取消、都等回调、再释放，顺序不能变。</p>
+<h2 id="七异步的回调与事件循环" tabindex="-1">七、异步的回调与事件循环 <a class="header-anchor" href="#七异步的回调与事件循环"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="7.1-libusb_handle_events-做什么" tabindex="-1">7.1 <code>libusb_handle_events</code> 做什么 <a class="header-anchor" href="#7.1-libusb_handle_events-做什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>它不是「处理一次传输」。它把库内部维护的 fd 集合扔给 <code>poll()</code>，等某个 fd 可读，去读内核给的完成事件，然后逐个调用你注册的回调。没有 fd 就绪就一直等。</p>
+<p>推论三条：事件循环必须持续跑，跑一次只处理掉一批；回调里别干重活，那等于卡住整个事件分发；一处线程跑循环就够，多个线程同时跑合法（库内部有锁）但没必要。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>函数</th>
+<th>行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>libusb_handle_events(ctx)</code></td>
+<td>阻塞，直到有事件</td>
+</tr>
+<tr>
+<td><code>libusb_handle_events_timeout(ctx, &amp;tv)</code></td>
+<td>最多阻塞 <code>tv</code></td>
+</tr>
+<tr>
+<td><code>libusb_handle_events_completed(ctx, &amp;completed)</code></td>
+<td>阻塞到 <code>*completed</code> 非 0，或有事件</td>
+</tr>
+<tr>
+<td><code>libusb_handle_events_timeout_completed(ctx, &amp;tv, &amp;completed)</code></td>
+<td>上面两个的结合</td>
+</tr>
+<tr>
+<td><code>libusb_get_next_timeout(ctx, &amp;tv)</code></td>
+<td>问库「下一个内部定时器多久到期」</td>
+</tr>
+</tbody>
+</table></div><p>最常用的是 completed 版：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> completed = <span class="hljs-number">0</span>;
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> LIBUSB_CALL <span class="hljs-title function_">cb</span><span class="hljs-params">(libusb_transfer *t)</span>
+{
+    (*(<span class="hljs-type">int</span> *)t-&gt;user_data)++;           <span class="hljs-comment">/* 回调里加计数 */</span>
+}
+<span class="hljs-keyword">while</span> (completed &lt; N) {
+    <span class="hljs-type">int</span> r = libusb_handle_events_completed(ctx, &amp;completed);
+    <span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">break</span>;
+}
+</code></pre></div></code></pre>
+<p><code>completed</code> 由回调去加，循环每次先检查它。既不空转，也不提前退出。</p>
+<h3 id="7.2-接进外部事件循环" tabindex="-1">7.2 接进外部事件循环 <a class="header-anchor" href="#7.2-接进外部事件循环"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>程序本身已经有事件循环（glib 的 <code>GMainLoop</code>、libevent、Qt 的 <code>QEventLoop</code>）时，别再多起一个线程，把 libusb 的 fd 塞进你的循环就行。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">libusb_pollfd</span> **<span class="hljs-title">fds</span> =</span> libusb_get_pollfds(ctx);
+<span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; fds[i]; i++)
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;fd %d events %x\n&quot;</span>, fds[i]-&gt;fd, fds[i]-&gt;events);
+</code></pre></div></code></pre>
+<p>拿到 fd 和关心的事件（<code>POLLIN</code>/<code>POLLOUT</code>），注册进你的 poll 集合。检测到事件发生时，调一次 <code>libusb_handle_events_completed</code> 让库去读完成队列。</p>
+<p>设备接入/移除会让 fd 列表变化，所以还得注册通知器：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> LIBUSB_CALL <span class="hljs-title function_">pollfd_added</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-type">short</span> events, <span class="hljs-type">void</span> *user_data)</span>
+{
+    <span class="hljs-comment">/* 把 fd 加进自己的 poll 集合 */</span>
+}
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> LIBUSB_CALL <span class="hljs-title function_">pollfd_removed</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-type">void</span> *user_data)</span>
+{
+    <span class="hljs-comment">/* 从 poll 集合里摘掉 fd */</span>
+}
+libusb_set_pollfd_notifiers(ctx, pollfd_added, pollfd_removed, <span class="hljs-literal">NULL</span>);
+</code></pre></div></code></pre>
+<p>这两个回调跟热插拔回调不是一回事。</p>
+<h3 id="7.3-热插拔" tabindex="-1">7.3 热插拔 <a class="header-anchor" href="#7.3-热插拔"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>1.0.16 之后支持热插拔事件，不用轮询设备列表。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> LIBUSB_CALL <span class="hljs-title function_">hotplug_cb</span><span class="hljs-params">(libusb_context *ctx, libusb_device *dev,
+                                  libusb_hotplug_event event, <span class="hljs-type">void</span> *user_data)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">libusb_device_descriptor</span> <span class="hljs-title">d</span>;</span>
+    libusb_get_device_descriptor(dev, &amp;d);
+    <span class="hljs-keyword">if</span> (event == LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED)
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;arrived %04x:%04x\n&quot;</span>, d.idVendor, d.idProduct);
+    <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (event == LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT)
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;left %04x:%04x\n&quot;</span>, d.idVendor, d.idProduct);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+libusb_hotplug_register_callback(ctx,
+                                 LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED |
+                                 LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT,
+                                 LIBUSB_HOTPLUG_ENUMERATE,   <span class="hljs-comment">/* 已插着的也回调一遍 */</span>
+                                 VENDOR_ID, PRODUCT_ID,
+                                 LIBUSB_HOTPLUG_MATCH_ANY,   <span class="hljs-comment">/* dev_class */</span>
+                                 hotplug_cb, <span class="hljs-literal">NULL</span>, &amp;hp_handle);
+</code></pre></div></code></pre>
+<p>三个过滤器分别管 <code>vendor_id</code>、<code>product_id</code>、<code>dev_class</code>。任意一个填 <code>LIBUSB_HOTPLUG_MATCH_ANY</code> 就是不限，三个都填具体值就是「与」的关系。只按类匹配时，vid/pid 填 <code>MATCH_ANY</code>，<code>dev_class</code> 填 <code>0x03</code>。</p>
+<p><code>LIBUSB_HOTPLUG_ENUMERATE</code> 很实用：注册那一刻会把当前已插着的设备也回调一遍，省了「先枚举再注册」。</p>
+<p>接入与移除的完整时序：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>接入：hotplug 回调 → libusb_open → (可选) libusb_reset_device
+                  → detach_kernel_driver / set_auto_detach_kernel_driver
+                  → (可选) libusb_set_configuration
+                  → libusb_claim_interface
+                  → alloc_transfer + fill + submit
+移除：hotplug 回调 → 取消在飞的 transfer，等回调
+                  → release_interface → close → 释放 buffer
+</code></pre></div></code></pre>
+<p><code>libusb_reset_device</code> 可选，用来把设备恢复到干净状态（上次异常断开时端点还挂着 halt）。它会让设备重新枚举，地址变了、旧 handle 失效，所以要在 open 之后、claim 之前做。</p>
+<h3 id="7.4-事件循环与线程" tabindex="-1">7.4 事件循环与线程 <a class="header-anchor" href="#7.4-事件循环与线程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>单线程全异步</strong>：一个循环，所有设备的所有 transfer 都挂在里面，回调里只做搬运。没锁，时序可控。</p>
+<p>一线程一设备：每设备一个线程各跑 <code>libusb_handle_events</code>，代码直白，但线程多了麻烦，并发效率不如单线程。一两个设备随便选，十几个设备一律单线程。</p>
+<h2 id="八设备断开与资源释放" tabindex="-1">八、设备断开与资源释放 <a class="header-anchor" href="#八设备断开与资源释放"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>USB 设备随时会被拔。桌面上是意外，工业现场是日常。代码必须按「随时会断」来写。</p>
+<h3 id="8.1-断开时的返回值" tabindex="-1">8.1 断开时的返回值 <a class="header-anchor" href="#8.1-断开时的返回值"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>同步 API 返回</th>
+<th>异步 <code>status</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>传输中途拔出</td>
+<td><code>LIBUSB_ERROR_NO_DEVICE</code></td>
+<td><code>LIBUSB_TRANSFER_NO_DEVICE</code></td>
+</tr>
+<tr>
+<td>接口被别的进程占</td>
+<td><code>LIBUSB_ERROR_BUSY</code></td>
+<td>——</td>
+</tr>
+<tr>
+<td>端点 stall</td>
+<td><code>LIBUSB_ERROR_PIPE</code></td>
+<td><code>LIBUSB_TRANSFER_STALL</code></td>
+</tr>
+<tr>
+<td>超时</td>
+<td><code>LIBUSB_ERROR_TIMEOUT</code></td>
+<td><code>LIBUSB_TRANSFER_TIMED_OUT</code></td>
+</tr>
+<tr>
+<td>句柄已关</td>
+<td><code>LIBUSB_ERROR_NO_DEVICE</code></td>
+<td>——</td>
+</tr>
+<tr>
+<td>传输被取消</td>
+<td>——</td>
+<td><code>LIBUSB_TRANSFER_CANCELLED</code></td>
+</tr>
+</tbody>
+</table></div><p><code>LIBUSB_ERROR_NO_DEVICE</code> 是终结信号，不是可重试错误。收到就往上报，别在循环里死磕——重试只会立刻再失败一次。</p>
+<h3 id="8.2-释放顺序" tabindex="-1">8.2 释放顺序 <a class="header-anchor" href="#8.2-释放顺序"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>顺序和申请完全相反：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 1. 先让在飞的传输落地 */</span>
+<span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; N_XFER; i++)
+    libusb_cancel_transfer(<span class="hljs-type">g_t</span>[i]);
+<span class="hljs-keyword">while</span> (inflight &gt; <span class="hljs-number">0</span>)
+    libusb_handle_events(ctx);       <span class="hljs-comment">/* 等 CANCELLED 回调到齐 */</span>
+<span class="hljs-comment">/* 2. 释放 transfer 和它引用的 buffer */</span>
+<span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; N_XFER; i++) {
+    libusb_free_transfer(<span class="hljs-type">g_t</span>[i]);    <span class="hljs-comment">/* 只释放 transfer 本身 */</span>
+    <span class="hljs-built_in">free</span>(g_buf[i]);                  <span class="hljs-comment">/* buffer 是你 malloc 的，自己 free */</span>
+}
+<span class="hljs-comment">/* 3. 还接口 */</span>
+libusb_release_interface(h, <span class="hljs-number">0</span>);
+libusb_attach_kernel_driver(h, <span class="hljs-number">0</span>);   <span class="hljs-comment">/* 摘过就挂回去 */</span>
+<span class="hljs-comment">/* 4. 关句柄 */</span>
+libusb_close(h);
+<span class="hljs-comment">/* 5. 释放设备列表 */</span>
+libusb_free_device_list(<span class="hljs-built_in">list</span>, <span class="hljs-number">1</span>);
+<span class="hljs-comment">/* 6. 退库 */</span>
+libusb_exit(ctx);
+</code></pre></div></code></pre>
+<p>两个反复出现的错误：</p>
+<ul>
+<li><code>libusb_free_transfer</code> 之后还访问 <code>t-&gt;buffer</code>。<code>free_transfer</code> 只释放 transfer 结构，<code>buffer</code> 是独立分配的，所以要分开处理，顺序是「先 transfer 后 buffer」。</li>
+<li><code>libusb_exit</code> 之前还有 handle 没关。库会尝试清理，但你的 udev 权限、内核驱动挂回、接口状态全都不保证恢复，设备下次插上会变哑巴。</li>
+</ul>
+<h3 id="8.3-用统一清理兜住所有出口" tabindex="-1">8.3 用统一清理兜住所有出口 <a class="header-anchor" href="#8.3-用统一清理兜住所有出口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>C 里没有析构函数，只能自己管。把资源集中在一个结构体里，全初始化为 NULL/0，配一个统一清理函数：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_session</span> {</span>
+    libusb_context       *ctx;
+    libusb_device       **<span class="hljs-built_in">list</span>;
+    libusb_device_handle *h;
+    <span class="hljs-type">int</span>                   claimed;
+    <span class="hljs-type">int</span>                   detached;
+};
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">session_close</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> usb_session *s)</span>
+{
+    <span class="hljs-keyword">if</span> (!s) <span class="hljs-keyword">return</span>;
+    <span class="hljs-keyword">if</span> (s-&gt;h) {
+        <span class="hljs-keyword">if</span> (s-&gt;claimed)  libusb_release_interface(s-&gt;h, <span class="hljs-number">0</span>);
+        <span class="hljs-keyword">if</span> (s-&gt;detached) libusb_attach_kernel_driver(s-&gt;h, <span class="hljs-number">0</span>);
+        libusb_close(s-&gt;h);
+    }
+    <span class="hljs-keyword">if</span> (s-&gt;<span class="hljs-built_in">list</span>) libusb_free_device_list(s-&gt;<span class="hljs-built_in">list</span>, <span class="hljs-number">1</span>);
+    <span class="hljs-keyword">if</span> (s-&gt;ctx)  libusb_exit(s-&gt;ctx);
+    <span class="hljs-built_in">memset</span>(s, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(*s));
+}
+</code></pre></div></code></pre>
+<p>每个失败分支都 <code>goto fail;</code>，<code>fail:</code> 标签只有一句 <code>session_close(&amp;s);</code>。新增错误路径时不会忘记补清理。</p>
+<h3 id="8.4-信号处理" tabindex="-1">8.4 信号处理 <a class="header-anchor" href="#8.4-信号处理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>Ctrl-C</code> 默认直接杀进程，内核会回收 fd，但设备那头会停在半包状态，内核驱动也没挂回去。要干净退出就得接信号：设一个 <code>volatile sig_atomic_t g_stop</code>，<code>signal(SIGINT, on_sigint)</code> 里只置位，主循环用 <code>libusb_handle_events_timeout_completed</code> 配 200ms 超时轮询它，退出后落回正常清理流程。信号处理函数里只能碰 <code>volatile sig_atomic_t</code>，别在里面调 <code>libusb_*</code>。</p>
+<h2 id="九无驱设计的思路" tabindex="-1">九、无驱设计的思路 <a class="header-anchor" href="#九无驱设计的思路"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>回到最初的问题：为什么要在用户态干这件事。</p>
+<h3 id="9.1-内核驱动的三个现实麻烦" tabindex="-1">9.1 内核驱动的三个现实麻烦 <a class="header-anchor" href="#9.1-内核驱动的三个现实麻烦"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>痛点不是「写不出来」，是「维护不过来」：</p>
+<ul>
+<li><strong>版本漂移</strong>。客户那边 2.6.18、2.6.32、3.10、4.19 各有一批，每个大版本 API 都有微调，一份驱动得开好几个条件编译分支，<code>Makefile</code> 都得写两份。</li>
+<li><strong>移植成本</strong>。给嵌入式平台做产品，客户的内核裁剪过，连 <code>insmod</code> 都没移植进去。你想加模块？没门。客户的系统你又不能动。</li>
+<li><strong>交付节奏</strong>。客户邮件一封接一封：「客户要 2.6.5 的驱动」「要双核 2.6.18-smp 的」「平台是定制的 2.6.12-xxx」。你一部分工作时间全花在编译内核、定制驱动上。</li>
+</ul>
+<p>libusb 绕开的正是这三条：一份用户态程序，编出来是普通可执行文件，不依赖内核版本，不需要 root 装模块，拷过去就能跑。</p>
+<h3 id="9.2-从-hiddev-到-libusb-的改写路径" tabindex="-1">9.2 从 hiddev 到 libusb 的改写路径 <a class="header-anchor" href="#9.2-从-hiddev-到-libusb-的改写路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>老办法是走 <code>/dev/usb/hid/hiddevN</code> 加 <code>ioctl</code>。同样「发 72 字节报告再读回 72 字节」，我们的 <code>Device_Report</code> 得这样写：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ret = ioctl(fd, HIDIOCINITREPORT, <span class="hljs-number">0</span>);        <span class="hljs-comment">/* 发送前必须初始化 */</span>
+<span class="hljs-keyword">for</span> (index = <span class="hljs-number">0</span>; index &lt; <span class="hljs-number">72</span>; index++) {        <span class="hljs-comment">/* HID 每次只能操作一个 usage */</span>
+    uref.report_type = HID_REPORT_TYPE_FEATURE;
+    uref.report_id   = HID_REPORT_ID_FIRST;
+    uref.usage_index = index;
+    uref.field_index = <span class="hljs-number">0</span>;
+    uref.value       = send_data[index];
+    ioctl(fd, HIDIOCGUCODE, &amp;uref);
+    ret = ioctl(fd, HIDIOCSUSAGE, &amp;uref);
+    <span class="hljs-keyword">if</span> (ret != <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> UNKNOWN_ERROR;
+}
+rinfo.report_type = HID_REPORT_TYPE_FEATURE;
+rinfo.report_id   = HID_REPORT_ID_FIRST;
+rinfo.num_fields  = <span class="hljs-number">1</span>;
+ret = ioctl(fd, HIDIOCSREPORT, &amp;rinfo);      <span class="hljs-comment">/* 真正发出去 */</span>
+<span class="hljs-keyword">if</span> (ret != <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> WRITE_REPORT;
+</code></pre></div></code></pre>
+<p>读回也是一样 72 次 <code>ioctl</code>（<code>HIDIOCGUSAGE</code>）。一次 72 字节的传输，进出各 72 次系统调用，还得跟 <code>HIDIOCGUCODE</code> 的状态机较劲。</p>
+<p>同一个 <code>Device_Report</code>，换成 libusb：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>usb_claim_interface(Device_handle, <span class="hljs-number">0</span>);       <span class="hljs-comment">/* 0 = 默认接口 */</span>
+<span class="hljs-comment">/* 一次控制传输把 72 字节发完 */</span>
+send_len = usb_control_msg(Device_handle,
+                           USB_ENDPOINT_OUT | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
+                           HID_REPORT_SET, <span class="hljs-number">0x0300</span>, <span class="hljs-number">0</span>,
+                           send_data, <span class="hljs-number">72</span>, USB_TIMEOUT);
+<span class="hljs-keyword">if</span> (send_len &lt; <span class="hljs-number">0</span>)   <span class="hljs-keyword">return</span> WRITE_REPORT;
+<span class="hljs-keyword">if</span> (send_len != <span class="hljs-number">72</span>) <span class="hljs-keyword">return</span> send_len;
+<span class="hljs-comment">/* 一次控制传输读回来 */</span>
+recv_len = usb_control_msg(Device_handle,
+                           USB_ENDPOINT_IN | USB_TYPE_CLASS | USB_RECIP_INTERFACE,
+                           HID_REPORT_GET, <span class="hljs-number">0x0300</span>, <span class="hljs-number">0</span>,
+                           recv_data, <span class="hljs-number">72</span>, USB_TIMEOUT);
+<span class="hljs-keyword">if</span> (recv_len &lt; <span class="hljs-number">0</span>)   <span class="hljs-keyword">return</span> READ_REPORT;
+<span class="hljs-keyword">if</span> (recv_len != <span class="hljs-number">72</span>) <span class="hljs-keyword">return</span> recv_len;
+usb_release_interface(Device_handle, <span class="hljs-number">0</span>);     <span class="hljs-comment">/* 与 claim 配对 */</span>
+<span class="hljs-built_in">memcpy</span>(buffer72, recv_data, <span class="hljs-number">72</span>);
+<span class="hljs-keyword">return</span> SUCCESS;
+</code></pre></div></code></pre>
+<p>用到的宏在 <code>usb.h</code> 里：<code>USB_ENDPOINT_OUT</code>（<code>0x00</code>）、<code>USB_ENDPOINT_IN</code>（<code>0x80</code>）、<code>USB_TYPE_CLASS</code>（<code>0x01 &lt;&lt; 5</code>，即 <code>0x20</code>）、<code>USB_RECIP_INTERFACE</code>（<code>0x01</code>）、<code>HID_REPORT_SET</code>（<code>0x09</code>）、<code>HID_REPORT_GET</code>（<code>0x01</code>）。</p>
+<p><code>0x0300</code> 这个 <code>wValue</code> 是「报告类型 Feature（高字节 0x03）+ 报告 ID 0x00」。这一处最容易填错，查一眼 HID 规范的 <code>wValue</code> 编码表。</p>
+<p>144 次 <code>ioctl</code> 变 2 次控制传输。数据在链路上怎么走，两者是一回事——都走控制传输的 <code>SET_REPORT</code>/<code>GET_REPORT</code>，只是 libusb 把协议细节铺好了。</p>
+<h3 id="9.3-驱动框架照搬" tabindex="-1">9.3 驱动框架照搬 <a class="header-anchor" href="#9.3-驱动框架照搬"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>内核驱动那套 <code>probe</code>/<code>read</code>/<code>write</code>/<code>release</code> 结构，用户态一样能照搬。五个接口：<code>Device_Find()</code> 按 VID/PID 枚举并把设备信息存进全局表、<code>Device_Open()</code> 逐句柄 open、<code>Device_Read()</code> / <code>Device_Write()</code> 收发、<code>Device_Close()</code> 关闭回收。</p>
+<p>结构与全局表：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;usb.h&gt;</span></span>
+<span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device</span> *<span class="hljs-title">udev</span>;</span>
+    usb_dev_handle    *device_handle;
+} device_descript;
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> USB_TIMEOUT   10000</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> VENDOR_ID     0xffff</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> PRODUCT_ID    0xffff</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> DEVICE_MINOR  16          <span class="hljs-comment">/* 最多同时操作 16 个 */</span></span>
+<span class="hljs-type">int</span>             g_num;
+device_descript g_list[DEVICE_MINOR];
+</code></pre></div></code></pre>
+<p><code>Device_Find</code> 的骨架就是 2.6 那段双链表遍历，只多一步「把匹配到的 <code>dev</code> 指针存进 <code>g_list[g_num++]</code>」。打开与关闭：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">Device_Open</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-keyword">if</span> (g_list[g_num].udev != <span class="hljs-literal">NULL</span>)
+        g_list[g_num].device_handle = usb_open(g_list[g_num].udev);
+}
+<span class="hljs-type">void</span> <span class="hljs-title function_">Device_Close</span><span class="hljs-params">(<span class="hljs-type">int</span> handle)</span>
+{
+    usb_close(g_list[handle].device_handle);
+    g_list[handle].device_handle = <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p>设备协议变了只改 <code>Device_Read</code>/<code>Device_Write</code>，枚举和资源管理不动。多个同型号设备挂一台机器，靠 <code>g_list</code> 下标区分，调用者的「句柄」就是那个下标。</p>
+<h2 id="十无驱方案能做什么不能做什么" tabindex="-1">十、无驱方案能做什么、不能做什么 <a class="header-anchor" href="#十无驱方案能做什么不能做什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>libusb 不是万能的。它让你能跟设备说话，但不让设备变成系统的一部分。这条线要划清，否则做到一半才发现方向错了。</p>
+<h3 id="10.1-能做的" tabindex="-1">10.1 能做的 <a class="header-anchor" href="#10.1-能做的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>能力</th>
+<th>说明</th>
+<th>实现要点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读写设备数据</td>
+<td>批量、中断、控制、同步四种传输全支持</td>
+<td>认对端点和传输类型</td>
+</tr>
+<tr>
+<td>发厂商自定义命令</td>
+<td><code>bmRequestType</code> 填 <code>0x40</code>/<code>0xC0</code></td>
+<td><code>wValue</code>/<code>wIndex</code> 自己定义</td>
+</tr>
+<tr>
+<td>实现私有协议</td>
+<td>固件和主机约定好就行</td>
+<td>谁也不管你们怎么编码</td>
+</tr>
+<tr>
+<td>取描述符、字符串</td>
+<td>枚举设备信息、读序列号</td>
+<td><code>get_descriptor</code> / <code>get_string_descriptor_ascii</code></td>
+</tr>
+<tr>
+<td>热插拔响应</td>
+<td>插上就打开，拔掉就清理</td>
+<td><code>libusb_hotplug_register_callback</code></td>
+</tr>
+<tr>
+<td>多设备并发</td>
+<td>一个进程管多个同 VID/PID 设备</td>
+<td>每设备一 handle，一个事件循环</td>
+</tr>
+<tr>
+<td>跨平台</td>
+<td>Linux / macOS / Windows（WinUSB）同一套代码</td>
+<td>注意后端差异</td>
+</tr>
+</tbody>
+</table></div><h3 id="10.2-不能做的" tabindex="-1">10.2 不能做的 <a class="header-anchor" href="#10.2-不能做的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>做不到的事</th>
+<th>为什么</th>
+<th>后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>自动变成串口（<code>/dev/ttyUSB0</code>）</td>
+<td>要注册 <code>tty</code> 子系统，只有内核驱动能注册</td>
+<td>别的程序看不见这个设备</td>
+</tr>
+<tr>
+<td>自动变成网卡</td>
+<td>要挂到 net 子系统</td>
+<td>只能由你的进程转发数据</td>
+</tr>
+<tr>
+<td>自动变成摄像头（V4L2）</td>
+<td>要注册 video device</td>
+<td>打不开 <code>/dev/video0</code></td>
+</tr>
+<tr>
+<td>让 <code>mount</code> 认出 U 盘</td>
+<td>要挂到块设备和文件系统层</td>
+<td>只能自己解析文件系统</td>
+</tr>
+<tr>
+<td>参与系统电源管理</td>
+<td>挂起/唤醒策略归内核管</td>
+<td>睡眠唤醒后会丢句柄</td>
+</tr>
+<tr>
+<td>被其他程序当标准设备用</td>
+<td>设备节点对你私有</td>
+<td>你的程序是唯一使用者</td>
+</tr>
+<tr>
+<td>独占整台设备做热插拔策略</td>
+<td>claim 是按接口的</td>
+<td>别的接口仍归系统</td>
+</tr>
+</tbody>
+</table></div><p>这就是「无驱」的代价：<strong>你的程序是设备的唯一入口，别的程序想用，得走你的进程。</strong></p>
+<h3 id="10.3-什么时候该回到内核驱动" tabindex="-1">10.3 什么时候该回到内核驱动 <a class="header-anchor" href="#10.3-什么时候该回到内核驱动"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li>设备要出现在系统标准位置（<code>/dev/tty*</code>、<code>/dev/video*</code>、网络接口），让 <code>cat</code>、<code>ffmpeg</code>、<code>iperf</code> 这些现成工具直接用。</li>
+<li>要参与系统级电源管理，或者开机就要可用（早于任何用户态进程）。</li>
+<li>多个进程要同时访问同一个接口。claim 是独占的，要么用 IPC，要么换驱动。</li>
+<li>要与内核里别的子系统协同（比如把 USB 数据直接导进网络栈）。</li>
+<li>设备本来就是标准类设备，比如标准 UVC 摄像头、标准 CDC 串口——系统自带驱动就够用，别自己写。</li>
+</ul>
+<h3 id="10.4-混合方案" tabindex="-1">10.4 混合方案 <a class="header-anchor" href="#10.4-混合方案"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>有些产品两条路都走：一个极简内核驱动只做枚举和接口转发（暴露 <code>/dev/mydev0</code> 给别的程序用），协议处理全在用户态。代价是代码分两处，好处是既进了系统，又留了灵活性。</p>
+<h2 id="十一一个完整的例子" tabindex="-1">十一、一个完整的例子 <a class="header-anchor" href="#十一一个完整的例子"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>行为：找设备 → 打开 → claim → 发一条厂商命令 → 异步持续读 → <code>Ctrl-C</code> 干净退出。</p>
+<h3 id="11.1-上下文与开头" tabindex="-1">11.1 上下文与开头 <a class="header-anchor" href="#11.1-上下文与开头"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdlib.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;signal.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;libusb.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> VENDOR_ID   0x1234</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> PRODUCT_ID  0x5678</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> IFACE       0</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> EP_IN       0x81</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> PKT_SIZE    4096</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> N_XFER      4</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">app</span> {</span>
+    libusb_context       *ctx;
+    libusb_device_handle *h;
+    libusb_transfer      *t[N_XFER];
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>        *buf[N_XFER];
+    <span class="hljs-type">int</span>                   inflight;
+    <span class="hljs-type">int</span>                   error;
+    <span class="hljs-type">int</span>                   stopping;
+};
+<span class="hljs-type">static</span> <span class="hljs-keyword">volatile</span> <span class="hljs-type">sig_atomic_t</span> g_stop;
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">on_signal</span><span class="hljs-params">(<span class="hljs-type">int</span> s)</span> { (<span class="hljs-type">void</span>)s; g_stop = <span class="hljs-number">1</span>; }
+</code></pre></div></code></pre>
+<h3 id="11.2-找设备并打开" tabindex="-1">11.2 找设备并打开 <a class="header-anchor" href="#11.2-找设备并打开"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">open_device</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> app *a)</span>
+{
+    libusb_device **<span class="hljs-built_in">list</span> = <span class="hljs-literal">NULL</span>;
+    <span class="hljs-type">ssize_t</span> cnt = libusb_get_device_list(a-&gt;ctx, &amp;<span class="hljs-built_in">list</span>);
+    <span class="hljs-keyword">if</span> (cnt &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> (<span class="hljs-type">int</span>)cnt;
+    libusb_device *dev = <span class="hljs-literal">NULL</span>;
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">ssize_t</span> i = <span class="hljs-number">0</span>; i &lt; cnt; i++) {
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">libusb_device_descriptor</span> <span class="hljs-title">d</span>;</span>
+        <span class="hljs-keyword">if</span> (libusb_get_device_descriptor(<span class="hljs-built_in">list</span>[i], &amp;d) &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">continue</span>;
+        <span class="hljs-keyword">if</span> (d.idVendor == VENDOR_ID &amp;&amp; d.idProduct == PRODUCT_ID) {
+            dev = <span class="hljs-built_in">list</span>[i];
+            <span class="hljs-keyword">break</span>;
+        }
+    }
+    <span class="hljs-keyword">if</span> (!dev) {
+        libusb_free_device_list(<span class="hljs-built_in">list</span>, <span class="hljs-number">1</span>);
+        <span class="hljs-keyword">return</span> LIBUSB_ERROR_NO_DEVICE;
+    }
+    <span class="hljs-type">int</span> r = libusb_open(dev, &amp;a-&gt;h);
+    libusb_free_device_list(<span class="hljs-built_in">list</span>, <span class="hljs-number">1</span>);   <span class="hljs-comment">/* 数组用完即放，handle 独立存活 */</span>
+    <span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> r;
+    <span class="hljs-comment">/* 被内核驱动绑着就摘掉，否则 claim 会 BUSY */</span>
+    <span class="hljs-keyword">if</span> (libusb_kernel_driver_active(a-&gt;h, IFACE) == <span class="hljs-number">1</span>)
+        libusb_detach_kernel_driver(a-&gt;h, IFACE);
+    r = libusb_claim_interface(a-&gt;h, IFACE);
+    <span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>) {
+        libusb_close(a-&gt;h);
+        a-&gt;h = <span class="hljs-literal">NULL</span>;
+        <span class="hljs-keyword">return</span> r;
+    }
+    <span class="hljs-comment">/* 厂商命令：0x40 = OUT + 厂商 + 设备 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> cmd[<span class="hljs-number">4</span>] = {<span class="hljs-number">0x01</span>, <span class="hljs-number">0x02</span>, <span class="hljs-number">0x03</span>, <span class="hljs-number">0x04</span>};
+    r = libusb_control_transfer(a-&gt;h, <span class="hljs-number">0x40</span>, <span class="hljs-number">0x01</span>, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>, cmd, <span class="hljs-keyword">sizeof</span>(cmd), <span class="hljs-number">1000</span>);
+    <span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>) {
+        libusb_release_interface(a-&gt;h, IFACE);
+        libusb_close(a-&gt;h);
+        a-&gt;h = <span class="hljs-literal">NULL</span>;
+    }
+    <span class="hljs-keyword">return</span> r;
+}
+</code></pre></div></code></pre>
+<h3 id="11.3-回调与启动" tabindex="-1">11.3 回调与启动 <a class="header-anchor" href="#11.3-回调与启动"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> LIBUSB_CALL <span class="hljs-title function_">read_cb</span><span class="hljs-params">(libusb_transfer *t)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">app</span> *<span class="hljs-title">a</span> =</span> (<span class="hljs-keyword">struct</span> app *)t-&gt;user_data;
+    <span class="hljs-keyword">switch</span> (t-&gt;status) {
+    <span class="hljs-keyword">case</span> LIBUSB_TRANSFER_COMPLETED:
+        <span class="hljs-keyword">if</span> (t-&gt;actual_length &gt; <span class="hljs-number">0</span>)
+            <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;rx %d bytes\n&quot;</span>, t-&gt;actual_length);
+        <span class="hljs-keyword">if</span> (!a-&gt;stopping) libusb_submit_transfer(t);   <span class="hljs-comment">/* 补位 */</span>
+        <span class="hljs-keyword">else</span>              a-&gt;inflight--;
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">case</span> LIBUSB_TRANSFER_CANCELLED:
+        a-&gt;inflight--;
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">case</span> LIBUSB_TRANSFER_STALL:
+        libusb_clear_halt(a-&gt;h, t-&gt;endpoint);
+        <span class="hljs-keyword">if</span> (!a-&gt;stopping) libusb_submit_transfer(t);
+        <span class="hljs-keyword">else</span>              a-&gt;inflight--;
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">case</span> LIBUSB_TRANSFER_NO_DEVICE:
+        a-&gt;error = LIBUSB_ERROR_NO_DEVICE;
+        a-&gt;inflight--;
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">default</span>:
+        a-&gt;error = LIBUSB_ERROR_IO;
+        a-&gt;inflight--;
+        <span class="hljs-keyword">break</span>;
+    }
+}
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">start_stream</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> app *a)</span>
+{
+    a-&gt;inflight = <span class="hljs-number">0</span>;
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; N_XFER; i++) {
+        a-&gt;buf[i] = <span class="hljs-built_in">malloc</span>(PKT_SIZE);
+        a-&gt;t[i]   = libusb_alloc_transfer(<span class="hljs-number">0</span>);
+        <span class="hljs-keyword">if</span> (!a-&gt;buf[i] || !a-&gt;t[i]) <span class="hljs-keyword">return</span> LIBUSB_ERROR_NO_MEM;
+        libusb_fill_bulk_transfer(a-&gt;t[i], a-&gt;h, EP_IN, a-&gt;buf[i], PKT_SIZE,
+                                  read_cb, a, <span class="hljs-number">0</span>);
+        <span class="hljs-type">int</span> r = libusb_submit_transfer(a-&gt;t[i]);
+        <span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> r;
+        a-&gt;inflight++;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<h3 id="11.4-主循环与收尾" tabindex="-1">11.4 主循环与收尾 <a class="header-anchor" href="#11.4-主循环与收尾"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">app</span> <span class="hljs-title">a</span>;</span>
+    <span class="hljs-built_in">memset</span>(&amp;a, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(a));
+    signal(SIGINT, on_signal);
+    signal(SIGTERM, on_signal);
+    <span class="hljs-type">int</span> r = libusb_init(&amp;a.ctx);
+    <span class="hljs-keyword">if</span> (r &lt; <span class="hljs-number">0</span>) <span class="hljs-keyword">return</span> <span class="hljs-number">1</span>;
+    <span class="hljs-keyword">if</span> (open_device(&amp;a) &lt; <span class="hljs-number">0</span> || start_stream(&amp;a) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> cleanup;
+    <span class="hljs-keyword">while</span> (!g_stop &amp;&amp; a.error == <span class="hljs-number">0</span>) {
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timeval</span> <span class="hljs-title">tv</span> =</span> {<span class="hljs-number">0</span>, <span class="hljs-number">200000</span>};       <span class="hljs-comment">/* 200ms，保证能看到 g_stop */</span>
+        libusb_handle_events_timeout_completed(a.ctx, &amp;tv, <span class="hljs-literal">NULL</span>);
+    }
+cleanup:
+    a.stopping = <span class="hljs-number">1</span>;
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; N_XFER; i++)
+        <span class="hljs-keyword">if</span> (a.t[i]) libusb_cancel_transfer(a.t[i]);
+    <span class="hljs-keyword">while</span> (a.inflight &gt; <span class="hljs-number">0</span>) {                   <span class="hljs-comment">/* 等 CANCELLED 回调到齐 */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timeval</span> <span class="hljs-title">tv</span> =</span> {<span class="hljs-number">0</span>, <span class="hljs-number">100000</span>};
+        libusb_handle_events_timeout_completed(a.ctx, &amp;tv, <span class="hljs-literal">NULL</span>);
+    }
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; N_XFER; i++) {
+        <span class="hljs-keyword">if</span> (a.t[i])   libusb_free_transfer(a.t[i]);
+        <span class="hljs-keyword">if</span> (a.buf[i]) <span class="hljs-built_in">free</span>(a.buf[i]);
+    }
+    <span class="hljs-keyword">if</span> (a.h) {
+        libusb_release_interface(a.h, IFACE);
+        libusb_attach_kernel_driver(a.h, IFACE);
+        libusb_close(a.h);
+    }
+    libusb_exit(a.ctx);
+    <span class="hljs-keyword">return</span> a.error ? <span class="hljs-number">1</span> : <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<h3 id="11.5-编译" tabindex="-1">11.5 编译 <a class="header-anchor" href="#11.5-编译"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>gcc -Wall -O2 -o usbapp usbapp.c $(pkg-config --cflags --libs libusb-1.0)
+</code></pre></div></code></pre>
+<p>没装 <code>pkg-config</code> 时用 <code>-lusb-1.0</code>。交叉编译要显式给路径，别让 gcc 抓宿主机上的：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>arm-linux-gnueabihf-gcc -o usbapp usbapp.c \
+    -I<span class="hljs-variable">$SYSROOT</span>/usr/include/libusb-1.0 \
+    -L<span class="hljs-variable">$SYSROOT</span>/usr/lib -lusb-1.0
+</code></pre></div></code></pre>
+<p><code>-I</code> 指到 <code>libusb-1.0</code> 目录本身，因为代码里写的是 <code>#include &lt;libusb.h&gt;</code>。完整流程在《libusb 安装与交叉编译》。</p>
+<h2 id="十二易错点速查" tabindex="-1">十二、易错点速查 <a class="header-anchor" href="#十二易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>症状</th>
+<th>常见原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>claim</code> 返回 <code>BUSY</code></td>
+<td>内核驱动绑着这个接口</td>
+<td><code>detach_kernel_driver</code> 或 <code>set_auto_detach_kernel_driver</code></td>
+</tr>
+<tr>
+<td><code>open</code> 返回 <code>ACCESS</code></td>
+<td>设备节点权限不够</td>
+<td>加 udev 规则 <code>MODE=&quot;0666&quot;</code></td>
+</tr>
+<tr>
+<td>传输随机报 <code>PIPE</code></td>
+<td>端点 stall，上一条命令设备没接住</td>
+<td><code>clear_halt</code> 后重试，检查协议时序</td>
+</tr>
+<tr>
+<td>同步读永远超时</td>
+<td>端点地址方向填错</td>
+<td>查配置描述符的 <code>bEndpointAddress</code></td>
+</tr>
+<tr>
+<td>返回 0 但数据不全</td>
+<td>没检查 <code>transferred</code></td>
+<td>按需写凑满循环</td>
+</tr>
+<tr>
+<td>异步回调不触发</td>
+<td>没人跑 <code>libusb_handle_events</code></td>
+<td>加事件循环，或接进外部 poll</td>
+</tr>
+<tr>
+<td>回调里数据是垃圾</td>
+<td>buffer 在栈上，函数返回就失效</td>
+<td>malloc 到堆上，活到回调之后</td>
+</tr>
+<tr>
+<td>偶发段错误</td>
+<td>transfer 没取消就 <code>free_transfer</code></td>
+<td>先 cancel，等 <code>CANCELLED</code> 回调，再释放</td>
+</tr>
+<tr>
+<td>事件循环空转烧 CPU</td>
+<td><code>timeout</code> 传 0 还在循环里转</td>
+<td>用 <code>{0, 200000}</code> 这类有限超时</td>
+</tr>
+<tr>
+<td>拔掉后程序卡死</td>
+<td>同步调用 <code>timeout</code> 设 0</td>
+<td>给有限超时，处理 <code>NO_DEVICE</code></td>
+</tr>
+<tr>
+<td><code>libusb_exit</code> 后崩溃</td>
+<td>还有 handle / transfer 没释放</td>
+<td>严格按申请的反序释放</td>
+</tr>
+<tr>
+<td>拔了再插连不上</td>
+<td>没处理热插拔，或旧句柄还占着</td>
+<td>注册 hotplug 回调，拔掉时释放干净</td>
+</tr>
+<tr>
+<td>中文厂商名变问号</td>
+<td><code>get_string_descriptor_ascii</code> 只转 ASCII</td>
+<td>用 <code>get_string_descriptor</code> 拿 UTF-16 自己转</td>
+</tr>
+<tr>
+<td>换台机器端点号不对</td>
+<td>端点地址由固件定，不是常量</td>
+<td>从配置描述符读，别硬编码</td>
+</tr>
+<tr>
+<td>多设备数据串了</td>
+<td>全局变量被多个 handle 共用</td>
+<td>每设备一套 context，用 <code>user_data</code> 传</td>
+</tr>
+<tr>
+<td>设了配置接口就失效</td>
+<td><code>set_configuration</code> 会重置所有接口</td>
+<td>claim 之前设配置，设完重新 claim</td>
+</tr>
+</tbody>
+</table></div><p>几条不用查表就能记住的规矩：</p>
+<ul>
+<li>申请和释放严格反序，<code>claim</code> 配 <code>release</code>，<code>open</code> 配 <code>close</code>，<code>alloc</code> 配 <code>free</code>。</li>
+<li>同步 API 的 buffer 可以放栈上，异步 API 的 buffer 必须在堆上。</li>
+<li>所有 <code>timeout</code> 都给有限值，除了「设备连续吐数据」的持续流。</li>
+<li><code>actual_length</code> 和 <code>transferred</code> 每次都要看，返回 0 不等于传完了。</li>
+<li>回调里只做搬运，别做耗时操作，事件循环只有一个。</li>
+<li><code>NO_DEVICE</code> 是终点，<code>TIMEOUT</code> 是常态，<code>PIPE</code> 要 <code>clear_halt</code>。</li>
+</ul>
+<p>把这些盯住，剩下的基本是设备固件那边的协议问题。协议对不上就抓包，<code>usbmon</code> 那一篇讲怎么抓。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一libusb-的编程模型" data-toc-target="一libusb-的编程模型">一、libusb 的编程模型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.1-固定六步" data-toc-target="1.1-固定六步">1.1 固定六步</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.2-对象层次" data-toc-target="1.2-对象层次">1.2 对象层次</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.3-claim_interface-为什么是关键" data-toc-target="1.3-claim_interface-为什么是关键">1.3 claim_interface 为什么是关键</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.4-老-api-与新-api-的对应" data-toc-target="1.4-老-api-与新-api-的对应">1.4 老 API 与新 API 的对应</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二初始化与设备枚举" data-toc-target="二初始化与设备枚举">二、初始化与设备枚举</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.1-初始化-context" data-toc-target="2.1-初始化-context">2.1 初始化 context</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.2-取设备列表" data-toc-target="2.2-取设备列表">2.2 取设备列表</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.3-按-vidpid-挑设备" data-toc-target="2.3-按-vidpid-挑设备">2.3 按 VID/PID 挑设备</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.4-取字符串描述符" data-toc-target="2.4-取字符串描述符">2.4 取字符串描述符</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.5-遍历配置接口端点" data-toc-target="2.5-遍历配置接口端点">2.5 遍历配置、接口、端点</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.6-老-api-的枚举写法" data-toc-target="2.6-老-api-的枚举写法">2.6 老 API 的枚举写法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.7-一定要认接口类" data-toc-target="2.7-一定要认接口类">2.7 一定要认接口类</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三打开设备与声明接口" data-toc-target="三打开设备与声明接口">三、打开设备与声明接口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.1-打开" data-toc-target="3.1-打开">3.1 打开</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.2-设配置与备用设置" data-toc-target="3.2-设配置与备用设置">3.2 设配置与备用设置</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.3-摘内核驱动" data-toc-target="3.3-摘内核驱动">3.3 摘内核驱动</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.4-claim-的语义再确认" data-toc-target="3.4-claim-的语义再确认">3.4 claim 的语义再确认</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四同步传输批量与控制" data-toc-target="四同步传输批量与控制">四、同步传输：批量与控制</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.1-批量传输" data-toc-target="4.1-批量传输">4.1 批量传输</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.2-控制传输" data-toc-target="4.2-控制传输">4.2 控制传输</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.3-同步的坑" data-toc-target="4.3-同步的坑">4.3 同步的坑</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五中断传输与轮询" data-toc-target="五中断传输与轮询">五、中断传输与轮询</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.1-同步中断传输" data-toc-target="5.1-同步中断传输">5.1 同步中断传输</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.2-轮询循环的写法" data-toc-target="5.2-轮询循环的写法">5.2 轮询循环的写法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.3-中断-out-与老-api" data-toc-target="5.3-中断-out-与老-api">5.3 中断 OUT 与老 API</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六异步传输libusb_transfer" data-toc-target="六异步传输libusb_transfer">六、异步传输：libusb_transfer</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.1-transfer-的关键字段" data-toc-target="6.1-transfer-的关键字段">6.1 transfer 的关键字段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.2-批量异步的流程" data-toc-target="6.2-批量异步的流程">6.2 批量异步的流程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.3-中断与控制异步" data-toc-target="6.3-中断与控制异步">6.3 中断与控制异步</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.4-同步-vs-异步对照" data-toc-target="6.4-同步-vs-异步对照">6.4 同步 vs 异步对照</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.5-用多个-transfer-填满流水线" data-toc-target="6.5-用多个-transfer-填满流水线">6.5 用多个 transfer 填满流水线</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.6-取消" data-toc-target="6.6-取消">6.6 取消</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七异步的回调与事件循环" data-toc-target="七异步的回调与事件循环">七、异步的回调与事件循环</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.1-libusb_handle_events-做什么" data-toc-target="7.1-libusb_handle_events-做什么">7.1 libusb_handle_events 做什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.2-接进外部事件循环" data-toc-target="7.2-接进外部事件循环">7.2 接进外部事件循环</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.3-热插拔" data-toc-target="7.3-热插拔">7.3 热插拔</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.4-事件循环与线程" data-toc-target="7.4-事件循环与线程">7.4 事件循环与线程</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八设备断开与资源释放" data-toc-target="八设备断开与资源释放">八、设备断开与资源释放</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.1-断开时的返回值" data-toc-target="8.1-断开时的返回值">8.1 断开时的返回值</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.2-释放顺序" data-toc-target="8.2-释放顺序">8.2 释放顺序</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.3-用统一清理兜住所有出口" data-toc-target="8.3-用统一清理兜住所有出口">8.3 用统一清理兜住所有出口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.4-信号处理" data-toc-target="8.4-信号处理">8.4 信号处理</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九无驱设计的思路" data-toc-target="九无驱设计的思路">九、无驱设计的思路</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.1-内核驱动的三个现实麻烦" data-toc-target="9.1-内核驱动的三个现实麻烦">9.1 内核驱动的三个现实麻烦</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.2-从-hiddev-到-libusb-的改写路径" data-toc-target="9.2-从-hiddev-到-libusb-的改写路径">9.2 从 hiddev 到 libusb 的改写路径</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.3-驱动框架照搬" data-toc-target="9.3-驱动框架照搬">9.3 驱动框架照搬</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十无驱方案能做什么不能做什么" data-toc-target="十无驱方案能做什么不能做什么">十、无驱方案能做什么、不能做什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.1-能做的" data-toc-target="10.1-能做的">10.1 能做的</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.2-不能做的" data-toc-target="10.2-不能做的">10.2 不能做的</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.3-什么时候该回到内核驱动" data-toc-target="10.3-什么时候该回到内核驱动">10.3 什么时候该回到内核驱动</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.4-混合方案" data-toc-target="10.4-混合方案">10.4 混合方案</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一一个完整的例子" data-toc-target="十一一个完整的例子">十一、一个完整的例子</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.1-上下文与开头" data-toc-target="11.1-上下文与开头">11.1 上下文与开头</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.2-找设备并打开" data-toc-target="11.2-找设备并打开">11.2 找设备并打开</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.3-回调与启动" data-toc-target="11.3-回调与启动">11.3 回调与启动</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.4-主循环与收尾" data-toc-target="11.4-主循环与收尾">11.4 主循环与收尾</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.5-编译" data-toc-target="11.5-编译">11.5 编译</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二易错点速查" data-toc-target="十二易错点速查">十二、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/F.通信与协议/02-USB/03-libusb与无驱方案/libusb-编程：从同步到异步/","title":"libusb 编程：从同步到异步","url":"/F.通信与协议/02-USB/03-libusb与无驱方案/libusb-编程：从同步到异步/","type":"current"},{"id":"/F.通信与协议/02-USB/03-libusb与无驱方案/RK3399-实战：用-libusb-读写-USB-设备/","title":"RK3399 实战：用 libusb 读写 USB 设备","url":"/F.通信与协议/02-USB/03-libusb与无驱方案/RK3399-实战：用-libusb-读写-USB-设备/","type":"neighbor"},{"id":"/F.通信与协议/02-USB/03-libusb与无驱方案/RK3399-实战：用-usbmon-抓取-USB-数据/","title":"RK3399 实战：用 usbmon 抓取 USB 数据","url":"/F.通信与协议/02-USB/03-libusb与无驱方案/RK3399-实战：用-usbmon-抓取-USB-数据/","type":"neighbor"},{"id":"/F.通信与协议/02-USB/03-libusb与无驱方案/libusb-的安装、交叉编译与移植/","title":"libusb 的安装、交叉编译与移植","url":"/F.通信与协议/02-USB/03-libusb与无驱方案/libusb-的安装、交叉编译与移植/","type":"neighbor"}],"links":[{"source":"/F.通信与协议/02-USB/03-libusb与无驱方案/libusb-编程：从同步到异步/","target":"/F.通信与协议/02-USB/03-libusb与无驱方案/RK3399-实战：用-libusb-读写-USB-设备/","type":"neighbor"},{"source":"/F.通信与协议/02-USB/03-libusb与无驱方案/libusb-编程：从同步到异步/","target":"/F.通信与协议/02-USB/03-libusb与无驱方案/RK3399-实战：用-usbmon-抓取-USB-数据/","type":"neighbor"},{"source":"/F.通信与协议/02-USB/03-libusb与无驱方案/libusb-编程：从同步到异步/","target":"/F.通信与协议/02-USB/03-libusb与无驱方案/libusb-的安装、交叉编译与移植/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

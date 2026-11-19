@@ -1,0 +1,2668 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Linux USB 驱动的结构与 urb · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">Linux USB 驱动的结构与 urb</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/F.通信与协议/02-USB/01-协议与基础概念/Linux-USB-驱动的结构与-urb/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">Linux USB 驱动的结构与 urb</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">Linux USB 驱动的结构与 urb</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>这一篇只谈 Linux 侧的驱动代码：结构体长什么样，urb 怎么发出去，热插拔是谁在背后顶着跑。你敲下的每一个 <code>usb_submit_urb()</code>，从调用到落到总线上，中间过了哪几层，这里给全。</p>
+<p><strong>不讲什么</strong>：差分电平、包格式、四种传输类型的线上时序、枚举时总线上一共走了哪些请求。那些属于同目录的另一篇《USB 2.0 协议：从物理层到枚举》。在那边搞清楚「设备怎么被认出来」，回这边看「认出来之后驱动怎么接住它」。</p>
+<p><strong>怎么读</strong>：手里有代码、想动 probe 的，看第一、五章。结构体嵌套看晕的，看第二、三、四章。urb 提交了没反应、回调不进的，看第七、八、九章。hub 报错、TT 概念打结的，看第十章。插上去 probe 不触发，看第十一章。</p>
+</blockquote>
+<h2 id="一usb-驱动的整体结构" tabindex="-1">一、USB 驱动的整体结构 <a class="header-anchor" href="#一usb-驱动的整体结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核里的 USB 代码切成三层。搞清楚哪层管什么，后面看结构体才不会串。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层</th>
+<th>代码位置</th>
+<th>它管什么</th>
+<th>你不该在这一层干的事</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>设备驱动层</td>
+<td><code>drivers/usb/</code> 下各具体驱动</td>
+<td>认领接口、跑业务协议、收发数据</td>
+<td>直接读写控制器寄存器</td>
+</tr>
+<tr>
+<td>usbcore</td>
+<td><code>drivers/usb/core/</code></td>
+<td>枚举、配置、接口与驱动匹配、urb 排队、设备模型</td>
+<td>关心 qTD 长什么样</td>
+</tr>
+<tr>
+<td>HCD</td>
+<td><code>drivers/usb/host/</code></td>
+<td>urb 翻译成传输描述符、DMA 映射、中断处理、根 hub 虚拟化</td>
+<td>关心你的业务协议</td>
+</tr>
+</tbody>
+</table></div><p>数据往下走只有一条路，往回走靠中断：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>你的驱动 --urb--&gt; usbcore --urb--&gt; HCD --qTD/QH--&gt; 控制器 --包--&gt; 设备
+控制器中断 --&gt; HCD irq handler --&gt; 扫完成队列 --&gt; usb_hcd_giveback_urb --&gt; urb-&gt;complete
+</code></pre></div></code></pre>
+<p>驱动从头到尾没碰过寄存器。你表达的意思只有一句：往哪个端点发多少字节，完了叫我。这句话的载体就是 urb，本篇后面一半篇幅都在讲它。</p>
+<h3 id="1.1-驱动挂在接口上不是挂在设备上" tabindex="-1">1.1 驱动挂在接口上，不是挂在设备上 <a class="header-anchor" href="#1.1-驱动挂在接口上不是挂在设备上"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>struct usb_driver</code> 和 <code>struct usb_interface</code> 对等。一个物理设备插上来，内核先建一个 <code>usb_device</code>，再按配置里的接口数目建若干 <code>usb_interface</code>，每个接口单独去和驱动匹配。</p>
+<p>所以一个复合设备会同时被两个驱动认领：摄像头带麦克风的，视频接口归 uvcvideo，音频接口归 snd-usb-audio。两个驱动互不知道对方存在，共享同一个 <code>usb_device</code>。你在自己驱动里看到的 <code>interface_to_usbdev(intf)</code>，拿到的就是这个公共父对象。</p>
+<p>另一条路是 <code>struct usb_device_driver</code>，它和整个 <code>usb_device</code> 对等，一个设备只能挂一个。usbfs、通用驱动走这条。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>驱动结构</th>
+<th>匹配对象</th>
+<th>一个设备能有几个</th>
+<th>典型使用者</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>struct usb_driver</code></td>
+<td><code>usb_interface</code></td>
+<td>每个接口一个，可以有多个</td>
+<td>绝大多数设备驱动</td>
+</tr>
+<tr>
+<td><code>struct usb_device_driver</code></td>
+<td><code>usb_device</code></td>
+<td>1</td>
+<td>usbfs、通用驱动</td>
+</tr>
+</tbody>
+</table></div><p>新手常犯的错：把 <code>usb_driver</code> 想成「一个设备一个驱动」，然后在 probe 里遍历所有接口。不用。probe 一次就给你一个接口，其他的接口不归你。</p>
+<h3 id="1.2-一份最小骨架" tabindex="-1">1.2 一份最小骨架 <a class="header-anchor" href="#1.2-一份最小骨架"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>先把骨架摆出来，后面所有章节都是往这个框里填。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/module.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/usb.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device_id</span> <span class="hljs-title">my_ids</span>[] =</span> {
+	{ USB_DEVICE(<span class="hljs-number">0x1234</span>, <span class="hljs-number">0x5678</span>) },
+	{ }
+};
+MODULE_DEVICE_TABLE(usb, my_ids);
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">my_probe</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> usb_interface *intf, <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> usb_device_id *id)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device</span> *<span class="hljs-title">udev</span> =</span> interface_to_usbdev(intf);
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_interface</span> *<span class="hljs-title">alt</span> =</span> intf-&gt;cur_altsetting;
+	<span class="hljs-type">int</span> i;
+
+	dev_info(&amp;intf-&gt;dev, <span class="hljs-string">&quot;vid=%04x pid=%04x speed=%d\n&quot;</span>,
+		 le16_to_cpu(udev-&gt;descriptor.idVendor),
+		 le16_to_cpu(udev-&gt;descriptor.idProduct), udev-&gt;speed);
+
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; alt-&gt;desc.bNumEndpoints; i++) {
+		<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_endpoint_descriptor</span> *<span class="hljs-title">ep</span> =</span> &amp;alt-&gt;endpoint[i].desc;
+		dev_info(&amp;intf-&gt;dev, <span class="hljs-string">&quot;ep addr=0x%02x attr=0x%02x\n&quot;</span>,
+			 ep-&gt;bEndpointAddress, ep-&gt;bmAttributes);
+	}
+
+	usb_set_intfdata(intf, udev);
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">my_disconnect</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> usb_interface *intf)</span>
+{
+	usb_set_intfdata(intf, <span class="hljs-literal">NULL</span>);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_driver</span> <span class="hljs-title">my_driver</span> =</span> {
+	.name       = <span class="hljs-string">&quot;my_usb&quot;</span>,
+	.id_table   = my_ids,
+	.probe      = my_probe,
+	.disconnect = my_disconnect,
+};
+
+module_usb_driver(my_driver);
+MODULE_LICENSE(<span class="hljs-string">&quot;GPL&quot;</span>);
+</code></pre></div></code></pre>
+<p><code>id_table</code> 决定谁来 match 你，匹配靠 vid/pid、设备类、接口类三组字段，写法在第五章展开。<code>probe</code> 返回 0 表示认领成功，返回负数表示放弃这个接口，放弃以后内核会去找别的驱动。<code>disconnect</code> 里必须停掉所有在飞的 urb，否则回调会打到已经释放的私有数据上。</p>
+<p><code>module_usb_driver()</code> 是宏，展开就是 <code>module_init/module_exit</code> 加 <code>usb_register_driver()</code> 与 <code>usb_deregister()</code>。老代码里这两种写法都能见到。</p>
+<h3 id="1.3-一次完整的生命周期" tabindex="-1">1.3 一次完整的生命周期 <a class="header-anchor" href="#1.3-一次完整的生命周期"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>把时间轴摊开，一共五段。</p>
+<ol>
+<li>设备插到 hub 端口上，hub 的中断端点报上来一位状态变化。</li>
+<li>hub 线程 <code>khubd</code> 醒来，复位端口、分配总线地址、读设备描述符、读配置描述符。这一段全在第十一章。</li>
+<li>usbcore 按配置建出 <code>usb_interface</code>，逐个和已注册驱动的 <code>id_table</code> 比对。</li>
+<li>对上了，调你的 <code>probe</code>。你在 probe 里申请 urb、提交第一个控制请求、或者注册字符设备。</li>
+<li>设备被拔掉，或者驱动被 <code>rmmod</code>，走 <code>disconnect</code>。在飞的 urb 必须已经被 <code>usb_kill_urb()</code> 或 <code>usb_poison_urb()</code> 收干净。</li>
+</ol>
+<p>第 2 步和第 5 步是内核自动的，第 3、4 步跨 usbcore 与你的代码，第 4 步之后的数据收发是你自己的活。</p>
+<h3 id="1.4-这篇要建立的三个直觉" tabindex="-1">1.4 这篇要建立的三个直觉 <a class="header-anchor" href="#1.4-这篇要建立的三个直觉"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>所有数据传输都走 urb</strong>。控制传输也一样。<code>usb_control_msg()</code> 只是帮你把「分配 urb、填 urb、提交、等完成、释放 urb」这一串包了起来，你用得多了会忘了底下有个 urb，但它一直都在。第七章会把这个封装拆开。</p>
+<p><strong>urb 不全是一次性的</strong>。中断端点、批量端点可以复用一个 urb，回调里重新提交，这叫 urb 复用。等时端点必须预先准备多个 urb 形成流水，一个回调里提交下一个，才不会断流。这一点决定了你的驱动是能跑还是能稳。</p>
+<p><strong>同步与异步只差在一个等待</strong>。<code>usb_control_msg()</code>、<code>usb_bulk_msg()</code> 是同步接口，内部一样提交 urb，只是用完成量把自己挂起，等回调唤醒。同步接口在中断上下文里不能用，因为它会睡。第八章会列出这套实现。</p>
+<h2 id="二核心数据结构" tabindex="-1">二、核心数据结构 <a class="header-anchor" href="#二核心数据结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一共八个结构体，按「谁包着谁」排一遍：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>结构体</th>
+<th>对应什么</th>
+<th>关键成员</th>
+<th>谁分配</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>struct usb_device</code></td>
+<td>一个物理设备</td>
+<td><code>descriptor</code>、<code>config</code>、<code>actconfig</code>、<code>ep0</code></td>
+<td>usbcore 枚举时</td>
+</tr>
+<tr>
+<td><code>struct usb_host_config</code></td>
+<td>一个配置</td>
+<td><code>desc</code>、<code>interface[]</code></td>
+<td>usbcore 读完配置描述符</td>
+</tr>
+<tr>
+<td><code>struct usb_interface</code></td>
+<td>一个接口</td>
+<td><code>cur_altsetting</code>、<code>dev</code>、<code>minor</code></td>
+<td>usbcore 按接口数目建</td>
+</tr>
+<tr>
+<td><code>struct usb_host_interface</code></td>
+<td>一个设置</td>
+<td><code>desc</code>、<code>endpoint[]</code>、<code>extra</code></td>
+<td>usbcore 解析描述符时</td>
+</tr>
+<tr>
+<td><code>struct usb_host_endpoint</code></td>
+<td>一个端点</td>
+<td><code>desc</code>、<code>urb_list</code>、<code>hcpriv</code></td>
+<td>usbcore 解析描述符时</td>
+</tr>
+<tr>
+<td><code>struct usb_bus</code></td>
+<td>一条总线</td>
+<td><code>busnum</code>、<code>root_hub</code>、<code>devmap</code></td>
+<td>HCD 注册时</td>
+</tr>
+<tr>
+<td><code>struct usb_hub</code></td>
+<td>一个 hub 实例</td>
+<td><code>urb</code>、<code>event_bits</code>、<code>tt</code></td>
+<td>hub 驱动 probe 时</td>
+</tr>
+<tr>
+<td><code>struct urb</code></td>
+<td>一次传输</td>
+<td><code>pipe</code>、<code>transfer_buffer</code>、<code>complete</code></td>
+<td>你的驱动</td>
+</tr>
+</tbody>
+</table></div><p>内存分配的方向是自上而下的：<code>usb_device</code> 先建，读描述符，再按描述符里的数目建配置、接口、设置、端点。所以你在 probe 里拿到的所有下层指针，都是 usbcore 早就填好的，你只读不写。</p>
+<h3 id="2.1-指针网" tabindex="-1">2.1 指针网 <a class="header-anchor" href="#2.1-指针网"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>usb_device
+ ├── descriptor          ← 设备描述符（18 字节）
+ ├── ep0                 ← 端点 0，内嵌的 usb_host_endpoint
+ ├── config / actconfig  → usb_host_config（全部配置／当前激活）
+ ├── ep_in[16] / ep_out[16] ← 端点的快速索引
+ └── bus                 → usb_bus → root_hub → usb_device（环）
+
+usb_host_config:  desc + interface[] → usb_interface + intf_cache[]
+usb_interface:    cur_altsetting + altsetting + 内嵌 struct device dev
+usb_host_interface:  desc + endpoint[] → usb_host_endpoint
+usb_host_endpoint:   desc + urb_list + hcpriv（HCD 私有，你千万别动）
+</code></pre></div></code></pre>
+<p><code>usb_interface</code> 里嵌了一个 <code>struct device dev</code>，<code>usb_device</code> 里也嵌了一个。这是 Linux 设备模型的统一做法：USB 设备在 sysfs 里的路径，就是从这两个 <code>device</code> 长出来的。</p>
+<h3 id="2.2-配置--接口--设置--端点四层" tabindex="-1">2.2 配置 / 接口 / 设置 / 端点：四层 <a class="header-anchor" href="#2.2-配置--接口--设置--端点四层"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这是全篇最该记牢的一张表。USB 描述符的嵌套关系、驱动绑定的粒度、alternate setting 的用途，全挂在这四层上。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层级</th>
+<th>内核结构</th>
+<th>描述符</th>
+<th>数量关系</th>
+<th>绑定粒度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>设备</td>
+<td><code>usb_device</code></td>
+<td>设备描述符</td>
+<td>1</td>
+<td>—</td>
+</tr>
+<tr>
+<td>配置</td>
+<td><code>usb_host_config</code></td>
+<td>配置描述符</td>
+<td>1..n，同一时刻只激活 1 个</td>
+<td>不绑定</td>
+</tr>
+<tr>
+<td>接口</td>
+<td><code>usb_interface</code></td>
+<td>接口描述符</td>
+<td>每个配置 1..n</td>
+<td>驱动绑在这一层</td>
+</tr>
+<tr>
+<td>设置</td>
+<td><code>usb_host_interface</code></td>
+<td>接口描述符</td>
+<td>每个接口 1..n</td>
+<td>切换用 <code>usb_set_interface()</code></td>
+</tr>
+<tr>
+<td>端点</td>
+<td><code>usb_host_endpoint</code></td>
+<td>端点描述符</td>
+<td>每个设置 0..n</td>
+<td>urb 发往这一层</td>
+</tr>
+</tbody>
+</table></div><p>一个设备有多个配置。手机就是典型：插到电脑上可以当 U 盘，也可以当摄像头，这两种用法对应两个配置，同一时刻只能选一个。切换靠标准请求 <code>SET_CONFIGURATION</code>，参数是配置描述符里的 <code>bConfigurationValue</code>。</p>
+<p>一个配置有多个接口。接着上面的例子，当 U 盘用的时候，设备只需要启用 1 个接口（大容量存储类）；当摄像头用的时候，要启用 2 个接口（视频类加音频类）。剩下的接口在硬件上存在，但当前配置用不到，就不列进这个配置的 <code>bNumInterfaces</code> 里。</p>
+<p>一个接口有多个设置。这一层最容易被忽略。设置就是 alternate setting，用来在同一套接口框架下切换带宽或数据格式。USB 摄像头调分辨率就是这个动作：每个分辨率对应一个 altsetting，不同的 altsetting 下端点数目和 <code>wMaxPacketSize</code> 都不一样。默认生效的永远是 0 号设置，要换别的必须显式调用 <code>usb_set_interface(udev, ifnum, alt)</code>。</p>
+<p>一个设置有多个端点。端点 0 不算在里面，它在每个设备上都有，走控制传输，是设备出厂就带的默认管道。所以接口描述符里的 <code>bNumEndpoints</code> 不含端点 0。</p>
+<p>四层里只有「接口」这一层参与驱动匹配。你的 <code>probe</code> 收到的是 <code>usb_interface *</code>，不是 <code>usb_device *</code>，也不是 <code>usb_host_interface *</code>。想拿当前设置，走 <code>intf-&gt;cur_altsetting</code>。还有一个坑：<code>usb_host_config</code> 里的 <code>interface[]</code> 数组顺序，未必等于配置里接口号的顺序，判断接口身份要看 <code>cur_altsetting-&gt;desc.bInterfaceNumber</code>，不要按数组下标猜。</p>
+<h3 id="2.3-usb_host_config-与-usb_host_interface" tabindex="-1">2.3 usb_host_config 与 usb_host_interface <a class="header-anchor" href="#2.3-usb_host_config-与-usb_host_interface"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_config</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_config_descriptor</span>	<span class="hljs-title">desc</span>;</span>
+	<span class="hljs-type">char</span> *<span class="hljs-built_in">string</span>;			<span class="hljs-comment">/* iConfiguration string, if present */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_interface</span> *<span class="hljs-title">interface</span>[<span class="hljs-title">USB_MAXINTERFACES</span>];</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_interface_cache</span> *<span class="hljs-title">intf_cache</span>[<span class="hljs-title">USB_MAXINTERFACES</span>];</span>
+	u8 *extra;			<span class="hljs-comment">/* Extra descriptors */</span>
+	<span class="hljs-type">int</span> extralen;
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_interface</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_interface_descriptor</span>	<span class="hljs-title">desc</span>;</span>
+	<span class="hljs-comment">/* array of desc.bNumEndpoint endpoints associated with this
+	 * interface setting.  these will be in no particular order. */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_endpoint</span> *<span class="hljs-title">endpoint</span>;</span>
+	<span class="hljs-type">char</span> *<span class="hljs-built_in">string</span>;			<span class="hljs-comment">/* iInterface string, if present */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *extra;		<span class="hljs-comment">/* Extra descriptors */</span>
+	<span class="hljs-type">int</span> extralen;
+};
+</code></pre></div></code></pre>
+<p><code>interface[]</code> 是配置所包含的接口数组，顺序不保证按接口号排。<code>intf_cache[]</code> 是接口缓存，即使这个配置当前没被激活，它的接口信息也留着，这样 <code>lsusb -v</code> 能列出所有配置下的接口，而不只是当前激活的那个。</p>
+<p><code>extra</code> 和 <code>extralen</code> 装的是额外描述符。类特定描述符（HID 的 report descriptor、音频的 class-specific 描述符）都塞在这里，原始字节流，要自己按 <code>bDescriptorType</code> 解析。HID 驱动 probe 时第一件事就是从 <code>usb_host_interface.extra</code> 把 report descriptor 捞出来。<code>endpoint</code> 不是数组声明，是指针，指向一块连续内存，长度是 <code>desc.bNumEndpoints</code>，遍历写法就是 <code>for (i = 0; i &lt; alt-&gt;desc.bNumEndpoints; i++)</code>。</p>
+<h3 id="2.4-usb_host_endpoint-与-usb_interface_cache" tabindex="-1">2.4 usb_host_endpoint 与 usb_interface_cache <a class="header-anchor" href="#2.4-usb_host_endpoint-与-usb_interface_cache"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_endpoint</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_endpoint_descriptor</span>	<span class="hljs-title">desc</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span>		<span class="hljs-title">urb_list</span>;</span>
+	<span class="hljs-type">void</span>				*hcpriv;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">ep_device</span>		*<span class="hljs-title">ep_dev</span>;</span>	<span class="hljs-comment">/* For sysfs info */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *extra;	<span class="hljs-comment">/* Extra descriptors */</span>
+	<span class="hljs-type">int</span> extralen;
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_interface_cache</span> {</span>
+	<span class="hljs-type">unsigned</span> num_altsetting;	<span class="hljs-comment">/* number of alternate settings */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">kref</span> <span class="hljs-title">ref</span>;</span>		<span class="hljs-comment">/* reference counter */</span>
+	<span class="hljs-comment">/* variable-length array of alternate settings for this interface,
+	 * stored in no particular order */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_interface</span> <span class="hljs-title">altsetting</span>[0];</span>
+};
+</code></pre></div></code></pre>
+<p><code>usb_interface_cache</code> 存在的理由只有一条：把「这个接口的所有设置」打包在一起，用引用计数管住。<code>altsetting[0]</code> 是柔性数组写法，实际长度是 <code>num_altsetting</code>。设备在运行时切换配置，旧配置的接口信息不能立刻释放，因为还有人在用，就是这个 <code>kref</code> 在挡着。</p>
+<p><code>urb_list</code> 是这个端点的 urb 待处理队列。每个端点维护自己的一条链，你提交的 urb 就是挂到这条链上，HCD 从这条链上取。同一个端点上你在飞的 urb 排成一队，按提交顺序走。<code>hcpriv</code> 是给 HCD 用的私有指针，别碰。你改了它，HCD 的内部数据结构就崩了。<code>ep_dev</code> 只在 sysfs 里用，给每个端点挂上 <code>ep_XX</code> 节点。</p>
+<h3 id="2.5-usb_bus-与-usb_devmap" tabindex="-1">2.5 usb_bus 与 usb_devmap <a class="header-anchor" href="#2.5-usb_bus-与-usb_devmap"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_bus</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device</span> *<span class="hljs-title">controller</span>;</span>	<span class="hljs-comment">/* host/master side hardware */</span>
+	<span class="hljs-type">int</span> busnum;			<span class="hljs-comment">/* Bus number (in order of reg) */</span>
+	<span class="hljs-type">char</span> *bus_name;			<span class="hljs-comment">/* stable id (PCI slot_name etc) */</span>
+	u8 uses_dma;			<span class="hljs-comment">/* Does the host controller use DMA? */</span>
+	u8 otg_port;			<span class="hljs-comment">/* 0, or number of OTG/HNP port */</span>
+	<span class="hljs-type">unsigned</span> is_b_host:<span class="hljs-number">1</span>;		<span class="hljs-comment">/* true during some HNP roleswitches */</span>
+	<span class="hljs-type">unsigned</span> b_hnp_enable:<span class="hljs-number">1</span>;	<span class="hljs-comment">/* OTG: did A-Host enable HNP? */</span>
+	<span class="hljs-type">int</span> devnum_next;		<span class="hljs-comment">/* Next open device number, round-robin */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_devmap</span> <span class="hljs-title">devmap</span>;</span>	<span class="hljs-comment">/* device address allocation map */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device</span> *<span class="hljs-title">root_hub</span>;</span>	<span class="hljs-comment">/* Root hub */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">bus_list</span>;</span>	<span class="hljs-comment">/* list of busses */</span>
+	<span class="hljs-type">int</span> bandwidth_allocated;	<span class="hljs-comment">/* periodic time used, us/frame.
+					 * Full/low speed reserve 90%,
+					 * high speed reserves 80%. */</span>
+	<span class="hljs-type">int</span> bandwidth_int_reqs;		<span class="hljs-comment">/* number of Interrupt requests */</span>
+	<span class="hljs-type">int</span> bandwidth_isoc_reqs;	<span class="hljs-comment">/* number of Isoc. requests */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device</span> *<span class="hljs-title">dev</span>;</span>		<span class="hljs-comment">/* device for this bus */</span>
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_devmap</span> {</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> devicemap[<span class="hljs-number">128</span> / (<span class="hljs-number">8</span> * <span class="hljs-keyword">sizeof</span>(<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>))];
+};
+</code></pre></div></code></pre>
+<p>三条值得单独拎出来。</p>
+<p><code>devnum_next</code> 做轮转分配，总线初始化时置为 1。地址分配不是从最小可用号找起，是轮着来，避免同一个地址反复给不同设备。</p>
+<p><code>devmap</code> 是地址位图，每条总线一张，128 位。一条 <code>usb_bus_type</code> 类型的总线上最多 128 个设备，<code>choose_address()</code> 在这张位图里找空闲位，找到了就把设备的总线地址定下来。<code>bandwidth_allocated</code> 是带宽记账：中断传输和等时传输要预留带宽，全速/低速总线允许预留到 90%，高速总线 80%。你申请等时管道时如果超了预算，<code>usb_submit_urb()</code> 会返回 <code>-ENOSPC</code>。这个报错不是设备坏了，是带宽不够。</p>
+<h2 id="三usb_device-与-usb_interface" tabindex="-1">三、usb_device 与 usb_interface <a class="header-anchor" href="#三usb_device-与-usb_interface"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这两个结构是驱动里摸得最多的。<code>usb_device</code> 代表物理设备，<code>usb_interface</code> 代表设备里的一个逻辑功能，你的 probe 收到的就是后者。</p>
+<h3 id="3.1-usb_device" tabindex="-1">3.1 usb_device <a class="header-anchor" href="#3.1-usb_device"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device</span> {</span>
+	<span class="hljs-type">int</span>		devnum;
+	<span class="hljs-type">char</span>		devpath[<span class="hljs-number">16</span>];
+	<span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">usb_device_state</span>	<span class="hljs-title">state</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">usb_device_speed</span>	<span class="hljs-title">speed</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_tt</span>	*<span class="hljs-title">tt</span>;</span>
+	<span class="hljs-type">int</span>		ttport;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>	toggle[<span class="hljs-number">2</span>];
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device</span>	*<span class="hljs-title">parent</span>;</span>	<span class="hljs-comment">/* our hub, unless we&#x27;re the root */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_bus</span>		*<span class="hljs-title">bus</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_endpoint</span> <span class="hljs-title">ep0</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device</span>	<span class="hljs-title">dev</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device_descriptor</span> <span class="hljs-title">descriptor</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_config</span>	*<span class="hljs-title">config</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_config</span>	*<span class="hljs-title">actconfig</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_endpoint</span>	*<span class="hljs-title">ep_in</span>[16];</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_endpoint</span>	*<span class="hljs-title">ep_out</span>[16];</span>
+	<span class="hljs-type">char</span>		**rawdescriptors;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">short</span>	bus_mA;
+	u8		portnum;
+	u8		level;
+	<span class="hljs-type">unsigned</span>		discon_suspended:<span class="hljs-number">1</span>;
+	<span class="hljs-type">unsigned</span>		have_langid:<span class="hljs-number">1</span>;
+	<span class="hljs-type">int</span>			string_langid;
+	<span class="hljs-type">char</span>			*product;
+	<span class="hljs-type">char</span>			*manufacturer;
+	<span class="hljs-type">char</span>			*serial;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span>	<span class="hljs-title">filelist</span>;</span>
+	<span class="hljs-type">int</span>			maxchild;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device</span>	*<span class="hljs-title">children</span>[<span class="hljs-title">USB_MAXCHILDREN</span>];</span>
+	<span class="hljs-type">int</span>			pm_usage_cnt;
+	u32			quirks;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">delayed_work</span>	<span class="hljs-title">autosuspend</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">mutex</span>		<span class="hljs-title">pm_mutex</span>;</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>		last_busy;
+	<span class="hljs-type">int</span>			autosuspend_delay;
+	<span class="hljs-type">unsigned</span>		auto_pm:<span class="hljs-number">1</span>;
+	<span class="hljs-type">unsigned</span>		do_remote_wakeup:<span class="hljs-number">1</span>;
+	<span class="hljs-type">unsigned</span>		autosuspend_disabled:<span class="hljs-number">1</span>;
+	<span class="hljs-type">unsigned</span>		autoresume_disabled:<span class="hljs-number">1</span>;
+};
+</code></pre></div></code></pre>
+<p>逐组过。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>成员</th>
+<th>讲什么</th>
+<th>要知道的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>devnum</code></td>
+<td>总线上的编号</td>
+<td>枚举时主机分配，一条总线上限 128 个设备。跟固件里的序列号无关</td>
+</tr>
+<tr>
+<td><code>devpath[16]</code></td>
+<td>树里的位置</td>
+<td>形如 <code>/port/port/...</code>，根 hub 的 <code>devpath[0]</code> 是字符 <code>'0'</code></td>
+</tr>
+<tr>
+<td><code>state</code></td>
+<td>设备状态</td>
+<td>六种取值，见下表</td>
+</tr>
+<tr>
+<td><code>speed</code></td>
+<td>速度</td>
+<td>枚举时由 <code>hub_port_wait_reset()</code> 按端口状态字填，第十一章讲</td>
+</tr>
+<tr>
+<td><code>tt</code> / <code>ttport</code></td>
+<td>TT 归属</td>
+<td>只有挂在高速 hub 后面的低速/全速设备才有值</td>
+</tr>
+<tr>
+<td><code>toggle[2]</code></td>
+<td>DATA0/DATA1 翻转位</td>
+<td><code>[0]</code> 管 IN，<code>[1]</code> 管 OUT，一位一个端点。内核维护，驱动别碰</td>
+</tr>
+<tr>
+<td><code>parent</code> / <code>children[]</code></td>
+<td>树的边</td>
+<td><code>parent</code> 指父 hub，根 hub 为空；<code>maxchild</code> 是端口数</td>
+</tr>
+<tr>
+<td><code>bus</code></td>
+<td>所属总线</td>
+<td><code>usb_bus.root_hub</code> 又指回树根，构成一个环</td>
+</tr>
+<tr>
+<td><code>ep0</code></td>
+<td>端点 0</td>
+<td>内嵌结构体不是指针，设备一创建就得初始化好</td>
+</tr>
+<tr>
+<td><code>descriptor</code></td>
+<td>设备描述符</td>
+<td>内嵌，<code>bMaxPacketSize0</code> 存端点 0 最大包长</td>
+</tr>
+<tr>
+<td><code>config</code> / <code>actconfig</code></td>
+<td>配置</td>
+<td>前者全部配置，后者当前激活的</td>
+</tr>
+<tr>
+<td><code>ep_in[16]</code> / <code>ep_out[16]</code></td>
+<td>端点索引</td>
+<td>端点号 0..15，所以开 16 项</td>
+</tr>
+<tr>
+<td><code>rawdescriptors</code></td>
+<td>原始字节流</td>
+<td><code>lsusb -v</code> 的输出从这儿拼出来</td>
+</tr>
+<tr>
+<td><code>bus_mA</code></td>
+<td>总线能给的电流</td>
+<td>HCD 设置，一般 500mA。需求方在 <code>bMaxPower</code></td>
+</tr>
+<tr>
+<td><code>portnum</code> / <code>level</code></td>
+<td>端口号与层级</td>
+<td>根 hub 的 <code>level</code> 是 0，往下依次加一</td>
+</tr>
+<tr>
+<td><code>product</code> / <code>manufacturer</code> / <code>serial</code></td>
+<td>字符串</td>
+<td>读之前先确定语言 ID（<code>have_langid</code>、<code>string_langid</code>）</td>
+</tr>
+<tr>
+<td><code>quirks</code></td>
+<td>怪设备补丁位</td>
+<td>遇到怪设备先翻 <code>unusual_devs.h</code> 有没有现成条目</td>
+</tr>
+<tr>
+<td><code>autosuspend_delay</code> 等</td>
+<td>自动挂起</td>
+<td>延迟多久没活动就睡，<code>last_busy</code> 记最后一次活动</td>
+</tr>
+<tr>
+<td><code>filelist</code> / <code>usbfs_dentry</code></td>
+<td>usbfs</td>
+<td>用户态直接发请求（libusb 那条路）走这里</td>
+</tr>
+</tbody>
+</table></div><p><code>state</code> 的六种取值是理解枚举进度的标尺：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>状态</th>
+<th>含义</th>
+<th>此时能用什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>USB_STATE_NOTATTACHED</code></td>
+<td>没接上</td>
+<td>什么都不行</td>
+</tr>
+<tr>
+<td><code>USB_STATE_ATTACHED</code></td>
+<td>hub 已检测到插入，还没有地址</td>
+<td>只有默认地址 0</td>
+</tr>
+<tr>
+<td><code>USB_STATE_POWERED</code></td>
+<td>端口已上电</td>
+<td>同上</td>
+</tr>
+<tr>
+<td><code>USB_STATE_DEFAULT</code></td>
+<td>复位完成，处于默认态</td>
+<td>默认控制管道，地址 0</td>
+</tr>
+<tr>
+<td><code>USB_STATE_ADDRESS</code></td>
+<td>主机已分配唯一地址</td>
+<td>可用默认管道响应请求</td>
+</tr>
+<tr>
+<td><code>USB_STATE_CONFIGURED</code></td>
+<td>收到非 0 值的 <code>SET_CONFIGURATION</code></td>
+<td>设备所有功能可用</td>
+</tr>
+<tr>
+<td><code>USB_STATE_SUSPENDED</code></td>
+<td>挂起，省电</td>
+<td>设备自己维护地址与配置信息</td>
+</tr>
+</tbody>
+</table></div><p>挂起这一条多说一句。总线 3ms 没有传输活动，设备就进挂起态。挂起期间设备必须自己保住地址和配置。恢复时主机不会重新枚举，直接接着用。<code>toggle</code> 这一位丢了会导致重传或者数据错乱，它是硬件握手的一部分。<code>quirks</code> 是给那些不守规矩设备打的补丁开关：某个型号的 U 盘复位后包长报错、某个摄像头控制传输超时，都在这里挂一个位，代码里按位判断绕过去。</p>
+<h3 id="3.2-usb_interface" tabindex="-1">3.2 usb_interface <a class="header-anchor" href="#3.2-usb_interface"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_interface</span> {</span>
+	<span class="hljs-comment">/* array of alternate settings for this interface,
+	 * stored in no particular order */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_interface</span> *<span class="hljs-title">altsetting</span>;</span>
+
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_interface</span> *<span class="hljs-title">cur_altsetting</span>;</span>	<span class="hljs-comment">/* the currently
+					 * active alternate setting */</span>
+	<span class="hljs-type">unsigned</span> num_altsetting;	<span class="hljs-comment">/* number of alternate settings */</span>
+
+	<span class="hljs-type">int</span> minor;			<span class="hljs-comment">/* minor number this interface is
+					 * bound to */</span>
+	<span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">usb_interface_condition</span> <span class="hljs-title">condition</span>;</span>		<span class="hljs-comment">/* state of binding */</span>
+	<span class="hljs-type">unsigned</span> is_active:<span class="hljs-number">1</span>;		<span class="hljs-comment">/* the interface is not suspended */</span>
+	<span class="hljs-type">unsigned</span> needs_remote_wakeup:<span class="hljs-number">1</span>;	<span class="hljs-comment">/* driver requires remote wakeup */</span>
+
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device</span> <span class="hljs-title">dev</span>;</span>		<span class="hljs-comment">/* interface specific device info */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device</span> *<span class="hljs-title">usb_dev</span>;</span>		<span class="hljs-comment">/* pointer to the usb class&#x27;s device */</span>
+	<span class="hljs-type">int</span> pm_usage_cnt;		<span class="hljs-comment">/* usage counter for autosuspend */</span>
+};
+</code></pre></div></code></pre>
+<p><code>cur_altsetting</code> 是驱动里用得最多的成员。当前生效的设置是哪个，端点表就在它下面。你 probe 里所有端点遍历都从它开始。<code>altsetting</code> 是全部设置的数组，<code>num_altsetting</code> 是长度。要切到别的设置，调 <code>usb_set_interface()</code>，它会把 <code>cur_altsetting</code> 换成新的那个，同时按新设置的端点重新配置管道。<code>minor</code> 是这个接口绑定的次设备号。如果你的驱动注册字符设备，usbfs 会分一个次设备号，记在这儿。</p>
+<p><code>condition</code> 是绑定状态，四种取值：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>取值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>USB_INTERFACE_UNBOUND</code></td>
+<td>没有驱动认领</td>
+</tr>
+<tr>
+<td><code>USB_INTERFACE_BINDING</code></td>
+<td>正在 probe</td>
+</tr>
+<tr>
+<td><code>USB_INTERFACE_BOUND</code></td>
+<td>已绑定</td>
+</tr>
+<tr>
+<td><code>USB_INTERFACE_UNBINDING</code></td>
+<td>正在断开</td>
+</tr>
+</tbody>
+</table></div><p><code>is_active</code> 表示接口没被挂起。<code>needs_remote_wakeup</code> 表示这个驱动要求设备能远程唤醒。<code>dev</code> 是内嵌的设备模型对象，sysfs 里 <code>/sys/bus/usb/drivers/&lt;driver&gt;/&lt;busnum&gt;-&lt;port&gt;:&lt;config&gt;.&lt;interface&gt;</code> 这一层就是它。<code>usb_dev</code> 是 <code>usb</code> 类的设备指针，主要给 usbfs 用。</p>
+<h3 id="3.3-从接口拿设备" tabindex="-1">3.3 从接口拿设备 <a class="header-anchor" href="#3.3-从接口拿设备"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>驱动里最常写的一句：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device</span> *<span class="hljs-title">udev</span> =</span> interface_to_usbdev(intf);
+</code></pre></div></code></pre>
+<p>这个宏实际做的是 <code>container_of(intf-&gt;dev.parent, struct usb_device, dev)</code>：从接口的设备对象往上找父设备对象，再反推出 <code>usb_device</code>。</p>
+<p>私有数据用 <code>usb_set_intfdata()</code> / <code>usb_get_intfdata()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>usb_set_intfdata(intf, my_priv);		<span class="hljs-comment">/* probe 里存 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_priv</span> *<span class="hljs-title">p</span> =</span> usb_get_intfdata(intf);	<span class="hljs-comment">/* 别处取 */</span>
+</code></pre></div></code></pre>
+<p>别自己往 <code>intf</code> 上挂全局变量。一个设备可以有多个接口，多个同型号设备可以同时在系统里，全局变量撑不住。</p>
+<h2 id="四描述符在代码里的表示" tabindex="-1">四、描述符在代码里的表示 <a class="header-anchor" href="#四描述符在代码里的表示"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>描述符是设备跟主机自我介绍的格式。协议层面怎么排布，那篇讲协议的说全了。这里只说内核里怎么把那段字节流变成结构体。</p>
+<h3 id="4.1-设备描述符" tabindex="-1">4.1 设备描述符 <a class="header-anchor" href="#4.1-设备描述符"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device_descriptor</span> {</span>
+	__u8	bLength;		__u8	bDescriptorType;
+	__le16	bcdUSB;			__u8	bDeviceClass;
+	__u8	bDeviceSubClass;	__u8	bDeviceProtocol;
+	__u8	bMaxPacketSize0;	__le16	idVendor;
+	__le16	idProduct;		__le16	bcdDevice;
+	__u8	iManufacturer;		__u8	iProduct;
+	__u8	iSerialNumber;		__u8	bNumConfigurations;
+} __attribute__ ((packed));
+</code></pre></div></code></pre>
+<p><code>bcdUSB</code> 是协议版本号。能跑高速的设备，这一项是 <code>0200H</code>。</p>
+<p><code>bDeviceClass</code>、<code>bDeviceSubClass</code>、<code>bDeviceProtocol</code> 是类信息。这里有个容易踩的地方：<code>bDeviceClass</code> 为 0 时，类信息在各接口描述符里，不能拿设备级的这三个字段判断设备类型。绝大多数复合设备都这么干。三者还有第三种用法在 hub 上：<code>bDeviceProtocol</code> 决定 TT 的类型。全速/低速 hub 的这个值是 0；高速 hub 的值是 1 表示 single TT，是 2 表示 multiple TT。第十章会用到。</p>
+<p><code>bMaxPacketSize0</code> 是端点 0 的最大包长。为什么放在设备描述符而不是端点描述符？因为端点 0 没有自己的描述符。这个值只能是 8、16、32、64 四者之一，而且高速设备只能是 64，低速设备只能是 8。<code>255</code> 这个值在处理代码里也出现过，那是给某些不规矩设备留的容错分支。</p>
+<p><code>bNumConfigurations</code> 是当前速度模式下的配置数量。有的设备在不同速度下能提供的配置数不一样，这个字段只算当前速度那一种。<code>idVendor</code> / <code>idProduct</code> 是驱动匹配的钥匙，多数情况用 <code>USB_DEVICE(vid, pid)</code> 宏。<code>bcdDevice</code> 是设备版本号，要区分同一个 pid 的不同批次就靠它。</p>
+<h3 id="4.2-配置描述符" tabindex="-1">4.2 配置描述符 <a class="header-anchor" href="#4.2-配置描述符"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_config_descriptor</span> {</span>
+	__u8	bLength;		__u8	bDescriptorType;
+	__le16	wTotalLength;		__u8	bNumInterfaces;
+	__u8	bConfigurationValue;	__u8	iConfiguration;
+	__u8	bmAttributes;		__u8	bMaxPower;
+} __attribute__ ((packed));
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_interface_descriptor</span> {</span>
+	__u8	bLength;		__u8	bDescriptorType;
+	__u8	bInterfaceNumber;	__u8	bAlternateSetting;
+	__u8	bNumEndpoints;		__u8	bInterfaceClass;
+	__u8	bInterfaceSubClass;	__u8	bInterfaceProtocol;
+	__u8	iInterface;
+} __attribute__ ((packed));
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_endpoint_descriptor</span> {</span>
+	__u8	bLength;		__u8	bDescriptorType;
+	__u8	bEndpointAddress;	__u8	bmAttributes;
+	__le16	wMaxPacketSize;		__u8	bInterval;
+	__u8	bRefresh;		__u8	bSynchAddress;
+} __attribute__ ((packed));
+</code></pre></div></code></pre>
+<p><code>bDescriptorType</code> 不只可以是 <code>USB_DT_CONFIG</code>，还能是 <code>USB_DT_OTHER_SPEED_CONFIG</code>。后者表示这是另一速度下的配置，参数一样但数值不同。</p>
+<p><code>wTotalLength</code> 是整个配置的总长度，包括配置描述符本身加上后面跟着的所有接口描述符、端点描述符、类特定描述符。用 <code>GET_DESCRIPTOR</code> 请求读配置时，返回的数据长度就是这个值。先读 9 字节拿 <code>wTotalLength</code>，再按它读全，是标准做法。<code>bNumInterfaces</code> 是这个配置包含的接口数量。</p>
+<p><code>bConfigurationValue</code> 是切换配置时的参数。设备可以有多个配置，同一时间只有一个激活，用 <code>SET_CONFIGURATION</code> 请求加这个值切。切之前要确保旧配置上的接口都没人在用。<code>bmAttributes</code> 表征配置特点：bit 6 为 1 表示自供电，bit 5 为 1 表示支持远程唤醒，bit 7 必须为 1。</p>
+<p><code>bMaxPower</code> 是设备正常工作要从总线拿的最大电流，单位 2mA。设备靠这个字段向 hub 申报需求，要得太多超过 hub 能给的上限，hub 直接拒绝。<code>usb_device</code> 里的 <code>bus_mA</code> 是供给方，这里是需求方。</p>
+<h3 id="4.3-接口描述符" tabindex="-1">4.3 接口描述符 <a class="header-anchor" href="#4.3-接口描述符"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>bInterfaceNumber</code> 是接口号，每个配置里多个接口靠它索引。<code>bAlternateSetting</code> 是设置号，协议规定接口默认用 0 号设置，一个接口的多个设置就是靠这个字段区分。</p>
+<p><code>bNumEndpoints</code> 是接口拥有的端点数，不含端点 0。端点 0 是控制传输，所有设备都有，没必要重复计入。hub 做例证：它的传输是中断传输，所以这个值是 1。</p>
+<p><code>bInterfaceClass</code> / <code>bInterfaceSubClass</code> / <code>bInterfaceProtocol</code> 是接口级的类信息。复合设备靠这三个字段区分每个接口的功能。HID 的 <code>bInterfaceClass</code> 是 3，大容量存储是 8，CDC 是 0x0A。匹配驱动时用 <code>USB_INTERFACE_INFO()</code> 宏按这三项比对。hub 的 <code>bInterfaceSubClass</code> 是 0，<code>bInterfaceProtocol</code> 是 0（全速）或 1（高速 single TT）。</p>
+<h3 id="4.4-端点描述符" tabindex="-1">4.4 端点描述符 <a class="header-anchor" href="#4.4-端点描述符"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>bEndpointAddress</code> 的 bits 0~3 是端点号（掩码 <code>USB_ENDPOINT_NUMBER_MASK</code>），bit 7 是方向（掩码 <code>USB_ENDPOINT_DIR_MASK</code>，1 为 IN）。拿端点信息用 <code>usb_endpoint_num()</code>、<code>usb_endpoint_dir_in()</code>、<code>usb_endpoint_type()</code> 这几个辅助函数，比自己移位清楚。</p>
+<p><code>bmAttributes</code> 的 bit1 和 bit0 合起来是传输类型（掩码 <code>USB_ENDPOINT_XFERTYPE_MASK</code>）：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>bit1:bit0</th>
+<th>传输类型</th>
+<th>常量</th>
+<th>典型用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>00</td>
+<td>控制</td>
+<td><code>USB_ENDPOINT_XFER_CONTROL</code></td>
+<td>枚举、类请求</td>
+</tr>
+<tr>
+<td>01</td>
+<td>等时</td>
+<td><code>USB_ENDPOINT_XFER_ISOC</code></td>
+<td>音频、视频流</td>
+</tr>
+<tr>
+<td>10</td>
+<td>批量</td>
+<td><code>USB_ENDPOINT_XFER_BULK</code></td>
+<td>U 盘、打印机</td>
+</tr>
+<tr>
+<td>11</td>
+<td>中断</td>
+<td><code>USB_ENDPOINT_XFER_INT</code></td>
+<td>键鼠、hub 状态回报</td>
+</tr>
+</tbody>
+</table></div><p>等时端点还用 bit3:bit2 表示同步类型（无同步、异步、自适应、同步），用 bit5:bit4 表示用途（数据、反馈、隐式反馈）。</p>
+<p><code>wMaxPacketSize</code> 是端点一次能处理的最大字节数。你发的数据超过这个值，协议层会自动拆成多次传输。高速设备的高带宽等时端点，这里还编码了每微帧的额外事务数。</p>
+<p><code>bInterval</code> 是轮询间隔。USB 是轮询式总线，这个值表示端点希望主机多久来问一次。批量和控制端点忽略这个字段。单位随速度变：低速/全速中断端点按毫秒算，高速中断端点按 2 的幂次微帧算，等时端点按 2 的幂次算。<code>bRefresh</code> 和 <code>bSynchAddress</code> 只在音频端点里有意义，其他端点这两个字段不用看。</p>
+<p>端点 0 没有自己的端点描述符，这是协议里的特例。它的所有特性在 spec 里定死了，唯一需要协商的 <code>max packet size</code> 放在设备描述符的 <code>bMaxPacketSize0</code> 里。</p>
+<h3 id="4.5-hub-描述符与-hub-结构体" tabindex="-1">4.5 hub 描述符与 hub 结构体 <a class="header-anchor" href="#4.5-hub-描述符与-hub-结构体"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>hub 设备有类特定描述符，结构是这样：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_hub_descriptor</span> {</span>
+	__u8	bDescLength;
+	__u8	bDescriptorType;
+	__u8	bNbrPorts;
+	__le16	wHubCharacteristics;
+	__u8	bPwrOn2PwrGood;
+	__u8	bHubContrCurrent;
+	__u8	DeviceRemovable[(USB_MAXCHILDREN + <span class="hljs-number">1</span> + <span class="hljs-number">7</span>) / <span class="hljs-number">8</span>];
+	__u8	PortPwrCtrlMask[(USB_MAXCHILDREN + <span class="hljs-number">1</span> + <span class="hljs-number">7</span>) / <span class="hljs-number">8</span>];
+} __attribute__ ((packed));
+</code></pre></div></code></pre>
+<p><code>bNbrPorts</code> 是下行端口数，不能大于 31，这个上限直接决定了 <code>usb_hub</code> 里那些位图的长度。<code>wHubCharacteristics</code> 记录一堆位域特性：是不是复合设备、有没有过流保护、电源切换方式、TT 的思考时间等。<code>bPwrOn2PwrGood</code> 是从加电到端口供电稳定所需的时间，单位 2ms。<code>bHubContrCurrent</code> 是 hub 控制器自身的最大电流需求，单位 mA。</p>
+<p><code>DeviceRemovable</code> 每个 bit 对应一个端口，0 表示该端口设备可移除，1 表示不可移除，用来区分内置设备和外插设备。<code>PortPwrCtrlMask</code> 是端口电源控制掩码。</p>
+<p><code>usb_hub</code> 结构体是 hub 驱动自己的运行时状态：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_hub</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">device</span>		*<span class="hljs-title">intfdev</span>;</span>	<span class="hljs-comment">/* the &quot;interface&quot; device */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device</span>	*<span class="hljs-title">hdev</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">kref</span>		<span class="hljs-title">kref</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">urb</span>		*<span class="hljs-title">urb</span>;</span>		<span class="hljs-comment">/* for interrupt polling pipe */</span>
+
+	<span class="hljs-comment">/* buffer for urb ... with extra space in case of babble */</span>
+	<span class="hljs-type">char</span>			(*buffer)[<span class="hljs-number">8</span>];
+	<span class="hljs-type">dma_addr_t</span>		buffer_dma;	<span class="hljs-comment">/* DMA address for buffer */</span>
+	<span class="hljs-class"><span class="hljs-keyword">union</span> {</span>
+		<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_hub_status</span>	<span class="hljs-title">hub</span>;</span>
+		<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_port_status</span>	<span class="hljs-title">port</span>;</span>
+	}			*status;	<span class="hljs-comment">/* buffer for status reports */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">mutex</span>		<span class="hljs-title">status_mutex</span>;</span>	<span class="hljs-comment">/* for the status buffer */</span>
+
+	<span class="hljs-type">int</span>			error;		<span class="hljs-comment">/* last reported error */</span>
+	<span class="hljs-type">int</span>			nerrors;	<span class="hljs-comment">/* track consecutive errors */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span>	<span class="hljs-title">event_list</span>;</span>	<span class="hljs-comment">/* hubs w/data or errs ready */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>		event_bits[<span class="hljs-number">1</span>];	<span class="hljs-comment">/* status change bitmask */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>		change_bits[<span class="hljs-number">1</span>];	<span class="hljs-comment">/* ports with logical connect
+						   status change */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>		busy_bits[<span class="hljs-number">1</span>];	<span class="hljs-comment">/* ports being reset or resumed */</span>
+
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_hub_descriptor</span> *<span class="hljs-title">descriptor</span>;</span>	<span class="hljs-comment">/* class descriptor */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_tt</span>		<span class="hljs-title">tt</span>;</span>		<span class="hljs-comment">/* Transaction Translator */</span>
+
+	<span class="hljs-type">unsigned</span>		mA_per_port;	<span class="hljs-comment">/* current available for each port */</span>
+	<span class="hljs-type">unsigned</span>		limited_power:<span class="hljs-number">1</span>;
+	<span class="hljs-type">unsigned</span>		quiescing:<span class="hljs-number">1</span>;
+	<span class="hljs-type">unsigned</span>		activating:<span class="hljs-number">1</span>;
+	<span class="hljs-type">unsigned</span>		disconnected:<span class="hljs-number">1</span>;
+	<span class="hljs-type">unsigned</span>		has_indicators:<span class="hljs-number">1</span>;
+	u8			indicator[USB_MAXCHILDREN];
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">delayed_work</span>	<span class="hljs-title">leds</span>;</span>
+};
+</code></pre></div></code></pre>
+<p><code>struct usb_hub</code> 结构体的几个位域值得单独看一眼。<code>urb</code> 是那个常驻的中断管道 urb，用来轮询端口状态变化。它只分配一次，回调里重新提交，一直转。<code>buffer</code> 和 <code>buffer_dma</code> 是它的传输缓冲区，<code>(*buffer)[8]</code> 表示每个端口 8 字节，够放 hub 状态和端口状态，多留一点空间是为了防 babble（设备发超了）。<code>status</code> 是状态上报的缓冲区，<code>status_mutex</code> 保护它。</p>
+<p><code>event_bits</code> 是状态变化位掩码，<code>change_bits</code> 是逻辑连接状态有变化的端口，<code>busy_bits</code> 是正在复位或恢复的端口。<code>busy_bits</code> 那个标志只在复位和恢复函数内部设置，测它的相应位就能知道某个端口是不是正在忙。<code>mA_per_port</code> 是给每个端口的电流额度，一般 500mA。但如果 hub 本身供不上，或者上游主机控制器供不上，这个值会低于 500mA。<code>limited_power</code> 为 1 表示额度被上游卡住了。</p>
+<p><code>quiescing</code> 是「停」的意思，复位和挂起时置 1。一旦置 1，hub 驱动就不再提交任何 urb。<code>activating</code> 为 1 表示 hub 驱动要给每个端口发一次 <code>Get Port Status</code> 请求。正常流程里只有某个端口状态变了才去查，<code>activating</code> 是强制全查一遍。正常情况下 <code>quiescing</code> 和 <code>activating</code> 都该是 0。</p>
+<h2 id="五usb_driver-与-probedisconnect" tabindex="-1">五、usb_driver 与 probe/disconnect <a class="header-anchor" href="#五usb_driver-与-probedisconnect"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>usb_driver</code> 是你要写的那个结构。它的三个回调把驱动的生命周期钉死了：匹配上就 probe，设备走就 disconnect，不匹配还能给个预处理机会。</p>
+<h3 id="5.1-完整结构" tabindex="-1">5.1 完整结构 <a class="header-anchor" href="#5.1-完整结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_driver</span> {</span>
+	<span class="hljs-type">const</span> <span class="hljs-type">char</span> *name;
+
+	<span class="hljs-type">int</span> (*probe) (<span class="hljs-keyword">struct</span> usb_interface *intf,
+		      <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> usb_device_id *id);
+	<span class="hljs-type">void</span> (*disconnect) (<span class="hljs-keyword">struct</span> usb_interface *intf);
+
+	<span class="hljs-type">int</span> (*ioctl) (<span class="hljs-keyword">struct</span> usb_interface *intf, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> code, <span class="hljs-type">void</span> *buf);
+
+	<span class="hljs-type">int</span> (*suspend) (<span class="hljs-keyword">struct</span> usb_interface *intf, <span class="hljs-type">pm_message_t</span> message);
+	<span class="hljs-type">int</span> (*resume) (<span class="hljs-keyword">struct</span> usb_interface *intf);
+	<span class="hljs-type">int</span> (*reset_resume)(<span class="hljs-keyword">struct</span> usb_interface *intf);
+	<span class="hljs-type">int</span> (*pre_reset)(<span class="hljs-keyword">struct</span> usb_interface *intf);
+	<span class="hljs-type">int</span> (*post_reset)(<span class="hljs-keyword">struct</span> usb_interface *intf);
+
+	<span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device_id</span> *<span class="hljs-title">id_table</span>;</span>
+
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_dynids</span> <span class="hljs-title">dynids</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usbdrv_wrap</span> <span class="hljs-title">drvwrap</span>;</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> no_dynamic_id:<span class="hljs-number">1</span>;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> supports_autosuspend:<span class="hljs-number">1</span>;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> soft_unbind:<span class="hljs-number">1</span>;
+};
+</code></pre></div></code></pre>
+<p><code>name</code> 出现在 sysfs 的驱动目录名和日志里，起个能搜到的名字。<code>id_table</code> 匹配表，设成 <code>NULL</code> 且 <code>probe</code> 也不设，那就只当个占位，让设备保持无主状态（usbfs 用得上）。<code>ioctl</code> 是给 usbfs 留的钩子，一般不用。</p>
+<p>电源管理三个：<code>suspend</code>、<code>resume</code>、<code>reset_resume</code>。<code>reset_resume</code> 在复位后恢复时调用，比 <code>resume</code> 多做一层重配。复位前后钩子两个：<code>pre_reset</code>、<code>post_reset</code>。设备被 <code>usb_reset_device()</code> 复位时会先调 <code>pre_reset</code> 让你把在飞的 urb 收干净，复位完再调 <code>post_reset</code> 让你重新配置。</p>
+<p><code>supports_autosuspend</code> 置 1 表示你的驱动支持自动挂起，置了以后设备空闲一段时间会自动睡，你的 <code>suspend</code>/<code>resume</code> 必须能正确响应。<code>soft_unbind</code> 置 1 表示解绑时你的驱动自己负责停 urb，别让 usbcore 替你停。<code>no_dynamic_id</code> 置 1 表示禁止运行时通过 sysfs 的 <code>new_id</code> 添加新的设备 ID，生产驱动关掉更稳妥。</p>
+<h3 id="5.2-id_table-怎么写" tabindex="-1">5.2 id_table 怎么写 <a class="header-anchor" href="#5.2-id_table-怎么写"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>匹配表是一串 <code>usb_device_id</code>，以全零项结尾：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device_id</span> <span class="hljs-title">my_ids</span>[] =</span> {
+	{ USB_DEVICE(<span class="hljs-number">0x1234</span>, <span class="hljs-number">0x5678</span>) },			<span class="hljs-comment">/* vid/pid 精确匹配 */</span>
+	{ USB_DEVICE_VER(<span class="hljs-number">0x1234</span>, <span class="hljs-number">0x5678</span>, <span class="hljs-number">0x0100</span>, <span class="hljs-number">0x01ff</span>) },	<span class="hljs-comment">/* 版本号范围 */</span>
+	{ USB_DEVICE_INFO(<span class="hljs-number">0xe0</span>, <span class="hljs-number">0x01</span>, <span class="hljs-number">0x01</span>) },		<span class="hljs-comment">/* 按设备类 */</span>
+	{ USB_INTERFACE_INFO(USB_CLASS_HID, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>) },	<span class="hljs-comment">/* 按接口类，复合设备用 */</span>
+	{ .match_flags = USB_DEVICE_ID_MATCH_INT_CLASS,
+	  .bInterfaceClass = <span class="hljs-number">0x08</span> },			<span class="hljs-comment">/* 手工控制匹配位 */</span>
+	{ }						<span class="hljs-comment">/* 终止项 */</span>
+};
+MODULE_DEVICE_TABLE(usb, my_ids);
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>宏</th>
+<th>匹配依据</th>
+<th>用在什么设备上</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>USB_DEVICE</code></td>
+<td>vid + pid</td>
+<td>单一功能设备</td>
+</tr>
+<tr>
+<td><code>USB_DEVICE_VER</code></td>
+<td>vid + pid + 版本号范围</td>
+<td>需要区分硬件的同 pid 型号</td>
+</tr>
+<tr>
+<td><code>USB_DEVICE_INFO</code></td>
+<td>设备类/子类/协议</td>
+<td>类设备</td>
+</tr>
+<tr>
+<td><code>USB_INTERFACE_INFO</code></td>
+<td>接口类/子类/协议</td>
+<td>复合设备</td>
+</tr>
+</tbody>
+</table></div><p><code>USB_INTERFACE_INFO</code> 的三项参数是 <code>bInterfaceClass</code>、<code>bInterfaceSubClass</code>、<code>bInterfaceProtocol</code>。要匹配任何子类或协议，用 <code>USB_CLASS_*</code> 配合通配写法，或用 <code>match_flags</code> 手工控制哪几项参与比对，后者更容易加注释说明为什么这么匹配。</p>
+<p><code>MODULE_DEVICE_TABLE(usb, my_ids)</code> 这句一定要写。它把匹配表导出到模块信息里，<code>depmod</code> 才能生成别名，udev 才能在设备插入时按需 <code>modprobe</code>。漏了这行，热插拔时模块不会自动加载，你只能手动 insmod。</p>
+<h3 id="5.3-probe-里做什么" tabindex="-1">5.3 probe 里做什么 <a class="header-anchor" href="#5.3-probe-里做什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>顺序很重要。写乱了，出错处理的路径就会漏资源。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">my_probe</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> usb_interface *intf, <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> usb_device_id *id)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device</span> *<span class="hljs-title">udev</span> =</span> interface_to_usbdev(intf);
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_interface</span> *<span class="hljs-title">alt</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_priv</span> *<span class="hljs-title">priv</span>;</span>
+	<span class="hljs-type">int</span> ret;
+
+	<span class="hljs-comment">/* 1. 判断这个接口能不能干 */</span>
+	alt = usb_altnum_to_altsetting(intf, <span class="hljs-number">0</span>);
+	<span class="hljs-keyword">if</span> (!alt || alt-&gt;desc.bNumEndpoints &lt; <span class="hljs-number">1</span>)
+		<span class="hljs-keyword">return</span> -ENODEV;
+
+	<span class="hljs-comment">/* 2. 分配私有数据 */</span>
+	priv = kzalloc(<span class="hljs-keyword">sizeof</span>(*priv), GFP_KERNEL);
+	<span class="hljs-keyword">if</span> (!priv)
+		<span class="hljs-keyword">return</span> -ENOMEM;
+
+	<span class="hljs-comment">/* 3. 存端点信息，端点地址直接抄下来，别每次重算 */</span>
+	priv-&gt;in_ep = &amp;alt-&gt;endpoint[<span class="hljs-number">0</span>].desc;
+	priv-&gt;maxp = usb_maxpacket(udev, usb_rcvbulkpipe(udev, <span class="hljs-number">1</span>), <span class="hljs-number">0</span>);
+
+	<span class="hljs-comment">/* 4. 分配 urb */</span>
+	priv-&gt;urb = usb_alloc_urb(<span class="hljs-number">0</span>, GFP_KERNEL);
+	<span class="hljs-keyword">if</span> (!priv-&gt;urb) {
+		ret = -ENOMEM;
+		<span class="hljs-keyword">goto</span> err_free;
+	}
+
+	<span class="hljs-comment">/* 5. 申请传输缓冲区 */</span>
+	priv-&gt;buf = usb_alloc_coherent(udev, priv-&gt;maxp, GFP_KERNEL, &amp;priv-&gt;dma);
+	<span class="hljs-keyword">if</span> (!priv-&gt;buf) {
+		ret = -ENOMEM;
+		<span class="hljs-keyword">goto</span> err_urb;
+	}
+
+	<span class="hljs-comment">/* 6. 挂到 intf 上，disconnect 才找得到 */</span>
+	usb_set_intfdata(intf, priv);
+
+	<span class="hljs-comment">/* 7. 必要的设备初始化 */</span>
+	ret = my_init_device(udev);
+	<span class="hljs-keyword">if</span> (ret)
+		<span class="hljs-keyword">goto</span> err_data;
+
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+err_data:
+	usb_free_coherent(udev, priv-&gt;maxp, priv-&gt;buf, priv-&gt;dma);
+err_urb:
+	usb_free_urb(priv-&gt;urb);
+err_free:
+	kfree(priv);
+	<span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<p>第 1 步别省。设备实际的端点表跟你写在代码里的假设不一定对，先确认再干活，失败就干净退出。第 3 步有个细节：<code>usb_rcvbulkpipe(udev, 1)</code> 里的 <code>1</code> 是端点号，不是地址。管道编码里会把方向位补上，你别自己拼 <code>0x81</code>。第 6 步必须早于任何能触发异步操作的调用，urb 的回调里要靠 <code>usb_get_intfdata()</code> 找回私有数据，挂晚了就是空指针。</p>
+<p><code>probe</code> 里能睡。它在进程上下文跑，<code>kmalloc(GFP_KERNEL)</code>、<code>usb_control_msg()</code> 都能用。这一点跟中断上下文里的代码不同，别搞混。</p>
+<h3 id="5.4-disconnect-里做什么" tabindex="-1">5.4 disconnect 里做什么 <a class="header-anchor" href="#5.4-disconnect-里做什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>disconnect</code> 的核心只有一句：<strong>先把在飞的 urb 全收干净，再释放资源</strong>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">my_disconnect</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> usb_interface *intf)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_priv</span> *<span class="hljs-title">priv</span> =</span> usb_get_intfdata(intf);
+
+	usb_set_intfdata(intf, <span class="hljs-literal">NULL</span>);
+	<span class="hljs-keyword">if</span> (!priv)
+		<span class="hljs-keyword">return</span>;
+
+	<span class="hljs-comment">/* 1. 停掉所有还在飞的 urb，并等它们出来 */</span>
+	usb_kill_urb(priv-&gt;urb);
+
+	<span class="hljs-comment">/* 2. 释放缓冲区 */</span>
+	usb_free_coherent(interface_to_usbdev(intf), priv-&gt;maxp,
+			  priv-&gt;buf, priv-&gt;dma);
+
+	<span class="hljs-comment">/* 3. 放 urb */</span>
+	usb_free_urb(priv-&gt;urb);
+
+	<span class="hljs-comment">/* 4. 放私有数据 */</span>
+	kfree(priv);
+}
+</code></pre></div></code></pre>
+<p><code>usb_kill_urb()</code> 会同步等待 urb 的回调执行完才返回。这是它和无条件取消的区别，也是唯一能保证安全的行为。先 <code>usb_set_intfdata(intf, NULL)</code> 再干活，是为了防止并发路径上还有人在取私有数据。如果驱动里用了定时器或者 workqueue，在 1 之前要先把它们停掉，用 <code>del_timer_sync()</code> / <code>cancel_work_sync()</code>。定时器里提交 urb 的写法最容易漏，一漏就是 use-after-free。</p>
+<h3 id="5.5-复位与挂起" tabindex="-1">5.5 复位与挂起 <a class="header-anchor" href="#5.5-复位与挂起"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>设备被复位时，usbcore 会走一遍这个顺序：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>usb_reset_device()
+  -&gt; pre_reset(intf)        你可以在这里停掉在飞的 urb
+  -&gt; 实际复位
+  -&gt; post_reset(intf)       重新配置接口、重新提交 urb
+  -&gt; reset_resume(intf)     或者走 resume 路径
+</code></pre></div></code></pre>
+<p><code>pre_reset</code> 里只做一件事：<code>usb_kill_urb()</code> 把所有 urb 停下来。USB 规范规定复位后设备的所有状态清空，urb 提交上去必然失败。<code>post_reset</code> 里把设备重新配一遍：重设接口设置、重设类特定参数、重新提交 urb。</p>
+<p>自动挂起要配合 <code>supports_autosuspend</code> 和 <code>pm_usage_cnt</code>。简单的做法是在空闲时调 <code>usb_autopm_put_interface(intf)</code>，活跃时调 <code>usb_autopm_get_interface(intf)</code>。这两个函数是成对的计数器，漏掉一个就是永不休眠或者随机休眠。</p>
+<h2 id="六设备号与-dev_t" tabindex="-1">六、设备号与 dev_t <a class="header-anchor" href="#六设备号与-dev_t"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核里每个能打开的字符设备都有个设备号，USB 驱动注册字符设备时绕不开这块。</p>
+<h3 id="6.1-主次设备号各管什么" tabindex="-1">6.1 主次设备号各管什么 <a class="header-anchor" href="#6.1-主次设备号各管什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>主设备号标明设备种类，也决定了打开这个设备时走哪个驱动。次设备号是因为一个驱动要支持多个设备才有的，给驱动自己用来区分具体操作哪个。</p>
+<p>一句话分工：<strong>主设备号帮你找到驱动，次设备号给驱动用来决定操作哪个设备</strong>。</p>
+<p>例如 U 盘驱动的主设备号固定，系统里插了两个 U 盘，两个盘共用同一个主设备号，靠次设备号区分 <code>/dev/sda</code> 和 <code>/dev/sdb</code>。</p>
+<h3 id="6.2-分配方式与设备节点" tabindex="-1">6.2 分配方式与设备节点 <a class="header-anchor" href="#6.2-分配方式与设备节点"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>两条路。第一条，静态指定，编译期写死一个主设备号，风险是跟别人撞。第二条，动态分配，让内核给你挑一个空闲的，这是推荐做法。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 静态：写死主设备号 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> MY_MAJOR 240</span>
+ret = register_chrdev_region(MKDEV(MY_MAJOR, <span class="hljs-number">0</span>), MY_COUNT, <span class="hljs-string">&quot;my_usb&quot;</span>);
+
+<span class="hljs-comment">/* 动态：让内核挑，再拆回来 */</span>
+<span class="hljs-type">dev_t</span> devt;
+<span class="hljs-type">int</span> ret = alloc_chrdev_region(&amp;devt, <span class="hljs-number">0</span>, MY_COUNT, <span class="hljs-string">&quot;my_usb&quot;</span>);
+<span class="hljs-type">int</span> major = MAJOR(devt);
+<span class="hljs-type">int</span> minor = MINOR(devt);
+unregister_chrdev_region(devt, MY_COUNT);	<span class="hljs-comment">/* 释放 */</span>
+</code></pre></div></code></pre>
+<p><code>MKDEV(major, minor)</code> 拼成一个 <code>dev_t</code>，<code>MAJOR()</code> 和 <code>MINOR()</code> 拆回来。<code>dev_t</code> 是 32 位，主设备号 12 位，次设备号 20 位。次设备号能到 1048576，够用。</p>
+<p><code>usb_interface</code> 里的 <code>minor</code> 字段是 usbfs 分配的次设备号。如果你的驱动跑在 usbfs 之上，用它就行。走字符设备这条路，流程是这样：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 1. 申请设备号区域 */</span>
+alloc_chrdev_region(&amp;devt, <span class="hljs-number">0</span>, count, <span class="hljs-string">&quot;my_usb&quot;</span>);
+
+<span class="hljs-comment">/* 2. 初始化 cdev 并绑定 file_operations */</span>
+cdev_init(&amp;priv-&gt;cdev, &amp;my_fops);
+priv-&gt;cdev.owner = THIS_MODULE;
+cdev_add(&amp;priv-&gt;cdev, devt, count);
+
+<span class="hljs-comment">/* 3. 创建设备节点 */</span>
+device_create(my_class, <span class="hljs-literal">NULL</span>, devt, <span class="hljs-literal">NULL</span>, <span class="hljs-string">&quot;my_usb%d&quot;</span>, index);
+</code></pre></div></code></pre>
+<p>第 3 步的 <code>device_create</code> 让 udev 自动在 <code>/dev</code> 下建节点，不用手工 <code>mknod</code>。模块卸载时对应 <code>device_destroy</code>、<code>cdev_del</code>、<code>unregister_chrdev_region</code>，三样都要清。</p>
+<p>一个容易忽略的点：多个同型号设备在系统里时，设备号要按实例分配，不能每个 probe 都申请同一段。把 <code>index</code> 做成全局递增计数器，配一个锁。</p>
+<h3 id="6.3-从-sysfs-看设备号" tabindex="-1">6.3 从 sysfs 看设备号 <a class="header-anchor" href="#6.3-从-sysfs-看设备号"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>不写代码也能查，<code>/sys/class/my_usb/my_usb0/dev</code> 里面是 <code>major:minor</code>，<code>/sys/bus/usb/devices/1-1:1.0/</code> 是接口的 sysfs 目录。USB 设备的 sysfs 路径有固定格式：<code>&lt;busnum&gt;-&lt;portpath&gt;:&lt;config&gt;.&lt;interface&gt;</code>。<code>1-1:1.0</code> 表示 1 号总线上、路径为 1 的设备、配置 1、接口 0。调试匹配问题时这个路径比设备名有用得多。</p>
+<h2 id="七urbusb-传输的载体" tabindex="-1">七、urb：USB 传输的载体 <a class="header-anchor" href="#七urbusb-传输的载体"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面六章都在铺路。这一章开始讲主角。</p>
+<p><code>urb</code> 是 USB Request Block 的缩写。它是 USB 驱动收发数据的基本单位，一个 urb 封装了一句话：<strong>往哪个端点、传什么数据、传多少、完了回调哪个函数</strong>。一次 urb 提交对应一次 USB 传输。驱动要自己分配它、填充它、提交它、在回调里回收它。</p>
+<p>这四步是你写 USB 驱动时重复最多的动作。封装好的同步接口（<code>usb_control_msg()</code>、<code>usb_bulk_msg()</code>）也是在做这四步，只是不让你看见。</p>
+<h3 id="7.1-结构体" tabindex="-1">7.1 结构体 <a class="header-anchor" href="#7.1-结构体"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">urb</span> {</span>
+	<span class="hljs-comment">/* private: usb core and host controller only fields in the urb */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">kref</span> <span class="hljs-title">kref</span>;</span>		<span class="hljs-comment">/* reference count of the URB */</span>
+	<span class="hljs-type">void</span> *hcpriv;			<span class="hljs-comment">/* private data for host controller */</span>
+	<span class="hljs-type">atomic_t</span> use_count;		<span class="hljs-comment">/* concurrent submissions counter */</span>
+	<span class="hljs-type">atomic_t</span> reject;		<span class="hljs-comment">/* submissions will fail */</span>
+	<span class="hljs-type">int</span> unlinked;			<span class="hljs-comment">/* unlink error code */</span>
+
+	<span class="hljs-comment">/* public: documented fields in the urb that can be used by drivers */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">urb_list</span>;</span>	<span class="hljs-comment">/* list head for use by the urb&#x27;s owner */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">anchor_list</span>;</span>	<span class="hljs-comment">/* the URB may be anchored */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_anchor</span> *<span class="hljs-title">anchor</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device</span> *<span class="hljs-title">dev</span>;</span>		<span class="hljs-comment">/* (in) pointer to associated device */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_host_endpoint</span> *<span class="hljs-title">ep</span>;</span>	<span class="hljs-comment">/* (internal) pointer to endpoint */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> pipe;		<span class="hljs-comment">/* (in) pipe information */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> stream_id;		<span class="hljs-comment">/* (in) stream ID */</span>
+	<span class="hljs-type">int</span> status;			<span class="hljs-comment">/* (return) non-ISO status */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> transfer_flags;	<span class="hljs-comment">/* (in) URB_SHORT_NOT_OK | ...*/</span>
+	<span class="hljs-type">void</span> *transfer_buffer;		<span class="hljs-comment">/* (in) associated data buffer */</span>
+	<span class="hljs-type">dma_addr_t</span> transfer_dma;	<span class="hljs-comment">/* (in) dma addr for transfer_buffer */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">scatterlist</span> *<span class="hljs-title">sg</span>;</span>		<span class="hljs-comment">/* (in) scatter gather buffer list */</span>
+	<span class="hljs-type">int</span> num_mapped_sgs;		<span class="hljs-comment">/* (internal) mapped sg entries */</span>
+	<span class="hljs-type">int</span> num_sgs;			<span class="hljs-comment">/* (in) number of entries in the sg list */</span>
+	u32 transfer_buffer_length;	<span class="hljs-comment">/* (in) data buffer length */</span>
+	u32 actual_length;		<span class="hljs-comment">/* (return) actual transfer length */</span>
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *setup_packet;	<span class="hljs-comment">/* (in) setup packet (control only) */</span>
+	<span class="hljs-type">dma_addr_t</span> setup_dma;		<span class="hljs-comment">/* (in) dma addr for setup_packet */</span>
+	<span class="hljs-type">int</span> start_frame;		<span class="hljs-comment">/* (modify) start frame (ISO) */</span>
+	<span class="hljs-type">int</span> number_of_packets;		<span class="hljs-comment">/* (in) number of ISO packets */</span>
+	<span class="hljs-type">int</span> interval;			<span class="hljs-comment">/* (modify) transfer interval (INT/ISO) */</span>
+	<span class="hljs-type">int</span> error_count;		<span class="hljs-comment">/* (return) number of ISO errors */</span>
+	<span class="hljs-type">void</span> *context;			<span class="hljs-comment">/* (in) context for completion */</span>
+	<span class="hljs-type">usb_complete_t</span> complete;	<span class="hljs-comment">/* (in) completion routine */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_iso_packet_descriptor</span> <span class="hljs-title">iso_frame_desc</span>[0];</span>	<span class="hljs-comment">/* (in) ISO ONLY */</span>
+};
+</code></pre></div></code></pre>
+<p>分三组看，注释里的 <code>(in)</code> 是「你提交前填」，<code>(return)</code> 是「回调里读」。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>分组</th>
+<th>成员</th>
+<th>用法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>你填的</td>
+<td><code>dev</code>、<code>pipe</code>、<code>transfer_buffer</code>、<code>transfer_buffer_length</code>、<code>complete</code>、<code>context</code>、<code>interval</code>、<code>transfer_flags</code></td>
+<td>提交前必须就位</td>
+</tr>
+<tr>
+<td>内核填的</td>
+<td><code>ep</code>（从 <code>pipe</code> 解析）、<code>hcpriv</code>、<code>kref</code></td>
+<td>你别动</td>
+</tr>
+<tr>
+<td>回调里读的</td>
+<td><code>status</code>（0 成功，负数错误）、<code>actual_length</code>（实际传了多少）</td>
+<td>判断结果用</td>
+</tr>
+</tbody>
+</table></div><p><code>iso_frame_desc[0]</code> 是柔性数组，只有等时传输用。<code>number_of_packets</code> 表示这帧里有几个包，每个包的状态记在 <code>iso_frame_desc[i].status</code> 里。</p>
+<h3 id="7.2-pipe一个整数编码五件事" tabindex="-1">7.2 pipe：一个整数编码五件事 <a class="header-anchor" href="#7.2-pipe一个整数编码五件事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>pipe</code> 不是文件描述符，是个位域打包的整数。内核给了一组宏拼装和拆解。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>拼装</th>
+<th>作用</th>
+<th>拆解</th>
+<th>取出什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>usb_sndctrlpipe(dev, ep)</code></td>
+<td>控制 OUT</td>
+<td><code>usb_pipeendpoint(pipe)</code></td>
+<td>端点号</td>
+</tr>
+<tr>
+<td><code>usb_rcvctrlpipe(dev, ep)</code></td>
+<td>控制 IN</td>
+<td><code>usb_pipedevice(pipe)</code></td>
+<td>设备地址</td>
+</tr>
+<tr>
+<td><code>usb_sndbulkpipe(dev, ep)</code></td>
+<td>批量 OUT</td>
+<td><code>usb_pipein(pipe)</code></td>
+<td>方向，非 0 为 IN</td>
+</tr>
+<tr>
+<td><code>usb_rcvbulkpipe(dev, ep)</code></td>
+<td>批量 IN</td>
+<td><code>usb_pipetype(pipe)</code></td>
+<td>传输类型</td>
+</tr>
+<tr>
+<td><code>usb_sndintpipe(dev, ep)</code></td>
+<td>中断 OUT</td>
+<td><code>usb_pipebulk(pipe)</code></td>
+<td>是否批量管道</td>
+</tr>
+<tr>
+<td><code>usb_rcvintpipe(dev, ep)</code></td>
+<td>中断 IN</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>usb_sndisocpipe(dev, ep)</code></td>
+<td>等时 OUT</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>usb_rcvisocpipe(dev, ep)</code></td>
+<td>等时 IN</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div><p>注意管道宏的第二个参数是<strong>端点号</strong>（0~15），不是端点地址。你从描述符里读到 <code>bEndpointAddress</code> 是 <code>0x81</code>，端点号是 1，方向是 IN，对应 <code>usb_rcvbulkpipe(udev, 1)</code>。直接把 <code>0x81</code> 传进去是错的。</p>
+<h3 id="7.3-urb-生命周期" tabindex="-1">7.3 urb 生命周期 <a class="header-anchor" href="#7.3-urb-生命周期"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>阶段</th>
+<th>调用</th>
+<th>谁做</th>
+<th>失败怎么办</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>分配</td>
+<td><code>usb_alloc_urb(iso_packets, mem_flags)</code></td>
+<td>你</td>
+<td>返回 NULL，退 <code>-ENOMEM</code></td>
+</tr>
+<tr>
+<td>填充</td>
+<td><code>usb_fill_*_urb()</code></td>
+<td>你</td>
+<td>无返回值，填错就是运行时故障</td>
+</tr>
+<tr>
+<td>提交</td>
+<td><code>usb_submit_urb(urb, mem_flags)</code></td>
+<td>你</td>
+<td>返回负数，按错误码处理</td>
+</tr>
+<tr>
+<td>传输</td>
+<td>HCD 执行</td>
+<td>内核</td>
+<td>出错记在 <code>urb-&gt;status</code></td>
+</tr>
+<tr>
+<td>完成</td>
+<td><code>urb-&gt;complete()</code></td>
+<td>内核调你</td>
+<td>读 <code>status</code> 分情况处理</td>
+</tr>
+<tr>
+<td>回收</td>
+<td><code>usb_free_urb(urb)</code></td>
+<td>你</td>
+<td>无返回值</td>
+</tr>
+</tbody>
+</table></div><p><code>iso_packets</code> 参数只有等时传输要填非 0，其他传输填 0。</p>
+<p>一条铁律：<strong>一个 urb 在飞的时候不能碰它的字段</strong>。<code>usb_submit_urb()</code> 返回 0 之后，这个 urb 归属 HCD，你只能等回调。想改什么，等回调里改完再重新提交。</p>
+<p>另一条：<strong><code>usb_free_urb()</code> 可以在提交后立刻调</strong>。它只是减引用计数，不会真的释放。真正的释放在回调执行完、最后一次引用放掉之后。所以常见写法是 <code>usb_submit_urb()</code> 紧跟 <code>usb_free_urb()</code>，看起来危险其实安全。但如果你打算复用这个 urb，就别急着 free。</p>
+<h3 id="7.4-填充四个-fill-函数与等时手工填" tabindex="-1">7.4 填充：四个 fill 函数与等时手工填 <a class="header-anchor" href="#7.4-填充四个-fill-函数与等时手工填"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 控制传输 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">usb_fill_control_urb</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> urb *urb, <span class="hljs-keyword">struct</span> usb_device *dev,
+		<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> pipe, <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *setup_packet,
+		<span class="hljs-type">void</span> *transfer_buffer, <span class="hljs-type">int</span> buffer_length,
+		<span class="hljs-type">usb_complete_t</span> complete_fn, <span class="hljs-type">void</span> *context)</span>;
+
+<span class="hljs-comment">/* 批量传输 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">usb_fill_bulk_urb</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> urb *urb, <span class="hljs-keyword">struct</span> usb_device *dev,
+		<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> pipe, <span class="hljs-type">void</span> *transfer_buffer,
+		<span class="hljs-type">int</span> buffer_length, <span class="hljs-type">usb_complete_t</span> complete_fn, <span class="hljs-type">void</span> *context)</span>;
+
+<span class="hljs-comment">/* 中断传输 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">usb_fill_int_urb</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> urb *urb, <span class="hljs-keyword">struct</span> usb_device *dev,
+		<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> pipe, <span class="hljs-type">void</span> *transfer_buffer,
+		<span class="hljs-type">int</span> buffer_length, <span class="hljs-type">usb_complete_t</span> complete_fn,
+		<span class="hljs-type">void</span> *context, <span class="hljs-type">int</span> interval)</span>;
+
+<span class="hljs-comment">/* 等时没有 fill 函数，手工填 */</span>
+urb-&gt;dev = udev;
+urb-&gt;pipe = usb_rcvisocpipe(udev, ep_num);
+urb-&gt;transfer_flags = URB_ISO_ASAP;
+urb-&gt;transfer_buffer = buf;
+urb-&gt;transfer_buffer_length = total_len;
+urb-&gt;complete = my_complete;
+urb-&gt;context = priv;
+urb-&gt;interval = ep_desc-&gt;bInterval;
+urb-&gt;number_of_packets = n;
+<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; n; i++) {
+	urb-&gt;iso_frame_desc[i].offset = i * pkt_size;
+	urb-&gt;iso_frame_desc[i].length = pkt_size;
+}
+</code></pre></div></code></pre>
+<p>中断传输多一个 <code>interval</code> 参数，直接从端点描述符的 <code>bInterval</code> 抄。高速端点的这个值要按 2 的幂次转换，用 <code>usb_fill_int_urb()</code> 它会替你算。</p>
+<p><code>URB_ISO_ASAP</code> 表示不指定起始帧，让 HCD 自己找最早能排上的。不设这个标志就得自己填 <code>start_frame</code>，填错了那一帧的数据直接丢。</p>
+<h3 id="7.5-transfer_flags-常用位" tabindex="-1">7.5 transfer_flags 常用位 <a class="header-anchor" href="#7.5-transfer_flags-常用位"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>标志</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>URB_SHORT_NOT_OK</code></td>
+<td>IN 传输收到短包时视为错误</td>
+</tr>
+<tr>
+<td><code>URB_ISO_ASAP</code></td>
+<td>等时传输自动选起始帧</td>
+</tr>
+<tr>
+<td><code>URB_NO_TRANSFER_DMA_MAP</code></td>
+<td>缓冲区已经 DMA 映射好了，用 <code>transfer_dma</code></td>
+</tr>
+<tr>
+<td><code>URB_ZERO_PACKET</code></td>
+<td>批量 OUT 在整数倍包长时补一个零长包</td>
+</tr>
+<tr>
+<td><code>URB_NO_INTERRUPT</code></td>
+<td>不要完成中断，靠轮询收结果</td>
+</tr>
+</tbody>
+</table></div><p><code>URB_SHORT_NOT_OK</code> 值得单独说。IN 传输时设备返回的字节数少于请求长度，默认算成功（<code>actual_length</code> 会小于 <code>transfer_buffer_length</code>）。如果你的协议要求必须收满，就设这个标志，否则短包会被静默接受，上层解析出错。<code>URB_ZERO_PACKET</code> 是很多 U 盘驱动的固定项：设备在等齐一个完整包才算一次传输结束，你的数据刚好是 512 的整数倍时，不补零长包设备就一直等下去，表现为传输卡住。<code>URB_NO_TRANSFER_DMA_MAP</code> 配合 DMA API 用：你自己调 <code>dma_map_single()</code>，把地址写进 <code>transfer_dma</code>，再设这个标志，usbcore 就不重复映射了。</p>
+<h3 id="7.6-三条分配路径" tabindex="-1">7.6 三条分配路径 <a class="header-anchor" href="#7.6-三条分配路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>全手工</strong>。最大控制权，适合中断端点和批量端点。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>urb = usb_alloc_urb(<span class="hljs-number">0</span>, GFP_KERNEL);
+<span class="hljs-keyword">if</span> (!urb)
+	<span class="hljs-keyword">return</span> -ENOMEM;
+usb_fill_int_urb(urb, udev, usb_rcvintpipe(udev, ep_num),
+		 buf, len, my_complete, priv, ep_desc-&gt;bInterval);
+usb_submit_urb(urb, GFP_KERNEL);
+</code></pre></div></code></pre>
+<p><strong>同步接口</strong>。省事，但不能在中断上下文用。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, <span class="hljs-number">0</span>),
+		      USB_REQ_GET_DESCRIPTOR, USB_DIR_IN,
+		      (USB_DT_DEVICE &lt;&lt; <span class="hljs-number">8</span>), <span class="hljs-number">0</span>,
+		      buf, len, USB_CTRL_GET_TIMEOUT);
+
+ret = usb_bulk_msg(udev, usb_sndbulkpipe(udev, ep_num),
+		   buf, len, &amp;actual, <span class="hljs-number">5000</span>);
+</code></pre></div></code></pre>
+<p>这两个函数内部走的是「分配 urb → 填充 → 提交 → 等完成 → 释放」全套。它们返回负数是错误码，非负数是实际传输字节数。</p>
+<p><strong>DMA 一致缓冲区</strong>。要求 DMA 的场合用这个。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>buf = usb_alloc_coherent(udev, size, GFP_KERNEL, &amp;dma);
+usb_fill_bulk_urb(urb, udev, usb_rcvbulkpipe(udev, ep),
+		  buf, size, my_complete, priv);
+urb-&gt;transfer_dma = dma;
+urb-&gt;transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
+</code></pre></div></code></pre>
+<p><code>usb_alloc_coherent()</code> 保证缓冲区和 DMA 地址一致，适合反复提交的 urb。配套释放用 <code>usb_free_coherent()</code>。</p>
+<h2 id="八urb-的发送流程" tabindex="-1">八、urb 的发送流程 <a class="header-anchor" href="#八urb-的发送流程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>从你调 <code>usb_submit_urb()</code> 到数据真正上了线，中间过了四层。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>usb_submit_urb()
+  -&gt; usb_hcd_submit_urb()
+       -&gt; is_root_hub(urb-&gt;dev) ?
+            是: rh_urb_enqueue(hcd, urb)
+            否: hcd-&gt;driver-&gt;urb_enqueue(hcd, urb, mem_flags)
+                  -&gt; 以 EHCI 为例 ehci_urb_enqueue()
+                       -&gt; qh_urb_transaction()    urb → qTD 链
+                       -&gt; submit_async()          qTD 链 → QH → 调度表
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层</th>
+<th>函数</th>
+<th>干什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>usbcore</td>
+<td><code>usb_submit_urb</code></td>
+<td>校验、引用计数、锚点、统计</td>
+</tr>
+<tr>
+<td>usbcore</td>
+<td><code>usb_hcd_submit_urb</code></td>
+<td>判断根 hub 还是真实设备、DMA 映射</td>
+</tr>
+<tr>
+<td>HCD</td>
+<td><code>urb_enqueue</code></td>
+<td>urb 转传输描述符、排调度表</td>
+</tr>
+<tr>
+<td>控制器</td>
+<td>硬件</td>
+<td>按调度表把包发出去</td>
+</tr>
+</tbody>
+</table></div><h3 id="8.1-usb_submit_urb-做了什么" tabindex="-1">8.1 usb_submit_urb 做了什么 <a class="header-anchor" href="#8.1-usb_submit_urb-做了什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>它不是一个简单的转发。进来以后按顺序做这些：</p>
+<ol>
+<li>检查 <code>urb-&gt;dev</code> 和 <code>urb-&gt;ep</code> 是否合法，设备是否处于 <code>USB_STATE_CONFIGURED</code>。</li>
+<li>检查 <code>urb-&gt;status</code> 是否已被设为 <code>-EINPROGRESS</code>，防止重复提交。</li>
+<li>增加 <code>use_count</code>，防止并发提交同一个 urb。</li>
+<li>按管道的传输类型校验参数：等时要有 <code>number_of_packets</code>，控制要有 <code>setup_packet</code>，批量长度不能超端点最大包长的倍数。</li>
+<li>处理 <code>anchor</code>：如果 urb 已经挂在一个锚点上，把它从锚点里摘出来。</li>
+<li>调 <code>usb_hcd_submit_urb()</code>；失败时回滚计数，成功则返回 0。</li>
+</ol>
+<p>返回负数的常见原因：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>错误码</th>
+<th>含义</th>
+<th>排查方向</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-ENODEV</code></td>
+<td>设备已经断开</td>
+<td>检查 <code>udev-&gt;state</code></td>
+</tr>
+<tr>
+<td><code>-ENOENT</code></td>
+<td>端点无效</td>
+<td>检查 <code>pipe</code> 的端点号</td>
+</tr>
+<tr>
+<td><code>-EPIPE</code></td>
+<td>端点被 stall</td>
+<td>需要 <code>usb_clear_halt()</code></td>
+</tr>
+<tr>
+<td><code>-ENOMEM</code></td>
+<td>内存不够</td>
+<td>检查 <code>mem_flags</code></td>
+</tr>
+<tr>
+<td><code>-EINVAL</code></td>
+<td>参数不合法</td>
+<td>检查长度、<code>interval</code>、<code>setup_packet</code></td>
+</tr>
+<tr>
+<td><code>-ENOSPC</code></td>
+<td>带宽不足</td>
+<td>等时/中断带宽预留满了</td>
+</tr>
+<tr>
+<td><code>-EACCES</code></td>
+<td>接口被挂起</td>
+<td>先 <code>usb_autopm_get_interface()</code></td>
+</tr>
+<tr>
+<td><code>-EXDEV</code></td>
+<td>锚点被 poison 了</td>
+<td>检查 <code>usb_poison_urb</code> 的调用</td>
+</tr>
+</tbody>
+</table></div><p><code>-EPIPE</code> 是串口调试时最常见的。设备端点上一次传输出了错，端点自动进入 halt 状态，后续所有 urb 都返回 <code>-EPIPE</code>。恢复办法是调 <code>usb_clear_halt()</code> 清掉 halt 位。</p>
+<h3 id="8.2-usb_hcd_submit_urb-的分叉" tabindex="-1">8.2 usb_hcd_submit_urb 的分叉 <a class="header-anchor" href="#8.2-usb_hcd_submit_urb-的分叉"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这一段是理解根 hub 特殊性的关键。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (is_root_hub(urb-&gt;dev))
+	status = rh_urb_enqueue(hcd, urb);
+<span class="hljs-keyword">else</span>
+	status = hcd-&gt;driver-&gt;urb_enqueue(hcd, urb, mem_flags);
+</code></pre></div></code></pre>
+<p><code>is_root_hub()</code> 判断 <code>urb-&gt;dev == hcd-&gt;self.root_hub</code>。是根 hub，走 <code>rh_urb_enqueue()</code>；是真实设备，走 HCD 自己的 <code>urb_enqueue</code>。以 UHCI 为例走 <code>uhci_urb_enqueue()</code>，以 EHCI 为例走 <code>ehci_urb_enqueue()</code>。</p>
+<p>这段代码还有个顺序上的细节：<code>usb_hcd_submit_urb()</code> 在调 <code>urb_enqueue</code> 之前会做 DMA 映射。映射的目标是 <code>urb-&gt;transfer_buffer</code>，把虚拟地址换成设备能访问的总线地址，写进 <code>urb-&gt;transfer_dma</code>。</p>
+<h3 id="8.3-ehci_urb_enqueue-的分流" tabindex="-1">8.3 ehci_urb_enqueue 的分流 <a class="header-anchor" href="#8.3-ehci_urb_enqueue-的分流"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>EHCI 的处理按端点类型分两条路：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>control   -&gt; qh_urb_transaction() + submit_async()
+bulk      -&gt; qh_urb_transaction() + submit_async()
+interrupt -&gt; qh_urb_transaction() + submit_periodic()
+isoc      -&gt; itd/sitd 路径 + submit_periodic()
+</code></pre></div></code></pre>
+<p>前两种走异步调度表（asynchronous schedule list），后两种走周期调度表（periodic schedule list）。这个分法的理由是带宽：中断和等时要求时间确定性，必须挂在周期表上按帧预约；控制和批量可以等，挂在异步表上占剩余带宽。</p>
+<p><code>qh_urb_transaction()</code> 的活是把 urb 拆成一串 qTD（Queue Element Transfer Descriptor）。qTD 是 EHCI 能认识的传输单元，一个 qTD 描述一次不超过一定长度的传输。你的 urb 传 8KB，端点最大包长 512，就会生成多个 qTD，每个 qTD 挂到 <code>qtd_list</code> 上。</p>
+<p><code>submit_async()</code> 的活是把这串 qTD 挂到端点对应的 QH（Queue Head）上，再把 QH 排进异步调度表。QH 是端点的硬件代表，一个端点一个 QH，里面存着端点特性、当前 qTD 指针、以及 DATA0/DATA1 翻转位。</p>
+<h3 id="8.4-同步接口怎么等" tabindex="-1">8.4 同步接口怎么等 <a class="header-anchor" href="#8.4-同步接口怎么等"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>usb_start_wait_urb()</code> 提交完 urb 以后，调用 <code>wait_for_completion_timeout()</code> 把自己挂起。这是个非中断的等待，进程睡眠，不占 CPU。等谁唤醒它？等 <code>urb-&gt;complete</code> 里的 <code>complete(&amp;ctx-&gt;done)</code>。</p>
+<p>把 <code>usb_control_msg()</code> 的整条链路串起来：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>usb_control_msg()
+  -&gt; usb_internal_control_msg()
+       -&gt; usb_alloc_urb()                分配
+       -&gt; usb_fill_control_urb()         填充
+       -&gt; usb_start_wait_urb()
+            -&gt; usb_submit_urb(GFP_NOIO)  提交
+            -&gt; wait_for_completion_timeout()  睡
+                 ... 硬件跑完，中断进来 ...
+                 -&gt; urb-&gt;complete = usb_api_blocking_completion
+                      -&gt; complete(&amp;ctx-&gt;done)   醒
+       -&gt; usb_free_urb()                 回收
+</code></pre></div></code></pre>
+<p>超时的情况也走这条线：<code>wait_for_completion_timeout()</code> 返回 0，说明没人叫它。这时要 <code>usb_kill_urb()</code> 把 urb 撤下来，再返回 <code>-ETIMEDOUT</code>。</p>
+<p><code>GFP_NOIO</code> 这个标志有讲究。它不允许内存分配触发 IO，因为提交 urb 本身就在 IO 路径上，如果再进 IO 就死锁了。写同步等待路径时必须用这个标志，不能用 <code>GFP_KERNEL</code>。</p>
+<h3 id="8.5-什么时候能用-gfp_kernel" tabindex="-1">8.5 什么时候能用 GFP_KERNEL <a class="header-anchor" href="#8.5-什么时候能用-gfp_kernel"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一条简单判据：<strong>这段代码能睡吗</strong>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>上下文</th>
+<th>能用 <code>GFP_KERNEL</code> 吗</th>
+<th>提交 urb 用</th>
+<th>同步接口能用吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>进程上下文（probe、ioctl、write）</td>
+<td>能</td>
+<td><code>GFP_KERNEL</code></td>
+<td>能</td>
+</tr>
+<tr>
+<td>中断上下文（irq handler）</td>
+<td>不能</td>
+<td><code>GFP_ATOMIC</code></td>
+<td>不能</td>
+</tr>
+<tr>
+<td>完成回调（<code>urb-&gt;complete</code>）</td>
+<td>不能</td>
+<td><code>GFP_ATOMIC</code></td>
+<td>不能</td>
+</tr>
+<tr>
+<td>定时器回调</td>
+<td>不能</td>
+<td><code>GFP_ATOMIC</code></td>
+<td>不能</td>
+</tr>
+<tr>
+<td>持有自旋锁</td>
+<td>不能</td>
+<td><code>GFP_ATOMIC</code></td>
+<td>不能</td>
+</tr>
+</tbody>
+</table></div><p><code>urb-&gt;complete</code> 是在中断上下文里跑的（软中断或 tasklet），这一点经常被忘记。在回调里调 <code>usb_control_msg()</code> 会直接崩，因为那个函数会睡。需要发同步请求的场合，把活扔给 workqueue，在 work 里发。</p>
+<h2 id="九urb-的完成回调" tabindex="-1">九、urb 的完成回调 <a class="header-anchor" href="#九urb-的完成回调"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>传输跑完了，硬件中断进来，内核得找到你的 urb 把结果还回去。这一段是驱动里最容易写出 bug 的地方，因为它在中断上下文跑。</p>
+<h3 id="9.1-真实设备的回收路径" tabindex="-1">9.1 真实设备的回收路径 <a class="header-anchor" href="#9.1-真实设备的回收路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>以 EHCI 为例，从中断入口到你的回调，一路是这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>系统中断入口
+  -&gt; asm_do_IRQ
+       -&gt; handle_level_irq
+            -&gt; handle_IRQ_event
+                 -&gt; usb_hcd_irq            控制器中断
+                      -&gt; ehci_irq
+                           -&gt; ehci_work
+                                -&gt; scan_async
+                                     -&gt; qh_completions
+                                          -&gt; qtd_copy_status     填 urb-&gt;status
+                                          -&gt; ehci_urb_done
+                                               -&gt; usb_hcd_giveback_urb
+                                                    -&gt; urb-&gt;complete(urb)
+</code></pre></div></code></pre>
+<p><code>qh_completions()</code> 里做的是逐个 qTD 看完成状态，把结果汇总写进 <code>urb-&gt;status</code>。<code>qtd_copy_status()</code> 把 qTD 的状态码翻译成 urb 的错误码，这一步决定了你在回调里看到的 <code>status</code> 是什么值。<code>ehci_urb_done()</code> 把已经完成的 urb 从端点的 <code>urb_list</code> 上摘下来，然后交给 <code>usb_hcd_giveback_urb()</code>。</p>
+<p><code>usb_hcd_giveback_urb()</code> 是统一的回收出口：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">usb_hcd_giveback_urb</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> usb_hcd *hcd, <span class="hljs-keyword">struct</span> urb *urb, <span class="hljs-type">int</span> status)</span>
+{
+	urb-&gt;status = status;
+	unmap_urb_for_dma(hcd, urb);
+	usb_hcd_unlink_urb_from_ep(hcd, urb);
+	usb_unanchor_urb(urb);
+	urb-&gt;complete(urb);
+	usb_put_urb(urb);
+}
+</code></pre></div></code></pre>
+<p>顺序不能乱：先解映射再回调，因为回调里会重新提交这个 urb、重新映射。<code>usb_unanchor_urb()</code> 把 urb 从锚点链表上摘掉，否则锚点会一直涨。</p>
+<h3 id="9.2-根-hub-的回收路径" tabindex="-1">9.2 根 hub 的回收路径 <a class="header-anchor" href="#9.2-根-hub-的回收路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>根 hub 没有真实硬件端点，走另一条：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>rh_timer_func(timer)
+  -&gt; usb_hcd_poll_rh_status(hcd)
+       -&gt; hcd-&gt;driver-&gt;hub_status_data(hcd, buffer)
+            -&gt; 有变化就取出 hcd-&gt;status_urb，拷数据
+                 -&gt; usb_hcd_unlink_urb_from_ep
+                 -&gt; usb_hcd_giveback_urb(hcd, urb, 0)
+                      -&gt; urb-&gt;complete
+</code></pre></div></code></pre>
+<p><code>rh_timer_func</code> 本身就是个定时器函数，一行转发，在 <code>usb_create_hcd()</code> 里挂上：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">rh_timer_func</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> _hcd)</span>
+{
+	usb_hcd_poll_rh_status((<span class="hljs-keyword">struct</span> usb_hcd *)_hcd);
+}
+
+hcd-&gt;rh_timer.function = rh_timer_func;
+</code></pre></div></code></pre>
+<p>根 hub 的中断端点用轮询实现，不是真中断。这是它的第二个特殊之处（第一个是不做 DMA 映射，见 9.4）。驱动请求状态时注册一个 urb 到 <code>hcd-&gt;status_urb</code>，之后靠这个定时器定期去查。轮询主体：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">usb_hcd_poll_rh_status</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> usb_hcd *hcd)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">urb</span> *<span class="hljs-title">urb</span>;</span>
+	<span class="hljs-type">int</span> length;
+	<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> flags;
+	<span class="hljs-type">char</span> buffer[<span class="hljs-number">4</span>];		<span class="hljs-comment">/* Any root hubs with &gt; 31 ports? */</span>
+
+	<span class="hljs-keyword">if</span> (unlikely(!hcd-&gt;rh_registered))	<span class="hljs-comment">/* 驱动还没注册就退出 */</span>
+		<span class="hljs-keyword">return</span>;
+	<span class="hljs-keyword">if</span> (!hcd-&gt;uses_new_polling &amp;&amp; !hcd-&gt;status_urb)
+		<span class="hljs-keyword">return</span>;
+
+	<span class="hljs-comment">/* 让 HCD 自己报有没有状态变化，返回值大于 0 表示有 */</span>
+	length = hcd-&gt;driver-&gt;hub_status_data(hcd, buffer);
+	<span class="hljs-keyword">if</span> (length &gt; <span class="hljs-number">0</span>) {
+		spin_lock_irqsave(&amp;hcd_root_hub_lock, flags);
+		urb = hcd-&gt;status_urb;
+		<span class="hljs-keyword">if</span> (urb) {
+			hcd-&gt;poll_pending = <span class="hljs-number">0</span>;
+			hcd-&gt;status_urb = <span class="hljs-literal">NULL</span>;
+			urb-&gt;actual_length = length;
+			<span class="hljs-built_in">memcpy</span>(urb-&gt;transfer_buffer, buffer, length);
+			usb_hcd_unlink_urb_from_ep(hcd, urb);
+			spin_unlock(&amp;hcd_root_hub_lock);
+			usb_hcd_giveback_urb(hcd, urb, <span class="hljs-number">0</span>);
+			spin_lock(&amp;hcd_root_hub_lock);
+		} <span class="hljs-keyword">else</span> {
+			length = <span class="hljs-number">0</span>;
+			hcd-&gt;poll_pending = <span class="hljs-number">1</span>;
+		}
+		spin_unlock_irqrestore(&amp;hcd_root_hub_lock, flags);
+	}
+
+	<span class="hljs-keyword">if</span> (hcd-&gt;uses_new_polling ? hcd-&gt;poll_rh :
+	    (length == <span class="hljs-number">0</span> &amp;&amp; hcd-&gt;status_urb != <span class="hljs-literal">NULL</span>))
+		mod_timer(&amp;hcd-&gt;rh_timer, (jiffies / (HZ / <span class="hljs-number">4</span>) + <span class="hljs-number">1</span>) * (HZ / <span class="hljs-number">4</span>));
+}
+</code></pre></div></code></pre>
+<p><code>hub_status_data</code> 是 HCD 提供的回调，EHCI 里是 <code>ehci_hub_status_data()</code>，负责检测端口状态和 td 队列状态，返回有变化的端口数。返回值大于 0 就是有事情发生。</p>
+<p><code>hcd-&gt;status_urb</code> 非空就把状态数据拷进去，<code>urb-&gt;actual_length = length</code>，然后交回上层。空就说明还没人申请，置 <code>poll_pending</code> 记一笔，等下次有人申请时立刻补发。</p>
+<p>注意 <code>usb_hcd_giveback_urb()</code> 调用时是放了 <code>hcd_root_hub_lock</code> 的。回调里会重新提交 urb，重新提交要拿这把锁，不放开就自锁死。回调返回后再把锁拿回来。</p>
+<p>最后那句 <code>mod_timer</code> 决定下次什么时候来。<code>(jiffies / (HZ/4) + 1) * (HZ/4)</code> 让所有 USB 设备的定时器对齐到同一批时间点触发，减少 CPU 被打断的次数。规范要求 256ms 内必须报一次，<code>HZ/4</code> 在 <code>HZ=100</code> 时是 25ms，远快于要求。</p>
+<h3 id="9.3-根-hub-为什么不做-dma-映射" tabindex="-1">9.3 根 hub 为什么不做 DMA 映射 <a class="header-anchor" href="#9.3-根-hub-为什么不做-dma-映射"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>普通设备提交 urb 时，<code>usb_hcd_submit_urb()</code> 会把 <code>transfer_buffer</code> 做 DMA 映射，让设备能直接访问这块内存。根 hub 不走这一步。</p>
+<p>原因是根 hub 不是真硬件。它是 HCD 虚拟出来的一个设备，代表主机控制器自己。根 hub 的「端点」没有物理实体，所谓传输只是把 HCD 内部的状态字拷到一块内存里。具体到代码：<code>usb_hcd_poll_rh_status()</code> 里那句 <code>memcpy(urb-&gt;transfer_buffer, buffer, length)</code>，数据源是栈上的 <code>char buffer[4]</code>，目的地是 urb 的传输缓冲区。两边都是普通内存，中间没有总线传输，没有设备发起 DMA 读。</p>
+<p>所以 Linux 按 spec 的规定把根 hub 的状态静态放在内存里，操作的时候直接拷贝过去就行。既然没有真实的总线传输，就没有必要映射——映射了也没有任何设备会去读那个地址。这也是为什么根 hub 的传输不会失败。它不依赖线缆、不依赖对端设备响应，拷贝完就算完成。你在 <code>lsusb -t</code> 里看到的根 hub 就是这一层虚拟化出来的。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>项目</th>
+<th>真实设备</th>
+<th>根 hub</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>提交入口</td>
+<td><code>hcd-&gt;driver-&gt;urb_enqueue</code></td>
+<td><code>rh_urb_enqueue</code></td>
+</tr>
+<tr>
+<td>传输描述符</td>
+<td>qTD / iTD / siTD</td>
+<td>无</td>
+</tr>
+<tr>
+<td>DMA 映射</td>
+<td>需要</td>
+<td>不需要</td>
+</tr>
+<tr>
+<td>数据来源</td>
+<td>设备通过总线发来</td>
+<td>HCD 内部状态字，<code>memcpy</code></td>
+</tr>
+<tr>
+<td>完成触发</td>
+<td>硬件中断</td>
+<td>定时器 <code>rh_timer_func</code></td>
+</tr>
+<tr>
+<td>会失败吗</td>
+<td>会（超时、stall、CRC 错）</td>
+<td>不会</td>
+</tr>
+</tbody>
+</table></div><h3 id="9.4-回调里能做什么不能做什么" tabindex="-1">9.4 回调里能做什么，不能做什么 <a class="header-anchor" href="#9.4-回调里能做什么不能做什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>回调签名只有 urb 一个参数（<code>typedef void (*usb_complete_t)(struct urb *)</code>），要拿私有数据走 <code>urb-&gt;context</code>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>能做</th>
+<th>不能做</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>读 <code>status</code> 和 <code>actual_length</code> 判断结果</td>
+<td>任何会睡的操作：<code>kmalloc(GFP_KERNEL)</code>、<code>mutex_lock()</code>、<code>usb_control_msg()</code>、<code>msleep()</code></td>
+</tr>
+<tr>
+<td>改 <code>context</code> 指向的数据（无并发访问时）</td>
+<td>调 <code>usb_kill_urb()</code>，它会等自己，直接死锁</td>
+</tr>
+<tr>
+<td>重新提交这个 urb（<code>GFP_ATOMIC</code>）</td>
+<td>假设 <code>status == 0</code> 就等于数据完整，短包也是 0</td>
+</tr>
+<tr>
+<td><code>complete()</code> / <code>wake_up()</code> 唤醒等待者</td>
+<td>直接释放 <code>transfer_buffer</code>，如果 urb 还要复用</td>
+</tr>
+<tr>
+<td>数据入环形缓冲区、调度 workqueue</td>
+<td></td>
+</tr>
+</tbody>
+</table></div><p>一个必须处理的边界：<code>urb-&gt;status</code> 为 <code>-ENOENT</code> 或 <code>-ECONNRESET</code> 表示 urb 是被取消的，不是传输失败。<code>disconnect</code> 里调 <code>usb_kill_urb()</code> 就会让在飞的 urb 回调收到这个值。这时候不要重试，直接返回。</p>
+<h3 id="9.5-三种收尾写法" tabindex="-1">9.5 三种收尾写法 <a class="header-anchor" href="#9.5-三种收尾写法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>同步等待型</strong>。回调只负责叫醒：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">my_sync_complete</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> urb *urb)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_ctx</span> *<span class="hljs-title">ctx</span> =</span> urb-&gt;context;
+	ctx-&gt;status = urb-&gt;status;
+	ctx-&gt;actual = urb-&gt;actual_length;
+	complete(&amp;ctx-&gt;done);
+}
+</code></pre></div></code></pre>
+<p><strong>流式重提交型</strong>。中断端点常用，回调里处理数据然后立刻重新提交：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">my_int_complete</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> urb *urb)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_priv</span> *<span class="hljs-title">priv</span> =</span> urb-&gt;context;
+
+	<span class="hljs-keyword">if</span> (urb-&gt;status) {
+		<span class="hljs-keyword">if</span> (urb-&gt;status == -ENOENT || urb-&gt;status == -ECONNRESET)
+			<span class="hljs-keyword">return</span>;			<span class="hljs-comment">/* 被取消，退出 */</span>
+		<span class="hljs-keyword">if</span> (++priv-&gt;errors &gt; <span class="hljs-number">5</span>)		<span class="hljs-comment">/* 其他错误，计数后重试 */</span>
+			<span class="hljs-keyword">return</span>;
+	}
+
+	my_handle_data(priv, urb-&gt;transfer_buffer, urb-&gt;actual_length);
+
+	usb_submit_urb(urb, GFP_ATOMIC);	<span class="hljs-comment">/* 保持一直有 urb 在飞 */</span>
+}
+</code></pre></div></code></pre>
+<p>这个模式的关键是「一直有 urb 在飞」。中断端点的意义就是持续等待设备上报，中间断了就会漏事件。</p>
+<p><strong>等时流水型</strong>。等时传输不能只有一个 urb，必须预先准备多个形成环：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; N_URBS; i++) {
+	urb = usb_alloc_urb(packets_per_urb, GFP_KERNEL);
+	<span class="hljs-comment">/* 等时字段手工填，见 7.4 */</span>
+	usb_submit_urb(urb, GFP_KERNEL);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">my_iso_complete</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> urb *urb)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">my_priv</span> *<span class="hljs-title">priv</span> =</span> urb-&gt;context;
+	<span class="hljs-type">int</span> i;
+
+	<span class="hljs-keyword">if</span> (!urb-&gt;status) {
+		<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; urb-&gt;number_of_packets; i++) {
+			<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_iso_packet_descriptor</span> *<span class="hljs-title">d</span> =</span>
+				&amp;urb-&gt;iso_frame_desc[i];
+			<span class="hljs-keyword">if</span> (!d-&gt;status)
+				my_queue_audio(priv, urb-&gt;transfer_buffer +
+					       d-&gt;offset, d-&gt;actual_length);
+		}
+	}
+	usb_submit_urb(urb, GFP_ATOMIC);
+}
+</code></pre></div></code></pre>
+<p>等时的错误处理要注意：每个包的 <code>status</code> 单独判断，一个包错了不代表整帧丢。音频设备允许偶尔丢几个采样，视频允许偶尔丢几帧，业务层能做补偿就补偿。</p>
+<h3 id="9.6-停-urb-的三种方式" tabindex="-1">9.6 停 urb 的三种方式 <a class="header-anchor" href="#9.6-停-urb-的三种方式"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>函数</th>
+<th>行为</th>
+<th>用在什么场合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>usb_kill_urb(urb)</code></td>
+<td>取消并同步等待回调执行完</td>
+<td><code>disconnect</code>、<code>pre_reset</code></td>
+</tr>
+<tr>
+<td><code>usb_poison_urb(urb)</code></td>
+<td>取消并标记，后续提交全部失败</td>
+<td>让端点彻底停用</td>
+</tr>
+<tr>
+<td><code>usb_unpoison_urb(urb)</code></td>
+<td>清掉 poison 标记</td>
+<td>恢复正常使用</td>
+</tr>
+</tbody>
+</table></div><p><code>usb_kill_urb()</code> 是最常用的。它返回时保证回调已经跑完了，你可以安全释放私有数据。代价是它会睡，不能在中断上下文调。<code>usb_poison_urb()</code> 除了取消，还会把 urb 标记成中毒状态，之后再 <code>usb_submit_urb()</code> 返回 <code>-EXDEV</code>，用来防止某个路径上还在偷偷重提交。</p>
+<p>一次要停很多个 urb 时，用锚点批量操作：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_anchor</span> <span class="hljs-title">anchor</span>;</span>
+
+init_usb_anchor(&amp;anchor);
+usb_anchor_urb(urb, &amp;anchor);		<span class="hljs-comment">/* 提交前挂上 */</span>
+usb_submit_urb(urb, GFP_KERNEL);
+
+usb_kill_anchored_urbs(&amp;anchor);	<span class="hljs-comment">/* 停止全部 */</span>
+</code></pre></div></code></pre>
+<p>锚点比你自己维护链表可靠，因为它处理了提交和完成之间的竞态。自己写链表，很容易出现在「刚判断完链表为空、新 urb 又进来了」的窗口里出错。</p>
+<h2 id="十hub-与-tt-电路" tabindex="-1">十、HUB 与 TT 电路 <a class="header-anchor" href="#十hub-与-tt-电路"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面反复提到 TT，这一章说清楚它是什么、为什么有它、以及单 TT 和多 TT 的差别。</p>
+<h3 id="10.1-tt-是什么" tabindex="-1">10.1 TT 是什么 <a class="header-anchor" href="#10.1-tt-是什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>TT 是 Transaction Translator，翻译过来叫事务翻译器。你可以把它想成一块特殊的电路，物理上在 hub 里面，确切地说在高速 hub 里面。</p>
+<p>USB 有三种速度：低速（1.5Mbps）、全速（12Mbps）、高速（480Mbps）。USB 1.x 时代只有前两种，主机控制器也只有 OHCI 和 UHCI 两种。USB 2.0 推出 EHCI 之后，高速设备出现了，hub 也分成高速 hub 和老 hub。</p>
+<p>问题来了：高速 hub 能不能直接挂低速/全速设备？答案是不行。高速 hub 的下行端口跑在高速信令上，低速/全速设备的电平、包格式、握手全都不一样，双方说不上话。</p>
+<p>解决方式是加一块 TT 电路。它负责高速与低速/全速之间的数据转换：上游按高速协议收发，下游按低速/全速协议收发，中间做包的拆分与重组、速度转换、时序对齐。</p>
+<p>结论：一个高速 hub 里如果有 TT，就能挂低速/全速设备；没有 TT，低速/全速设备就没法用，只能插到 OHCI/UHCI 出来的 hub 口上。</p>
+<h3 id="10.2-单-tt-与多-tt" tabindex="-1">10.2 单 TT 与多 TT <a class="header-anchor" href="#10.2-单-tt-与多-tt"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>结构</th>
+<th><code>bDeviceProtocol</code> 值</th>
+<th>影响</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Single TT</td>
+<td>整个 hub 共用一块 TT</td>
+<td>1</td>
+<td>多个低速设备互相拖慢</td>
+</tr>
+<tr>
+<td>Multiple TT</td>
+<td>每个端口各配一块 TT</td>
+<td>2</td>
+<td>各端口互不干扰</td>
+</tr>
+</tbody>
+</table></div><p>区别在并发能力。单 TT 的 hub 上，所有低速/全速设备共用一套翻译电路，同一时刻只能有一个设备在做转换。你插三个低速设备上去，它们的事务要排队，总带宽被一块 TT 卡住，表现就是三个设备一起变慢。多 TT 的 hub 每个端口一块独立电路，各走各的，互不排队。</p>
+<p>现实情况：大多数消费级 hub 是单 TT。理由很直接——一个 hub 一块 TT 就够应付常见的键鼠场景，多加电路要成本。买 hub 时不看这个参数，插上一堆低速设备才发现互相拖累。</p>
+<p>代码里判断靠设备描述符的 <code>bDeviceProtocol</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 全速/低速 hub 的这个字段是 0 */</span>
+<span class="hljs-keyword">if</span> (udev-&gt;descriptor.bDeviceProtocol == <span class="hljs-number">1</span>)
+	dev_info(&amp;udev-&gt;dev, <span class="hljs-string">&quot;single TT hub\n&quot;</span>);
+<span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (udev-&gt;descriptor.bDeviceProtocol == <span class="hljs-number">2</span>)
+	dev_info(&amp;udev-&gt;dev, <span class="hljs-string">&quot;multiple TT hub\n&quot;</span>);
+</code></pre></div></code></pre>
+<p><code>usb_device</code> 里的 <code>tt</code> 和 <code>ttport</code> 就是给这种设备用的。设备挂在高速 hub 的某个端口后面、且自己是低速/全速设备时，<code>tt</code> 指向那个 hub 的 TT 结构，<code>ttport</code> 记住是哪个端口。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_tt</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">usb_device</span>	*<span class="hljs-title">hub</span>;</span>		<span class="hljs-comment">/* hub that implements this TT */</span>
+	<span class="hljs-type">wait_queue_head_t</span>	wait;
+	<span class="hljs-type">int</span>			multi;		<span class="hljs-comment">/* nonzero for multi-TT */</span>
+	<span class="hljs-type">unsigned</span>		think_time;	<span class="hljs-comment">/* from hub descriptor */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span>	<span class="hljs-title">tt_list</span>;</span>
+};
+</code></pre></div></code></pre>
+<p><code>multi</code> 非 0 表示多 TT。<code>think_time</code> 从 hub 描述符里来，是 TT 在两次事务之间需要的最小间隔，调度时要考虑。</p>
+<h3 id="10.3-hub-的传输特点与端口状态位" tabindex="-1">10.3 hub 的传输特点与端口状态位 <a class="header-anchor" href="#10.3-hub-的传输特点与端口状态位"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>USB 存储设备最常见的是控制传输加批量传输。hub 不一样，它用的是控制加中断，其中最有特色的是中断传输。hub 的那个中断端点只有一个用途：上报端口状态变化。设备插拔、过流、端口使能状态改变，都从这个端点报上来。这个端点常驻一个 urb，回调里重新提交，一直转。这就是第十一章那个 hub 线程的触发源。</p>
+<p>hub 上报的状态有两个寄存器，一个叫端口状态（port status），一个叫端口状态变化（port change）。两个都是位图。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位</th>
+<th>名称</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>USB_PORT_STAT_CONNECTION</code></td>
+<td>Current Connect Status</td>
+<td>当前有没有设备接在这个口上</td>
+</tr>
+<tr>
+<td><code>USB_PORT_STAT_ENABLE</code></td>
+<td>Port Enabled</td>
+<td>端口是否已使能</td>
+</tr>
+<tr>
+<td><code>USB_PORT_STAT_SUSPEND</code></td>
+<td>Suspend</td>
+<td>端口是否挂起</td>
+</tr>
+<tr>
+<td><code>USB_PORT_STAT_RESET</code></td>
+<td>Reset</td>
+<td>端口是否正在复位</td>
+</tr>
+<tr>
+<td><code>USB_PORT_STAT_LOW_SPEED</code></td>
+<td>Low Speed</td>
+<td>设备是低速</td>
+</tr>
+<tr>
+<td><code>USB_PORT_STAT_HIGH_SPEED</code></td>
+<td>High Speed</td>
+<td>设备是高速</td>
+</tr>
+<tr>
+<td><code>USB_PORT_STAT_C_CONNECTION</code></td>
+<td>Connect Change</td>
+<td>连接状态变过</td>
+</tr>
+<tr>
+<td><code>USB_PORT_STAT_C_ENABLE</code></td>
+<td>Enable Change</td>
+<td>使能状态变过</td>
+</tr>
+<tr>
+<td><code>USB_PORT_STAT_C_RESET</code></td>
+<td>Reset Change</td>
+<td>复位完成过</td>
+</tr>
+</tbody>
+</table></div><p>两个寄存器的用法有本质区别。状态位是「现在是什么」，变化位是「变过没有」。<code>USB_PORT_STAT_CONNECTION</code> 为 1，说明现在有设备连着。<code>USB_PORT_STAT_C_CONNECTION</code> 为 1，说明这个连接状态自上次清除以来变过。变化位是粘滞的，读完之后必须发 <code>Clear Port Feature</code> 请求清掉，否则下次还会报。这个请求也是 hub 的标准请求之一。</p>
+<p>判断逻辑很直白：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 有设备接着，且连接状态刚变过 */</span>
+<span class="hljs-keyword">if</span> ((portstatus &amp; USB_PORT_STAT_CONNECTION) &amp;&amp;
+    (portchange &amp; USB_PORT_STAT_C_CONNECTION))
+	connect_change = <span class="hljs-number">1</span>;
+</code></pre></div></code></pre>
+<p>插入和拔出都会让这两位置起来。区别在于 <code>portstatus</code> 的 CONNECTION 位：插入时是 1，拔出时是 0。</p>
+<h3 id="10.4-什么情况要重新枚举" tabindex="-1">10.4 什么情况要重新枚举 <a class="header-anchor" href="#10.4-什么情况要重新枚举"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>hub 线程对每个端口做判断，三种情况要往 <code>hub_port_connect_change()</code> 走：</p>
+<ol>
+<li>连接有变化。插了或者拔了。</li>
+<li>端口本身重新使能，也就是 enable 状态变了。这种情况多半是为了对付电磁干扰——瞬时干扰让端口掉了使能，重新使能后设备其实还在。</li>
+<li>在复位一个设备的时候发现它的描述符变了。这对应硬件本身做了升级，比如某些设备支持在线更新固件。</li>
+</ol>
+<p>第一种是真正的物理变化，后两种算逻辑变化。循环里那个端口号计数器不只是遍历用，它还保证了「有几个端口，才能接几个设备」这个逻辑。<code>usb_bus</code> 最多接 128 个设备，hub 最多接 31 个设备，但 hub 上没那么多物理端口，你也没法接更多。端口数是 hub 描述符的 <code>bNbrPorts</code> 拿的。</p>
+<h2 id="十一热插拔与-hub-线程" tabindex="-1">十一、热插拔与 hub 线程 <a class="header-anchor" href="#十一热插拔与-hub-线程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>设备插上去，probe 就被调用。中间这一大段是内核自动跑的，但它决定了你 probe 能不能被调到。</p>
+<h3 id="11.1-谁在盯着端口" tabindex="-1">11.1 谁在盯着端口 <a class="header-anchor" href="#11.1-谁在盯着端口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>hub 驱动在初始化时创建一个内核线程，线程主体是个循环：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>khubd_task = kthread_run(hub_thread, <span class="hljs-literal">NULL</span>, <span class="hljs-string">&quot;khubd&quot;</span>);
+
+<span class="hljs-keyword">do</span> {
+	hub_events();
+	wait_event_freezable(khubd_wait,
+			!list_empty(&amp;hub_event_list) ||
+			kthread_should_stop());
+} <span class="hljs-keyword">while</span> (!kthread_should_stop() || !list_empty(&amp;hub_event_list));
+</code></pre></div></code></pre>
+<p><code>hub_event_list</code> 把所有 <code>usb_hub</code> 的 <code>event_list</code> 串在一起。hub 的中断 urb 回调报告有事件，就把这个 hub 挂进 <code>hub_event_list</code>，然后唤醒 <code>khubd_wait</code>。线程醒来跑一圈 <code>hub_events()</code>，跑完再睡。</p>
+<p>这个设计的意义：中断上下文里只做最少的事（把 hub 挂链表、唤醒线程），所有耗时操作（发控制请求、复位端口、读描述符）全在 <code>hub_events()</code> 里做。因为它在进程上下文，可以睡。</p>
+<p><code>hub_events()</code> 对每个 hub 的每个端口做检查。端口号从 1 到 <code>bNbrPorts</code>，这个值从 hub 描述符里读：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">for</span> (i = <span class="hljs-number">1</span>; i &lt;= hub-&gt;descriptor-&gt;bNbrPorts; i++) {
+	<span class="hljs-keyword">if</span> (connect_change)
+		hub_port_connect_change(hub, i, portstatus, portchange);
+}
+</code></pre></div></code></pre>
+<h3 id="11.2-hub_port_connect_change-的重试结构" tabindex="-1">11.2 hub_port_connect_change 的重试结构 <a class="header-anchor" href="#11.2-hub_port_connect_change-的重试结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>真正的枚举在这里。核心是一个四次循环：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; SET_CONFIG_TRIES; i++) {	<span class="hljs-comment">/* SET_CONFIG_TRIES = 4 */</span>
+	udev = usb_alloc_dev(hdev, hdev-&gt;bus, port1);
+	udev-&gt;speed = USB_SPEED_UNKNOWN;
+
+	choose_address(udev);				<span class="hljs-comment">/* 分配 udev-&gt;devnum */</span>
+	status = hub_port_init(hub, udev, port1, i);
+	...
+}
+</code></pre></div></code></pre>
+<p>前两次（<code>i=0</code>、<code>i=1</code>）走新策略，后两次（<code>i=2</code>、<code>i=3</code>）走旧策略。所有这一切只有一个目的：<strong>拿到设备描述符</strong>。早年有些设备不按规范来，读描述符的路径必须换个问法才通。新策略是「先读 64 字节看看」，旧策略是「先读 8 字节，再按 <code>bMaxPacketSize0</code> 读全」。</p>
+<p><code>choose_address()</code> 在 <code>usb_bus</code> 的 <code>devmap</code> 位图里找一个空闲地址填进 <code>udev-&gt;devnum</code>。这一步必须在读描述符之前，因为设备需要地址才能响应非默认管道的请求。</p>
+<h3 id="11.3-hub_port_init-干的三件事" tabindex="-1">11.3 hub_port_init 干的三件事 <a class="header-anchor" href="#11.3-hub_port_init-干的三件事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>原型：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">hub_port_init</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> usb_hub *hub, <span class="hljs-keyword">struct</span> usb_device *udev,
+			 <span class="hljs-type">int</span> port1, <span class="hljs-type">int</span> retry_counter)</span>
+</code></pre></div></code></pre>
+<p>它依次做：调 <code>hub_port_reset()</code> 复位端口，顺便把 <code>udev-&gt;speed</code> 定下来；根据 <code>udev-&gt;speed</code> 猜一个 <code>udev-&gt;ep0.desc.wMaxPacketSize</code>，填 <code>udev-&gt;tt</code> 和 <code>udev-&gt;ttport</code>；在循环里读设备描述符，直到成功或者重试用完。</p>
+<p>第二步的「猜」是个关键点。端点 0 的最大包长在设备描述符的 <code>bMaxPacketSize0</code> 里，但要读到设备描述符，得先用端点 0 发控制传输。这是个鸡生蛋问题。内核的解法是按速度猜：低速设备猜 8，全速猜 8 或 16 或 32 或 64，高速猜 64。猜错了就重试，每次换一种。<code>GET_DESCRIPTOR_TRIES</code> 是 2，配合外层 4 次循环，一共 8 次机会。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> GET_DESCRIPTOR_BUFSIZE	64</span>
+buf = kmalloc(GET_DESCRIPTOR_BUFSIZE, GFP_NOIO);
+<span class="hljs-keyword">for</span> (j = <span class="hljs-number">0</span>; j &lt; <span class="hljs-number">3</span>; ++j) {
+	buf-&gt;bMaxPacketSize0 = <span class="hljs-number">0</span>;
+	r = usb_control_msg(udev, usb_rcvaddr0pipe(),
+	    USB_REQ_GET_DESCRIPTOR, USB_DIR_IN,
+	    USB_DT_DEVICE &lt;&lt; <span class="hljs-number">8</span>, <span class="hljs-number">0</span>,
+	    buf, GET_DESCRIPTOR_BUFSIZE, USB_CTRL_GET_TIMEOUT);
+	<span class="hljs-keyword">switch</span> (buf-&gt;bMaxPacketSize0) {
+	<span class="hljs-keyword">case</span> <span class="hljs-number">8</span>: <span class="hljs-keyword">case</span> <span class="hljs-number">16</span>: <span class="hljs-keyword">case</span> <span class="hljs-number">32</span>: <span class="hljs-keyword">case</span> <span class="hljs-number">64</span>: <span class="hljs-keyword">case</span> <span class="hljs-number">255</span>:
+		<span class="hljs-keyword">if</span> (buf-&gt;bDescriptorType == USB_DT_DEVICE) {
+			r = <span class="hljs-number">0</span>;
+			<span class="hljs-keyword">break</span>;
+		}
+		<span class="hljs-comment">/* FALL THROUGH */</span>
+	<span class="hljs-keyword">default</span>:
+		<span class="hljs-keyword">if</span> (r == <span class="hljs-number">0</span>)
+			r = -EPROTO;
+		<span class="hljs-keyword">break</span>;
+	}
+	<span class="hljs-keyword">if</span> (r == <span class="hljs-number">0</span>)
+		<span class="hljs-keyword">break</span>;
+}
+udev-&gt;descriptor.bMaxPacketSize0 = buf-&gt;bMaxPacketSize0;
+kfree(buf);
+
+<span class="hljs-keyword">for</span> (j = <span class="hljs-number">0</span>; j &lt; SET_ADDRESS_TRIES; ++j) {	<span class="hljs-comment">/* SET_ADDRESS_TRIES = 2 */</span>
+	retval = hub_set_address(udev, devnum);
+	<span class="hljs-keyword">if</span> (retval &gt;= <span class="hljs-number">0</span>)
+		<span class="hljs-keyword">break</span>;
+	msleep(<span class="hljs-number">200</span>);
+}
+<span class="hljs-keyword">if</span> (retval &lt; <span class="hljs-number">0</span>) {
+	dev_err(&amp;udev-&gt;dev, <span class="hljs-string">&quot;device not accepting address %d, error %d\n&quot;</span>,
+		devnum, retval);
+	<span class="hljs-keyword">goto</span> fail;
+}
+</code></pre></div></code></pre>
+<p>三次内循环是为了容错。读到合法的 <code>bMaxPacketSize0</code> 并且 <code>bDescriptorType</code> 正确才算成功，<code>255</code> 那个分支是给某些不守规矩设备留的后门。读到之后再用这个值读完整设备描述符，如果返回长度等于 <code>sizeof(udev-&gt;descriptor)</code>，说明控制传输正常、端点 0 包长也验证对了。</p>
+<p><code>device not accepting address</code> 这个报错很有名。它表示 <code>SET_ADDRESS</code> 请求设备没应答，多半意味着设备供电不足、线缆质量差、或者设备已经在别的状态里。</p>
+<h3 id="11.4-hub_port_reset-与端口复位" tabindex="-1">11.4 hub_port_reset 与端口复位 <a class="header-anchor" href="#11.4-hub_port_reset-与端口复位"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">hub_port_reset</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> usb_hub *hub, <span class="hljs-type">int</span> port1,
+			  <span class="hljs-keyword">struct</span> usb_device *udev, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> delay)</span>
+{
+	<span class="hljs-type">int</span> i, status;
+
+	<span class="hljs-comment">/* Block EHCI CF initialization during the port reset.
+	 * Some companion controllers don&#x27;t like it when they mix. */</span>
+	down_read(&amp;ehci_cf_port_reset_rwsem);
+
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; PORT_RESET_TRIES; i++) {	<span class="hljs-comment">/* PORT_RESET_TRIES = 5 */</span>
+		status = set_port_feature(hub-&gt;hdev, port1, USB_PORT_FEAT_RESET);
+		<span class="hljs-keyword">if</span> (status)
+			dev_err(hub-&gt;intfdev, <span class="hljs-string">&quot;cannot reset port %d (err = %d)\n&quot;</span>,
+				port1, status);
+		<span class="hljs-keyword">else</span> {
+			status = hub_port_wait_reset(hub, port1, udev, delay);
+			<span class="hljs-keyword">if</span> (status &amp;&amp; status != -ENOTCONN)
+				dev_dbg(hub-&gt;intfdev, <span class="hljs-string">&quot;port_wait_reset: err = %d\n&quot;</span>,
+					status);
+		}
+
+		<span class="hljs-keyword">switch</span> (status) {
+		<span class="hljs-keyword">case</span> <span class="hljs-number">0</span>:
+			<span class="hljs-comment">/* TRSTRCY = 10 ms; plus some extra */</span>
+			msleep(<span class="hljs-number">10</span> + <span class="hljs-number">40</span>);
+			udev-&gt;devnum = <span class="hljs-number">0</span>;	<span class="hljs-comment">/* Device now at address 0 */</span>
+			<span class="hljs-comment">/* FALL THROUGH */</span>
+		<span class="hljs-keyword">case</span> -ENOTCONN:	<span class="hljs-comment">/* 107, transport endpoint is not connected */</span>
+		<span class="hljs-keyword">case</span> -ENODEV:	<span class="hljs-comment">/* 19, no such device */</span>
+			clear_port_feature(hub-&gt;hdev, port1, USB_PORT_FEAT_C_RESET);
+			usb_set_device_state(udev, status
+				? USB_STATE_NOTATTACHED : USB_STATE_DEFAULT);
+			<span class="hljs-keyword">goto</span> done;
+		}
+		dev_dbg(hub-&gt;intfdev, <span class="hljs-string">&quot;port %d not enabled, trying reset again\n&quot;</span>,
+			port1);
+		delay = HUB_LONG_RESET_TIME;
+	}
+	dev_err(hub-&gt;intfdev, <span class="hljs-string">&quot;Cannot enable port %i.  Maybe the USB cable is bad?\n&quot;</span>,
+		port1);
+done:
+	up_read(&amp;ehci_cf_port_reset_rwsem);
+	<span class="hljs-keyword">return</span> status;
+}
+</code></pre></div></code></pre>
+<p><code>ehci_cf_port_reset_rwsem</code> 这把读写信号量挡的是 EHCI 的伴随控制器初始化。老式主板上 EHCI 和 UHCI/OHCI 共存，端口复位期间不能让伴随控制器捣乱。</p>
+<p><code>msleep(10 + 40)</code> 里的 10ms 是规范要求的复位恢复时间（TRSTRCY），后面 40ms 是余量。成功复位后 <code>udev-&gt;devnum = 0</code>，因为设备回到地址 0 的默认态，状态置成 <code>USB_STATE_DEFAULT</code>。</p>
+<p>失败分支的三种状态码：<code>0</code>、<code>-ENOTCONN</code>（107，连接已断）、<code>-ENODEV</code>（19，设备不存在）。只有这三种才清复位变化位。其他错误码会走到循环末尾重试，五次都失败就打那句「Maybe the USB cable is bad?」。</p>
+<h3 id="11.5-hub_port_wait_reset" tabindex="-1">11.5 hub_port_wait_reset <a class="header-anchor" href="#11.5-hub_port_wait_reset"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">hub_port_wait_reset</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> usb_hub *hub, <span class="hljs-type">int</span> port1,
+			       <span class="hljs-keyword">struct</span> usb_device *udev, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> delay)</span>
+{
+	ret = hub_port_status(hub, port1, &amp;portstatus, &amp;portchange);
+
+	<span class="hljs-keyword">if</span> (!(portstatus &amp; USB_PORT_STAT_CONNECTION))
+		<span class="hljs-keyword">return</span> -ENOTCONN;	<span class="hljs-comment">/* 复位期间设备被拔了 */</span>
+	<span class="hljs-keyword">if</span> (portchange &amp; USB_PORT_STAT_C_CONNECTION)
+		<span class="hljs-keyword">return</span> -ENOTCONN;	<span class="hljs-comment">/* 复位期间又报插入，不正常 */</span>
+
+	<span class="hljs-keyword">if</span> (!(portstatus &amp; USB_PORT_STAT_RESET) &amp;&amp;
+	    (portstatus &amp; USB_PORT_STAT_ENABLE)) {
+		<span class="hljs-keyword">if</span> (hub_is_wusb(hub))
+			udev-&gt;speed = USB_SPEED_VARIABLE;
+		<span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (portstatus &amp; USB_PORT_STAT_HIGH_SPEED)
+			udev-&gt;speed = USB_SPEED_HIGH;
+		<span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (portstatus &amp; USB_PORT_STAT_LOW_SPEED)
+			udev-&gt;speed = USB_SPEED_LOW;
+		<span class="hljs-keyword">else</span>
+			udev-&gt;speed = USB_SPEED_FULL;
+		<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+	}
+	<span class="hljs-keyword">return</span> -ETIMEDOUT;		<span class="hljs-comment">/* 常见的是 -110 */</span>
+}
+</code></pre></div></code></pre>
+<p><code>udev-&gt;speed</code> 就是从端口状态字里读出来的。复位完成后状态位应该是 <code>ENABLE</code> 置起、<code>RESET</code> 落下，这时候看 <code>HIGH_SPEED</code> 和 <code>LOW_SPEED</code> 两个位就知道速度：都不置就是全速。返回 <code>-ETIMEDOUT</code>（-110）是实践中最常见的失败值，意思是等了这么久端口还没完成复位，原因多为设备固件卡住、供电不足、或者线缆太差。</p>
+<p><code>hub_port_status()</code> 底下就是发 <code>GET_STATUS</code> 请求：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">get_port_status</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> usb_device *hdev, <span class="hljs-type">int</span> port1,
+			   <span class="hljs-keyword">struct</span> usb_port_status *data)</span>
+{
+	<span class="hljs-type">int</span> i, status = -ETIMEDOUT;	<span class="hljs-comment">/* ETIMEDOUT = 110 */</span>
+
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; USB_STS_RETRIES &amp;&amp; status == -ETIMEDOUT; i++) {
+		status = usb_control_msg(hdev, usb_rcvctrlpipe(hdev, <span class="hljs-number">0</span>),
+		    USB_REQ_GET_STATUS, USB_DIR_IN | USB_RT_PORT, <span class="hljs-number">0</span>, port1,
+		    data, <span class="hljs-keyword">sizeof</span>(*data), USB_STS_TIMEOUT);
+	}
+	<span class="hljs-keyword">return</span> status;
+}
+</code></pre></div></code></pre>
+<p>注意 <code>USB_RT_PORT</code> 这个请求类型，它表示这是发给 hub 端口的类请求，不是发给设备的。hub 的所有端口操作都靠这个类型区分。</p>
+<h3 id="11.6-probe-为什么没被调用" tabindex="-1">11.6 probe 为什么没被调用 <a class="header-anchor" href="#11.6-probe-为什么没被调用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>检查点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>dmesg 完全没有插入日志</td>
+<td>供电、线缆、端口本身</td>
+</tr>
+<tr>
+<td>有 <code>new high-speed USB device</code> 但没绑定</td>
+<td><code>id_table</code> 是否匹配，<code>MODULE_DEVICE_TABLE</code> 漏没漏</td>
+</tr>
+<tr>
+<td>有 <code>device not accepting address</code></td>
+<td>供电不足、线缆质量、设备状态</td>
+</tr>
+<tr>
+<td>有 <code>Cannot enable port</code></td>
+<td>端口复位失败，多半是硬件</td>
+</tr>
+<tr>
+<td>有 <code>-110</code> 超时</td>
+<td>设备固件没响应，或 TT 配置有问题</td>
+</tr>
+<tr>
+<td>绑定到了错误的驱动</td>
+<td><code>id_table</code> 太宽，用 <code>USB_INTERFACE_INFO</code> 收窄</td>
+</tr>
+</tbody>
+</table></div><p><code>lsusb -t</code> 看树形结构和速度，<code>lsusb -v</code> 看全部描述符，<code>cat /sys/kernel/debug/usb/devices</code> 看内核眼里的设备状态。三个一起用，比反复加 printk 快。</p>
+<h2 id="十二易错点速查" tabindex="-1">十二、易错点速查 <a class="header-anchor" href="#十二易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="12.1-结构体与描述符" tabindex="-1">12.1 结构体与描述符 <a class="header-anchor" href="#12.1-结构体与描述符"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>遍历端点越界</td>
+<td><code>alt-&gt;endpoint</code> 的长度没跟 <code>desc.bNumEndpoints</code></td>
+<td>循环上界用 <code>desc.bNumEndpoints</code></td>
+</tr>
+<tr>
+<td>接口顺序对不上</td>
+<td><code>usb_host_config.interface[]</code> 顺序不等于接口号</td>
+<td>用 <code>bInterfaceNumber</code> 判断</td>
+</tr>
+<tr>
+<td>拿不到类特定描述符</td>
+<td>在错误的结构里找 <code>extra</code></td>
+<td>接口级在 <code>usb_host_interface.extra</code></td>
+</tr>
+<tr>
+<td>复合设备识别成单一功能</td>
+<td>用了 <code>USB_DEVICE</code> 而不是 <code>USB_INTERFACE_INFO</code></td>
+<td>按接口类匹配</td>
+</tr>
+<tr>
+<td>端点号传错</td>
+<td>把 <code>bEndpointAddress</code>（如 <code>0x81</code>）当端点号</td>
+<td>用 <code>usb_endpoint_num()</code> 取低 4 位</td>
+</tr>
+</tbody>
+</table></div><h3 id="12.2-urb" tabindex="-1">12.2 urb <a class="header-anchor" href="#12.2-urb"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>提交返回 <code>-EPIPE</code></td>
+<td>端点被 stall</td>
+<td><code>usb_clear_halt()</code> 清掉</td>
+</tr>
+<tr>
+<td>提交返回 <code>-EACCES</code></td>
+<td>接口处于挂起</td>
+<td>先 <code>usb_autopm_get_interface()</code></td>
+</tr>
+<tr>
+<td>提交返回 <code>-ENOSPC</code></td>
+<td>等时/中断带宽不够</td>
+<td>减小包长或间隔，或减少并发 urb</td>
+</tr>
+<tr>
+<td>回调永远不进</td>
+<td>urb 提交失败但返回值没检查</td>
+<td>检查 <code>usb_submit_urb()</code> 返回值</td>
+</tr>
+<tr>
+<td>回调进两次</td>
+<td>同一个 urb 重复提交</td>
+<td>别并发提交，看 <code>use_count</code></td>
+</tr>
+<tr>
+<td>大块传输卡住</td>
+<td>批量 OUT 缺零长包</td>
+<td>加 <code>URB_ZERO_PACKET</code></td>
+</tr>
+<tr>
+<td>短包被当成功</td>
+<td>默认行为</td>
+<td>需要严格长度就设 <code>URB_SHORT_NOT_OK</code></td>
+</tr>
+<tr>
+<td>传输后数据是垃圾</td>
+<td>DMA 缓冲区没映射或映射错</td>
+<td>用 <code>usb_alloc_coherent()</code></td>
+</tr>
+<tr>
+<td>传输后内存被改</td>
+<td>改了在飞 urb 的字段</td>
+<td>只在回调里改</td>
+</tr>
+</tbody>
+</table></div><h3 id="12.3-上下文与生命周期" tabindex="-1">12.3 上下文与生命周期 <a class="header-anchor" href="#12.3-上下文与生命周期"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>回调里崩在 <code>might_sleep</code></td>
+<td>回调里调了会睡的函数</td>
+<td>改用 workqueue</td>
+</tr>
+<tr>
+<td>拔设备后 oops</td>
+<td><code>disconnect</code> 没停 urb</td>
+<td><code>usb_kill_urb()</code> 之后再释放</td>
+</tr>
+<tr>
+<td>偶发 use-after-free</td>
+<td>定时器还在跑就释放了私有数据</td>
+<td><code>del_timer_sync()</code> 提前停</td>
+</tr>
+<tr>
+<td><code>disconnect</code> 卡住</td>
+<td>在回调里调了 <code>usb_kill_urb()</code></td>
+<td>回调里不能等自己</td>
+</tr>
+<tr>
+<td>设备休眠后传输出错</td>
+<td>自动挂起计数没配平</td>
+<td><code>get</code>/<code>put</code> 成对调用</td>
+</tr>
+<tr>
+<td><code>rmmod</code> 报设备忙</td>
+<td>还有打开的文件或未停的 urb</td>
+<td>关文件、停 urb</td>
+</tr>
+</tbody>
+</table></div><h3 id="12.4-枚举与-hub" tabindex="-1">12.4 枚举与 hub <a class="header-anchor" href="#12.4-枚举与-hub"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>低速设备插高速 hub 不认</td>
+<td>hub 没有 TT</td>
+<td>换多 TT hub 或插到 OHCI/UHCI 口</td>
+</tr>
+<tr>
+<td>多个低速设备互相拖慢</td>
+<td>单 TT hub 共用翻译电路</td>
+<td>换多 TT hub</td>
+</tr>
+<tr>
+<td>端口状态一直不变化</td>
+<td>变化位没清</td>
+<td>发 <code>Clear Port Feature</code></td>
+</tr>
+<tr>
+<td>复位总超时（-110）</td>
+<td>设备固件或供电问题</td>
+<td>换线、外接供电、复位重试</td>
+</tr>
+<tr>
+<td>地址分配失败</td>
+<td><code>devmap</code> 满了或设备不应答</td>
+<td>检查 128 设备上限、检查供电</td>
+</tr>
+</tbody>
+</table></div><h3 id="12.5-最后三句" tabindex="-1">12.5 最后三句 <a class="header-anchor" href="#12.5-最后三句"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>第一句，<strong>urb 是唯一的数据通道</strong>。所有同步接口底下都是它。搞不清的时候，把封装拆开，看完整的四步。</p>
+<p>第二句，<strong>回调在中断上下文</strong>。能睡的函数一律不能在回调里调，需要睡眠的活交给 workqueue。</p>
+<p>第三句，<strong>disconnect 的唯一义务是停干净</strong>。<code>usb_kill_urb()</code> 之后才动内存，顺序反了就是 oops。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一usb-驱动的整体结构" data-toc-target="一usb-驱动的整体结构">一、USB 驱动的整体结构</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.1-驱动挂在接口上不是挂在设备上" data-toc-target="1.1-驱动挂在接口上不是挂在设备上">1.1 驱动挂在接口上，不是挂在设备上</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.2-一份最小骨架" data-toc-target="1.2-一份最小骨架">1.2 一份最小骨架</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.3-一次完整的生命周期" data-toc-target="1.3-一次完整的生命周期">1.3 一次完整的生命周期</a>
+                    
+                    <a class="toc-item toc-lv3" href="#1.4-这篇要建立的三个直觉" data-toc-target="1.4-这篇要建立的三个直觉">1.4 这篇要建立的三个直觉</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二核心数据结构" data-toc-target="二核心数据结构">二、核心数据结构</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.1-指针网" data-toc-target="2.1-指针网">2.1 指针网</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.2-配置--接口--设置--端点四层" data-toc-target="2.2-配置--接口--设置--端点四层">2.2 配置 / 接口 / 设置 / 端点：四层</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.3-usb_host_config-与-usb_host_interface" data-toc-target="2.3-usb_host_config-与-usb_host_interface">2.3 usb_host_config 与 usb_host_interface</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.4-usb_host_endpoint-与-usb_interface_cache" data-toc-target="2.4-usb_host_endpoint-与-usb_interface_cache">2.4 usb_host_endpoint 与 usb_interface_cache</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.5-usb_bus-与-usb_devmap" data-toc-target="2.5-usb_bus-与-usb_devmap">2.5 usb_bus 与 usb_devmap</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三usb_device-与-usb_interface" data-toc-target="三usb_device-与-usb_interface">三、usb_device 与 usb_interface</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.1-usb_device" data-toc-target="3.1-usb_device">3.1 usb_device</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.2-usb_interface" data-toc-target="3.2-usb_interface">3.2 usb_interface</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.3-从接口拿设备" data-toc-target="3.3-从接口拿设备">3.3 从接口拿设备</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四描述符在代码里的表示" data-toc-target="四描述符在代码里的表示">四、描述符在代码里的表示</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.1-设备描述符" data-toc-target="4.1-设备描述符">4.1 设备描述符</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.2-配置描述符" data-toc-target="4.2-配置描述符">4.2 配置描述符</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.3-接口描述符" data-toc-target="4.3-接口描述符">4.3 接口描述符</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.4-端点描述符" data-toc-target="4.4-端点描述符">4.4 端点描述符</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.5-hub-描述符与-hub-结构体" data-toc-target="4.5-hub-描述符与-hub-结构体">4.5 hub 描述符与 hub 结构体</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五usb_driver-与-probedisconnect" data-toc-target="五usb_driver-与-probedisconnect">五、usb_driver 与 probe/disconnect</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.1-完整结构" data-toc-target="5.1-完整结构">5.1 完整结构</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.2-id_table-怎么写" data-toc-target="5.2-id_table-怎么写">5.2 id_table 怎么写</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.3-probe-里做什么" data-toc-target="5.3-probe-里做什么">5.3 probe 里做什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.4-disconnect-里做什么" data-toc-target="5.4-disconnect-里做什么">5.4 disconnect 里做什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.5-复位与挂起" data-toc-target="5.5-复位与挂起">5.5 复位与挂起</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六设备号与-dev_t" data-toc-target="六设备号与-dev_t">六、设备号与 dev_t</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.1-主次设备号各管什么" data-toc-target="6.1-主次设备号各管什么">6.1 主次设备号各管什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.2-分配方式与设备节点" data-toc-target="6.2-分配方式与设备节点">6.2 分配方式与设备节点</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.3-从-sysfs-看设备号" data-toc-target="6.3-从-sysfs-看设备号">6.3 从 sysfs 看设备号</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七urbusb-传输的载体" data-toc-target="七urbusb-传输的载体">七、urb：USB 传输的载体</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.1-结构体" data-toc-target="7.1-结构体">7.1 结构体</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.2-pipe一个整数编码五件事" data-toc-target="7.2-pipe一个整数编码五件事">7.2 pipe：一个整数编码五件事</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.3-urb-生命周期" data-toc-target="7.3-urb-生命周期">7.3 urb 生命周期</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.4-填充四个-fill-函数与等时手工填" data-toc-target="7.4-填充四个-fill-函数与等时手工填">7.4 填充：四个 fill 函数与等时手工填</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.5-transfer_flags-常用位" data-toc-target="7.5-transfer_flags-常用位">7.5 transfer_flags 常用位</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.6-三条分配路径" data-toc-target="7.6-三条分配路径">7.6 三条分配路径</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八urb-的发送流程" data-toc-target="八urb-的发送流程">八、urb 的发送流程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.1-usb_submit_urb-做了什么" data-toc-target="8.1-usb_submit_urb-做了什么">8.1 usb_submit_urb 做了什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.2-usb_hcd_submit_urb-的分叉" data-toc-target="8.2-usb_hcd_submit_urb-的分叉">8.2 usb_hcd_submit_urb 的分叉</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.3-ehci_urb_enqueue-的分流" data-toc-target="8.3-ehci_urb_enqueue-的分流">8.3 ehci_urb_enqueue 的分流</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.4-同步接口怎么等" data-toc-target="8.4-同步接口怎么等">8.4 同步接口怎么等</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.5-什么时候能用-gfp_kernel" data-toc-target="8.5-什么时候能用-gfp_kernel">8.5 什么时候能用 GFP_KERNEL</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九urb-的完成回调" data-toc-target="九urb-的完成回调">九、urb 的完成回调</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.1-真实设备的回收路径" data-toc-target="9.1-真实设备的回收路径">9.1 真实设备的回收路径</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.2-根-hub-的回收路径" data-toc-target="9.2-根-hub-的回收路径">9.2 根 hub 的回收路径</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.3-根-hub-为什么不做-dma-映射" data-toc-target="9.3-根-hub-为什么不做-dma-映射">9.3 根 hub 为什么不做 DMA 映射</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.4-回调里能做什么不能做什么" data-toc-target="9.4-回调里能做什么不能做什么">9.4 回调里能做什么，不能做什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.5-三种收尾写法" data-toc-target="9.5-三种收尾写法">9.5 三种收尾写法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.6-停-urb-的三种方式" data-toc-target="9.6-停-urb-的三种方式">9.6 停 urb 的三种方式</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十hub-与-tt-电路" data-toc-target="十hub-与-tt-电路">十、HUB 与 TT 电路</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.1-tt-是什么" data-toc-target="10.1-tt-是什么">10.1 TT 是什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.2-单-tt-与多-tt" data-toc-target="10.2-单-tt-与多-tt">10.2 单 TT 与多 TT</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.3-hub-的传输特点与端口状态位" data-toc-target="10.3-hub-的传输特点与端口状态位">10.3 hub 的传输特点与端口状态位</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.4-什么情况要重新枚举" data-toc-target="10.4-什么情况要重新枚举">10.4 什么情况要重新枚举</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一热插拔与-hub-线程" data-toc-target="十一热插拔与-hub-线程">十一、热插拔与 hub 线程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.1-谁在盯着端口" data-toc-target="11.1-谁在盯着端口">11.1 谁在盯着端口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.2-hub_port_connect_change-的重试结构" data-toc-target="11.2-hub_port_connect_change-的重试结构">11.2 hub_port_connect_change 的重试结构</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.3-hub_port_init-干的三件事" data-toc-target="11.3-hub_port_init-干的三件事">11.3 hub_port_init 干的三件事</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.4-hub_port_reset-与端口复位" data-toc-target="11.4-hub_port_reset-与端口复位">11.4 hub_port_reset 与端口复位</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.5-hub_port_wait_reset" data-toc-target="11.5-hub_port_wait_reset">11.5 hub_port_wait_reset</a>
+                    
+                    <a class="toc-item toc-lv3" href="#11.6-probe-为什么没被调用" data-toc-target="11.6-probe-为什么没被调用">11.6 probe 为什么没被调用</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二易错点速查" data-toc-target="十二易错点速查">十二、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv3" href="#12.1-结构体与描述符" data-toc-target="12.1-结构体与描述符">12.1 结构体与描述符</a>
+                    
+                    <a class="toc-item toc-lv3" href="#12.2-urb" data-toc-target="12.2-urb">12.2 urb</a>
+                    
+                    <a class="toc-item toc-lv3" href="#12.3-上下文与生命周期" data-toc-target="12.3-上下文与生命周期">12.3 上下文与生命周期</a>
+                    
+                    <a class="toc-item toc-lv3" href="#12.4-枚举与-hub" data-toc-target="12.4-枚举与-hub">12.4 枚举与 hub</a>
+                    
+                    <a class="toc-item toc-lv3" href="#12.5-最后三句" data-toc-target="12.5-最后三句">12.5 最后三句</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/F.通信与协议/02-USB/01-协议与基础概念/Linux-USB-驱动的结构与-urb/","title":"Linux USB 驱动的结构与 urb","url":"/F.通信与协议/02-USB/01-协议与基础概念/Linux-USB-驱动的结构与-urb/","type":"current"},{"id":"/F.通信与协议/02-USB/01-协议与基础概念/USB-2.0-协议：从物理层到枚举/","title":"USB 2.0 协议：从物理层到枚举","url":"/F.通信与协议/02-USB/01-协议与基础概念/USB-2.0-协议：从物理层到枚举/","type":"neighbor"}],"links":[{"source":"/F.通信与协议/02-USB/01-协议与基础概念/Linux-USB-驱动的结构与-urb/","target":"/F.通信与协议/02-USB/01-协议与基础概念/USB-2.0-协议：从物理层到枚举/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

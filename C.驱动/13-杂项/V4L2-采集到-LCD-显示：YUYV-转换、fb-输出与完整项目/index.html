@@ -1,0 +1,1379 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>V4L2 采集到 LCD 显示：YUYV 转换、fb 输出与完整项目 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">V4L2 采集到 LCD 显示：YUYV 转换、fb 输出与完整项目</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/C.驱动/13-杂项/V4L2-采集到-LCD-显示：YUYV-转换、fb-输出与完整项目/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">V4L2 采集到 LCD 显示：YUYV 转换、fb 输出与完整项目</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">V4L2 采集到 LCD 显示：YUYV 转换、fb 输出与完整项目</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <p>摄像头采回来的第一帧数据，直接往屏幕上扔是花的。原因很简单：几乎所有的 UVC 摄像头默认输出 <strong>YUYV</strong>（YUV 4:2:2 打包格式），而绝大多数的 LCD framebuffer 只认 <strong>RGB565</strong>（或 RGB32）。中间必须做一次格式转换。</p>
+<p>这篇从「为什么两种格式不能直接对接」讲到「一帧图像真的出现在屏幕上」，最后给一个能编译运行的完整项目。</p>
+<h2 id="一为什么要转换" tabindex="-1">一、为什么要转换 <a class="header-anchor" href="#一为什么要转换"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>两个数字先摆出来。320×240 的 YUYV 一帧是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>320 × 240 × 2 = 153 600 字节
+</code></pre></div></code></pre>
+<p>同样的画面，RGB565 一帧也是 153 600 字节。<strong>大小一样，但排布完全不同</strong>：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th></th>
+<th>YUYV 4:2:2</th>
+<th>RGB565</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>每个像素占</td>
+<td>平均 2 字节</td>
+<td>固定 2 字节</td>
+</tr>
+<tr>
+<td>分量组织</td>
+<td>4 字节描述 2 个像素，共享 U/V</td>
+<td>每 2 字节独立描述 1 个像素</td>
+</tr>
+<tr>
+<td>通道</td>
+<td>Y（亮度）+ U/V（色度）</td>
+<td>R / G / B</td>
+</tr>
+<tr>
+<td>谁在用</td>
+<td>摄像头、视频编码</td>
+<td>LCD framebuffer、多数 GUI</td>
+</tr>
+</tbody>
+</table></div><p>不能直接拷过去的原因：<strong>YUYV 的字节流里没有「红色」「绿色」「蓝色」，只有亮度和色差</strong>。LCD 控制器收到 <code>0x56 0x59</code> 会当成一个像素的 RGB565 值（R=10, G=45, B=25），得到的是灰紫色噪点，跟原图毫无关系。</p>
+<p>所以转换是必须的一步。而且这一步是纯 CPU 运算，嵌入式上开销不小。320×240 一帧 76 800 个像素，每个像素十几次乘加，在 400MHz 的 ARM9 上要几毫秒。这也是为什么很多方案宁可用硬件 IP（如 SoC 的 CSC 模块）或让摄像头直接输出 RGB。</p>
+<h2 id="二yuv-采样444--422--420" tabindex="-1">二、YUV 采样：4:4:4 / 4:2:2 / 4:2:0 <a class="header-anchor" href="#二yuv-采样444--422--420"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>人眼对亮度的敏感度远高于颜色。这个生理事实是 YUV 全部设计的出发点：<strong>亮度（Y）全采样，色度（U/V）可以少采</strong>，肉眼几乎看不出差别，而数据量能省下一大半。</p>
+<p>写成 <code>J:a:b</code> 的形式，含义是「J 个像素宽的参考块里，第一行有 a 个色度采样，第二行有 b 个」。</p>
+<h3 id="2.1-444不压缩" tabindex="-1">2.1 4:4:4：不压缩 <a class="header-anchor" href="#2.1-444不压缩"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>每个像素都有独立的 Y、U、V：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>像素：  [Y0 U0 V0] [Y1 U1 V1] [Y2 U2 V2] [Y3 U3 V3]
+码流：   Y0 U0 V0   Y1 U1 V1   Y2 U2 V2   Y3 U3 V3
+</code></pre></div></code></pre>
+<p>每像素 3 字节。完全无损，但也就没有压缩的意义了。用于专业后期和色彩关键场景。</p>
+<h3 id="2.2-422水平方向减半" tabindex="-1">2.2 4:2:2：水平方向减半 <a class="header-anchor" href="#2.2-422水平方向减半"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>每两个相邻像素共享一组 U/V：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>像素：  [Y0 U0 V0] [Y1 U1 V1] [Y2 U2 V2] [Y3 U3 V3]
+              └────┬────┘          └────┬────┘
+              共享U0V0               共享U2V2
+码流：   Y0 U0 Y1 V0   Y2 U2 Y3 V2
+</code></pre></div></code></pre>
+<p>还原回去：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>[Y0 U0 V0] [Y1 U0 V0] [Y2 U2 V2] [Y3 U2 V2]
+</code></pre></div></code></pre>
+<p>每像素平均 2 字节（省 1/3）。<strong>这就是 YUYV。</strong> 摄像头最常用的格式，因为不跨行，硬件实现简单。</p>
+<h3 id="2.3-420水平垂直都减半" tabindex="-1">2.3 4:2:0：水平垂直都减半 <a class="header-anchor" href="#2.3-420水平垂直都减半"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>两行两列共四个像素共享一组 U/V：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>第0行：  [Y0 U0 V0] [Y1 U0 V0] [Y2 U2 V2] [Y3 U2 V2]
+第1行：  [Y4 U0 V0] [Y5 U0 V0] [Y6 U2 V2] [Y7 U2 V2]
+                  └──────┬──────┘
+                    共享U0V0
+</code></pre></div></code></pre>
+<p>每像素平均 1.5 字节（省一半）。<strong>H.264 / JPEG 用的就是 4:2:0</strong>，也是 NV12、NV21、I420 这几种格式的基础。</p>
+<p>代价是<strong>不能按行独立解码</strong>，一行数据需要两行的色度信息，这也是 4:2:0 在硬件管线里比 4:2:2 麻烦的地方。</p>
+<h3 id="2.4-有一处常见的说法错误" tabindex="-1">2.4 有一处常见的说法错误 <a class="header-anchor" href="#2.4-有一处常见的说法错误"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>老资料里常写「4:2:0 是水平方向每 4 个像素取 1 个 U、1 个 V」。这个说法把 4:2:0 和已经淘汰的 4:1:1 搞混了。</p>
+<p>准确的描述是：<strong>4:2:0 在水平方向每 2 像素取 1 个色度采样，但垂直方向也每 2 行取 1 次</strong>，所以 4 个像素（2×2）共享一组 U/V。总采样数是 4:4:4 的 1/4，但两个方向各减半，而不是一个方向减到 1/4。</p>
+<h2 id="三存储格式planar-与-packed" tabindex="-1">三、存储格式：planar 与 packed <a class="header-anchor" href="#三存储格式planar-与-packed"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>采样决定「采多少」，存储决定「怎么摆」。这是两个独立维度，混起来是理解 YUV 最大的障碍。</p>
+<h3 id="3.1-两种排布" tabindex="-1">3.1 两种排布 <a class="header-anchor" href="#3.1-两种排布"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>含义</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>planar</strong>（平面）</td>
+<td>先存完所有 Y，再存完所有 U，再存完所有 V</td>
+<td>I420、YV12、YUV420P</td>
+</tr>
+<tr>
+<td><strong>packed</strong>（打包）</td>
+<td>每个像素（或像素对）的 Y/U/V 交错在一起</td>
+<td>YUYV、UYVY、YVYU</td>
+</tr>
+<tr>
+<td><strong>semi-planar</strong>（半平面）</td>
+<td>Y 是独立平面，UV 交错成第二个平面</td>
+<td>NV12、NV21</td>
+</tr>
+</tbody>
+</table></div><h3 id="3.2-具体格式对比" tabindex="-1">3.2 具体格式对比 <a class="header-anchor" href="#3.2-具体格式对比"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>以 4×2 的小图为例，Y 分量是 <code>Y0..Y7</code>，色度是 <code>U0 V0</code>（第 0 组）和 <code>U1 V1</code>（第 1 组）：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>YUYV（packed 4:2:2），每 4 字节两个像素
+  Y0 U0 Y1 V0  Y2 U1 Y3 V1  Y4 U2 Y5 V2  Y6 U3 Y7 V3
+  └─ 像素0,1 ─┘ └─ 像素2,3 ─┘
+
+I420 / YU12（planar 4:2:0）：Y 平面 + U 平面 + V 平面
+  Y 平面: Y0 Y1 Y2 Y3 Y4 Y5 Y6 Y7
+  U 平面: U0 U1 U2 U3
+  V 平面: V0 V1 V2 V3
+
+YV12（planar 4:2:0）：同 I420，但 V 在 U 前面
+  Y 平面: Y0 Y1 Y2 Y3 Y4 Y5 Y6 Y7
+  V 平面: V0 V1 V2 V3
+  U 平面: U0 U1 U2 U3
+
+NV12（semi-planar 4:2:0）：Y 平面 + UV 交织平面
+  Y 平面:  Y0 Y1 Y2 Y3 Y4 Y5 Y6 Y7
+  UV 平面: U0 V0 U1 V1 U2 V2 U3 V3
+
+NV21（semi-planar 4:2:0）：同 NV12，但 VU 交织
+  Y 平面:  Y0 Y1 Y2 Y3 Y4 Y5 Y6 Y7
+  VU 平面: V0 U0 V1 U1 V2 U2 V3 U3
+</code></pre></div></code></pre>
+<p>记忆口诀：</p>
+<ul>
+<li><strong>I 开头的是 I420，Y 开头的是 YV12</strong>，两者只差 U/V 平面顺序；</li>
+<li><strong>NV12 是 UV 交织，NV21 是 VU 交织</strong>（Android Camera 默认输出 NV21）；</li>
+<li>V4L2 里 <code>V4L2_PIX_FMT_YUV420</code> 对应 I420，<code>V4L2_PIX_FMT_YVU420</code> 对应 YV12。</li>
+</ul>
+<p>搞错 U/V 顺序不会崩，但画面颜色会「红蓝互换」，人脸变青、天空变橙。这是 YUV 处理最常见的 bug，出现时先怀疑 U/V 顺序。</p>
+<h2 id="四rgb-的几种位宽" tabindex="-1">四、RGB 的几种位宽 <a class="header-anchor" href="#四rgb-的几种位宽"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>LCD 侧要的是 RGB。RGB 的变体按每个像素占多少字节分：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>格式</th>
+<th>位宽</th>
+<th>通道分配</th>
+<th>每像素字节</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>RGB555</td>
+<td>16</td>
+<td>1 位空 + R5 + G5 + B5</td>
+<td>2</td>
+</tr>
+<tr>
+<td><strong>RGB565</strong></td>
+<td>16</td>
+<td>R5 + G6 + B5</td>
+<td>2</td>
+</tr>
+<tr>
+<td>RGB444</td>
+<td>16</td>
+<td>A4 + R4 + G4 + B4</td>
+<td>2</td>
+</tr>
+<tr>
+<td>RGB888</td>
+<td>24</td>
+<td>R8 + G8 + B8</td>
+<td>3</td>
+</tr>
+<tr>
+<td>ARGB8888</td>
+<td>32</td>
+<td>A8 + R8 + G8 + B8</td>
+<td>4</td>
+</tr>
+</tbody>
+</table></div><p><strong>RGB565 是嵌入式 LCD 的默认选择</strong>：16 位刚好对齐总线宽度，G 多给 1 位是因为人眼对绿色最敏感。代价是颜色有断层，渐变天空会出现色带。</p>
+<p>RGB565 的位布局（小端，即内存里低字节在前）：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>16 位值:  R R R R R  G G G G G G  B B B B B
+bit:      15..11     10..5         4..0
+
+举例：纯红 = 0xF800，纯绿 = 0x07E0，纯蓝 = 0x001F，白 = 0xFFFF
+</code></pre></div></code></pre>
+<p>构造宏：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> RGB565(r, g, b)  ( (((r) &gt;&gt; 3) &lt;&lt; 11) | \
+                           (((g) &gt;&gt; 2) &lt;&lt; 5)  | \
+                            ((b) &gt;&gt; 3) )</span>
+</code></pre></div></code></pre>
+<p>用 <code>|</code> 而不是 <code>+</code>。两者在字段不重叠时结果一样，但 <code>|</code> 明确表达了「拼位域」的意图，也不怕将来调整位宽时出错。</p>
+<p>RGB888 转 RGB565：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 0xRRGGBB -&gt; RGB565 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> RGB888_TO_RGB565(x)  RGB565(((x) &gt;&gt; 16) &amp; 0xFF, \
+                                    ((x) &gt;&gt; 8)  &amp; 0xFF, \
+                                     (x)        &amp; 0xFF)</span>
+</code></pre></div></code></pre>
+<p>注意蓝色是 <code>(x) &amp; 0xFF</code>，<strong>右移 0 位</strong>。写成 <code>(x &gt;&gt; 3) &amp; 0xFF</code> 是错的。<code>RGB565</code> 宏内部已经会对 B 做 <code>&gt;&gt; 3</code>，再移一次等于丢了 3 位精度，蓝色会整体偏暗。</p>
+<h2 id="五yuyv--rgb565-转换" tabindex="-1">五、YUYV → RGB565 转换 <a class="header-anchor" href="#五yuyv--rgb565-转换"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>原理用 BT.601 的换算公式：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>R = Y + 1.402 × (V - 128)
+G = Y - 0.344 × (U - 128) - 0.715 × (V - 128)
+B = Y + 1.772 × (U - 128)
+</code></pre></div></code></pre>
+<p>浮点太慢，改整数近似（除以 256）：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>系数</th>
+<th>256 倍</th>
+<th>整数写法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1.402</td>
+<td>359</td>
+<td><code>V + (V*103 &gt;&gt; 8)</code>（把 1.402 拆成 1 + 0.402）</td>
+</tr>
+<tr>
+<td>0.344</td>
+<td>88</td>
+<td><code>(U*88 &gt;&gt; 8)</code></td>
+</tr>
+<tr>
+<td>0.715</td>
+<td>183</td>
+<td><code>(V*183 &gt;&gt; 8)</code></td>
+</tr>
+<tr>
+<td>1.772</td>
+<td>454</td>
+<td><code>U + (U*198 &gt;&gt; 8)</code>（1 + 0.773）</td>
+</tr>
+</tbody>
+</table></div><p>实现：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">clamp255</span><span class="hljs-params">(<span class="hljs-type">int</span> v)</span>
+{
+    <span class="hljs-keyword">return</span> v &lt; <span class="hljs-number">0</span> ? <span class="hljs-number">0</span> : (v &gt; <span class="hljs-number">255</span> ? <span class="hljs-number">255</span> : v);
+}
+
+<span class="hljs-comment">/*
+ * YUYV (YUV 4:2:2 packed) -&gt; RGB565
+ * 输入 yuyv: 每 4 字节 2 像素，布局 Y0 U0 Y1 V0
+ * 输入 rgb : 输出缓冲，宽 × 高 × 2 字节
+ */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">yuyv_to_rgb565</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *yuyv, <span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> *rgb,
+                   <span class="hljs-type">int</span> width, <span class="hljs-type">int</span> height)</span>
+{
+    <span class="hljs-type">int</span> x, y;
+
+    <span class="hljs-keyword">for</span> (y = <span class="hljs-number">0</span>; y &lt; height; y++) {
+        <span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *line = yuyv + (<span class="hljs-type">size_t</span>)y * width * <span class="hljs-number">2</span>;
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> *out = rgb + (<span class="hljs-type">size_t</span>)y * width;
+        <span class="hljs-type">int</span> r, g, b;
+
+        <span class="hljs-keyword">for</span> (x = <span class="hljs-number">0</span>; x + <span class="hljs-number">1</span> &lt; width; x += <span class="hljs-number">2</span>) {
+            <span class="hljs-comment">/* 四个字节一次取完，两个像素共享 U/V */</span>
+            <span class="hljs-type">int</span> Y0 = line[<span class="hljs-number">0</span>];
+            <span class="hljs-type">int</span> U  = line[<span class="hljs-number">1</span>] - <span class="hljs-number">128</span>;
+            <span class="hljs-type">int</span> Y1 = line[<span class="hljs-number">2</span>];
+            <span class="hljs-type">int</span> V  = line[<span class="hljs-number">3</span>] - <span class="hljs-number">128</span>;
+
+            <span class="hljs-comment">/* 像素 0 */</span>
+            r = Y0 + V + ((V * <span class="hljs-number">103</span>) &gt;&gt; <span class="hljs-number">8</span>);
+            g = Y0 - ((U * <span class="hljs-number">88</span>) &gt;&gt; <span class="hljs-number">8</span>) - ((V * <span class="hljs-number">183</span>) &gt;&gt; <span class="hljs-number">8</span>);
+            b = Y0 + U + ((U * <span class="hljs-number">198</span>) &gt;&gt; <span class="hljs-number">8</span>);
+            out[x] = (<span class="hljs-type">unsigned</span> <span class="hljs-type">short</span>)(((clamp255(r) &gt;&gt; <span class="hljs-number">3</span>) &lt;&lt; <span class="hljs-number">11</span>) |
+                                      ((clamp255(g) &gt;&gt; <span class="hljs-number">2</span>) &lt;&lt; <span class="hljs-number">5</span>)  |
+                                       (clamp255(b) &gt;&gt; <span class="hljs-number">3</span>));
+
+            <span class="hljs-comment">/* 像素 1：Y 换成 Y1，U/V 不变 */</span>
+            r = Y1 + V + ((V * <span class="hljs-number">103</span>) &gt;&gt; <span class="hljs-number">8</span>);
+            g = Y1 - ((U * <span class="hljs-number">88</span>) &gt;&gt; <span class="hljs-number">8</span>) - ((V * <span class="hljs-number">183</span>) &gt;&gt; <span class="hljs-number">8</span>);
+            b = Y1 + U + ((U * <span class="hljs-number">198</span>) &gt;&gt; <span class="hljs-number">8</span>);
+            out[x + <span class="hljs-number">1</span>] = (<span class="hljs-type">unsigned</span> <span class="hljs-type">short</span>)(((clamp255(r) &gt;&gt; <span class="hljs-number">3</span>) &lt;&lt; <span class="hljs-number">11</span>) |
+                                          ((clamp255(g) &gt;&gt; <span class="hljs-number">2</span>) &lt;&lt; <span class="hljs-number">5</span>)  |
+                                           (clamp255(b) &gt;&gt; <span class="hljs-number">3</span>));
+
+            line += <span class="hljs-number">4</span>;
+        }
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<h3 id="5.1-三个必须说清的点" tabindex="-1">5.1 三个必须说清的点 <a class="header-anchor" href="#5.1-三个必须说清的点"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>一、<code>clamp255</code> 不能省。</strong> YUV→RGB 的换算结果可能超出 [0,255]（高饱和区域的 R 或 B 会超过 255）。不截断直接右移，溢出位会污染相邻字段，在高光或纯色区域会出现彩色噪点。</p>
+<p><strong>二、U/V 是「共享」的，不是「每像素一个」。</strong> 上面代码里两个像素用同一组 <code>U</code>/<code>V</code>，这正是 4:2:2 的定义。很多实现写错就错在这里：按像素推进指针（每像素 +2 字节），结果 U/V 读到的是下一个像素的 Y。现象是<strong>画面整体偏色，并且颜色呈周期性条纹</strong>。</p>
+<p><strong>三、行宽用 <code>width × 2</code>，但真实帧可能带填充。</strong> 摄像头驱动可能让 <code>bytesperline &gt; width × 2</code>（行尾补齐到 16 或 32 字节对齐）。此时必须用 <code>v4l2_pix_format.bytesperline</code> 推进行指针，否则每行会越错越多，画面呈斜条纹。上面函数为了通用性假设无填充，实际项目里应把 <code>bytesperline</code> 作为参数传进来。</p>
+<h3 id="5.2-性能能优化在哪" tabindex="-1">5.2 性能：能优化在哪 <a class="header-anchor" href="#5.2-性能能优化在哪"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一帧 320×240 要转 76 800 次，每次约 15 次整数运算，总共约 115 万次操作。在 400MHz 的 ARM920T 上这是 5～10 毫秒，25fps 时 CPU 占用 12%～25%。</p>
+<p>能做的优化，按性价比排序：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>手段</th>
+<th>收益</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>编译器开 <code>-O2</code></td>
+<td>2～3 倍</td>
+<td>无</td>
+</tr>
+<tr>
+<td>查表法（预计算 RGB565 分量）</td>
+<td>1.5～2 倍</td>
+<td>3 × 256 项表，占用 1.5KB</td>
+</tr>
+<tr>
+<td>NEON / MMX SIMD</td>
+<td>4～8 倍</td>
+<td>需要架构支持，代码可读性差</td>
+</tr>
+<tr>
+<td>让摄像头直接输出 RGB565</td>
+<td>完全省掉</td>
+<td>多数 UVC 不支持，或帧率受限</td>
+</tr>
+<tr>
+<td>用 GPU（OpenGL ES 纹理 + 着色器）</td>
+<td>硬件加速</td>
+<td>需要 GPU 驱动栈，复杂度高</td>
+</tr>
+</tbody>
+</table></div><p>嵌入式上最实际的是前两条。真要跑 30fps 高分辨率，就别在 CPU 上转，查 SoC 有没有 CSC/DE 硬件模块。</p>
+<h2 id="六存一帧-yuv用-ffplay-验证" tabindex="-1">六、存一帧 YUV，用 ffplay 验证 <a class="header-anchor" href="#六存一帧-yuv用-ffplay-验证"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>转换代码写对没有，最快的确诊方式是<strong>先把原始 YUV 存下来，用桌面上的 ffplay 打开看</strong>。ffplay 认识 YUYV，能正确显示；如果 ffplay 里正常而你的 LCD 上是花的，问题就在转换或 fb 那一侧。</p>
+<p>存盘：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">save_yuv_image</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *start, <span class="hljs-type">int</span> length)</span>
+{
+    FILE *fp = fopen(<span class="hljs-string">&quot;pic.yuv&quot;</span>, <span class="hljs-string">&quot;wb&quot;</span>);    <span class="hljs-comment">/* 必须是 &quot;wb&quot;，不是 &quot;w&quot; */</span>
+
+    <span class="hljs-keyword">if</span> (!fp) {
+        perror(<span class="hljs-string">&quot;fopen pic.yuv&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    fwrite(start, <span class="hljs-number">1</span>, length, fp);
+    fclose(fp);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>那个 <code>&quot;wb&quot;</code> 很关键。文本模式在某些平台上会做换行符转换，把二进制数据写坏。Windows 上必翻车，Linux 上虽然无差别，但习惯要养成。</p>
+<p>在采集循环里每 N 帧存一张：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (count % <span class="hljs-number">200</span> == <span class="hljs-number">0</span>)
+    save_yuv_image(frame, frame_len);
+</code></pre></div></code></pre>
+<h3 id="6.1-装-ffplay" tabindex="-1">6.1 装 ffplay <a class="header-anchor" href="#6.1-装-ffplay"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>ffplay 依赖 SDL2。从源码装（2016 年的做法，现在多数发行版直接 <code>apt install ffmpeg</code> 就行）：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 先装 SDL2</span>
+git <span class="hljs-built_in">clone</span> https://github.com/libsdl-org/SDL.git
+<span class="hljs-built_in">cd</span> SDL
+./configure &amp;&amp; make &amp;&amp; make install
+
+<span class="hljs-comment"># 再编 ffmpeg（需要 yasm）</span>
+<span class="hljs-built_in">sudo</span> apt-get install yasm
+wget http://www.ffmpeg.org/releases/ffmpeg-3.1.tar.gz
+tar -zxvf ffmpeg-3.1.tar.gz
+<span class="hljs-built_in">cd</span> ffmpeg-3.1
+
+<span class="hljs-built_in">export</span> PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:<span class="hljs-variable">$PKG_CONFIG_PATH</span>
+./configure --enable-shared \
+            --extra-cflags=-I/usr/local/include \
+            --extra-ldflags=-L/usr/local/lib \
+            --enable-gpl
+make &amp;&amp; make install
+</code></pre></div></code></pre>
+<blockquote>
+<p>老资料里写的 <code>./configure make &amp; make install</code> 是错的。<code>./configure</code> 不带参数会把 <code>make</code> 和 <code>&amp;</code> 当成自己的参数，实际什么都没配。三个步骤之间要用 <code>&amp;&amp;</code>。</p>
+</blockquote>
+<p>装完让动态链接器找到 <code>/usr/local/lib</code>：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">echo</span> <span class="hljs-string">&quot;/usr/local/lib&quot;</span> | <span class="hljs-built_in">sudo</span> <span class="hljs-built_in">tee</span> -a /etc/ld.so.conf
+<span class="hljs-built_in">sudo</span> ldconfig
+
+<span class="hljs-comment"># 把 /usr/local/bin 加进 PATH</span>
+<span class="hljs-built_in">echo</span> <span class="hljs-string">&#x27;export PATH=$PATH:/usr/local/bin&#x27;</span> &gt;&gt; /etc/profile
+<span class="hljs-built_in">source</span> /etc/profile          <span class="hljs-comment"># 注意是 /etc，不是 /ect</span>
+</code></pre></div></code></pre>
+<p>验证：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ffmpeg -version
+<span class="hljs-comment"># ffmpeg version 3.1 Copyright (c) 2000-2016 the FFmpeg developers</span>
+</code></pre></div></code></pre>
+<h3 id="6.2-播放" tabindex="-1">6.2 播放 <a class="header-anchor" href="#6.2-播放"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ffplay -f rawvideo -video_size 320x240 -pixel_format yuyv422 pic.yuv
+</code></pre></div></code></pre>
+<p>四个参数：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-f rawvideo</code></td>
+<td>输入是裸数据，没有容器头</td>
+</tr>
+<tr>
+<td><code>-video_size 320x240</code></td>
+<td>必须和采集分辨率<strong>完全一致</strong></td>
+</tr>
+<tr>
+<td><code>-pixel_format yuyv422</code></td>
+<td>必须和采集格式一致</td>
+</tr>
+<tr>
+<td>结尾</td>
+<td>文件路径</td>
+</tr>
+</tbody>
+</table></div><p>尺寸写错会报：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Invalid buffer size, packet size 1646280 &lt; expected frame_size 3098880
+</code></pre></div></code></pre>
+<p>两个数字的含义：第一个是文件实际大小，第二个是按 <code>-video_size</code> 算出来的期望大小。对不上就说明尺寸或格式参数错了。这个报错其实是个很好的自检工具。</p>
+<p>正常运行时 ffplay 会打印：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Input #0, rawvideo, from &#x27;pic.yuv&#x27;:
+  Duration: 00:00:00.04, start: 0.000000, bitrate: 30720 kb/s
+    Stream #0:0: Video: rawvideo (YUY2 / 0x32595559), yuyv422, 320x240, 30720 kb/s
+</code></pre></div></code></pre>
+<p>看到 <code>yuyv422</code> 和正确的分辨率，就证明采集这一侧完全没问题。</p>
+<h2 id="七fb-设备查询参数与映射" tabindex="-1">七、fb 设备：查询参数与映射 <a class="header-anchor" href="#七fb-设备查询参数与映射"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>LCD 在 Linux 下是 framebuffer 设备 <code>/dev/fb0</code>。写它就是在屏幕上画。</p>
+<p>用之前要问它三件事：分辨率多少、位深多少、一行多少字节。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/fb.h&gt;</span></span>
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">fb_fix_screeninfo</span> <span class="hljs-title">finfo</span>;</span>    <span class="hljs-comment">/* 不可变参数 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">fb_var_screeninfo</span> <span class="hljs-title">vinfo</span>;</span>    <span class="hljs-comment">/* 可变参数（分辨率、位深可改） */</span>
+
+ioctl(fb_fd, FBIOGET_FSCREENINFO, &amp;finfo);
+ioctl(fb_fd, FBIOGET_VSCREENINFO, &amp;vinfo);
+</code></pre></div></code></pre>
+<p>两套参数的分工：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>结构体</th>
+<th>关键字段</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fb_fix_screeninfo</code></td>
+<td><code>smem_start</code>（物理地址）、<code>line_length</code>（每行字节）、<code>smem_len</code></td>
+<td>算偏移、算大小</td>
+</tr>
+<tr>
+<td><code>fb_var_screeninfo</code></td>
+<td><code>xres</code> / <code>yres</code>（可见分辨率）、<code>xres_virtual</code> / <code>yres_virtual</code>（显存分辨率）、<code>bits_per_pixel</code>、<code>red</code> / <code>green</code> / <code>blue</code> 位域</td>
+<td>画点、算像素格式</td>
+</tr>
+</tbody>
+</table></div><p>两个分辨率要分清：<code>xres</code> 是<strong>屏幕实际显示的像素</strong>，<code>xres_virtual</code> 是<strong>显存里一行有多少像素</strong>。双缓冲时 <code>xres_virtual = 2 × xres</code>，一屏显示一屏绘制。单缓冲时两者相等。</p>
+<p><code>line_length</code> 是显存里一行的真实字节数，可能大于 <code>xres × bits_per_pixel / 8</code>（存在行尾 padding）。<strong>算地址偏移必须用 <code>line_length</code>，不能用 <code>xres × bpp</code>。</strong> 这是 fb 编程最常见的错误来源，现象是画面斜移。</p>
+<p>完整打开流程：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;fcntl.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/mman.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/fb.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> *fb_addr;   <span class="hljs-comment">/* 映射后的显存基址 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>   fb_width;   <span class="hljs-comment">/* 可见宽度 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>   fb_height;  <span class="hljs-comment">/* 可见高度 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>   fb_line;    <span class="hljs-comment">/* 每行字节数 */</span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">fb_open</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">char</span> *name)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">fb_fix_screeninfo</span> <span class="hljs-title">finfo</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">fb_var_screeninfo</span> <span class="hljs-title">vinfo</span>;</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> len;
+    <span class="hljs-type">void</span> *p;
+    <span class="hljs-type">int</span> fd;
+
+    fd = open(name, O_RDWR);
+    <span class="hljs-keyword">if</span> (fd &lt; <span class="hljs-number">0</span>) {
+        perror(name);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    <span class="hljs-keyword">if</span> (ioctl(fd, FBIOGET_FSCREENINFO, &amp;finfo) &lt; <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;FBIOGET_FSCREENINFO&quot;</span>);
+        <span class="hljs-keyword">goto</span> fail;
+    }
+    <span class="hljs-keyword">if</span> (ioctl(fd, FBIOGET_VSCREENINFO, &amp;vinfo) &lt; <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;FBIOGET_VSCREENINFO&quot;</span>);
+        <span class="hljs-keyword">goto</span> fail;
+    }
+
+    fb_width  = vinfo.xres;
+    fb_height = vinfo.yres;
+    fb_line   = finfo.line_length;
+
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;fb: %ux%u, %u bpp, line_length=%u, smem_len=%u\n&quot;</span>,
+           fb_width, fb_height, vinfo.bits_per_pixel,
+           finfo.line_length, finfo.smem_len);
+
+    <span class="hljs-comment">/* 显存总大小：用 smem_len，不要自己拿 w*h*bpp/8 算，
+       虚拟分辨率大于可见分辨率时会算小 */</span>
+    len = finfo.smem_len;
+    p = mmap(<span class="hljs-literal">NULL</span>, len, PROT_READ | PROT_WRITE, MAP_SHARED, fd, <span class="hljs-number">0</span>);
+    <span class="hljs-keyword">if</span> (p == MAP_FAILED) {          <span class="hljs-comment">/* 不是 NULL */</span>
+        perror(<span class="hljs-string">&quot;mmap fb&quot;</span>);
+        <span class="hljs-keyword">goto</span> fail;
+    }
+    fb_addr = p;
+
+    <span class="hljs-keyword">return</span> fd;
+
+fail:
+    close(fd);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p><code>fb_width</code> / <code>fb_height</code> / <code>fb_line</code> / <code>fb_addr</code> 用全局静态变量，是因为画点函数要被高频调用，传一串参数既慢又难读。这个写法在多屏场景下要改成上下文结构体。</p>
+<h3 id="7.1-画一个像素" tabindex="-1">7.1 画一个像素 <a class="header-anchor" href="#7.1-画一个像素"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">fb_put_pixel</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> x, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> y, <span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> color)</span>
+{
+    <span class="hljs-comment">/* 偏移按「行」算，用 fb_line 而不是 fb_width * 2 */</span>
+    ((<span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> *)((<span class="hljs-type">char</span> *)fb_addr + y * fb_line))[x] = color;
+}
+</code></pre></div></code></pre>
+<p>等价但更常见的写法（要求 <code>fb_line == fb_width × 2</code>，无 padding 时才成立）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>fb_addr[y * fb_width + x] = color;
+</code></pre></div></code></pre>
+<p><strong>第二种写法在带 padding 的 fb 上是错的。</strong> 先确认 <code>fb_line == fb_width * 2</code>，不等就必须用第一种。</p>
+<h2 id="八把一帧画到-lcd" tabindex="-1">八、把一帧画到 LCD <a class="header-anchor" href="#八把一帧画到-lcd"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="8.1-先看一个尺寸巧合" tabindex="-1">8.1 先看一个尺寸巧合 <a class="header-anchor" href="#8.1-先看一个尺寸巧合"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>例子里有个很幸运的条件：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th></th>
+<th>宽</th>
+<th>高</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>摄像头采集</td>
+<td>320</td>
+<td>240</td>
+</tr>
+<tr>
+<td>LCD 屏幕（竖屏）</td>
+<td>240</td>
+<td>320</td>
+</tr>
+</tbody>
+</table></div><p>摄像头是横向 4:3，LCD 是竖向 3:4。两者正好是<strong>转 90° 的关系</strong>，而且转完之后尺寸刚好嵌满，一个像素都不浪费。</p>
+<p>所以显示的时候不是缩小或裁剪，而是<strong>旋转 90°</strong>：把采集图的第 <code>y</code> 行第 <code>x</code> 列，画到屏幕的第 <code>x</code> 行第 <code>y</code> 列。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>采集图 (320宽 × 240高)          屏幕 (240宽 × 320高)
+  (0,0) ──────────► (319,0)       (0,0)
+   │                              │            ▲
+   │                              │  旋转 90° │
+   ▼                              ▼            │
+  (0,239)                (0,319)  └────────────┘
+</code></pre></div></code></pre>
+<h3 id="8.2-实现" tabindex="-1">8.2 实现 <a class="header-anchor" href="#8.2-实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/*
+ * 把 rgb565 缓冲显示到 LCD，同时做 90° 旋转
+ * src_w/src_h 是源图（采集图）的宽高
+ */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">fb_show_img</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> *rgb, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> src_w,
+                 <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> src_h)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> x, y;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> max_x, max_y;
+
+    <span class="hljs-comment">/* 旋转后，源图的宽对应屏幕的高，源图的高对应屏幕的宽 */</span>
+    max_x = src_w &lt; fb_height ? src_w : fb_height;
+    max_y = src_h &lt; fb_width  ? src_h : fb_width;
+
+    <span class="hljs-keyword">for</span> (y = <span class="hljs-number">0</span>; y &lt; max_y; y++) {
+        <span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> *src_line = rgb + y * src_w;
+
+        <span class="hljs-keyword">for</span> (x = <span class="hljs-number">0</span>; x &lt; max_x; x++) {
+            <span class="hljs-comment">/* 关键：坐标互换 (x,y) -&gt; (y,x) */</span>
+            fb_put_pixel(y, x, src_line[x]);
+        }
+    }
+}
+</code></pre></div></code></pre>
+<p>坐标互换那行是全部要点。<code>fb_put_pixel(y, x, ...)</code> 里第一个参数是屏幕的 X（来自源图的 y），第二个是屏幕的 Y（来自源图的 x）。</p>
+<p>用 <code>min()</code> 裁剪是为了防止源图比屏幕大时越界写显存。越界写在 fb 上不会立刻崩，它只是往显存的邻居区域写数据，结果可能是花屏、可能是闪一下、也可能是把别的图层覆盖掉。</p>
+<h3 id="8.3-翻转方向" tabindex="-1">8.3 翻转方向 <a class="header-anchor" href="#8.3-翻转方向"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>旋转有四个方向，改坐标映射就行：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>需求</th>
+<th>写法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>顺时针 90°</td>
+<td><code>fb_put_pixel(y, x, c)</code></td>
+</tr>
+<tr>
+<td>逆时针 90°</td>
+<td><code>fb_put_pixel(fb_width - 1 - y, fb_height - 1 - x, c)</code></td>
+</tr>
+<tr>
+<td>180°</td>
+<td><code>fb_put_pixel(src_w - 1 - x, src_h - 1 - y, c)</code></td>
+</tr>
+<tr>
+<td>不旋转（裁剪）</td>
+<td><code>fb_put_pixel(x, y, c)</code></td>
+</tr>
+</tbody>
+</table></div><p>摄像头装反了（很多模块的排线朝下就算倒装）就是靠这个改的，不用拆机器。</p>
+<h3 id="8.4-直接内存拷贝会更快" tabindex="-1">8.4 直接内存拷贝会更快 <a class="header-anchor" href="#8.4-直接内存拷贝会更快"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>上面是逐点写，76 800 次函数调用加偏移计算。如果能不旋转，一次 <code>memcpy</code> 整帧更快：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 无旋转、且 fb_line == src_w * 2 时，整帧一次拷贝 */</span>
+<span class="hljs-built_in">memcpy</span>(fb_addr, rgb, src_w * src_h * <span class="hljs-number">2</span>);
+</code></pre></div></code></pre>
+<p>要旋转就没这个便宜可占了，只能逐点或逐行搬。逐行版本：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 旋转 90° 的逐行优化：源图一行 -&gt; 屏幕一列，仍需逐点，但省掉重复的行基址计算 */</span>
+<span class="hljs-keyword">for</span> (y = <span class="hljs-number">0</span>; y &lt; max_y; y++) {
+    <span class="hljs-type">const</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> *src_line = rgb + y * src_w;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> *dst = (<span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> *)((<span class="hljs-type">char</span> *)fb_addr + y * <span class="hljs-number">2</span>);
+    <span class="hljs-keyword">for</span> (x = <span class="hljs-number">0</span>; x &lt; max_x; x++)
+        dst[x * fb_width] = src_line[x];   <span class="hljs-comment">/* 屏幕上一列 = 步长 fb_width */</span>
+}
+</code></pre></div></code></pre>
+<h2 id="九完整项目" tabindex="-1">九、完整项目 <a class="header-anchor" href="#九完整项目"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="9.1-文件构成" tabindex="-1">9.1 文件构成 <a class="header-anchor" href="#9.1-文件构成"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>usb_camera/
+├── Makefile
+├── video2lcd.c             主程序：采集 + 转换 + 显示
+└── libv4l2/
+    ├── libv4l2.c            V4L2 ioctl 封装（对每个命令的薄封装）
+    ├── libv4l2.h
+    ├── color.c              YUYV -&gt; RGB565
+    ├── color.h
+    ├── fb.c                 framebuffer 打开/映射/画点
+    └── fb.h
+</code></pre></div></code></pre>
+<p>这个分层值得说一句：把 V4L2 的十几个 ioctl 各包一个函数，主程序里就只剩业务逻辑（采集→转换→显示），读起来清爽。代价是多了一层函数调用，但相对于 ioctl 本身的系统调用开销，这层几乎可以忽略。</p>
+<p><code>libv4l2.c</code> 里那二十来个函数（<code>v4l2_open</code> / <code>v4l2_querycap</code> / <code>v4l2_s_fmt</code> / <code>v4l2_reqbufs</code> / <code>v4l2_dqbuf</code> / <code>v4l2_qbuf</code> 等）就是前一篇文章里各个 ioctl 的薄封装，每个只有 10～20 行，内容不再重复。</p>
+<h3 id="9.2-主程序" tabindex="-1">9.2 主程序 <a class="header-anchor" href="#9.2-主程序"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdlib.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;fcntl.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;errno.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/mman.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/videodev2.h&gt;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;libv4l2/libv4l2.h&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;libv4l2/color.h&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;libv4l2/fb.h&quot;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> FB_NAME   <span class="hljs-string">&quot;/dev/fb0&quot;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NR_BUFS   4</span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">int</span> argc, <span class="hljs-type">char</span> **argv)</span>
+{
+    <span class="hljs-type">int</span> fd_video = <span class="hljs-number">-1</span>;
+    <span class="hljs-type">int</span> fd_fb = <span class="hljs-number">-1</span>;
+    <span class="hljs-type">int</span> ret = <span class="hljs-number">-1</span>;
+    <span class="hljs-type">int</span> width = <span class="hljs-number">320</span>, height = <span class="hljs-number">240</span>;
+    <span class="hljs-type">int</span> count = <span class="hljs-number">0</span>;
+
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_capability</span> <span class="hljs-title">cap</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_buf</span> *<span class="hljs-title">v4l2_buf</span> =</span> <span class="hljs-literal">NULL</span>;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_buf_unit</span> *<span class="hljs-title">unit</span> =</span> <span class="hljs-literal">NULL</span>;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *rgb565 = <span class="hljs-literal">NULL</span>;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> caps;
+
+    <span class="hljs-keyword">if</span> (argc != <span class="hljs-number">2</span>) {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;usage: %s &lt;/dev/videox&gt;\n&quot;</span>, argv[<span class="hljs-number">0</span>]);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    <span class="hljs-comment">/* 打开 LCD */</span>
+    fd_fb = fb_open(FB_NAME);
+    <span class="hljs-keyword">if</span> (fd_fb &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> err;
+
+    <span class="hljs-comment">/* 打开摄像头 */</span>
+    fd_video = v4l2_open(argv[<span class="hljs-number">1</span>], O_RDWR);
+    <span class="hljs-keyword">if</span> (fd_video &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> err;
+
+    <span class="hljs-comment">/* 查能力，注意用 device_caps */</span>
+    <span class="hljs-built_in">memset</span>(&amp;cap, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(cap));
+    <span class="hljs-keyword">if</span> (v4l2_querycap(fd_video, &amp;cap) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> err;
+
+    caps = (cap.capabilities &amp; V4L2_CAP_DEVICE_CAPS)
+           ? cap.device_caps : cap.capabilities;
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;driver=%s card=%s bus=%s\n&quot;</span>, cap.driver, cap.card, cap.bus_info);
+
+    <span class="hljs-keyword">if</span> (!(caps &amp; V4L2_CAP_VIDEO_CAPTURE) || !(caps &amp; V4L2_CAP_STREAMING)) {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;not a streaming capture device\n&quot;</span>);
+        <span class="hljs-keyword">goto</span> err;
+    }
+
+    <span class="hljs-comment">/* 枚举输入并选 0 */</span>
+    <span class="hljs-keyword">if</span> (v4l2_enuminput(fd_video, <span class="hljs-number">0</span>) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> err;
+    <span class="hljs-keyword">if</span> (v4l2_s_input(fd_video, <span class="hljs-number">0</span>) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> err;
+
+    <span class="hljs-comment">/* 确认支持 YUYV，然后设置 */</span>
+    <span class="hljs-keyword">if</span> (v4l2_enum_fmt(fd_video, V4L2_PIX_FMT_YUYV,
+                      V4L2_BUF_TYPE_VIDEO_CAPTURE) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> err;
+    <span class="hljs-keyword">if</span> (v4l2_s_fmt(fd_video, &amp;width, &amp;height, V4L2_PIX_FMT_YUYV,
+                   V4L2_BUF_TYPE_VIDEO_CAPTURE) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> err;
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;capture: %dx%d YUYV\n&quot;</span>, width, height);
+
+    <span class="hljs-comment">/* RGB565 缓冲：每像素 2 字节 */</span>
+    rgb565 = <span class="hljs-built_in">malloc</span>((<span class="hljs-type">size_t</span>)width * height * <span class="hljs-number">2</span>);
+    <span class="hljs-keyword">if</span> (!rgb565) {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;out of memory\n&quot;</span>);
+        <span class="hljs-keyword">goto</span> err;
+    }
+
+    <span class="hljs-comment">/* 申请缓冲并映射 */</span>
+    v4l2_buf = v4l2_reqbufs(fd_video, V4L2_BUF_TYPE_VIDEO_CAPTURE, NR_BUFS);
+    <span class="hljs-keyword">if</span> (!v4l2_buf)
+        <span class="hljs-keyword">goto</span> err;
+    <span class="hljs-keyword">if</span> (v4l2_querybuf(fd_video, v4l2_buf) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> err;
+    <span class="hljs-keyword">if</span> (v4l2_mmap(fd_video, v4l2_buf) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> err;
+
+    <span class="hljs-comment">/* 全部入队并启动 */</span>
+    <span class="hljs-keyword">if</span> (v4l2_qbuf_all(fd_video, v4l2_buf) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> err;
+    <span class="hljs-keyword">if</span> (v4l2_streamon(fd_video) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> err;
+
+    <span class="hljs-comment">/* 采集循环 */</span>
+    <span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+        <span class="hljs-keyword">if</span> (v4l2_poll(fd_video) &lt; <span class="hljs-number">0</span>)
+            <span class="hljs-keyword">break</span>;
+
+        unit = v4l2_dqbuf(fd_video, v4l2_buf);
+        <span class="hljs-keyword">if</span> (!unit)
+            <span class="hljs-keyword">break</span>;
+
+        <span class="hljs-comment">/* 每 200 帧存一张原始 YUV，方便回去用 ffplay 核对 */</span>
+        <span class="hljs-keyword">if</span> (count % <span class="hljs-number">200</span> == <span class="hljs-number">0</span>)
+            save_yuv_image(unit-&gt;start, unit-&gt;length);
+        count++;
+
+        <span class="hljs-comment">/* 转换并显示 */</span>
+        yuyv_to_rgb565(unit-&gt;start, (<span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> *)rgb565, width, height);
+        fb_show_img((<span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> *)rgb565, width, height);
+
+        <span class="hljs-comment">/* 这一行漏了，采集会在 NR_BUFS 帧之后停住 */</span>
+        <span class="hljs-keyword">if</span> (v4l2_qbuf(fd_video, unit) &lt; <span class="hljs-number">0</span>)
+            <span class="hljs-keyword">break</span>;
+    }
+
+    ret = <span class="hljs-number">0</span>;
+
+err:
+    <span class="hljs-keyword">if</span> (fd_video &gt;= <span class="hljs-number">0</span>) {
+        <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_buf_type</span> <span class="hljs-title">t</span> =</span> V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        ioctl(fd_video, VIDIOC_STREAMOFF, &amp;t);   <span class="hljs-comment">/* 先停采集 */</span>
+    }
+    <span class="hljs-keyword">if</span> (v4l2_buf) {
+        v4l2_munmap(fd_video, v4l2_buf);         <span class="hljs-comment">/* 再解映射 */</span>
+        v4l2_relbufs(v4l2_buf);
+    }
+    <span class="hljs-keyword">if</span> (fd_video &gt;= <span class="hljs-number">0</span>)
+        v4l2_close(fd_video);
+    <span class="hljs-keyword">if</span> (fd_fb &gt;= <span class="hljs-number">0</span>)
+        fb_close(fd_fb);
+    <span class="hljs-built_in">free</span>(rgb565);
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<p>清理顺序是有讲究的：<strong>先 <code>STREAMOFF</code>，再 <code>munmap</code>，最后 <code>close</code></strong>。顺序反了，内核可能正在往已经解映射的地址 DMA，轻则花屏，重则访问非法页崩溃。</p>
+<h3 id="9.3-makefile" tabindex="-1">9.3 Makefile <a class="header-anchor" href="#9.3-makefile"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-makefile"><div class="code-block" data-lang="makefile"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">makefile</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>CC          = arm-linux-gcc -march=armv4t -O2
+TARGET      = video2lcd
+SRCS        = libv4l2/libv4l2.c libv4l2/color.c libv4l2/fb.c video2lcd.c
+
+<span class="hljs-section">all:</span>
+	<span class="hljs-variable">$(CC)</span> -Wall -o <span class="hljs-variable">$(TARGET)</span> <span class="hljs-variable">$(SRCS)</span>
+
+<span class="hljs-section">clean:</span>
+	rm -f <span class="hljs-variable">$(TARGET)</span> *.o libv4l2/*.o
+</code></pre></div></code></pre>
+<p><code>-O2</code> 是必须的。第一版代码不加优化调试方便，但运行时要跑 25fps，不优化基本跟不上，转换那一层能差 2～3 倍。</p>
+<h3 id="9.4-编译与部署" tabindex="-1">9.4 编译与部署 <a class="header-anchor" href="#9.4-编译与部署"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ make
+arm-linux-gcc -march=armv4t -O2 -Wall -o video2lcd \
+    libv4l2/libv4l2.c libv4l2/color.c libv4l2/fb.c video2lcd.c
+
+$ <span class="hljs-built_in">cp</span> video2lcd /work/nfs_root/rootfs/
+</code></pre></div></code></pre>
+<h2 id="十运行与排错" tabindex="-1">十、运行与排错 <a class="header-anchor" href="#十运行与排错"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="10.1-正常运行的样子" tabindex="-1">10.1 正常运行的样子 <a class="header-anchor" href="#10.1-正常运行的样子"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>[root@zy:/]# ./video2lcd /dev/video0
+fb: 240x320, 16 bpp, line_length=480, smem_len=153600
+driver=uvcvideo card=USB 2.0 Camera: USB Camera bus=usb-s3c24xx-1
+input 0: Camera 1, std: 0x00000000
+pixelformat = YUYV, description = YUYV 4:2:2
+capture: 320x240 YUYV
+</code></pre></div></code></pre>
+<p>逐行解读：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>输出</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fb: 240x320, 16 bpp, line_length=480</code></td>
+<td>LCD 竖屏 240×320，16 位色。<code>line_length=480 = 240×2</code>，说明<strong>没有行填充</strong>，可以用 <code>fb_addr[y*240+x]</code> 简化写法</td>
+</tr>
+<tr>
+<td><code>driver=uvcvideo</code></td>
+<td>标准 UVC 驱动，说明摄像头是免驱的</td>
+</tr>
+<tr>
+<td><code>bus=usb-s3c24xx-1</code></td>
+<td>挂在三星 SoC 的 USB host 上，<code>-1</code> 表示第 1 个端口</td>
+</tr>
+<tr>
+<td><code>input 0: Camera 1</code></td>
+<td>只有一路输入，名字是 Camera 1</td>
+</tr>
+<tr>
+<td><code>pixelformat = YUYV</code></td>
+<td>确认支持目标格式，转换代码按 YUYV 写没问题</td>
+</tr>
+<tr>
+<td><code>capture: 320x240</code></td>
+<td><code>S_FMT</code> 回读的实际值，与请求一致</td>
+</tr>
+</tbody>
+</table></div><p><code>line_length=480</code> 这一行值得单独高兴一下：它等于 <code>240 × 2</code>，意味着没有行 padding，画点可以用最简形式。如果打印出来是 512 或 496，说明有对齐填充，必须改用 <code>fb_line</code> 计算偏移。</p>
+<h3 id="10.2-排错表" tabindex="-1">10.2 排错表 <a class="header-anchor" href="#10.2-排错表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>定位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LCD 上全是彩色噪点</td>
+<td>把 YUYV 当 RGB565 直接写了</td>
+<td>确认调用了 <code>yuyv_to_rgb565</code></td>
+</tr>
+<tr>
+<td>画面是灰的但轮廓可辨</td>
+<td>只取到了 Y 分量，U/V 没参与</td>
+<td>检查转换函数的 U/V 索引</td>
+</tr>
+<tr>
+<td>颜色反了（人脸发青、天空发橙）</td>
+<td>U/V 顺序反了</td>
+<td>交换 U 和 V 的读取位置</td>
+</tr>
+<tr>
+<td>画面斜向撕裂</td>
+<td>行宽用了 <code>width×2</code> 而实际有 padding</td>
+<td>改用 <code>bytesperline</code></td>
+</tr>
+<tr>
+<td>画面呈周期性条纹</td>
+<td>转换时按像素推进指针，U/V 错位</td>
+<td>U/V 应每 2 像素取一次</td>
+</tr>
+<tr>
+<td>采几帧后卡住</td>
+<td><code>DQBUF</code> 后忘了 <code>QBUF</code></td>
+<td>循环里补上</td>
+</tr>
+<tr>
+<td>上下或左右颠倒</td>
+<td>摄像头倒装</td>
+<td>改 8.3 节坐标映射</td>
+</tr>
+<tr>
+<td>只显示左上角一块</td>
+<td>旋转后尺寸算错，或屏幕分辨率读错</td>
+<td>打印 <code>fb_width</code>/<code>fb_height</code></td>
+</tr>
+<tr>
+<td>花屏一闪一闪</td>
+<td><code>munmap</code> 在 <code>STREAMOFF</code> 之前</td>
+<td>调换清理顺序</td>
+</tr>
+<tr>
+<td>帧率很低、CPU 100%</td>
+<td>转换没开 <code>-O2</code>，或在 ARM9 上跑高分辨率</td>
+<td>开优化或降分辨率</td>
+</tr>
+<tr>
+<td>偶发段错误</td>
+<td><code>mmap</code> 用 <code>!ptr</code> 判断，<code>MAP_FAILED</code> 没接住</td>
+<td>判 <code>== MAP_FAILED</code></td>
+</tr>
+<tr>
+<td><code>ffplay</code> 能看但 LCD 花</td>
+<td>问题在转换或 fb 侧，不在采集</td>
+<td>用 ffplay 对比排除采集问题</td>
+</tr>
+</tbody>
+</table></div><p>最后一条是本篇最实用的排查策略：<strong>凡是「画面不对」，先存一帧 YUV 用 ffplay 看</strong>。ffplay 显示正常说明采集和格式都对了，问题一定在转换或 fb；ffplay 也花说明采集侧就错了，去看格式协商。</p>
+<h3 id="10.3-一个已知的性能限制" tabindex="-1">10.3 一个已知的性能限制 <a class="header-anchor" href="#10.3-一个已知的性能限制"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>例子用的是 Mini2440（S3C2440），USB 只支持 <strong>1.1</strong>，12Mbps 理论上限 1.5MB/s。而 320×240 YUYV@25fps 需要：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>320 × 240 × 2 × 25 = 3.84 MB/s
+</code></pre></div></code></pre>
+<p><strong>远超 USB 1.1 的带宽</strong>，所以实际帧率会被压到 7～8fps，画面明显卡顿。这不是代码问题，是硬件上限。</p>
+<p>要提升，只有三条路：</p>
+<ul>
+<li>换 <strong>MJPEG</strong> 格式（压缩比 5～10 倍，带宽够了，但要加解码）；</li>
+<li>降分辨率到 160×120；</li>
+<li>换支持 USB 2.0 的板子（480Mbps，完全够）。</li>
+</ul>
+<p>这也解释了为什么同期的开发板教程都停在 320×240：不是不想上高分辨率，是 USB 1.1 搬不动。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一为什么要转换" data-toc-target="一为什么要转换">一、为什么要转换</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二yuv-采样444--422--420" data-toc-target="二yuv-采样444--422--420">二、YUV 采样：4:4:4 / 4:2:2 / 4:2:0</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.1-444不压缩" data-toc-target="2.1-444不压缩">2.1 4:4:4：不压缩</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.2-422水平方向减半" data-toc-target="2.2-422水平方向减半">2.2 4:2:2：水平方向减半</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.3-420水平垂直都减半" data-toc-target="2.3-420水平垂直都减半">2.3 4:2:0：水平垂直都减半</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.4-有一处常见的说法错误" data-toc-target="2.4-有一处常见的说法错误">2.4 有一处常见的说法错误</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三存储格式planar-与-packed" data-toc-target="三存储格式planar-与-packed">三、存储格式：planar 与 packed</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.1-两种排布" data-toc-target="3.1-两种排布">3.1 两种排布</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.2-具体格式对比" data-toc-target="3.2-具体格式对比">3.2 具体格式对比</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四rgb-的几种位宽" data-toc-target="四rgb-的几种位宽">四、RGB 的几种位宽</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五yuyv--rgb565-转换" data-toc-target="五yuyv--rgb565-转换">五、YUYV → RGB565 转换</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.1-三个必须说清的点" data-toc-target="5.1-三个必须说清的点">5.1 三个必须说清的点</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.2-性能能优化在哪" data-toc-target="5.2-性能能优化在哪">5.2 性能：能优化在哪</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六存一帧-yuv用-ffplay-验证" data-toc-target="六存一帧-yuv用-ffplay-验证">六、存一帧 YUV，用 ffplay 验证</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.1-装-ffplay" data-toc-target="6.1-装-ffplay">6.1 装 ffplay</a>
+                    
+                    <a class="toc-item toc-lv3" href="#6.2-播放" data-toc-target="6.2-播放">6.2 播放</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七fb-设备查询参数与映射" data-toc-target="七fb-设备查询参数与映射">七、fb 设备：查询参数与映射</a>
+                    
+                    <a class="toc-item toc-lv3" href="#7.1-画一个像素" data-toc-target="7.1-画一个像素">7.1 画一个像素</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八把一帧画到-lcd" data-toc-target="八把一帧画到-lcd">八、把一帧画到 LCD</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.1-先看一个尺寸巧合" data-toc-target="8.1-先看一个尺寸巧合">8.1 先看一个尺寸巧合</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.2-实现" data-toc-target="8.2-实现">8.2 实现</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.3-翻转方向" data-toc-target="8.3-翻转方向">8.3 翻转方向</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.4-直接内存拷贝会更快" data-toc-target="8.4-直接内存拷贝会更快">8.4 直接内存拷贝会更快</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九完整项目" data-toc-target="九完整项目">九、完整项目</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.1-文件构成" data-toc-target="9.1-文件构成">9.1 文件构成</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.2-主程序" data-toc-target="9.2-主程序">9.2 主程序</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.3-makefile" data-toc-target="9.3-makefile">9.3 Makefile</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.4-编译与部署" data-toc-target="9.4-编译与部署">9.4 编译与部署</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十运行与排错" data-toc-target="十运行与排错">十、运行与排错</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.1-正常运行的样子" data-toc-target="10.1-正常运行的样子">10.1 正常运行的样子</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.2-排错表" data-toc-target="10.2-排错表">10.2 排错表</a>
+                    
+                    <a class="toc-item toc-lv3" href="#10.3-一个已知的性能限制" data-toc-target="10.3-一个已知的性能限制">10.3 一个已知的性能限制</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/C.驱动/13-杂项/V4L2-采集到-LCD-显示：YUYV-转换、fb-输出与完整项目/","title":"V4L2 采集到 LCD 显示：YUYV 转换、fb 输出与完整项目","url":"/C.驱动/13-杂项/V4L2-采集到-LCD-显示：YUYV-转换、fb-输出与完整项目/","type":"current"},{"id":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","title":"ADC 与 DS18B20 传感器驱动","url":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","type":"neighbor"},{"id":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","title":"LED 与 PWM 字符设备驱动","url":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","type":"neighbor"},{"id":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","title":"Linux下用户空间修改设备寄存器或者物理内存的实现","url":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","type":"neighbor"},{"id":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","title":"RK3399 的 Wi-Fi 与蓝牙 rfkill 实现","url":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","type":"neighbor"}],"links":[{"source":"/C.驱动/13-杂项/V4L2-采集到-LCD-显示：YUYV-转换、fb-输出与完整项目/","target":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","type":"neighbor"},{"source":"/C.驱动/13-杂项/V4L2-采集到-LCD-显示：YUYV-转换、fb-输出与完整项目/","target":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","type":"neighbor"},{"source":"/C.驱动/13-杂项/V4L2-采集到-LCD-显示：YUYV-转换、fb-输出与完整项目/","target":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","type":"neighbor"},{"source":"/C.驱动/13-杂项/V4L2-采集到-LCD-显示：YUYV-转换、fb-输出与完整项目/","target":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

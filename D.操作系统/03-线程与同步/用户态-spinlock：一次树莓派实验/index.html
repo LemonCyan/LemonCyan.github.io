@@ -1,0 +1,1244 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>用户态 spinlock：一次树莓派实验 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">用户态 spinlock：一次树莓派实验</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/D.操作系统/03-线程与同步/用户态-spinlock：一次树莓派实验/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">用户态 spinlock：一次树莓派实验</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">用户态 spinlock：一次树莓派实验</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <h2 id="一为什么要自己实现一遍" tabindex="-1">一、为什么要自己实现一遍 <a class="header-anchor" href="#一为什么要自己实现一遍"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>进程同步机制有 spinlock、mutex、semaphore 三件套。</p>
+<p>我的学习方式是简化再简化，然后用代码把每一个实现出来。只看书，你手里只有名词；写完一遍，你才知道名词背后是哪几条指令。spinlock 是这三件套里最底层的一个，把它做出来，同步的基本骨架就有了。</p>
+<p>麻烦在测试。早先我的想法是：得先实现 process switch，才能测 spinlock。这个思路本身没错，因为自旋锁的失败模式是两个执行流同时进入临界区，你需要有能力制造并发。但为了测一把锁先去写调度器，代价太大，方向也跑偏了。</p>
+<p>后来想通了：并发不用自己造，pthread 已经给了。在 rpi2 上写个 pthread 程序，把 <code>pthread_spin_lock</code> / <code>pthread_spin_unlock</code> 换成自己的 <code>my_spin_lock</code> / <code>my_spin_unlock</code>，行为一样就说明写对了。</p>
+<p>这个办法的价值在于拿到了一个<strong>可以对照的基准</strong>。pthread 的实现是久经考验的，我的是刚写的三行汇编，两边跑同一套负载，输出一致与否就是判决书。没有基准，你连自己写的东西对不对都不知道。</p>
+<p>测试负载这样设计：三个线程抢同一把锁，各自往同一个文件 <code>/tmp/xyz1</code> 里连写三行。临界区短，抢得凶。锁一旦失效，三行就会交错。判读标准非常直观，比打时间戳、算计数器好使得多。</p>
+<p>这条路能走通，靠的是两件事：一是有硬件原子指令可用，二是有屏障能约束编译器和 CPU 的乱序。这两件事就是全文的主线。</p>
+<h2 id="二spinlock-的最小语义" tabindex="-1">二、spinlock 的最小语义 <a class="header-anchor" href="#二spinlock-的最小语义"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先把壳子剥掉。spinlock 的逻辑简单到可以用四行伪代码写完：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>init:   val = 0
+lock:   while (val == 1) ;    val = 1
+unlock: val = 0
+</code></pre></div></code></pre>
+<p><code>val</code> 为 0 表示空闲，为 1 表示被占用。抢锁就是「看一眼，空就占上，不空就再看」，直到占上为止。解锁就是把 <code>val</code> 清零。</p>
+<p>它一共只有三个要素：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>要素</th>
+<th>具体内容</th>
+<th>要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>状态位</td>
+<td>一个整型 <code>val_</code>，0 空闲、1 占用</td>
+<td>必须能被多个执行流直接读写</td>
+</tr>
+<tr>
+<td>测试并设置</td>
+<td>读旧值，若空闲则写入 1</td>
+<td>读和写合起来是一个不可分割的动作</td>
+</tr>
+<tr>
+<td>释放</td>
+<td>写入 0</td>
+<td>对之后抢锁的执行流可见</td>
+</tr>
+</tbody>
+</table></div><p>数据结构也就是一个整型加个封装：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-keyword">volatile</span> <span class="hljs-type">int</span> val_;
+} Spinlock;
+
+<span class="hljs-type">void</span> <span class="hljs-title function_">spinlock_init</span><span class="hljs-params">(Spinlock *spinlock)</span>
+{
+    spinlock-&gt;val_ = <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>到这里一切都好。难点在第三个要素那一栏的「不可分割」四个字上。C 语言没有提供这个能力，你写出来的每一行都是可分割的。</p>
+<h2 id="三核心难点原子性从哪来" tabindex="-1">三、核心难点：原子性从哪来 <a class="header-anchor" href="#三核心难点原子性从哪来"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>最直觉的实现长这样，用 <code>goto</code> 原地重试：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">spin_lock</span><span class="hljs-params">(Spinlock *spinlock)</span>
+{
+lock_mutex:
+    <span class="hljs-keyword">if</span> (spinlock-&gt;val_ == <span class="hljs-number">1</span>)
+        <span class="hljs-keyword">goto</span> lock_mutex;
+    <span class="hljs-keyword">else</span>
+        spinlock-&gt;val_ = <span class="hljs-number">1</span>;
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">spin_unlock</span><span class="hljs-params">(Spinlock *spinlock)</span>
+{
+    spinlock-&gt;val_ = <span class="hljs-number">0</span>;
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>短路一下：这段代码在单线程下完全正确。在多线程下它一定会坏，而且坏得概率不低。把两个线程的时间线摊开看：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>时刻</th>
+<th>线程 A</th>
+<th>线程 B</th>
+<th><code>val_</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>t0</td>
+<td>读 <code>val_</code>，得到 0</td>
+<td>—</td>
+<td>0</td>
+</tr>
+<tr>
+<td>t1</td>
+<td>—</td>
+<td>读 <code>val_</code>，得到 0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>t2</td>
+<td>写 <code>val_ = 1</code>，认为抢到了</td>
+<td>—</td>
+<td>1</td>
+</tr>
+<tr>
+<td>t3</td>
+<td>—</td>
+<td>写 <code>val_ = 1</code>，也认为抢到了</td>
+<td>1</td>
+</tr>
+<tr>
+<td>t4</td>
+<td>进入临界区</td>
+<td>进入临界区</td>
+<td>1</td>
+</tr>
+</tbody>
+</table></div><p>两个线程都进了临界区。锁在这里没有失效在「判断」上，失效在「判断」和「占用」之间的那道缝里。<code>val_</code> 从读到写之间，别的核随时可以插进来。</p>
+<p>每次只差几条指令，跑一万次错一次。这种 bug 最难查，因为它不常出现，而且出现时现场已经乱了。</p>
+<p>所以结论要说得直白些：<strong>spinlock 的全部难点不在「锁」，而在「原子性」与「内存可见性」</strong>。锁的语义四行就写完了；真正的工作量在把「读旧值 + 写新值」压成一个硬件不可打断的动作，以及保证临界区里的写对下一个持锁者可见。</p>
+<p>第一件事靠硬件原子指令，第二件事靠内存屏障。没有硬件原子指令，用户态根本实现不出正确的 spinlock，只能实现一个「看上去像锁」的东西。</p>
+<h2 id="四方案一用原子操作做测试并设置" tabindex="-1">四、方案一：用原子操作做测试并设置 <a class="header-anchor" href="#四方案一用原子操作做测试并设置"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>ARMv6 起有了一对指令：<code>ldrex</code> / <code>strex</code>（Load-Exclusive / Store-Exclusive）。它们配合工作，提供独占访问：</p>
+<ul>
+<li><code>ldrex</code> 读一个地址，同时在处理器的独占监视器里记下这个地址；</li>
+<li><code>strex</code> 往同一个地址写，只有在「从上次 <code>ldrex</code> 到现在没有别的核碰过这个地址」时才写成功，成功返回 0，失败返回非 0。</li>
+</ul>
+<p>这就把「读—判断—写」变成了一段受监视的序列。中途被别人插了，<code>strex</code> 会明确告诉你失败，重试即可。</p>
+<p>我这段汇编是从 Linux 3.10.37 的 <code>arch/arm/include/asm/atomic.h</code> 里 <code>atomic_add</code> 改出来的。自己从头写的那几版都有问题，最后还是要站在内核的肩膀上：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">spin_trylock_asm</span><span class="hljs-params">(Spinlock *spinlock)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> tmp;
+    <span class="hljs-type">int</span> result;
+
+    __asm__ __volatile__(<span class="hljs-string">&quot;@ atomic_test_and_set\n&quot;</span>
+    <span class="hljs-string">&quot;1:     ldrex   %0, [%3]\n&quot;</span>      <span class="hljs-comment">/* 独占读，%0 得到当前值 */</span>
+    <span class="hljs-string">&quot;       cmp     %0, #1\n&quot;</span>        <span class="hljs-comment">/* 已经是 1？ */</span>
+    <span class="hljs-string">&quot;       beq     1b\n&quot;</span>            <span class="hljs-comment">/* 被占了，回去重读 */</span>
+    <span class="hljs-string">&quot;       mov     %0, #1\n&quot;</span>        <span class="hljs-comment">/* 空闲，准备写入 1 */</span>
+    <span class="hljs-string">&quot;       strex   %1, %0, [%3]\n&quot;</span>  <span class="hljs-comment">/* 独占写，%1 = 0 表示成功 */</span>
+    <span class="hljs-string">&quot;       teq     %1, #0\n&quot;</span>        <span class="hljs-comment">/* 测成功标志 */</span>
+    <span class="hljs-string">&quot;       bne     1b&quot;</span>              <span class="hljs-comment">/* 写失败，说明被人插了，整体重来 */</span>
+        : <span class="hljs-string">&quot;=&amp;r&quot;</span> (result), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp), <span class="hljs-string">&quot;+Qo&quot;</span> (spinlock-&gt;val_)
+        : <span class="hljs-string">&quot;r&quot;</span> (&amp;spinlock-&gt;val_)
+        : <span class="hljs-string">&quot;cc&quot;</span>);
+
+    <span class="hljs-keyword">return</span> result;
+}
+</code></pre></div></code></pre>
+<p>逐行看关键处：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>片段</th>
+<th>作用</th>
+<th>少了它会怎样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ldrex %0, [%3]</code></td>
+<td>独占读，登记地址</td>
+<td>退化成普通读，无任何保护</td>
+</tr>
+<tr>
+<td><code>cmp/beq 1b</code></td>
+<td>已被占用就重读，不写</td>
+<td>无意义地写 <code>1</code>，制造总线流量</td>
+</tr>
+<tr>
+<td><code>strex %1, %0, [%3]</code></td>
+<td>只有独占未被破坏才写成功</td>
+<td>用 <code>str</code> 的话，两个人都会写成功</td>
+</tr>
+<tr>
+<td><code>teq %1, #0</code> + <code>bne 1b</code></td>
+<td>写失败则整段重来</td>
+<td>丢掉一次失败，锁被两个人同时持有</td>
+</tr>
+</tbody>
+</table></div><p>约束列表也有讲究。<code>&quot;=&amp;r&quot; (result)</code> 和 <code>&quot;=&amp;r&quot; (tmp)</code> 上的 <code>&amp;</code> 表示「早写」：这段汇编一开始就会写这两个寄存器，不能和输入操作数复用同一个寄存器。<code>&quot;+Qo&quot; (spinlock-&gt;val_)</code> 是内存操作数，<code>+</code> 表示读且写。<code>&quot;cc&quot;</code> 告诉编译器这段汇编会改条件码。</p>
+<p>少了 <code>&amp;</code>，编译器优化时把输入寄存器分配到 <code>%0</code> 或 <code>%1</code> 的位置，<code>ldrex</code> 一执行就把输入冲掉，行为就错了。这种错不报编译错误，只在特定优化等级下出现。</p>
+<p>同一个需求在不同平台上有不同实现：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>平台 / 方案</th>
+<th>指令或接口</th>
+<th>失败如何得知</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ARMv6 / ARMv7-A</td>
+<td><code>ldrex</code> / <code>strex</code></td>
+<td><code>strex</code> 返回非 0</td>
+</tr>
+<tr>
+<td>x86</td>
+<td><code>lock cmpxchg</code>、<code>xchg</code></td>
+<td><code>cmpxchg</code> 比较不相等</td>
+</tr>
+<tr>
+<td>老式 ARM（无 ldrex）</td>
+<td><code>swp</code></td>
+<td>无失败概念，靠总线锁</td>
+</tr>
+<tr>
+<td>C11</td>
+<td><code>atomic_exchange</code>、<code>atomic_compare_exchange_weak</code></td>
+<td>返回旧值 / 返回 false</td>
+</tr>
+<tr>
+<td>GCC 内建</td>
+<td><code>__atomic_*</code>、<code>__sync_*</code></td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div><p>写内核代码之外，日常用 C11 或 GCC 内建就够，别手写汇编。手写的唯一好处是能看清下面到底发生了什么，这也是这一节存在的理由。</p>
+<h2 id="五编译器优化带来的坑" tabindex="-1">五、编译器优化带来的坑 <a class="header-anchor" href="#五编译器优化带来的坑"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>有了正确的汇编，还没到能收工的时候。C 语言层面的东西编译器照样会动，而编译器不知道「<code>val_</code> 是锁」这件事。</p>
+<p>最经典的一幕是这样的代码：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> flag = <span class="hljs-number">1</span>;
+
+<span class="hljs-keyword">while</span> (flag)
+    ;   <span class="hljs-comment">/* 等别人把 flag 清掉 */</span>
+</code></pre></div></code></pre>
+<p>编译器一眼看出循环体没改 <code>flag</code>，于是把读操作提到循环外，等价改写成：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        ldr     r0, [flag]      @ 只读一次
+        cmp     r0, #0
+        beq     .Lexit
+.Lspin:
+        b       .Lspin          @ 死循环，flag 再也不会被读
+</code></pre></div></code></pre>
+<p>进循环时如果读到 1，这个线程就永远出不来了，哪怕另一个线程早把 <code>flag</code> 清零。给 <code>flag</code> 加上 <code>volatile</code> 能拦住这个优化，编译器不敢再把读提到循环外。但 <code>volatile</code> 到此为止，它管不了重排次序，管不了多核可见性，也不产生任何屏障语义，下一幕它就救不了场。</p>
+<p>第二幕更隐蔽，出在解锁那一侧：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>spinlock-&gt;data_x = <span class="hljs-number">42</span>;   <span class="hljs-comment">/* 临界区里的写 */</span>
+spin_unlock(spinlock);   <span class="hljs-comment">/* val_ = 0 */</span>
+</code></pre></div></code></pre>
+<p>编译器认为这两句没有依赖，就有机会把 <code>val_ = 0</code> 提前到前面。CPU 也一样，写缓冲区和乱序执行让它先看见锁的释放，再看见数据本身。结果下一个抢到锁的线程读到的还是旧值。</p>
+<p>我们手里唯一的工具是把「我不许你跨过去」明确写出来。两种写法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 编译器屏障：只约束编译器，不产生任何指令 */</span>
+__asm__ __volatile__(<span class="hljs-string">&quot;&quot;</span> ::: <span class="hljs-string">&quot;memory&quot;</span>);
+
+<span class="hljs-comment">/* 完整屏障：既约束编译器，也约束 CPU */</span>
+__asm__ __volatile__(<span class="hljs-string">&quot;dmb ish&quot;</span> ::: <span class="hljs-string">&quot;memory&quot;</span>);
+</code></pre></div></code></pre>
+<p><code>__asm__ __volatile__</code> 里的 <code>volatile</code> 让编译器不要删除、不要移出循环；<code>&quot;memory&quot;</code> 这个 clobber 告诉它「内存变了，寄存器里的缓存全作废，别跨过这条边重排访存」。两个东西名字一样，作用不同，不要混：<code>asm volatile</code> 管的是「这条汇编不能被优化掉」，<code>&quot;memory&quot;</code> 管的是「访存顺序」。</p>
+<p>一个常见的误解：把变量声明成 <code>volatile</code> 就以为万事大吉。它解决不了重排，解决不了多核可见性，也不产生任何屏障语义。真正要做同步，屏障和原子操作都得有。</p>
+<h2 id="六内存屏障与乱序执行" tabindex="-1">六、内存屏障与乱序执行 <a class="header-anchor" href="#六内存屏障与乱序执行"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>屏障要解决的是两件不同的事，得分清。</p>
+<p>第一件是编译器重排，上面已经说过。第二件是 CPU 重排：指令发出去之后，硬件为了填满流水线，会让后面的访存先于前面的访存完成。ARM 是弱内存模型，这种事每天都在发生。x86 的模型强一些，但也不是完全顺序的，写缓冲依然会让别的核晚看到你的写。</p>
+<p>ARM 上三种屏障指令，用途各不相同：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>指令</th>
+<th>全称</th>
+<th>管什么</th>
+<th>典型场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dmb</code></td>
+<td>Data Memory Barrier</td>
+<td>保证之前的访存在之后的访存之前完成，不保证指令流水</td>
+<td>锁的获取与释放、共享数据发布</td>
+</tr>
+<tr>
+<td><code>dsb</code></td>
+<td>Data Synchronization Barrier</td>
+<td>比 <code>dmb</code> 更严，等之前的访存真正完成</td>
+<td>改页表、关 MMU、DMA 前后</td>
+</tr>
+<tr>
+<td><code>isb</code></td>
+<td>Instruction Synchronization Barrier</td>
+<td>清空流水线，让之后取到的指令是新的</td>
+<td>改完系统寄存器、开了 MMU 之后</td>
+</tr>
+</tbody>
+</table></div><p>再加上编译器屏障，一共四个工具。它们的组合覆盖了从 C 源码到内存的整条链路：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>C 语句  --(编译器重排)--&gt;  机器指令  --(CPU 乱序)--&gt;  内存可见
+            ^                          ^
+            |                          |
+      编译器屏障 / &quot;memory&quot;          dmb / dsb / isb
+</code></pre></div></code></pre>
+<p><code>dmb ish</code> 里的 <code>ish</code> 是 inner shareable domain，指多核之间共享的那部分观察范围。用户态代码在 ARM Linux 上可以直接发 <code>dmb ish</code>，不需要特权；只约束写顺序时可以用弱一档的 <code>dmb ishst</code>，把读排除在外。屏障的选择上，宁可多给一个 <code>dmb ish</code>，别省。</p>
+<p>屏障配锁的规矩，一句话说清：<strong>获取锁之后要一次屏障，释放锁之前要一次屏障</strong>。</p>
+<ul>
+<li>解锁前屏障：保证临界区里的写先落地，再放锁。否则下一个持锁者读到的就是旧数据。</li>
+<li>加锁后屏障：保证拿到锁之后的读不会被提前到锁之前执行。读提前了，你读到的就是临界区外的脏数据。</li>
+</ul>
+<p>ARM 的 <code>ldrex</code> / <code>strex</code> 本身不带任何屏障语义，这两道屏障必须显式写。x86 的 <code>lock</code> 前缀指令自带全屏障，所以那边的实现看着「更短」，不是因为更简单，是因为硬件替它做了。</p>
+<h2 id="七方案二加上屏障的正确版本" tabindex="-1">七、方案二：加上屏障的正确版本 <a class="header-anchor" href="#七方案二加上屏障的正确版本"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把原子操作和屏障拼起来，才是完整版：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-keyword">volatile</span> <span class="hljs-type">int</span> val_;
+} Spinlock;
+
+<span class="hljs-type">void</span> <span class="hljs-title function_">spinlock_init</span><span class="hljs-params">(Spinlock *spinlock)</span>
+{
+    spinlock-&gt;val_ = <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">spin_trylock</span><span class="hljs-params">(Spinlock *spinlock)</span>
+{
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> tmp;
+    <span class="hljs-type">int</span> result;
+
+    __asm__ __volatile__(<span class="hljs-string">&quot;@ atomic_test_and_set\n&quot;</span>
+    <span class="hljs-string">&quot;1:     ldrex   %0, [%3]\n&quot;</span>
+    <span class="hljs-string">&quot;       cmp     %0, #1\n&quot;</span>
+    <span class="hljs-string">&quot;       beq     1b\n&quot;</span>
+    <span class="hljs-string">&quot;       mov     %0, #1\n&quot;</span>
+    <span class="hljs-string">&quot;       strex   %1, %0, [%3]\n&quot;</span>
+    <span class="hljs-string">&quot;       teq     %1, #0\n&quot;</span>
+    <span class="hljs-string">&quot;       bne     1b&quot;</span>
+        : <span class="hljs-string">&quot;=&amp;r&quot;</span> (result), <span class="hljs-string">&quot;=&amp;r&quot;</span> (tmp), <span class="hljs-string">&quot;+Qo&quot;</span> (spinlock-&gt;val_)
+        : <span class="hljs-string">&quot;r&quot;</span> (&amp;spinlock-&gt;val_)
+        : <span class="hljs-string">&quot;cc&quot;</span>);
+
+    <span class="hljs-keyword">return</span> result;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">spin_lock</span><span class="hljs-params">(Spinlock *spinlock)</span>
+{
+    <span class="hljs-keyword">while</span> (spin_trylock(spinlock) != <span class="hljs-number">0</span>)
+        ;   <span class="hljs-comment">/* 抢不到就再抢，这就是自旋 */</span>
+
+    <span class="hljs-comment">/* 拿到锁，禁止后面的访存被提前 */</span>
+    __asm__ __volatile__(<span class="hljs-string">&quot;dmb ish&quot;</span> ::: <span class="hljs-string">&quot;memory&quot;</span>);
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">spin_unlock</span><span class="hljs-params">(Spinlock *spinlock)</span>
+{
+    <span class="hljs-comment">/* 放锁之前，保证临界区的写已经完成 */</span>
+    __asm__ __volatile__(<span class="hljs-string">&quot;dmb ish&quot;</span> ::: <span class="hljs-string">&quot;memory&quot;</span>);
+
+    spinlock-&gt;val_ = <span class="hljs-number">0</span>;
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>用 C11 写等价版本，可读性好得多，也更容易跨平台：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdatomic.h&gt;</span></span>
+
+<span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-type">atomic_int</span> val_;
+} Spinlock;
+
+<span class="hljs-type">void</span> <span class="hljs-title function_">spinlock_init</span><span class="hljs-params">(Spinlock *spinlock)</span>
+{
+    atomic_init(&amp;spinlock-&gt;val_, <span class="hljs-number">0</span>);
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">spin_lock</span><span class="hljs-params">(Spinlock *spinlock)</span>
+{
+    <span class="hljs-type">int</span> expected = <span class="hljs-number">0</span>;
+
+    <span class="hljs-keyword">while</span> (!atomic_compare_exchange_weak_explicit(
+               &amp;spinlock-&gt;val_, &amp;expected, <span class="hljs-number">1</span>,
+               memory_order_acquire, memory_order_relaxed)) {
+        expected = <span class="hljs-number">0</span>;   <span class="hljs-comment">/* 失败后 CAS 会把旧值写回，这里重置 */</span>
+    }
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">spin_unlock</span><span class="hljs-params">(Spinlock *spinlock)</span>
+{
+    atomic_store_explicit(&amp;spinlock-&gt;val_, <span class="hljs-number">0</span>, memory_order_release);
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>memory_order_acquire</code> 对应加锁后的屏障，<code>memory_order_release</code> 对应解锁前的屏障。这一对名字和语义是直接映射的，理解起来比裸汇编轻松。<code>compare_exchange_weak</code> 允许伪失败（值相等但返回 false），所以外面套 <code>while</code>，重试一次就好。</p>
+<p>两个版本摆在一起，差别集中在下面几处：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>对比项</th>
+<th>裸汇编版本</th>
+<th>C11 版本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>原子性来源</td>
+<td><code>ldrex</code> / <code>strex</code></td>
+<td><code>atomic_compare_exchange_weak</code></td>
+</tr>
+<tr>
+<td>屏障表达</td>
+<td>显式 <code>dmb ish</code> + <code>&quot;memory&quot;</code></td>
+<td><code>acquire</code> / <code>release</code> 语义</td>
+</tr>
+<tr>
+<td>可移植性</td>
+<td>绑死 ARMv6+</td>
+<td>任何支持 C11 的编译器</td>
+</tr>
+<tr>
+<td>可读性</td>
+<td>要看懂 8 行汇编</td>
+<td>看函数名即可</td>
+</tr>
+<tr>
+<td>允许伪失败</td>
+<td><code>strex</code> 失败即重试</td>
+<td>同左，由 <code>while</code> 兜住</td>
+</tr>
+</tbody>
+</table></div><h2 id="八自旋的代价cpu-空转" tabindex="-1">八、自旋的代价：CPU 空转 <a class="header-anchor" href="#八自旋的代价cpu-空转"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>while (spin_trylock(spinlock) != 0) ;</code> 里的那个空分号，是最便宜的等待方式，也是最贵的。</p>
+<p>便宜在于不需要任何系统调用，不进内核，不碰调度器，不切栈。锁被占用的时间只有几百纳秒时，自旋等待几乎立刻就能拿到，比进入内核睡眠再唤醒快一个数量级。</p>
+<p>贵在于这段时间里，这个核什么正事都没干。争抢越激烈，空转越多：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>自旋的后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>临界区 100 ns，两个线程</td>
+<td>少量空转，划算</td>
+</tr>
+<tr>
+<td>临界区 100 ns，八个线程抢一个核</td>
+<td>大量空转，且持锁者正等着 CPU</td>
+</tr>
+<tr>
+<td>临界区 10 ms，任何线程数</td>
+<td>空转变成灾难，浪费整个时间片</td>
+</tr>
+<tr>
+<td>单核系统</td>
+<td>持锁者拿不到 CPU，等锁者永远空转，直接死锁</td>
+</tr>
+</tbody>
+</table></div><p>最后一行要格外注意。单核上如果关掉抢占再自旋等锁，而持锁者恰好被切出去了，程序就永久卡住。用户态下 pthread 的实现会尽量规避，内核态下这是必须靠「关抢占 + 临界区极短」两条规则联手保证的。</p>
+<p>还有一条常被忽略的成本：多个核同时对着同一个缓存行做 <code>ldrex</code>，这条缓存行会在核间反复弹跳（cache line bouncing）。空转不只是浪费自己的 CPU，还会把别人的缓存打掉。核数越多，这个代价越大。</p>
+<p>所以自旋有一个前提条件，必须写清楚：<strong>临界区要足够短，短到自旋等待的时间小于一次上下文切换的代价</strong>。经验上的量级是一次切换几千纳秒，临界区得控制在这个数量级甚至更短。超过就换 mutex。</p>
+<h2 id="九退让与让出sched_yield" tabindex="-1">九、退让与让出：sched_yield <a class="header-anchor" href="#九退让与让出sched_yield"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>空转最蠢的地方在于它不知道持锁者在干什么。如果持锁者正等着 CPU，你越转，它越轮不到。</p>
+<p><code>sched_yield()</code> 是给这种情况留的出口：主动放弃剩余时间片，把自己挪到同优先级队列的末尾，让别的线程有机会上。</p>
+<p><code>spin_lock</code> 里的自旋循环有两种写法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 方案 A：纯自旋，抢不到就不停重试 */</span>
+<span class="hljs-keyword">while</span> (spin_trylock(spinlock) != <span class="hljs-number">0</span>)
+    ;
+
+<span class="hljs-comment">/* 方案 B：抢不到时先让出 CPU，再回来重试 */</span>
+<span class="hljs-keyword">while</span> (spin_trylock(spinlock) != <span class="hljs-number">0</span>)
+    sched_yield();
+</code></pre></div></code></pre>
+<p>两种写法的差别落在「谁在等谁」上：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>写法</th>
+<th>语义</th>
+<th>适合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>纯自旋</td>
+<td>死等，绝不让出</td>
+<td>临界区极短、核数足够、不会被抢占</td>
+</tr>
+<tr>
+<td>自旋 + <code>sched_yield</code></td>
+<td>等不到就让一下，让对方有机会跑</td>
+<td>临界区稍长，或运行在会被抢占的环境</td>
+</tr>
+<tr>
+<td>直接睡眠</td>
+<td>用条件变量或 futex 阻塞</td>
+<td>临界区较长，或锁争抢频繁</td>
+</tr>
+</tbody>
+</table></div><p><code>sched_yield()</code> 不是免费的。每次调用都是一次系统调用，进内核，走一遍调度器。争抢激烈时，它会变成另一种形式的空转，只不过空转地点从用户态换到了内核态。有人测过在重负载下 <code>sched_yield</code> 反而拖慢整体吞吐，原因是它把锁交给了错误的线程，制造出「活锁」式的恶循环。</p>
+<p>所以别把它当万能药。它适合的场景很窄：你确定持锁者在别的核上跑着，或者你在一台已经超载的机器上不想再添一把火。真正需要长期等待时，正确做法是睡眠，而不是让出。</p>
+<p>把两行代码一改，spinlock 就变成了 mutex 的雏形：把自旋换成让出，再把让出换成阻塞，你就完成了从「占着 CPU 等」到「睡着等」的转变。这也是后面 futex 那一篇要做的事。</p>
+<h2 id="十树莓派上的实测" tabindex="-1">十、树莓派上的实测 <a class="header-anchor" href="#十树莓派上的实测"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>整套测试在 rpi2（Cortex-A7，四核，ARMv7-A）上跑，内核 3.10.37，交叉编译加 SSH 上机。测试程序的结构是这样：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> _GNU_SOURCE</span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdlib.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;signal.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;spinlock.h&quot;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> FN <span class="hljs-string">&quot;/tmp/xyz1&quot;</span></span>
+
+<span class="hljs-type">static</span> FILE *fs;
+<span class="hljs-type">static</span> Spinlock sp;
+<span class="hljs-type">static</span> <span class="hljs-type">pthread_spinlock_t</span> spinlock;
+<span class="hljs-type">static</span> <span class="hljs-keyword">volatile</span> <span class="hljs-type">int</span> run = <span class="hljs-number">1</span>;
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">write_file_1</span><span class="hljs-params">(<span class="hljs-type">void</span> *p)</span>
+{
+    <span class="hljs-type">int</span> time = <span class="hljs-number">0</span>;
+    <span class="hljs-type">pthread_t</span> tid = pthread_self();
+
+    <span class="hljs-keyword">while</span> (run) {
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> PTHREAD_FUNC</span>
+        pthread_spin_lock(&amp;spinlock);
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+        spin_lock(&amp;sp);
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        <span class="hljs-built_in">fprintf</span>(fs, <span class="hljs-string">&quot;%d ## thread 1 ## %d\n&quot;</span>, time, tid);
+        <span class="hljs-built_in">fprintf</span>(fs, <span class="hljs-string">&quot;%d ## thread 11\n&quot;</span>, time);
+        <span class="hljs-built_in">fprintf</span>(fs, <span class="hljs-string">&quot;%d ## thread 111\n&quot;</span>, time);
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> PTHREAD_FUNC</span>
+        pthread_spin_unlock(&amp;spinlock);
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+        spin_unlock(&amp;sp);
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        ++time;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">write_file_2</span><span class="hljs-params">(<span class="hljs-type">void</span> *p)</span>
+{
+    <span class="hljs-type">int</span> time = <span class="hljs-number">0</span>;
+    <span class="hljs-type">pthread_t</span> tid = pthread_self();
+
+    <span class="hljs-keyword">while</span> (run) {
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> PTHREAD_FUNC</span>
+        pthread_spin_lock(&amp;spinlock);
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+        spin_lock(&amp;sp);
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        <span class="hljs-built_in">fprintf</span>(fs, <span class="hljs-string">&quot;%d ## thread 2 long string 0123456789 ## %d\n&quot;</span>, time, tid);
+        <span class="hljs-built_in">fprintf</span>(fs, <span class="hljs-string">&quot;%d ## thread 22 long string 0123456789\n&quot;</span>, time);
+        <span class="hljs-built_in">fprintf</span>(fs, <span class="hljs-string">&quot;%d ## thread 222 long string 0123456789\n&quot;</span>, time);
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> PTHREAD_FUNC</span>
+        pthread_spin_unlock(&amp;spinlock);
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+        spin_unlock(&amp;sp);
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        ++time;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">write_file_3</span><span class="hljs-params">(<span class="hljs-type">void</span> *p)</span>
+{
+    <span class="hljs-type">int</span> time = <span class="hljs-number">0</span>;
+    <span class="hljs-type">pthread_t</span> tid = pthread_self();
+
+    <span class="hljs-keyword">while</span> (run) {
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> PTHREAD_FUNC</span>
+        pthread_spin_lock(&amp;spinlock);
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+        spin_lock(&amp;sp);
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        <span class="hljs-built_in">fprintf</span>(fs, <span class="hljs-string">&quot;%d ## thread 3 long string &quot;</span>
+                    <span class="hljs-string">&quot;ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%%^&amp;*()~ ## %d\n&quot;</span>, time, tid);
+        <span class="hljs-built_in">fprintf</span>(fs, <span class="hljs-string">&quot;%d ## thread 33 long string &quot;</span>
+                    <span class="hljs-string">&quot;ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%%^&amp;*()~\n&quot;</span>, time);
+        <span class="hljs-built_in">fprintf</span>(fs, <span class="hljs-string">&quot;%d ## thread 333 long string &quot;</span>
+                    <span class="hljs-string">&quot;ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%%^&amp;*()~\n&quot;</span>, time);
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> PTHREAD_FUNC</span>
+        pthread_spin_unlock(&amp;spinlock);
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+        spin_unlock(&amp;sp);
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+        ++time;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p>三个线程的临界区长度刻意不同。线程 1 写三行短串，线程 2 和线程 3 写长串，这样它占着锁的时间明显更长。如果锁是错的，长临界区会更容易被切开，交错更容易被抓到。这是有意的设计，不是随手写的。</p>
+<p>信号处理单独一个线程收，用 <code>sigwait</code> 而不是信号处理函数，避免在信号上下文里改全局变量带来的麻烦：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> *<span class="hljs-title function_">sig_thread</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    <span class="hljs-type">sigset_t</span> *<span class="hljs-built_in">set</span> = arg;
+    <span class="hljs-type">int</span> s, sig;
+
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;sig thread pid: %d\n&quot;</span>, getpid());
+
+    <span class="hljs-keyword">for</span> (;;) {
+        s = sigwait(<span class="hljs-built_in">set</span>, &amp;sig);
+        <span class="hljs-keyword">if</span> (s == <span class="hljs-number">0</span>) {
+            <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Signal handling thread got signal %d\n&quot;</span>, sig);
+            <span class="hljs-keyword">if</span> (sig == SIGINT)
+                run = <span class="hljs-number">0</span>;
+        }
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p>主函数把 <code>SIGQUIT</code> 和 <code>SIGINT</code> 都先屏蔽掉，再交给 <code>sig_thread</code>，这样所有线程都继承这个屏蔽字，信号只会落到那个专职线程上：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">int</span> argc, <span class="hljs-type">char</span> *argv[])</span>
+{
+    <span class="hljs-type">pthread_t</span> thread0, thread1, thread2, thread;
+    <span class="hljs-type">sigset_t</span> <span class="hljs-built_in">set</span>;
+
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> PTHREAD_FUNC</span>
+    pthread_spin_init(&amp;spinlock, <span class="hljs-number">0</span>);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;init pthread spinlock\n&quot;</span>);
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+    spinlock_init(&amp;sp);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;init my spinlock\n&quot;</span>);
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+
+    sigemptyset(&amp;<span class="hljs-built_in">set</span>);
+    sigaddset(&amp;<span class="hljs-built_in">set</span>, SIGQUIT);
+    sigaddset(&amp;<span class="hljs-built_in">set</span>, SIGINT);
+    <span class="hljs-keyword">if</span> (pthread_sigmask(SIG_BLOCK, &amp;<span class="hljs-built_in">set</span>, <span class="hljs-literal">NULL</span>) != <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;pthread_sigmask&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;open %s to write\n&quot;</span>, FN);
+    fs = fopen(FN, <span class="hljs-string">&quot;w&quot;</span>);
+    <span class="hljs-keyword">if</span> (fs == <span class="hljs-literal">NULL</span>) {
+        perror(<span class="hljs-string">&quot;open fail&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    pthread_create(&amp;thread, <span class="hljs-literal">NULL</span>, &amp;sig_thread, (<span class="hljs-type">void</span> *)&amp;<span class="hljs-built_in">set</span>);
+    pthread_create(&amp;thread0, <span class="hljs-literal">NULL</span>, write_file_1, <span class="hljs-literal">NULL</span>);
+    pthread_create(&amp;thread1, <span class="hljs-literal">NULL</span>, write_file_2, <span class="hljs-literal">NULL</span>);
+    pthread_create(&amp;thread2, <span class="hljs-literal">NULL</span>, write_file_3, <span class="hljs-literal">NULL</span>);
+
+    pthread_join(thread0, <span class="hljs-literal">NULL</span>);
+    pthread_join(thread1, <span class="hljs-literal">NULL</span>);
+    pthread_join(thread2, <span class="hljs-literal">NULL</span>);
+
+    fclose(fs);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;test end\n&quot;</span>);
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>编译时用 <code>-DPTHREAD_FUNC</code> 切到 pthread 版本，不加就是自己的实现，两边跑同一份代码：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 自己的 spinlock</span>
+gcc -O2 -pthread -o spinlock spinlock.c
+
+<span class="hljs-comment"># 对照组</span>
+gcc -O2 -pthread -DPTHREAD_FUNC -o spinlock_pthread spinlock.c
+
+./spinlock &amp;&amp; <span class="hljs-built_in">head</span> -n 30 /tmp/xyz1
+</code></pre></div></code></pre>
+<p>判读方法只有一条：<strong>每个线程的三行必须连在一起出现</strong>。三个线程共用一个 <code>FILE *</code>，<code>fprintf</code> 表面看是三次调用，实际会先在用户态缓冲区里攒着，凑够一块才真正写下去。这意味着锁保护的是缓冲区操作，而不是每一次 <code>write</code> 系统调用。</p>
+<p>于是「成功」的样子是三个线程的数据块轮流整段出现，时序数字递增，线程号各自连续：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>6 ## thread 1 ## 1985877088
+6 ## thread 11
+6 ## thread 111
+0 ## thread 2 long string 0123456789 ## 1977488480
+0 ## thread 22 long string 0123456789
+0 ## thread 222 long string 0123456789
+7 ## thread 1 ## 1985877088
+7 ## thread 11
+7 ## thread 111
+1 ## thread 2 long string 0123456789 ## 1977488480
+1 ## thread 22 long string 0123456789
+1 ## thread 222 long string 0123456789
+</code></pre></div></code></pre>
+<p>「失败」的样子是三个线程的行被搅在一起，序号跳着走：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>237 ## thread 1 ## 1985418336
+237 ## thread 3 long string ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&amp;*()~ ## 1968641120
+206 ## thread 2 long string 0123456789 ## 1977029728
+</code></pre></div></code></pre>
+<p>第二组里，线程 1 只输出了第一行，线程 3 和线程 2 就插了进来。线程 1 明明还握着锁，其余两个却进了临界区。</p>
+<p>我的第一版就是失败的那组。换成 <code>pthread_spin_lock</code> / <code>pthread_spin_unlock</code> 之后立刻正确。这一对照把问题范围锁死了：错在我自己写的那段，不在 pthread，不在文件操作，也不在信号处理。</p>
+<p>顺手写了个 <code>check_result.c</code>，逐行扫 <code>/tmp/xyz1</code>，检查行结构是否成组、序号是否单调。肉眼看几十行没问题，跑几万行就得靠程序判定。</p>
+<h2 id="十一用户态-spinlock-的适用边界" tabindex="-1">十一、用户态 spinlock 的适用边界 <a class="header-anchor" href="#十一用户态-spinlock-的适用边界"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>写完、跑对、也拿到了正确结果。但它到底该不该用在生产里？给一张明确的表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>适合</th>
+<th>不适合</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>临界区长度</td>
+<td>几十到几百纳秒</td>
+<td>毫秒级，含 I/O 或系统调用</td>
+</tr>
+<tr>
+<td>核数</td>
+<td>多于线程数</td>
+<td>单核，线程数超过核数</td>
+</tr>
+<tr>
+<td>抢占</td>
+<td>不会被长时间抢占</td>
+<td>线程被调度器切走</td>
+</tr>
+<tr>
+<td>优先级</td>
+<td>各线程优先级接近</td>
+<td>持锁者优先级低于等锁者</td>
+</tr>
+<tr>
+<td>平台</td>
+<td>有多核原子指令</td>
+<td>没有原子指令的单片机</td>
+</tr>
+</tbody>
+</table></div><p>优先级这一条要单独说。用户态 spinlock 不认识优先级，低优先级的线程拿到锁后被高优先级的线程按着摩擦，高优先级线程狂转，这就是优先级反转。mutex 有优先级继承机制去缓解，spinlock 没有，它连「谁在等」都不知道。实时系统里这一条足以否决掉自旋方案。</p>
+<p><code>pthread_spin_lock</code> 在 glibc 里的实现也不是纯自旋。它在有限次重试之后会退让，甚至在某些版本里会短暂睡眠，因为纯自旋在通用系统上确实不好用。你自己手写的那版没有这些保护，用它就等于默认接受所有边界。</p>
+<p>结论摆在这里：用户态手写 spinlock 的价值在教学和极窄的嵌入式场景。日常写应用，用 mutex；写驱动，看清楚内核 spinlock 的规则；只有当你需要理解「同步的原子性从哪来」的时候，自己写一遍最管用。</p>
+<h2 id="十二从用户态到内核态" tabindex="-1">十二、从用户态到内核态 <a class="header-anchor" href="#十二从用户态到内核态"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核里的 spinlock 和我们写的是同一个东西，但多了几条用户态用不上的规则：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>用户态 spinlock</th>
+<th>内核态 spinlock</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>原子性来源</td>
+<td><code>ldrex</code> / <code>strex</code>，或 C11 原子</td>
+<td>同一套硬件指令</td>
+</tr>
+<tr>
+<td>屏障</td>
+<td>显式 <code>dmb</code>，或 <code>acquire</code> / <code>release</code></td>
+<td><code>smp_mb</code> 系列宏，编译期按配置替换</td>
+</tr>
+<tr>
+<td>抢占</td>
+<td>由调度器决定，锁管不了</td>
+<td>必须显式 <code>spin_lock</code> 里关抢占</td>
+</tr>
+<tr>
+<td>中断</td>
+<td>不涉及</td>
+<td>与中断共享数据时要关中断，用 <code>spin_lock_irqsave</code></td>
+</tr>
+<tr>
+<td>调试</td>
+<td>无</td>
+<td>有 lockdep 查死锁、查锁序</td>
+</tr>
+<tr>
+<td>持有期间</td>
+<td>可以睡</td>
+<td>绝对不能睡</td>
+</tr>
+</tbody>
+</table></div><p>最要紧的一条是「持有内核 spinlock 期间不能睡眠」。内核 spinlock 的获取路径会关抢占，此时如果调用了会睡眠的函数，就会出现「关着抢占等别人唤醒」的死局，而这把锁往往正是在唤醒路径上被持有的。用户态没这个问题，因为你的锁不会关抢占，调度器想来就来。</p>
+<p>第二条是中断。中断上下文里不能睡眠，所以它只能自旋；而如果进程上下文持有锁时被中断打断，中断处理程序又去抢同一把锁，就会在同一个核上自己等自己。所以内核提供 <code>spin_lock_irqsave</code> 这样的组合接口，关中断加关抢占一次做完。用户态不存在这个层级，你连中断都看不到。</p>
+<p>用 <code>perf stat</code> 看一眼自己的自旋有多贵，是这项实验里最值钱的一步：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>perf <span class="hljs-built_in">stat</span> -e cycles,instructions,cache-misses ./spinlock
+perf <span class="hljs-built_in">stat</span> -e cs ./spinlock        <span class="hljs-comment"># cs 是上下文切换次数</span>
+</code></pre></div></code></pre>
+<p><code>cs</code> 特别低说明都在自旋，<code>cs</code> 很高说明让出太频繁。两个极端都不好，调参数得看这两个数。</p>
+<h2 id="十三易错点速查" tabindex="-1">十三、易错点速查 <a class="header-anchor" href="#十三易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>按踩坑频率排，前三条最致命：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>错误</th>
+<th>后果</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用普通读写实现测试并设置</td>
+<td>两个线程同时进临界区</td>
+<td>用 <code>ldrex</code>/<code>strex</code>、CAS 或 C11 原子</td>
+</tr>
+<tr>
+<td>换了原子指令但漏了屏障</td>
+<td>读到临界区外的旧数据</td>
+<td>加锁后用 <code>acquire</code>，解锁前用 <code>release</code></td>
+</tr>
+<tr>
+<td>把 <code>volatile</code> 当同步手段</td>
+<td>编译器不动了，CPU 照样重排</td>
+<td><code>volatile</code> 只防优化删除，不防重排</td>
+</tr>
+<tr>
+<td>内联汇编漏了 <code>&amp;</code> 早写约束</td>
+<td>特定优化等级下输入寄存器被冲掉</td>
+<td>输出操作数加 <code>&amp;</code>，<code>+</code> 标记读写</td>
+</tr>
+<tr>
+<td>原子操作忘了重试</td>
+<td>失败那次被当成成功，锁被两人持有</td>
+<td><code>strex</code> 非 0 就 <code>bne</code> 回开头</td>
+</tr>
+<tr>
+<td>单核上纯自旋</td>
+<td>持锁者拿不到 CPU，永久卡住</td>
+<td>加 <code>sched_yield</code>，或改睡眠锁</td>
+</tr>
+<tr>
+<td>临界区里有 <code>printf</code> 或系统调用</td>
+<td>自旋时间远超一次上下文切换</td>
+<td>把 I/O 拿出临界区</td>
+</tr>
+<tr>
+<td>用锁保护非共享数据</td>
+<td>性能白掉，还引入死锁风险</td>
+<td>先想清楚谁在共享什么</td>
+</tr>
+<tr>
+<td>调试加 <code>printf</code> 改变了时序</td>
+<td>bug 消失，上线再现</td>
+<td>用 <code>perf</code>、<code>ftrace</code> 或线程日志观察</td>
+</tr>
+</tbody>
+</table></div><p>调试这一条值得多说一句。<code>printf</code> 本身带锁、带系统调用、带内存屏障效果，它会把竞态窗口撑开或者干脆堵住。用 <code>printf</code> 调 spinlock 的结果往往是一调就好、不调就坏。要么把日志写到每线程独立的文件，要么用 <code>perf record</code> 采样。</p>
+<p>最后收尾。写一遍下来，能带走的东西只有这几条：</p>
+<ol>
+<li>锁的语义四行就完了，难的是让「读—判断—写」在硬件上不可分割。</li>
+<li>原子指令解决互斥，屏障解决可见性，两者缺一不可。</li>
+<li>编译器乱序和 CPU 乱序是两个独立的敌人，得分别对待。</li>
+<li><code>volatile</code> 不是同步原语，任何时候都别指望它。</li>
+<li>自旋的代价是实打实的 CPU 时间，临界区一长就该换成睡眠。</li>
+<li>验证 spinlock 只能靠大规模并发跑，一次失败就足以证明它错，一次成功什么也证明不了。</li>
+</ol>
+<p>完整的源码在 <a href="https://github.com/descent/progs/tree/master/spinlock" target="_blank" rel="noopener noreferrer">https://github.com/descent/progs/tree/master/spinlock</a>。想接着往下走，下一步是把 <code>spin_lock</code> 里的自旋换成 futex 阻塞，那才是 Linux 上真正跑在应用里的那把锁。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一为什么要自己实现一遍" data-toc-target="一为什么要自己实现一遍">一、为什么要自己实现一遍</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二spinlock-的最小语义" data-toc-target="二spinlock-的最小语义">二、spinlock 的最小语义</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三核心难点原子性从哪来" data-toc-target="三核心难点原子性从哪来">三、核心难点：原子性从哪来</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四方案一用原子操作做测试并设置" data-toc-target="四方案一用原子操作做测试并设置">四、方案一：用原子操作做测试并设置</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五编译器优化带来的坑" data-toc-target="五编译器优化带来的坑">五、编译器优化带来的坑</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六内存屏障与乱序执行" data-toc-target="六内存屏障与乱序执行">六、内存屏障与乱序执行</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七方案二加上屏障的正确版本" data-toc-target="七方案二加上屏障的正确版本">七、方案二：加上屏障的正确版本</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八自旋的代价cpu-空转" data-toc-target="八自旋的代价cpu-空转">八、自旋的代价：CPU 空转</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九退让与让出sched_yield" data-toc-target="九退让与让出sched_yield">九、退让与让出：sched_yield</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十树莓派上的实测" data-toc-target="十树莓派上的实测">十、树莓派上的实测</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一用户态-spinlock-的适用边界" data-toc-target="十一用户态-spinlock-的适用边界">十一、用户态 spinlock 的适用边界</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二从用户态到内核态" data-toc-target="十二从用户态到内核态">十二、从用户态到内核态</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三易错点速查" data-toc-target="十三易错点速查">十三、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/D.操作系统/03-线程与同步/用户态-spinlock：一次树莓派实验/","title":"用户态 spinlock：一次树莓派实验","url":"/D.操作系统/03-线程与同步/用户态-spinlock：一次树莓派实验/","type":"current"},{"id":"/D.操作系统/03-线程与同步/Pthread-线程生命周期：创建、取消与清理/","title":"Pthread 线程生命周期：创建、取消与清理","url":"/D.操作系统/03-线程与同步/Pthread-线程生命周期：创建、取消与清理/","type":"neighbor"},{"id":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","title":"futex：用户态同步原语","url":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","type":"neighbor"},{"id":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","title":"互斥锁：从 API 到优先级继承","url":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","type":"neighbor"},{"id":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","title":"信号量与条件变量：等待与唤醒","url":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","type":"neighbor"}],"links":[{"source":"/D.操作系统/03-线程与同步/用户态-spinlock：一次树莓派实验/","target":"/D.操作系统/03-线程与同步/Pthread-线程生命周期：创建、取消与清理/","type":"neighbor"},{"source":"/D.操作系统/03-线程与同步/用户态-spinlock：一次树莓派实验/","target":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","type":"neighbor"},{"source":"/D.操作系统/03-线程与同步/用户态-spinlock：一次树莓派实验/","target":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","type":"neighbor"},{"source":"/D.操作系统/03-线程与同步/用户态-spinlock：一次树莓派实验/","target":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

@@ -1,0 +1,1233 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>抢占：用户抢占、内核抢占与调度时机 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">抢占：用户抢占、内核抢占与调度时机</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/D.操作系统/04-调度与亲和性/抢占：用户抢占、内核抢占与调度时机/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">抢占：用户抢占、内核抢占与调度时机</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">抢占：用户抢占、内核抢占与调度时机</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>一条主线先记住：用户抢占看的是「返回用户空间那一刻 <code>need_resched</code> 有没有置位」，内核抢占看的是「内核态运行时能不能在进程不情愿的时候被换出去」。判据不同，别混。</p>
+</blockquote>
+<h2 id="一什么是抢占" tabindex="-1">一、什么是抢占 <a class="header-anchor" href="#一什么是抢占"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>抢占是内核在进程不配合的时候，把它从 CPU 上换下来的强制行为。</p>
+<p>进程离开 CPU 只有两条路：</p>
+<ul>
+<li>自己让：等锁、等 IO、等信号量，把状态改成睡眠，主动调 <code>schedule()</code>。</li>
+<li>被别人顶掉：时间片烧完，或者更高优先级的进程刚被唤醒，内核把当前进程踢下去。</li>
+</ul>
+<p>第二条就是抢占。判据只有一条：当前进程有没有同意。</p>
+<p>早期 Linux 内核不可抢占。调度方式很直白：进程可以调 <code>schedule()</code> 自愿启动一次调度；非自愿的强制调度只发生在两个位置——每次从系统调用返回的前夕，每次从中断或异常处理返回用户空间的前夕。系统空间里发生中断或异常，不会引起调度。</p>
+<p>这套设计让内核实现简单很多，代价是两件事。</p>
+<p>第一件是延迟。中断发生在内核中时，中断返回不调度，要等到最初让 CPU 从用户空间进入内核空间的那次系统调用或中断返回，才有机会切换。</p>
+<p>第二件是优先级反转。内核态运行的操作优先级高于任何用户态进程。一个低优先级用户进程在内核里跑长路径，高优先级任务只能干等。当内核执行长的系统调用时，实时进程要等到内核中运行的进程退出内核才能被调度，由此产生的响应延迟在今天的硬件上仍然可以到 100ms 级。</p>
+<p>Linux 2.6 引入内核抢占（preempt）。用户程序在执行系统调用期间可以被抢占，该进程暂时挂起，新唤醒的高优先级进程得到 CPU。这种抢占不能在内核任意位置安全进行——临界区里的代码不行。临界区指同一时间不允许超过一个进程执行的指令序列，Linux 内核里这些部分用自旋锁保护。</p>
+<p>内核抢占有一个连带要求：内核中所有会被一个以上进程共享的变量和数据结构，都要通过互斥机制保护，也就是都要放进临界区。抢占式内核的判定口径是——只要内核不在中断处理程序里，也不在被 <code>spinlock</code> 这类互斥机制保护的临界代码里，就认为可以安全地切换进程。</p>
+<p>Linux 内核把临界代码都加了互斥保护，同时在运行时间过长的代码路径上插入调度检查点，打断过长的执行路径。任务能快速切换进程状态，也为内核抢占做好准备。</p>
+<p>抢占分两层，这是本篇的骨架：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层次</th>
+<th>谁被换掉</th>
+<th>判据</th>
+<th>引入版本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用户抢占</td>
+<td>用户态刚返回、还没跑几条指令的进程</td>
+<td>返回用户空间时 <code>need_resched</code> 置位就 <code>schedule()</code></td>
+<td>2.4 起就有，2.6 沿用</td>
+</tr>
+<tr>
+<td>内核抢占</td>
+<td>正在内核态执行系统调用的进程</td>
+<td>返回内核空间或抢占计数归零时，<code>preempt_count == 0</code> 且 <code>need_resched</code> 置位</td>
+<td>2.6 引入</td>
+</tr>
+</tbody>
+</table></div><p>用户抢占对所有内核都成立，不可抢占内核也有用户抢占。内核抢占要 <code>CONFIG_PREEMPT</code> 打开才有。这句是后面所有讨论的地基。</p>
+<h2 id="二抢占与协作式调度的区别" tabindex="-1">二、抢占与协作式调度的区别 <a class="header-anchor" href="#二抢占与协作式调度的区别"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>协作式调度（cooperative）的规则是：内核代码一旦开始跑，就一直跑到它自己愿意交出 CPU 为止。调度程序没有办法在一个内核级任务正在执行的时候重新调度——内核中的各任务按协作方式调度，不具备抢占性。</p>
+<p>不可抢占内核的特点写下来就一句：内核代码一直执行到完成（返回用户空间）或者明显阻塞为止。</p>
+<p>两者对照：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>协作式（不可抢占内核）</th>
+<th>抢占式（<code>CONFIG_PREEMPT</code>）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内核态执行</td>
+<td>一路跑到底，除非自己阻塞</td>
+<td>满足条件就被换出</td>
+</tr>
+<tr>
+<td>切换触发点</td>
+<td>只在自己调 <code>schedule()</code> 或阻塞处</td>
+<td>自己让出 + 中断返回 + 解锁 + 使能软中断</td>
+</tr>
+<tr>
+<td>内核实现复杂度</td>
+<td>低，共享数据不用逐处设防</td>
+<td>高，共享数据必须进临界区</td>
+</tr>
+<tr>
+<td>实时响应</td>
+<td>取决于内核里最长的那条路径</td>
+<td>取决于最长的那段不可抢占区间</td>
+</tr>
+<tr>
+<td>吞吐</td>
+<td>上下文切换少，缓存友好</td>
+<td>切换多，加锁有开销</td>
+</tr>
+<tr>
+<td>典型延迟</td>
+<td>100ms 级</td>
+<td>微秒到毫秒级，看配置</td>
+</tr>
+</tbody>
+</table></div><p>协作式并非没有好处。切换次数少，锁开销小，单核批处理场景跑得比抢占式舒服。它的问题只出在一件事上：你没法给响应时间一个上界。</p>
+<p>不可抢占内核留下两个具体麻烦：</p>
+<p>一是中断嵌套的延迟。如果中断发生在内核中，本次中断返回不会引起调度，要等到最初让 CPU 进入内核的那次系统调用或中断（异常）返回时才会发生调度。也就是说，中间嵌套多少层中断都不会触发切换。</p>
+<p>二是优先级反转。内核态运行的任何操作都优先于用户态进程。一个低优先级用户进程由于执行软中断或硬中断处理，就能让一个高优先级任务得不到及时响应。</p>
+<p>抢占式内核针对这两点动手，思路是给「内核不可打断」这件事划出边界：绝大多数内核代码可以被换出，少数必须原子完成的段落用计数挡住。</p>
+<h2 id="三用户抢占返回用户空间时的检查" tabindex="-1">三、用户抢占：返回用户空间时的检查 <a class="header-anchor" href="#三用户抢占返回用户空间时的检查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>用户抢占的位置很确定：内核即将返回用户空间的时候。</p>
+<p>此刻内核知道自己是安全的——它已经把该做的事做完了，栈上状态已经收拢，返回用户空间不会把内核数据结构留在半截。所以内核无论是在从中断处理程序返回，还是从系统调用返回，都会检查 <code>need_resched</code> 标志。置位了就选一个更合适的进程投入运行。</p>
+<p>用户抢占发生在：</p>
+<ul>
+<li>从系统调用返回用户空间。</li>
+<li>从中断处理程序返回用户空间。</li>
+</ul>
+<p>只有这两个入口，因为用户态只能从这两个入口进入。</p>
+<p>看 ARM 上的返回路径，<code>ret_to_user</code> 是两条路的汇合点：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ENTRY(ret_from_exception)          @ 异常返回
+    get_thread_info tsk
+    mov  why, #0
+    b    ret_to_user
+
+__irq_usr:                         @ 用户态收到中断
+    usr_entry
+    kuser_cmpxchg_check
+    ...
+    b    ret_to_user
+
+ENTRY(ret_to_user)
+ret_slow_syscall:
+    disable_irq
+    ldr  r1, [tsk, #TI_FLAGS]
+    tst  r1, #_TIF_WORK_MASK
+    bne  work_pending
+
+work_pending:
+    tst  r1, #_TIF_NEED_RESCHED
+    bne  work_resched
+
+work_resched:
+    bl   schedule
+</code></pre></div></code></pre>
+<p>这段汇编值得逐行读一遍。<code>TI_FLAGS</code> 是 <code>thread_info</code> 里的标志字，<code>_TIF_WORK_MASK</code> 是一组「返回用户态之前必须处理完的待办」掩码——信号、单步、<code>need_resched</code> 都在里面。先粗筛一次 <code>_TIF_WORK_MASK</code>，有活才跳 <code>work_pending</code>；进了 <code>work_pending</code> 再细查 <code>_TIF_NEED_RESCHED</code>，置位就 <code>bl schedule</code>。</p>
+<p>两层判断的意义是省一条快路径。绝大多数返回用户空间的场合没有任何待办，第一条 <code>tst</code> 直接过掉，不进慢路径。</p>
+<p>用户抢占的关键性质：它只能在返回用户空间时发生。一个进程如果在用户态跑，时间片用完了，内核不会立刻抢它的 CPU——时间片用完这个事实记在 <code>need_resched</code> 里，等到下一次它进内核再返回时兑现。对纯计算型进程来说，抢占的粒度就是一个 tick。</p>
+<h2 id="四内核抢占内核态能不能被抢占" tabindex="-1">四、内核抢占：内核态能不能被抢占 <a class="header-anchor" href="#四内核抢占内核态能不能被抢占"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核抢占回答的是另一个问题：一个进程正在内核态执行系统调用，能不能被换下去。</p>
+<p>不支持内核抢占的系统里，进程一旦运行于内核空间，就可以一直执行，直到它主动放弃或时间片耗尽。这样一些非常紧急的进程会长时间得不到运行。</p>
+<p>支持内核抢占的系统里，更高优先级的进程可以抢占正在内核空间运行的低优先级进程。</p>
+<p>判定能不能抢，看三个条件同时成立：</p>
+<ol>
+<li>内核不在中断处理程序中。</li>
+<li>内核不在软中断或 <code>tasklet</code> 的底半部里。</li>
+<li>没有持有 <code>spinlock</code>、读写锁这类互斥机制保护的临界代码，即抢占计数为 0。</li>
+</ol>
+<p>三个条件都满足，内核态就是可抢占点。</p>
+<p>禁止内核抢占的情况，四条记牢：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>序号</th>
+<th>禁止抢占的场景</th>
+<th>何时恢复抢占</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>内核正在执行中断处理例程</td>
+<td>中断返回时再执行内核抢占</td>
+</tr>
+<tr>
+<td>2</td>
+<td>内核正在执行软中断或 <code>tasklet</code></td>
+<td>软中断返回时再执行内核抢占</td>
+</tr>
+<tr>
+<td>3</td>
+<td>处在临界区，持有自旋锁、读写锁</td>
+<td>释放锁、抢占计数减到 0 时</td>
+</tr>
+<tr>
+<td>4</td>
+<td>内核正在执行调度程序本身</td>
+<td>不需要恢复，抢占的理由就是调新进程</td>
+</tr>
+</tbody>
+</table></div><p>第 4 条的理由很直白：抢占的目的就是进行一次新的调度，没有理由把调度程序抢占掉再运行一遍调度程序。<code>schedule()</code> 内部会检测抢占计数，避免普通调度过程中又递归触发一次内核抢占调度。</p>
+<p>第 1 条要注意细节：硬件中断返回前会执行软中断，此时仍然处在中断上下文里，所以软中断和硬中断的禁止是连着的一段。</p>
+<p>第 3 条是内核抢占能成立的核心。持有自旋锁时被抢占，持锁进程被换下去，另一个 CPU 上的进程来抢同一把锁就只能自旋等死锁释放——而持锁者根本没在跑。死等就是这么来的。</p>
+<p>用户抢占与内核抢占的判据摆在一起：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>判据</th>
+<th>用户抢占</th>
+<th>内核抢占</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>发生位置</td>
+<td>中断或系统调用返回用户空间的路径上</td>
+<td>内核态内部，返回内核空间或抢占计数归零处</td>
+</tr>
+<tr>
+<td>检查什么</td>
+<td>只查 <code>need_resched</code></td>
+<td>查 <code>preempt_count == 0</code> 再查 <code>need_resched</code></td>
+</tr>
+<tr>
+<td>是否看抢占计数</td>
+<td>不看</td>
+<td>必看</td>
+</tr>
+<tr>
+<td>前置条件</td>
+<td>内核即将回到用户态</td>
+<td>不处在中断上下文、不持有锁、不在调度器里</td>
+</tr>
+<tr>
+<td>依赖配置项</td>
+<td>无</td>
+<td><code>CONFIG_PREEMPT</code></td>
+</tr>
+<tr>
+<td>被换下的进程处于</td>
+<td>用户态</td>
+<td>内核态，正跑系统调用</td>
+</tr>
+</tbody>
+</table></div><p>一张表里最该记住的是第三行：用户抢占不看 <code>preempt_count</code>，因为用户态没有临界区概念；内核抢占必须看，因为内核态随时握着别人要的锁。</p>
+<h2 id="五need_resched-标志" tabindex="-1">五、need_resched 标志 <a class="header-anchor" href="#五need_resched-标志"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核得知道什么时候该调 <code>schedule()</code>。只靠用户程序显式调用，它们就会一直执行下去。内核为此准备了一个 <code>need_resched</code> 标志，表明是否需要重新执行一次调度。</p>
+<p>实现上它是 <code>thread_info</code> 里的一个标志位 <code>TIF_NEED_RESCHED</code>，检查它的接口是 <code>need_resched()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> need_resched()  test_thread_flag(TIF_NEED_RESCHED)</span>
+</code></pre></div></code></pre>
+<p>谁来置位？两个主要来源：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>置位来源</th>
+<th>触发条件</th>
+<th>函数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>时间片耗尽</td>
+<td>每个 tick 进程陷入内核后时间片递减 1，减到 0 时置位</td>
+<td><code>scheduler_tick()</code> / <code>update_process_times()</code></td>
+</tr>
+<tr>
+<td>高优先级进程被唤醒</td>
+<td>被唤醒进程的优先级高于当前进程</td>
+<td><code>try_to_wake_up()</code></td>
+</tr>
+</tbody>
+</table></div><p>第一条的链路是：时钟中断 → <code>update_process_times()</code> → <code>scheduler_tick()</code>。每个 tick 进程陷入内核后时间片递减 1，减到 0 时把 <code>TIF_NEED_RESCHED</code> 置 1。</p>
+<p>第二条的链路是：某个事件唤醒一个睡眠进程 → <code>try_to_wake_up()</code> 算优先级 → 比当前进程高的，置位 <code>TIF_NEED_RESCHED</code>。这就是「唤醒即抢占」的来源，也是交互式进程响应快的原因。</p>
+<p>标志位只是记账，它本身不切换任何东西。真正发生切换，要等某一处代码显式检查它。这个检查点就是下一章的主题。</p>
+<p>一个容易忽略的点：<code>need_resched</code> 是每进程的，不是每 CPU 的全局开关。它挂在 <code>thread_info</code> 上，所以谁的时间片用完就置谁的位，检查的时候查的是当前进程那一个。</p>
+<p>字段位置随版本变过。老版本把 <code>flags</code> 和 <code>preempt_count</code> 一起放在 <code>thread_info</code> 里，5.x 之后 <code>thread_info</code> 变成 <code>task_struct</code> 的内嵌成员，物理位置挪了。<code>need_resched()</code> 和 <code>preempt_count()</code> 这两个抽象接口没变，所以看代码时按接口走，别死记偏移。</p>
+<h2 id="六抢占发生的时机" tabindex="-1">六、抢占发生的时机 <a class="header-anchor" href="#六抢占发生的时机"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>need_resched</code> 置位之后，内核要在合适的点兑现它。这些点就是调度时机。</p>
+<p>那句话要拆开看：「检查 <code>need_resched</code>」不等于「发生调度」，「检查」还要配上一个前提条件。五个时机，前提各不相同：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>时机</th>
+<th>检查什么</th>
+<th>前提条件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>中断返回内核空间</td>
+<td><code>preempt_count</code> 是否为 0，<code>TIF_NEED_RESCHED</code> 是否为 1</td>
+<td>被中断的是内核态代码</td>
+</tr>
+<tr>
+<td>中断或异常返回用户空间</td>
+<td>只查 <code>TIF_NEED_RESCHED</code> 是否为 1</td>
+<td>被中断的是用户态代码</td>
+</tr>
+<tr>
+<td>显式或隐式调 <code>preempt_enable()</code></td>
+<td><code>preempt_count</code> 是否为 0，<code>TIF_NEED_RESCHED</code> 是否为 1</td>
+<td>计数刚减到 0</td>
+</tr>
+<tr>
+<td>使能软中断（<code>local_bh_enable()</code>）</td>
+<td><code>preempt_count</code> 是否为 0，<code>TIF_NEED_RESCHED</code> 是否为 1</td>
+<td>软中断上下文已退出</td>
+</tr>
+<tr>
+<td>自己主动调 <code>schedule()</code></td>
+<td>不查，直接让</td>
+<td>自愿</td>
+</tr>
+</tbody>
+</table></div><p>五条里只有最后一条是自愿的，前四条都是抢占路径。前四条又分成两组：第 2 条是用户抢占，第 1、3、4 条是内核抢占。</p>
+<p>为什么第 1 条和第 2 条查的东西不一样？因为返回到哪儿决定了安全边界。</p>
+<p>返回到用户空间时，内核已经彻底离开自己的数据结构，栈上不留半截状态，切走绝对安全，所以只看有没有人排队，不关心抢占计数。返回到内核空间时，内核还要继续往下跑，锁还在手上、上下文还在中断里，所以必须先确认抢占计数归零，确认自己站在可抢占点上。</p>
+<p>第 3 条和第 4 条是「条件消失的那个瞬间」。加锁期间禁止抢占，解锁的瞬间条件消失，正好顺手检查一次。这是把检查点缝到释放路径上的做法：不用额外扫描，谁解除阻塞谁负责检查。</p>
+<p>第 5 条是自愿调度，跟抢占无关，列在这里是为了完整——<code>schedule()</code> 只有这五种入口，记全了就不会漏。</p>
+<p>还有一个隐含前提：这五条全都要当前进程在跑。如果 CPU 上正在跑的是 <code>idle</code> 线程，没有可抢占对象，<code>need_resched</code> 置位也只是让 <code>idle</code> 提前退出。</p>
+<h2 id="七从系统调用与中断返回时的抢占" tabindex="-1">七、从系统调用与中断返回时的抢占 <a class="header-anchor" href="#七从系统调用与中断返回时的抢占"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一章看两条真实的返回路径。它们把上一章的第 1 条和第 2 条落地成汇编。</p>
+<p>从硬中断返回内核空间，走的是 <code>retint_kernel</code>。x86 64 位（<code>arch/x86/entry_64.S</code>）里的骨架：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>#ifdef CONFIG_PREEMPT
+ENTRY(retint_kernel)
+    cmpl $0, threadinfo_preempt_count(%rcx)
+    jnz  retint_restore_args
+    bt   $TIF_NEED_RESCHED, threadinfo_flags(%rcx)
+    jnc  retint_restore_args
+    bt   $9, EFLAGS-ARGOFFSET(%rsp)
+    jnc  retint_restore_args
+    call preempt_schedule_irq
+    jmp  exit_intr
+#endif
+</code></pre></div></code></pre>
+<p>三道闸门，顺序不能换：</p>
+<ol>
+<li><code>cmpl $0, threadinfo_preempt_count</code> —— 抢占计数不为 0 就直接返回，一个字都不多查。</li>
+<li><code>bt $TIF_NEED_RESCHED</code> —— 没人排队也直接返回。</li>
+<li><code>bt $9, EFLAGS</code> —— 中断标志位没置起来就不抢，先恢复现场。</li>
+</ol>
+<p>三道都过了才 <code>call preempt_schedule_irq</code>。注意这三道闸门里没有一道是「判断要不要调度」，全都是「判断能不能调度」。要不要调度早就在 <code>need_resched</code> 里定好了，这里只负责确认现场安全。</p>
+<p><code>preempt_schedule_irq</code> 是出中断上下文时内核抢占调度的入口点。它被调用和返回时中断是关着的，这保护它不被中断递归调用：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>asmlinkage <span class="hljs-type">void</span> __sched <span class="hljs-title function_">preempt_schedule_irq</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">ctx_state</span> <span class="hljs-title">prev_state</span>;</span>
+
+    <span class="hljs-comment">/* Catch callers which need to be fixed */</span>
+    BUG_ON(preempt_count() || !irqs_disabled());
+
+    prev_state = exception_enter();
+    <span class="hljs-keyword">do</span> {
+        __preempt_count_add(PREEMPT_ACTIVE);
+        local_irq_enable();
+        __schedule();
+        local_irq_disable();
+        __preempt_count_sub(PREEMPT_ACTIVE);
+        <span class="hljs-comment">/*
+         * Check again in case we missed a preemption opportunity
+         * between schedule and now.
+         */</span>
+        barrier();
+    } <span class="hljs-keyword">while</span> (need_resched());
+
+    exception_exit(prev_state);
+}
+</code></pre></div></code></pre>
+<p>几个细节：</p>
+<ul>
+<li><code>BUG_ON(preempt_count() || !irqs_disabled())</code> 是一道自检。这个入口要求调用者进来时抢占计数为 0、中断关着，不符合就是调用者写错了。</li>
+<li>循环里 <code>__preempt_count_add(PREEMPT_ACTIVE)</code> 把抢占计数抬高，再开中断、调 <code>__schedule()</code>。抬高计数是为了让调度器知道自己在抢占路径上，别把当前进程从运行队列里摘掉——它没睡觉，只是被顶了一下。老版本用 <code>TASK_PREEMPTED</code> 进程状态标记同一个意思，两代实现换的是形式，语义一样。</li>
+<li><code>local_irq_enable()</code> 在 <code>__schedule()</code> 之前打开中断。切换过程本身很长，中断关着会拖坏整个系统。</li>
+<li>尾巴上的 <code>while (need_resched())</code> 是复查。<code>__schedule()</code> 返回后到下一次检查之间有个窗口，期间又有高优先级进程被唤醒，那就再抢一次。<code>barrier()</code> 保证编译器不去调整这条重读的顺序。</li>
+</ul>
+<p>再看 ARM 内核态接收中断的路径，<code>__irq_svc</code>：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>__irq_svc:                          @ 内核态接收到中断
+    svc_entry
+...
+#ifdef CONFIG_PREEMPT
+    get_thread_info tsk
+    ldr  r8, [tsk, #TI_PREEMPT]     @ 取抢占计数
+    add  r7, r8, #1                 @ 进入中断，计数加 1
+    str  r7, [tsk, #TI_PREEMPT]
+#endif
+    irq_handler                     @ 中断处理
+#ifdef CONFIG_PREEMPT
+    str  r8, [tsk, #TI_PREEMPT]     @ 恢复抢占计数
+    ldr  r0, [tsk, #TI_FLAGS]       @ 取标志
+    teq  r8, #0                     @ 抢占计数是否为 0
+    movne r0, #0                    @ 非 0 就把标志清零
+    tst  r0, #_TIF_NEED_RESCHED
+    blne svc_preempt
+#endif
+svc_preempt:
+    mov  r8, lr
+1:  bl   preempt_schedule_irq       @ 调度
+    ldr  r0, [tsk, #TI_FLAGS]
+    tst  r0, #_TIF_NEED_RESCHED
+    moveq pc, r8
+</code></pre></div></code></pre>
+<p>重点在 <code>teq r8, #0</code> 加 <code>movne r0, #0</code> 这两句。它没有直接判断「计数为 0 就抢」，而是用「计数非 0 就把标志清掉」的写法，把两个条件压成一次跳转。计数不为 0 时 <code>r0</code> 变 0，后面的 <code>tst</code> 必然不命中，自然不会抢。ARM 上的老代码爱用这种写法省指令。</p>
+<p>进入中断时把 <code>TI_PREEMPT</code> 加 1，退出时恢复原值——注意是恢复 <code>r8</code> 里存的旧值，不是减 1。中断嵌套时这样才对：三层嵌套只留最外层的原值，不会因为进出次数不配对而漂移。</p>
+<p>软中断这一侧走的是另一个入口。在打开页出错函数 <code>pagefault_enable</code> 和软中断底半部开启函数 <code>local_bh_enable</code> 里，会调用 <code>preempt_check_resched</code> 检查是否需要执行内核抢占：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_check_resched() \
+do { \
+    <span class="hljs-keyword">if</span> (should_resched()) \
+        __preempt_schedule(); \
+} while (0)</span>
+</code></pre></div></code></pre>
+<p><code>should_resched()</code> 把两件事合成一个判断：抢占计数是否为 0，<code>need_resched</code> 是否置位。两个都满足才进 <code>__preempt_schedule()</code>。</p>
+<p><code>preempt_schedule</code> 的源码与 <code>preempt_schedule_irq</code> 基本一样，差别在它进来时中断不一定关着，所以不需要 <code>BUG_ON(!irqs_disabled())</code>，也不需要临时开中断。两条路径共用一个核心循环，这个设计让「从哪进来」变得不重要——只要满足条件，切换逻辑只有一份。</p>
+<h2 id="八抢占点与-preempt_count" tabindex="-1">八、抢占点与 preempt_count <a class="header-anchor" href="#八抢占点与-preempt_count"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核抢占能成立的前提是一个可数的开关。Linux 在进程结构里加了 <code>preempt_count</code>，作为内核抢占锁：为 0 表示可以进行内核抢占。</p>
+<p>老版本它在 <code>thread_info</code> 里，和 <code>flags</code> 挨着：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">thread_info</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">task_struct</span>      *<span class="hljs-title">task</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">exec_domain</span>      *<span class="hljs-title">exec_domain</span>;</span>
+    __u32                   flags;
+    __u32                   status;
+    __u32                   cpu;
+    <span class="hljs-type">int</span>                     preempt_count;
+    <span class="hljs-type">mm_segment_t</span>            addr_limit;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">restart_block</span>    <span class="hljs-title">restart_block</span>;</span>
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_IA32_EMULATION</span>
+    <span class="hljs-type">void</span> __user             *sysenter_return;
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+};
+</code></pre></div></code></pre>
+<p>这个计数器不是布尔值，它是一个位域，按段划分用途：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位段</th>
+<th>含义</th>
+<th>谁加</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PREEMPT_MASK</code></td>
+<td>显式 <code>preempt_disable()</code> 的嵌套层数</td>
+<td>锁、RCU 读侧、链表遍历</td>
+</tr>
+<tr>
+<td><code>SOFTIRQ_MASK</code></td>
+<td>软中断禁用嵌套层数</td>
+<td><code>local_bh_disable()</code></td>
+</tr>
+<tr>
+<td><code>HARDIRQ_MASK</code></td>
+<td>硬中断嵌套层数</td>
+<td>中断入口</td>
+</tr>
+<tr>
+<td><code>NMI_MASK</code></td>
+<td>NMI 嵌套层数</td>
+<td>NMI 入口</td>
+</tr>
+</tbody>
+</table></div><p>整段加起来非 0，内核就不许被抢占。分段的目的是让代码能单独判断「我现在在中断里吗」「我在软中断里吗」，而不是只知道「总数非 0」。</p>
+<p>加计数和减计数的动作被包成宏，全部在 <code>include/linux/preempt.h</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_count_add(val)  __preempt_count_add(val)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_count_sub(val)  __preempt_count_sub(val)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_count_dec_and_test() __preempt_count_dec_and_test()</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __preempt_count_inc()   __preempt_count_add(1)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> __preempt_count_dec()   __preempt_count_sub(1)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_count_inc()     preempt_count_add(1)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_count_dec()     preempt_count_sub(1)</span>
+</code></pre></div></code></pre>
+<p>开抢占的那个宏是整套机制的关键：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_PREEMPT_COUNT</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_enable() \
+do { \
+    barrier(); \
+    <span class="hljs-keyword">if</span> (unlikely(preempt_count_dec_and_test())) \
+        __preempt_schedule(); \
+} while (0)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_check_resched() \
+do { \
+    <span class="hljs-keyword">if</span> (should_resched()) \
+        __preempt_schedule(); \
+} while (0)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_enable() \
+do { \
+    barrier(); \
+    preempt_count_dec(); \
+} while (0)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_check_resched() do { } while (0)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+</code></pre></div></code></pre>
+<p><code>preempt_count_dec_and_test()</code> 减一并返回结果是否为 0。减完不是 0 说明还有别的禁用嵌套着，什么也不做；减到 0 说明这是最外层，<code>unlikely</code> 分支进去触发一次抢占检查。</p>
+<p><code>barrier()</code> 挡在减计数之前，防止编译器把计数修改挪到临界区外面去。这段代码没有加锁，全靠这个屏障保证顺序。</p>
+<p><code>CONFIG_PREEMPT_COUNT</code> 关掉时，<code>preempt_enable()</code> 退化成一句 <code>preempt_count_dec()</code>，<code>preempt_check_resched()</code> 退化成空语句。抢占计数整个不参与编译，代价归零——这是给不需要内核抢占的配置省开销。</p>
+<p>再看不带检查的版本，供那些明确知道自己不该触发调度的路径使用：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_disable_notrace() \
+do { \
+    __preempt_count_inc(); \
+    barrier(); \
+} while (0)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> preempt_enable_no_resched_notrace() \
+do { \
+    barrier(); \
+    __preempt_count_dec(); \
+} while (0)</span>
+</code></pre></div></code></pre>
+<p><code>notrace</code> 后缀是给 ftrace 用的：这些函数出现得太频繁，被追踪会淹掉 trace 缓冲，也容易在追踪器内部形成递归。</p>
+<p>谁在用这套 API？凡是「这段代码不能被换出去」的地方：</p>
+<ul>
+<li>互斥机制：<code>spinlock</code>、读写锁、RCU 读侧临界区。</li>
+<li>中断代码：中断入口加计数，出口减计数。</li>
+<li>链表数据遍历：遍历过程中节点会被别的 CPU 摘掉，遍历期间不能换出。</li>
+<li>底半部：<code>local_bh_disable()</code> 到 <code>local_bh_enable()</code> 之间。</li>
+</ul>
+<p>临界代码运行完，需要开启内核抢占。这个「关—开」配对不配对，是内核里最常见的一类 bug：多减一次会让抢占计数下溢，少减一次会让这台 CPU 永远不能被抢占，症状是系统卡死但没报错。</p>
+<p>抢占式内核对内核的改造主要有两点：</p>
+<p>一是改中断的入口代码和返回代码。中断入口把 <code>preempt_count</code> 加 1，禁止内核抢占；中断返回处把 <code>preempt_count</code> 减 1，使内核重新可被抢占。</p>
+<p>二是改写自旋锁和读写锁的语义，在锁操作里增加对 <code>preempt_count</code> 的操作。加锁时计数加 1 禁止内核抢占；释放锁时计数减 1，并在抢占条件满足且需要重新调度时进行抢占调度。</p>
+<p>看 <code>_spin_unlock</code> 的实现就能看到这个配对：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> __lockfunc _spin_unlock(<span class="hljs-type">spinlock_t</span> *lock)
+{
+    spin_release(&amp;lock-&gt;dep_map, <span class="hljs-number">1</span>, _RET_IP_);
+    _raw_spin_unlock(lock);
+    preempt_enable();
+}
+</code></pre></div></code></pre>
+<p><code>_raw_spin_unlock</code> 放开的是锁本身，<code>preempt_enable()</code> 放开的是抢占。两件事分开做，顺序不能反：必须先真放锁，再允许抢占——反过来的话，抢占窗口里别人拿到锁，而你以为自己还持着。</p>
+<p>除了加计数，抢占式内核还在运行时间过长的代码路径上插入调度检查点，打断过长的执行路径。这类检查点用 <code>cond_resched()</code> 落地，常见于循环体内部。</p>
+<p>于是「可抢占点」有了精确定义：<code>preempt_count == 0</code> 的那一刻。一个内核函数的抢占延迟，等于它内部最长的一段连续 <code>preempt_count != 0</code> 的区间。</p>
+<h2 id="九抢占的代价为什么要权衡" tabindex="-1">九、抢占的代价：为什么要权衡 <a class="header-anchor" href="#九抢占的代价为什么要权衡"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核抢占不是免费的。它的成本分四层，从里到外。</p>
+<p>第一层，共享数据必须逐处设防。内核抢占要求内核中所有会被一个以上进程共享的变量和数据结构都通过互斥机制保护，也就是都放进临界区。这件事的工作量跟内核代码量成正比，而且没有「漏了也不会出事」的余地——漏一处就是一个竞态。</p>
+<p>第二层，加锁本身的开销。<code>preempt_disable</code>/<code>preempt_enable</code> 各自带一条编译器屏障，一次加解锁就多两条屏障加两次内存写。看着不多，但 <code>spinlock</code> 在内核里每秒被拿上百万次。</p>
+<p>第三层，上下文切换的开销。切换一次要换页表、污染 TLB、丢缓存局部性。抢占把「本来能一直跑完」的路径切成几段，每段都会被打断。</p>
+<p>第四层，调试成本。竞态的复现依赖时序，抢占式内核里的竞态一千次里错一次，压测一周才逮到。不可抢占内核里大部分竞态压根不存在，因为不存在「跑到一半被换走」这件事。</p>
+<p>代价和收益的对照：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>不可抢占内核</th>
+<th>抢占式内核</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>共享数据保护</td>
+<td>少量关键路径</td>
+<td>所有共享数据逐处设防</td>
+</tr>
+<tr>
+<td>每次加解锁开销</td>
+<td>低</td>
+<td>多两条屏障和两次计数写</td>
+</tr>
+<tr>
+<td>上下文切换次数</td>
+<td>少</td>
+<td>多，尤其负载重时</td>
+</tr>
+<tr>
+<td>缓存与 TLB 局部性</td>
+<td>好</td>
+<td>被打断就丢</td>
+</tr>
+<tr>
+<td>最长响应延迟</td>
+<td>内核里最长的那条路径，100ms 级</td>
+<td>最长的那段不可抢占区间</td>
+</tr>
+<tr>
+<td>竞态调试难度</td>
+<td>低，大部分竞态不存在</td>
+<td>高，时序依赖，难复现</td>
+</tr>
+<tr>
+<td>吞吐上限</td>
+<td>高</td>
+<td>略低</td>
+</tr>
+</tbody>
+</table></div><p>这里有个反向的账要算。如果为了响应快而无脑加抢占点，切换次数上去了，吞吐掉下来，缓存全废。如果为了吞吐把临界区拉长，响应又回去了。真正的取舍点在那个「最长不可抢占区间」上——它决定了实时性上限，也决定了你愿意为实时性付多少吞吐。</p>
+<p>反过来，不可抢占内核的「简单」也不是白拿的：它把延迟的账推给了用户。一个实时进程被低优先级进程的系统调用挡在后面，这个延迟没人管，因为内核压根没打算管。</p>
+<p>还有一笔隐性成本容易被忽视。抢占式内核里，<code>preempt_disable()</code> 到 <code>preempt_enable()</code> 之间的代码段变多了，而这些段落每一个都是「延迟贡献者」。函数调用链一长，嵌套层数一多，实际的最坏延迟远大于单段临界区的长度。测量抢占延迟时量的不是单点，是整条链。</p>
+<p>所以「要不要内核抢占」从来不是技术能不能做到的问题，是「你的延迟上界要求多少，愿意拿多少吞吐去换」的问题。下面几章把这个权衡拆到具体配置项上。</p>
+<h2 id="十自愿抢占与非自愿抢占" tabindex="-1">十、自愿抢占与非自愿抢占 <a class="header-anchor" href="#十自愿抢占与非自愿抢占"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核统计进程被换下 CPU 的次数，分两类记账。</p>
+<p>自愿切换：进程自己调 <code>schedule()</code> 让出 CPU。等锁、等 IO、等信号量、<code>sleep()</code>、<code>nanosleep()</code>，都属于这类。</p>
+<p>非自愿切换：进程不想让，被内核顶掉。用户抢占和内核抢占都算在这一类里。</p>
+<p>用户态能看到这两个数：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ grep ctxt /proc/&lt;pid&gt;/status
+voluntary_ctxt_switches:        1204
+nonvoluntary_ctxt_switches:     37
+</code></pre></div></code></pre>
+<p>两个数的比值说明很多东西：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>比值</th>
+<th>进程在干什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>自愿远大于非自愿</td>
+<td>交互式或 IO 密集型，大部分时间在等</td>
+</tr>
+<tr>
+<td>非自愿远大于自愿</td>
+<td>CPU 密集，一直在被时间片踢下去</td>
+</tr>
+<tr>
+<td>两个都很小</td>
+<td>刚起来的进程，或者被阻塞住的进程</td>
+</tr>
+<tr>
+<td>非自愿持续增长且进程很闲</td>
+<td>CPU 争抢严重，或者被别的高优先级任务挤</td>
+</tr>
+</tbody>
+</table></div><p>要分清一个界限：非自愿切换不等于内核抢占。时间片用完被换下，发生在返回用户空间的路径上，那是用户抢占。只有进程在内核态跑着被换下去，才是内核抢占。<code>/proc</code> 里这两个字段不区分这层，要区分得看栈或者用 <code>perf sched</code>。</p>
+<p>为什么值得分这两类？因为两者的调优手段不一样。</p>
+<p>自愿切换多的进程，瓶颈在等待对象上——锁争用、磁盘慢、网络延迟。加 CPU 核没用，得看它等什么。</p>
+<p>非自愿切换多的进程，瓶颈在 CPU 上——要么它自己算太久，要么别人跟它抢。这时候调 nice、绑核、减负载才有意义。</p>
+<h2 id="十一抢占与实时性的关系" tabindex="-1">十一、抢占与实时性的关系 <a class="header-anchor" href="#十一抢占与实时性的关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>实时系统对响应时间有严格限定。一个实时进程被实时设备的硬件中断唤醒后，应该在限定的时间内被调度执行。</p>
+<p>Linux 在不可抢占的年代满足不了这条。内核不可抢占，意味着不能确定系统在内核中的停留时间。实时进程要等到内核中运行的进程退出内核才能被调度，响应延迟能到 100ms 级。</p>
+<p>这个 100ms 不是最坏值，是常见值。真正的上界取决于当时内核里跑的是什么：一次大的 <code>write()</code> 回刷、一次内存回收、一次驱动里的大循环，都能把延迟推到几百毫秒。</p>
+<p>抢占把「内核停留时间」变成可分析的量。开了内核抢占之后，最坏调度延迟等于：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>最坏延迟 = 最长不可抢占区间 + 关中断时间 + 中断处理时间 + 调度器自身耗时
+</code></pre></div></code></pre>
+<p>四项里第一项是主导。找不可抢占区间，就是找 <code>preempt_count != 0</code> 的最长连续段——一把被长时间持有的自旋锁、一个关中断的循环、一个长遍历。</p>
+<p>这就是为什么抢占式内核要在运行时间过长的代码路径上插入调度检查点。检查点的作用不是让代码变快，是把一条长路径切成若干短区间，把最坏值压下来。</p>
+<p>优先级反转是另一个层面的问题。内核态运行的任何操作都要优先于用户态进程，一个低优先级用户进程由于执行软中断或硬中断处理，就能让高优先级任务得不到及时响应。抢占本身缓解了一部分——高优先级任务被唤醒后可以在中断返回时顶掉低优先级进程。但它治不了持锁导致的反转：高优先级进程在锁上等，持锁的低优先级进程跑不了，中间优先级进程在跑。</p>
+<p><code>PREEMPT_RT</code> 针对的正是这一层。它的演进脉络：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>阶段</th>
+<th>时间</th>
+<th>做了什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-rt</code> 补丁树</td>
+<td>2.6 时代起</td>
+<td>由内核社区在主线外维护，把自旋锁改造成可睡眠的 <code>rt_mutex</code>，带优先级继承</td>
+</tr>
+<tr>
+<td>中断线程化</td>
+<td>逐步进主线</td>
+<td>硬中断处理程序变成内核线程，可被按优先级调度，<code>CONFIG_IRQ_FORCED_THREADING</code></td>
+</tr>
+<tr>
+<td>抢占计数改造</td>
+<td>持续</td>
+<td>把 <code>preempt_count</code> 拆开，让大部分内核代码真正可抢占</td>
+</tr>
+<tr>
+<td>合入主线</td>
+<td>2024 年 6 月，6.12</td>
+<td><code>PREEMPT_RT</code> 进入主线，不再需要打补丁</td>
+</tr>
+</tbody>
+</table></div><p>关键差别不在「抢占得更彻底」，在锁的语义变了。<code>spinlock</code> 在 RT 里变成可睡眠的互斥量，带优先级继承——高优先级进程等锁时，持锁的低优先级进程会被临时提到高优先级，尽快跑完放锁。这直接掐断了优先级反转。</p>
+<p>代价也在这儿：自旋锁变成睡眠锁，原来在原子上下文里能做的事做不了了，临界区不能关中断，性能模型整个换一套。这也是 RT 补丁花了近二十年才进主线的原因。</p>
+<p>回到调度策略这一侧，<code>SCHED_FIFO</code> 和 <code>SCHED_RR</code> 的实时进程有个坑值得说清。一个 <code>SCHED_FIFO</code> 进程一旦拿到 CPU，同优先级或更低优先级的进程都拿不到，它会一直跑到自己阻塞为止。单核上如果它不阻塞，系统其它部分就全停了——谁去加载新程序？没人能加载。除非时钟中断里有更高优先级的任务等着。</p>
+<p>内核为此设了一个兜底：RT 限流。默认参数是每 1 秒周期里给实时任务 950ms，留下 50ms 给非实时任务：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ cat /proc/sys/kernel/sched_rt_runtime_us
+950000
+$ cat /proc/sys/kernel/sched_rt_period_us
+1000000
+</code></pre></div></code></pre>
+<p><code>-1</code> 表示关掉限流，实时任务可以无限占 CPU——单核上这么设然后跑一个死循环 <code>SCHED_FIFO</code>，机器就死了。</p>
+<p>至于「FIFO 实时进程运行时能加载新程序吗」这个问题，答案是能，但要靠别的核或者别的优先级。多核上加载器在另一个 CPU 上跑，不受影响；单核上要么有更高优先级的进程把它顶掉，要么等它自己阻塞，要么靠 RT 限流那 50ms 的窗口。</p>
+<h2 id="十二配置项preempt_noneboluntaryvoluntary" tabindex="-1">十二、配置项：PREEMPT_NONE/BOLUNTARY/VOLUNTARY <a class="header-anchor" href="#十二配置项preempt_noneboluntaryvoluntary"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核抢占是编译期选项。Linux 2.6 引入了三级配置，之后增加了 RT 这一级和运行期切换能力。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>配置项</th>
+<th>内核态可抢占</th>
+<th>抢占点</th>
+<th>典型场景</th>
+<th>延迟量级</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PREEMPT_NONE</code></td>
+<td>否</td>
+<td>只有 <code>cond_resched()</code> 等显式点</td>
+<td>服务器、批处理、吞吐优先</td>
+<td>数十毫秒到百毫秒</td>
+</tr>
+<tr>
+<td><code>PREEMPT_VOLUNTARY</code></td>
+<td>否</td>
+<td>显式点更密，<code>might_sleep()</code> 处也检查</td>
+<td>桌面、通用发行版默认的折中</td>
+<td>十毫秒级</td>
+</tr>
+<tr>
+<td><code>PREEMPT</code></td>
+<td>是</td>
+<td>中断返回、解锁、使能软中断</td>
+<td>桌面、低延迟、软实时</td>
+<td>毫秒级或更低</td>
+</tr>
+<tr>
+<td><code>PREEMPT_RT</code></td>
+<td>是，几乎全域</td>
+<td>上述全部，加中断线程化、可睡眠锁</td>
+<td>硬实时</td>
+<td>百微秒级</td>
+</tr>
+</tbody>
+</table></div><p>逐个说。</p>
+<p><code>PREEMPT_NONE</code> 是老式行为。内核态代码一路跑到底，只在显式调 <code>cond_resched()</code> 的地方检查 <code>need_resched</code>。服务器配置常用它，因为省掉抢占计数带来的开销，吞吐最好。</p>
+<p><code>PREEMPT_VOLUNTARY</code> 不改抢占模型，只是往内核里塞更多检查点。它在 <code>might_sleep()</code> 这类「你本来就该考虑睡眠」的位置插入一次调度检查。效果是把最长延迟从数十毫秒压到十毫秒级，代价是代码里多出一堆检查。它不产生内核抢占——检查点是代码自己走到那儿才生效的。</p>
+<p><code>PREEMPT</code> 是真正的内核抢占。中断返回、解锁、使能软中断，任意一个满足条件的点都能换进程。这是桌面发行版的主流选择。</p>
+<p><code>PREEMPT_RT</code> 在 <code>PREEMPT</code> 基础上换掉锁语义和中断模型，目标是把最坏延迟压到百微秒级。</p>
+<p>怎么确认手上前内核开的是哪个：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ grep -E &#x27;^CONFIG_PREEMPT&#x27; /boot/config-$(uname -r)
+CONFIG_PREEMPT_BUILD=y
+CONFIG_PREEMPT_NONE=y
+# CONFIG_PREEMPT_VOLUNTARY is not set
+# CONFIG_PREEMPT is not set
+</code></pre></div></code></pre>
+<p>或者看 <code>uname -a</code> 的尾巴，里面带 <code>PREEMPT</code> 字样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Linux host 5.15.0-91-generic #101-Ubuntu SMP ... x86_64 GNU/Linux
+Linux rt-host 6.12.0-rt1 #1 SMP PREEMPT_RT ... x86_64 GNU/Linux
+</code></pre></div></code></pre>
+<p>5.12 起多了 <code>CONFIG_PREEMPT_DYNAMIC</code>，编译时把三种模式都编进去，启动时用 <code>preempt=</code> 参数选：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>preempt=none
+preempt=voluntary
+preempt=full
+</code></pre></div></code></pre>
+<p>开了动态抢占的内核，还能在运行期从 debugfs 读当前模式：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ cat /sys/kernel/debug/sched/preempt
+full
+</code></pre></div></code></pre>
+<p>这个选项解决了一个实际痛点：同一个内核镜像既能上服务器也能上桌面，不用为两种配置各编一次。代价是抢占路径上多一次间接跳转。</p>
+<h2 id="十三常见误解" tabindex="-1">十三、常见误解 <a class="header-anchor" href="#十三常见误解"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>九个高频误区，逐个拆。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>误解</th>
+<th>事实</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>开了 <code>PREEMPT</code>，内核态随时能被打断</td>
+<td>中断上下文、临界区、调度器内部都不可抢，可抢的只有抢占计数为 0 的区间</td>
+</tr>
+<tr>
+<td>用户抢占要开 <code>CONFIG_PREEMPT</code></td>
+<td>用户抢占从 2.4 就有，任何配置下都成立；<code>CONFIG_PREEMPT</code> 管的是内核抢占</td>
+</tr>
+<tr>
+<td><code>need_resched</code> 一置位就立刻切换</td>
+<td>标志只是记账，要等某个检查点兑现，中间能拖满一整个 tick</td>
+</tr>
+<tr>
+<td><code>preempt_count</code> 是个布尔开关</td>
+<td>它是位域，分 <code>PREEMPT</code>、<code>SOFTIRQ</code>、<code>HARDIRQ</code>、<code>NMI</code> 几段，各自独立计数</td>
+</tr>
+<tr>
+<td>抢占越激进系统越快</td>
+<td>抢占拿吞吐换延迟，切换多、缓存丢、加锁贵，服务器上开满反而慢</td>
+</tr>
+<tr>
+<td><code>PREEMPT_RT</code> 就是把 <code>PREEMPT</code> 开到最大</td>
+<td>RT 换掉了锁语义（自旋锁变可睡眠的 <code>rt_mutex</code>）和中断模型（中断线程化），是两个不同的东西</td>
+</tr>
+<tr>
+<td>实时进程优先级高就一定能按时跑</td>
+<td>优先级反转、RT 限流、多实时任务抢同一个核，任何一个都能让它迟到</td>
+</tr>
+<tr>
+<td><code>cond_resched()</code> 是内核抢占点</td>
+<td>它是自愿让出，代码自己走到那儿才生效；抢占是代码不想让也会被换下去</td>
+</tr>
+<tr>
+<td>有了抢占就不用管 SMP 并发了</td>
+<td>抢占和并发是两个维度，多核上不开抢占照样有真并发，锁一个都不能少</td>
+</tr>
+</tbody>
+</table></div><p>几条展开说。</p>
+<p>第一条最要命。很多人以为开了 <code>PREEMPT</code> 就是「内核态随便打断」，然后写出「反正会被抢占，临界区不用保护」的代码。内核抢占的前提恰恰是临界区已经保护好了——抢占机制是建立在锁之上的，不是替代锁的。</p>
+<p>第五条是工程上最常见的错。从桌面换到服务器，把配置一路开满，然后发现吞吐掉了两成。原因是那些「为了低延迟而加的抢占点」在服务器上纯属开销。</p>
+<p>第七条关于 RT 的误解值得单独强调。<code>PREEMPT_RT</code> 的内核里，<code>spinlock_t</code> 在多数上下文下不再关抢占，而是变成可睡眠的互斥量。这意味着原来在 <code>spin_lock</code> 保护的临界区里不能做的事（睡眠、分配内存），在 RT 里反而能做了；但原来能做的事（在中断上下文里拿锁）反而受限。语义换了一套，移植代码时不能照搬。</p>
+<p>第八条要补一句。<code>cond_resched()</code> 在 <code>PREEMPT_NONE</code> 内核里承担了「伪抢占」的角色——它是不可抢占内核里唯一的自愿检查点来源。所以 <code>PREEMPT_NONE</code> 内核的延迟表现，很大程度上取决于 <code>cond_resched()</code> 撒得够不够密。</p>
+<h2 id="十四易错点速查" tabindex="-1">十四、易错点速查 <a class="header-anchor" href="#十四易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>写代码和看代码时容易踩的点，按主题归类。</p>
+<p><strong>判据类</strong></p>
+<ul>
+<li>用户抢占只查 <code>need_resched</code>，内核抢占要查 <code>preempt_count == 0</code> 和 <code>need_resched</code> 两个。搞混这两个判据，就会得出「返回用户空间时要检查锁」这种错误结论。</li>
+<li>返回用户空间是安全点，返回内核空间不是。区别在于前者已经彻底离开内核数据结构。</li>
+<li>中断上下文里不会发生内核抢占，只在中断返回的那一刻发生。</li>
+</ul>
+<p><strong>计数类</strong></p>
+<ul>
+<li><code>preempt_disable()</code> 和 <code>preempt_enable()</code> 必须严格配对。多减一次导致计数下溢，少减一次导致这台 CPU 永远不可抢占。</li>
+<li>嵌套是允许的，计数按层累加。只有最外层减到 0 才触发抢占检查。</li>
+<li>减计数之前有 <code>barrier()</code>，别在它前面插自己的代码，编译器屏障挡不住你手写的重排意图。</li>
+<li><code>preempt_enable_no_resched()</code> 不减检查，用完要自己补一次 <code>preempt_check_resched()</code>。</li>
+</ul>
+<p><strong>锁类</strong></p>
+<ul>
+<li><code>spin_lock</code> 隐含 <code>preempt_disable()</code>，<code>spin_unlock</code> 隐含 <code>preempt_enable()</code>。手写 <code>preempt_disable()</code> 再拿 <code>spin_lock</code> 是重复计数，功能上没错，但会让临界区比预期长。</li>
+<li>持锁期间被抢占会让另一个 CPU 死等，这是禁止持锁抢占的唯一理由。</li>
+<li>放锁和开抢占的顺序不能反：先真放锁，再 <code>preempt_enable()</code>。</li>
+</ul>
+<p><strong>调度类</strong></p>
+<ul>
+<li><code>schedule()</code> 不能在中断上下文里调。调度函数会对此作出判断，在中断里调用会打印出错信息。</li>
+<li><code>schedule()</code> 不能在持有自旋锁时调，会死锁。</li>
+<li>主动 <code>schedule()</code> 前必须先把进程状态改掉，只调 <code>schedule()</code> 不改状态，进程会被立刻重新选中。</li>
+</ul>
+<p><strong>配置类</strong></p>
+<ul>
+<li><code>PREEMPT_NONE</code> 不等于没有抢占，用户抢占一直在。</li>
+<li><code>PREEMPT_VOLUNTARY</code> 不产生内核抢占，它只是加密了检查点。</li>
+<li>换配置要重编内核，除非开了 <code>CONFIG_PREEMPT_DYNAMIC</code>。</li>
+<li>延迟问题先量再加配置，别凭感觉开 <code>PREEMPT_RT</code>。</li>
+</ul>
+<p><strong>实时类</strong></p>
+<ul>
+<li><code>SCHED_FIFO</code> 进程不阻塞会饿死同核上的所有低优先级任务，包括负责加载新程序的那个。</li>
+<li>RT 限流默认给实时任务每周期 950ms，剩下 50ms 是保命的。设成 <code>-1</code> 之前想清楚。</li>
+<li>优先级反转靠优先级继承解决，不靠调高优先级。</li>
+</ul>
+<p><strong>观察类</strong></p>
+<ul>
+<li><code>/proc/&lt;pid&gt;/status</code> 里的 <code>nonvoluntary_ctxt_switches</code> 混算用户抢占和内核抢占，要区分得看 <code>perf sched</code> 或者栈采样。</li>
+<li><code>uname -a</code> 尾巴上的 <code>PREEMPT</code> 字样能快速判断配置，<code>PREEMPT_RT</code> 会完整写出来。</li>
+<li>量抢占延迟要量整条链，不是量单个临界区——嵌套会让实际最坏值远大于单段长度。</li>
+</ul>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一什么是抢占" data-toc-target="一什么是抢占">一、什么是抢占</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二抢占与协作式调度的区别" data-toc-target="二抢占与协作式调度的区别">二、抢占与协作式调度的区别</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三用户抢占返回用户空间时的检查" data-toc-target="三用户抢占返回用户空间时的检查">三、用户抢占：返回用户空间时的检查</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四内核抢占内核态能不能被抢占" data-toc-target="四内核抢占内核态能不能被抢占">四、内核抢占：内核态能不能被抢占</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五need_resched-标志" data-toc-target="五need_resched-标志">五、need_resched 标志</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六抢占发生的时机" data-toc-target="六抢占发生的时机">六、抢占发生的时机</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七从系统调用与中断返回时的抢占" data-toc-target="七从系统调用与中断返回时的抢占">七、从系统调用与中断返回时的抢占</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八抢占点与-preempt_count" data-toc-target="八抢占点与-preempt_count">八、抢占点与 preempt_count</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九抢占的代价为什么要权衡" data-toc-target="九抢占的代价为什么要权衡">九、抢占的代价：为什么要权衡</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十自愿抢占与非自愿抢占" data-toc-target="十自愿抢占与非自愿抢占">十、自愿抢占与非自愿抢占</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一抢占与实时性的关系" data-toc-target="十一抢占与实时性的关系">十一、抢占与实时性的关系</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二配置项preempt_noneboluntaryvoluntary" data-toc-target="十二配置项preempt_noneboluntaryvoluntary">十二、配置项：PREEMPT_NONE/BOLUNTARY/VOLUNTARY</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三常见误解" data-toc-target="十三常见误解">十三、常见误解</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四易错点速查" data-toc-target="十四易错点速查">十四、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/D.操作系统/04-调度与亲和性/抢占：用户抢占、内核抢占与调度时机/","title":"抢占：用户抢占、内核抢占与调度时机","url":"/D.操作系统/04-调度与亲和性/抢占：用户抢占、内核抢占与调度时机/","type":"current"},{"id":"/D.操作系统/04-调度与亲和性/CPU-亲和性与绑核实战/","title":"CPU 亲和性与绑核实战","url":"/D.操作系统/04-调度与亲和性/CPU-亲和性与绑核实战/","type":"neighbor"},{"id":"/D.操作系统/04-调度与亲和性/调度器与优先级：从-nice-到-sched_/","title":"调度器与优先级：从 nice 到 sched_","url":"/D.操作系统/04-调度与亲和性/调度器与优先级：从-nice-到-sched_/","type":"neighbor"}],"links":[{"source":"/D.操作系统/04-调度与亲和性/抢占：用户抢占、内核抢占与调度时机/","target":"/D.操作系统/04-调度与亲和性/CPU-亲和性与绑核实战/","type":"neighbor"},{"source":"/D.操作系统/04-调度与亲和性/抢占：用户抢占、内核抢占与调度时机/","target":"/D.操作系统/04-调度与亲和性/调度器与优先级：从-nice-到-sched_/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

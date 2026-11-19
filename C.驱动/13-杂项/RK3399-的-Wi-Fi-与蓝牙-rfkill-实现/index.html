@@ -1,0 +1,1293 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RK3399 的 Wi-Fi 与蓝牙 rfkill 实现 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">RK3399 的 Wi-Fi 与蓝牙 rfkill 实现</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">RK3399 的 Wi-Fi 与蓝牙 rfkill 实现</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">RK3399 的 Wi-Fi 与蓝牙 rfkill 实现</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <p>上一篇讲了 rfkill 框架本身。这一篇看 Rockchip 在 RK3399 上怎么用它，对象是 NanoPC-T4 板子上的 AP6356（博通 BCM4356，Wi-Fi + 蓝牙二合一）。</p>
+<p>先把结论摆出来，因为这是读这两个驱动时最反直觉的一点：</p>
+<blockquote>
+<p><strong><code>rfkill-wlan.c</code> 里没有任何 rfkill 代码。</strong> 它一个 <code>struct rfkill</code> 都没分配，纯粹是个&quot;给 Wi-Fi 芯片上电&quot;的 platform 驱动，名字里的 rfkill 是历史遗留。</p>
+<p><strong><code>rfkill-bt.c</code> 才是真的 rfkill 驱动。</strong> 它走完了 <code>rfkill_alloc</code> + <code>rfkill_register</code> + <code>set_block</code> 全套。</p>
+</blockquote>
+<p>两个文件还互相调彼此的初始化函数，所以代码分布更加反直觉。这一篇按这个真实结构讲。</p>
+<h2 id="一两个文件怎么互相挂钩" tabindex="-1">一、两个文件怎么互相挂钩 <a class="header-anchor" href="#一两个文件怎么互相挂钩"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先看目录。这两个文件在 5.2.8 官方内核里<strong>并不存在</strong>，是从 Rockchip 的 4.19 SDK 里搬过来的：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>net/rfkill/
+├── core.c            内核自带的框架
+├── input.c           内核自带（弃用）
+├── rfkill-gpio.c     内核自带的通用 GPIO 驱动
+├── rfkill-wlan.c     ← Rockchip 加的
+└── rfkill-bt.c       ← Rockchip 加的
+</code></pre></div></code></pre>
+<p>打开 <code>rfkill-wlan.c</code> 会发现一个奇怪之处：<strong>没有 <code>module_init</code> / <code>module_exit</code></strong>。文件末尾只有：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> __init <span class="hljs-title function_">rfkill_wlan_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	LOG(<span class="hljs-string">&quot;Enter %s\n&quot;</span>, __func__);
+	<span class="hljs-keyword">return</span> platform_driver_register(&amp;rfkill_wlan_driver);
+}
+
+<span class="hljs-type">void</span> __exit <span class="hljs-title function_">rfkill_wlan_exit</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	LOG(<span class="hljs-string">&quot;Enter %s\n&quot;</span>, __func__);
+	platform_driver_unregister(&amp;rfkill_wlan_driver);
+}
+</code></pre></div></code></pre>
+<p>没有模块入口，这两个函数谁来调？</p>
+<p>答案是 <code>rfkill-bt.c</code> 的模块入口和出口：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> __init <span class="hljs-title function_">rfkill_rk_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	<span class="hljs-type">int</span> ret;
+
+	LOG(<span class="hljs-string">&quot;Enter %s\n&quot;</span>, __func__);
+
+	ret = rfkill_wlan_init();       <span class="hljs-comment">/* 先注册 Wi-Fi 驱动 */</span>
+	<span class="hljs-keyword">if</span> (ret)
+		<span class="hljs-keyword">return</span> ret;
+
+	ret = platform_driver_register(&amp;rfkill_rk_driver);
+	<span class="hljs-keyword">if</span> (ret)
+		rfkill_wlan_exit();
+
+	<span class="hljs-keyword">return</span> ret;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> __exit <span class="hljs-title function_">rfkill_rk_exit</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	platform_driver_unregister(&amp;rfkill_rk_driver);
+	rfkill_wlan_exit();
+}
+
+<span class="hljs-comment">/* 只有这一个模块入口，注册两个 platform 驱动 */</span>
+module_init(rfkill_rk_init);
+module_exit(rfkill_rk_exit);
+</code></pre></div></code></pre>
+<p>所以 <strong><code>rfkill-bt.c</code> 是主模块，<code>rfkill-wlan.c</code> 是被它带进来的</strong>。编译时两个文件编进同一个 <code>.ko</code>。</p>
+<p>这个设计的坏处很直接：想让 Wi-Fi 单独工作，得把蓝牙驱动一起加载。好处也有一个：Wi-Fi 和蓝牙共用 AP6356 的电源域，上电时序得协同，放在一个模块里省了跨模块同步。</p>
+<blockquote>
+<p>名字和实际情况的错位值得记一笔：<code>rfkill-bt.c</code> 编出来的模块叫 <code>rfkill_bt</code>，但它实际管着 Wi-Fi 和蓝牙两个平台的初始化。</p>
+</blockquote>
+<h2 id="二硬件ap6356-在-nanopc-t4-上怎么接" tabindex="-1">二、硬件：AP6356 在 NanoPC-T4 上怎么接 <a class="header-anchor" href="#二硬件ap6356-在-nanopc-t4-上怎么接"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>分析驱动之前先把接线搞清楚，否则看不懂设备树里的那些 GPIO。</p>
+<h3 id="2.1-电源" tabindex="-1">2.1 电源 <a class="header-anchor" href="#2.1-电源"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>电源</th>
+<th>电压</th>
+<th>来源</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VBAT</td>
+<td>3.0 ~ 4.8V</td>
+<td>VCC3V3_SYS，由 12V 主电源经 NB680GD 稳压得到</td>
+</tr>
+<tr>
+<td>VDDIO</td>
+<td>1.8V</td>
+<td>RK808 PMIC 第 61 脚</td>
+</tr>
+</tbody>
+</table></div><p>VBAT 是给射频功放供的，VDDIO 是 IO 电平参考。两个都要在，缺一个芯片就不工作。</p>
+<h3 id="2.2-时钟" tabindex="-1">2.2 时钟 <a class="header-anchor" href="#2.2-时钟"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>AP6356 需要一个外部低功耗时钟（LPO），接的是 <code>RTC_CLKO_WIFI</code>，来自 RK808 第 67 脚 <code>CLK32KOUT2</code>。32.768kHz，用于蓝牙低功耗模式下的休眠唤醒计时。</p>
+<p>设备树里 <code>clocks = &lt;&amp;rk808 1&gt;</code> 就是这个。</p>
+<h3 id="2.3-控制引脚" tabindex="-1">2.3 控制引脚 <a class="header-anchor" href="#2.3-控制引脚"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>RK3399 与 AP6356 之间能动的 GPIO 就这几个：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>信号</th>
+<th>RK3399 引脚</th>
+<th>方向</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>WL_REG_ON</code></td>
+<td>GPIO0_B2</td>
+<td>SoC → 模块</td>
+<td>Wi-Fi 上电/复位</td>
+</tr>
+<tr>
+<td><code>BT_REG_ON</code></td>
+<td>GPIO0_B1</td>
+<td>SoC → 模块</td>
+<td>蓝牙上电/复位</td>
+</tr>
+<tr>
+<td><code>BT_WAKE</code></td>
+<td>GPIO2_D2</td>
+<td>SoC → 模块</td>
+<td>主机告诉蓝牙&quot;别睡&quot;</td>
+</tr>
+<tr>
+<td><code>BT_HOST_WAKE</code></td>
+<td>GPIO0_A4</td>
+<td>模块 → SoC</td>
+<td>蓝牙告诉主机&quot;有事找你&quot;</td>
+</tr>
+<tr>
+<td><code>WIFI,host_wake_irq</code></td>
+<td>GPIO0_A3</td>
+<td>模块 → SoC</td>
+<td>Wi-Fi 告诉主机&quot;有事找你&quot;</td>
+</tr>
+<tr>
+<td><code>UART_CTS_N</code></td>
+<td>GPIO2_C3</td>
+<td>模块 → SoC</td>
+<td>蓝牙串口流控（可复用成 GPIO）</td>
+</tr>
+</tbody>
+</table></div><p>注意 <code>WL_REG_ON</code> 和 <code>BT_REG_ON</code> 都在 GPIO0 上，紧挨着（B2 / B1）。</p>
+<p>有一件事在这张表里看不出来但很关键：<strong><code>WL_REG_ON</code>（GPIO0_B2）在两个驱动里都没出现</strong>。它不在 <code>rfkill-wlan.c</code> 里，被 <code>sdio_pwrseq</code> 框架接管了。第五节展开。</p>
+<h2 id="三设备树两个-platdata-节点" tabindex="-1">三、设备树：两个 platdata 节点 <a class="header-anchor" href="#三设备树两个-platdata-节点"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="3.1-wi-fi-节点" tabindex="-1">3.1 Wi-Fi 节点 <a class="header-anchor" href="#3.1-wi-fi-节点"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-dts"><div class="code-block" data-lang="dts"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">dts</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-title class_">wireless-wlan</span> <span class="hljs-punctuation">{</span>
+	<span class="hljs-attr">compatible</span> <span class="hljs-operator">=</span> <span class="hljs-string">&quot;wlan-platdata&quot;</span><span class="hljs-punctuation">;</span>
+	<span class="hljs-attr">rockchip,grf</span> <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-variable">&amp;grf</span>&gt;</span><span class="hljs-punctuation">;</span>
+	wifi_chip_<span class="hljs-attr">type</span> <span class="hljs-operator">=</span> <span class="hljs-string">&quot;ap6356&quot;</span><span class="hljs-punctuation">;</span>
+	sdio_<span class="hljs-attr">vref</span> <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-number">1800</span>&gt;</span><span class="hljs-punctuation">;</span>
+	WIFI,host_wake_<span class="hljs-attr">irq</span> <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-variable">&amp;gpio0</span> <span class="hljs-number">3</span> GPIO_ACTIVE_HIGH&gt;</span><span class="hljs-punctuation">;</span> <span class="hljs-comment">/* GPIO0_A3 */</span>
+	<span class="hljs-attr">status</span> <span class="hljs-operator">=</span> <span class="hljs-string">&quot;okay&quot;</span><span class="hljs-punctuation">;</span>
+<span class="hljs-punctuation">};</span>
+</code></pre></div></code></pre>
+<p>驱动侧的匹配表：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">of_device_id</span> <span class="hljs-title">wlan_platdata_of_match</span>[] =</span> {
+	{ .compatible = <span class="hljs-string">&quot;wlan-platdata&quot;</span> },
+	{}
+};
+MODULE_DEVICE_TABLE(of, wlan_platdata_of_match);
+
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">platform_driver</span> <span class="hljs-title">rfkill_wlan_driver</span> =</span> {
+	.probe  = rfkill_wlan_probe,
+	.remove = rfkill_wlan_remove,
+	.driver = {
+		.name = <span class="hljs-string">&quot;wlan-platdata&quot;</span>,
+		.of_match_table = of_match_ptr(wlan_platdata_of_match),
+	},
+};
+</code></pre></div></code></pre>
+<p><strong>节点名 <code>wireless-wlan</code> 和 compatible <code>wlan-platdata</code> 不是一回事。</strong> 匹配只看 <code>compatible</code>，节点名随便叫什么都行。老资料里写&quot;只有 wireless-wlan 节点的 compatible 与驱动匹配表一致&quot;，容易让人以为节点名也参与匹配，其实不参与。</p>
+<p><code>wifi_chip_type = &quot;ap6356&quot;</code> 只是个标识串，驱动用它决定加载哪套参数（不同芯片的 SDIO 时序、天线配置不同）。</p>
+<p><code>WIFI,host_wake_irq</code> 是 Wi-Fi 唤醒主机的引脚。这个中断不在 <code>rfkill-wlan.c</code> 里申请，而是由 SDIO/brcmfmac 驱动处理。</p>
+<h3 id="3.2-蓝牙节点" tabindex="-1">3.2 蓝牙节点 <a class="header-anchor" href="#3.2-蓝牙节点"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-dts"><div class="code-block" data-lang="dts"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">dts</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-title class_">wireless-bluetooth</span> <span class="hljs-punctuation">{</span>
+	<span class="hljs-attr">compatible</span> <span class="hljs-operator">=</span> <span class="hljs-string">&quot;bluetooth-platdata&quot;</span><span class="hljs-punctuation">;</span>
+	<span class="hljs-attr">clocks</span> <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-variable">&amp;rk808</span> <span class="hljs-number">1</span>&gt;</span><span class="hljs-punctuation">;</span>
+	<span class="hljs-attr">clock-names</span> <span class="hljs-operator">=</span> <span class="hljs-string">&quot;ext_clock&quot;</span><span class="hljs-punctuation">;</span>
+	uart_rts_<span class="hljs-attr">gpios</span> <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-variable">&amp;gpio2</span> <span class="hljs-number">19</span> GPIO_ACTIVE_LOW&gt;</span><span class="hljs-punctuation">;</span> <span class="hljs-comment">/* GPIO2_C3 */</span>
+	<span class="hljs-attr">pinctrl-names</span> <span class="hljs-operator">=</span> <span class="hljs-string">&quot;default&quot;</span>, <span class="hljs-string">&quot;rts_gpio&quot;</span><span class="hljs-punctuation">;</span>
+	pinctrl<span class="hljs-number">-0</span> = <span class="hljs-params">&lt;<span class="hljs-variable">&amp;uart0_rts</span>&gt;</span><span class="hljs-punctuation">;</span>
+	pinctrl<span class="hljs-number">-1</span> = <span class="hljs-params">&lt;<span class="hljs-variable">&amp;uart0_gpios</span>&gt;</span><span class="hljs-punctuation">;</span>
+	BT,reset_<span class="hljs-attr">gpio</span>    <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-variable">&amp;gpio0</span> <span class="hljs-number">9</span> GPIO_ACTIVE_HIGH&gt;</span><span class="hljs-punctuation">;</span>  <span class="hljs-comment">/* GPIO0_B1 */</span>
+	BT,wake_<span class="hljs-attr">gpio</span>     <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-variable">&amp;gpio2</span> <span class="hljs-number">26</span> GPIO_ACTIVE_HIGH&gt;</span><span class="hljs-punctuation">;</span> <span class="hljs-comment">/* GPIO2_D2 */</span>
+	BT,wake_host_<span class="hljs-attr">irq</span> <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-variable">&amp;gpio0</span> <span class="hljs-number">4</span> GPIO_ACTIVE_HIGH&gt;</span><span class="hljs-punctuation">;</span>  <span class="hljs-comment">/* GPIO0_A4 */</span>
+	<span class="hljs-attr">status</span> <span class="hljs-operator">=</span> <span class="hljs-string">&quot;okay&quot;</span><span class="hljs-punctuation">;</span>
+<span class="hljs-punctuation">};</span>
+</code></pre></div></code></pre>
+<p>属性逐个说：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>属性</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clocks</code> / <code>clock-names</code></td>
+<td>外部时钟源，指向 rk808 的 1 号时钟，名字 <code>ext_clock</code></td>
+</tr>
+<tr>
+<td><code>uart_rts_gpios</code></td>
+<td>把 UART_CTS_N（GPIO2_C3）当 GPIO 用时的描述，低有效</td>
+</tr>
+<tr>
+<td><code>pinctrl-names</code></td>
+<td>两套引脚状态：<code>default</code> 和 <code>rts_gpio</code></td>
+</tr>
+<tr>
+<td><code>pinctrl-0</code></td>
+<td><code>default</code> 状态把 GPIO2_C3 复用成 UART RTS 功能</td>
+</tr>
+<tr>
+<td><code>pinctrl-1</code></td>
+<td><code>rts_gpio</code> 状态把 GPIO2_C3 复用成普通 GPIO</td>
+</tr>
+<tr>
+<td><code>BT,reset_gpio</code></td>
+<td>BT_REG_ON，高有效。<strong>高电平开蓝牙，低电平关</strong></td>
+</tr>
+<tr>
+<td><code>BT,wake_gpio</code></td>
+<td>BT_WAKE，高有效。主机 → 蓝牙的唤醒线</td>
+</tr>
+<tr>
+<td><code>BT,wake_host_irq</code></td>
+<td>BT_HOST_WAKE，高有效。蓝牙 → 主机，配成中断</td>
+</tr>
+</tbody>
+</table></div><p><code>pinctrl</code> 两套状态是为了流控切换：正常跑数据时 GPIO2_C3 是 UART 的 RTS 引脚，需要用 GPIO 手动控制时切到 <code>rts_gpio</code> 状态。</p>
+<h3 id="3.3-bt_wake-的语义" tabindex="-1">3.3 BT_WAKE 的语义 <a class="header-anchor" href="#3.3-bt_wake-的语义"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这根线的逻辑容易反着记，按设备树注释原文：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th><code>BT_WAKE</code> 电平</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>高</strong></td>
+<td>蓝牙不能睡，或者必须醒来</td>
+</tr>
+<tr>
+<td><strong>低</strong></td>
+<td>蓝牙可以睡（睡不睡它自己决定）</td>
+</tr>
+</tbody>
+</table></div><p>关键一条：<strong>主机每次发数据前都要拉高 <code>BT_WAKE</code></strong>。低电平只是&quot;允许睡&quot;，不是&quot;命令睡&quot;，所以蓝牙可能还醒着。但反过来，一直保持低电平，蓝牙迟早会自主进入低功耗。</p>
+<h2 id="四wi-fi-驱动一个名不副实的文件" tabindex="-1">四、Wi-Fi 驱动：一个名不副实的文件 <a class="header-anchor" href="#四wi-fi-驱动一个名不副实的文件"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>rfkill_wlan_probe()</code> 全文看完，会发现它和 rfkill 框架<strong>完全无关</strong>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">rfkill_wlan_probe</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> platform_device *pdev)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_wlan_data</span> *<span class="hljs-title">rfkill</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio_wifi_moudle</span> *<span class="hljs-title">pdata</span> =</span> pdev-&gt;dev.platform_data;
+	<span class="hljs-type">int</span> ret = <span class="hljs-number">-1</span>;
+
+	<span class="hljs-comment">/* 1. 注册一个 class，名字 rkwifi */</span>
+	class_register(&amp;rkwifi_power);
+
+	<span class="hljs-comment">/* 2. 没有平台数据就从设备树解析 */</span>
+	<span class="hljs-keyword">if</span> (!pdata) {
+		pdata = kzalloc(<span class="hljs-keyword">sizeof</span>(*pdata), GFP_KERNEL);
+		<span class="hljs-keyword">if</span> (!pdata)
+			<span class="hljs-keyword">return</span> -ENOMEM;
+
+		ret = wlan_platdata_parse_dt(&amp;pdev-&gt;dev, pdata);
+		<span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) {
+			LOG(<span class="hljs-string">&quot;%s: No platform data specified\n&quot;</span>, __func__);
+			<span class="hljs-keyword">return</span> ret;
+		}
+	}
+
+	<span class="hljs-comment">/* 3. 分配驱动私有数据 */</span>
+	rfkill = kzalloc(<span class="hljs-keyword">sizeof</span>(*rfkill), GFP_KERNEL);
+	<span class="hljs-keyword">if</span> (!rfkill)
+		<span class="hljs-keyword">goto</span> rfkill_alloc_fail;
+
+	rfkill-&gt;pdata = pdata;
+	g_rfkill = rfkill;
+
+	<span class="hljs-comment">/* 4. 如果配了 VBAT / RESET 引脚，申请它们 */</span>
+	<span class="hljs-keyword">if</span> (!pdata-&gt;mregulator.power_ctrl_by_pmu) {
+		ret = rfkill_rk_setup_gpio(&amp;pdata-&gt;vbat_n, wlan_name, <span class="hljs-string">&quot;wlan_vbat&quot;</span>);
+		<span class="hljs-keyword">if</span> (ret)
+			<span class="hljs-keyword">goto</span> fail_alloc;
+
+		ret = rfkill_rk_setup_gpio(&amp;pdata-&gt;reset_n, wlan_name, <span class="hljs-string">&quot;wlan_reset&quot;</span>);
+		<span class="hljs-keyword">if</span> (ret)
+			<span class="hljs-keyword">goto</span> fail_alloc;
+	}
+
+	<span class="hljs-comment">/* 5. 初始化唤醒锁 */</span>
+	wake_lock_init(&amp;rfkill-&gt;wlan_irq_wl, WAKE_LOCK_SUSPEND, <span class="hljs-string">&quot;rfkill_wlan_wake&quot;</span>);
+
+	<span class="hljs-comment">/* 6. 给 Wi-Fi 芯片上电 */</span>
+	rfkill_set_wifi_bt_power(<span class="hljs-number">1</span>);
+
+	<span class="hljs-keyword">if</span> (pdata-&gt;wifi_power_remain)
+		rockchip_wifi_power(<span class="hljs-number">1</span>);
+
+	fb_register_client(&amp;rfkill_wlan_fb_notifier);
+
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+fail_alloc:
+	kfree(rfkill);
+rfkill_alloc_fail:
+	kfree(pdata);
+	g_rfkill = <span class="hljs-literal">NULL</span>;
+	<span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<p><strong>整段没有 <code>rfkill_alloc</code>、没有 <code>struct rfkill</code>、没有 <code>set_block</code>。</strong></p>
+<p>它做的唯一有价值的事是：如果 Wi-Fi 芯片的电源和复位引脚接在 SoC 的 GPIO 上，就在 probe 时把芯片拉起来。仅此而已。</p>
+<p>所以&quot;Wi-Fi 的 rfkill&quot;这个说法在这个平台上是不准确的。真正管 Wi-Fi 开关的是 <code>cfg80211</code> / <code>brcmfmac</code>，它们通过自己的机制响应 <code>rfkill</code> 框架的全局状态。</p>
+<h3 id="4.1-私有数据结构" tabindex="-1">4.1 私有数据结构 <a class="header-anchor" href="#4.1-私有数据结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_wlan_data</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio_wifi_moudle</span> *<span class="hljs-title">pdata</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">wake_lock</span> <span class="hljs-title">wlan_irq_wl</span>;</span>
+};
+</code></pre></div></code></pre>
+<p>只有两个成员：</p>
+<ul>
+<li><code>pdata</code>：指向平台数据，下一节展开；</li>
+<li><code>wlan_irq_wl</code>：Wi-Fi 中断唤醒锁。Wi-Fi 模块有中断要处理时，防止系统进入休眠。</li>
+</ul>
+<p><code>wake_lock</code> 这套 API 从来没进过主线内核（一直待 <code>android-3.x</code> 分支），PC 上的发行版内核里没有。用 Rockchip SDK 才有。</p>
+<h3 id="4.2-平台数据struct-rksdmmc_gpio_wifi_moudle" tabindex="-1">4.2 平台数据：struct rksdmmc_gpio_wifi_moudle <a class="header-anchor" href="#4.2-平台数据struct-rksdmmc_gpio_wifi_moudle"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio_wifi_moudle</span> {</span>
+	<span class="hljs-type">int</span>  sdio_vol;              <span class="hljs-comment">/* SDIO 参考电压 */</span>
+	<span class="hljs-type">bool</span> vref_ctrl_enble;
+	<span class="hljs-type">bool</span> wifi_power_remain;     <span class="hljs-comment">/* 是否保持 Wi-Fi 供电 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_pmu</span>  <span class="hljs-title">mregulator</span>;</span>   <span class="hljs-comment">/* 主电源，走 PMIC */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_pmu</span>  <span class="hljs-title">ioregulator</span>;</span>  <span class="hljs-comment">/* IO 电源，走 PMIC */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio</span> <span class="hljs-title">vbat_n</span>;</span>       <span class="hljs-comment">/* 模块电源控制 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio</span> <span class="hljs-title">power_n</span>;</span>      <span class="hljs-comment">/* 电源使能 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio</span> <span class="hljs-title">reset_n</span>;</span>      <span class="hljs-comment">/* 复位 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio</span> <span class="hljs-title">vddio</span>;</span>        <span class="hljs-comment">/* IO 电压控制 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio</span> <span class="hljs-title">bgf_int_b</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio</span> <span class="hljs-title">wifi_int_b</span>;</span>   <span class="hljs-comment">/* Wi-Fi 中断 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio</span> <span class="hljs-title">gps_sync</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio</span> <span class="hljs-title">ANTSEL2</span>;</span>      <span class="hljs-comment">/* 天线选择 2 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio</span> <span class="hljs-title">ANTSEL3</span>;</span>      <span class="hljs-comment">/* 天线选择 3 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rksdmmc_gpio</span> <span class="hljs-title">GPS_LAN</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">regmap</span> *<span class="hljs-title">grf</span>;</span>               <span class="hljs-comment">/* 控制寄存器的 regmap */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">clk</span>    *<span class="hljs-title">ext_clk</span>;</span>           <span class="hljs-comment">/* 外部时钟源 */</span>
+};
+</code></pre></div></code></pre>
+<p>（<code>moudle</code> 是 Rockchip 自己的拼写错误，保留原样，搜代码时要注意。）</p>
+<p>字段虽多，实际用得上的只有 <code>vbat_n</code>、<code>reset_n</code>、<code>wifi_int_b</code>。在 NanoPC-T4 上：</p>
+<ul>
+<li><code>reset_n</code> 和 <code>vbat_n</code> <strong>都没配</strong>，所以 <code>rfkill_rk_setup_gpio</code> 直接返回 0 什么都不做；</li>
+<li><code>mregulator.power_ctrl_by_pmu</code> 是 false，走的是上面的 GPIO 分支。</li>
+</ul>
+<p>也就是说这块板子的 Wi-Fi 上电完全靠 <code>WL_REG_ON</code>，而已知 <code>WL_REG_ON</code> 不在这里。</p>
+<h3 id="4.3-wl_reg_on-去哪了sdio_pwrseq" tabindex="-1">4.3 WL_REG_ON 去哪了：sdio_pwrseq <a class="header-anchor" href="#4.3-wl_reg_on-去哪了sdio_pwrseq"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>设备树里没配 <code>WL_REG_ON</code>，是因为它在 <strong><code>sdio_pwrseq</code></strong> 那个节点里：</p>
+<pre><code class="language-dts"><div class="code-block" data-lang="dts"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">dts</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-title class_">sdio-pwrseq</span> <span class="hljs-punctuation">{</span>
+	<span class="hljs-attr">compatible</span> <span class="hljs-operator">=</span> <span class="hljs-string">&quot;mmc-pwrseq-simple&quot;</span><span class="hljs-punctuation">;</span>
+	<span class="hljs-attr">clocks</span> <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-variable">&amp;rk808</span> <span class="hljs-number">1</span>&gt;</span><span class="hljs-punctuation">;</span>
+	<span class="hljs-attr">clock-names</span> <span class="hljs-operator">=</span> <span class="hljs-string">&quot;ext_clock&quot;</span><span class="hljs-punctuation">;</span>
+	<span class="hljs-attr">pinctrl-names</span> <span class="hljs-operator">=</span> <span class="hljs-string">&quot;default&quot;</span><span class="hljs-punctuation">;</span>
+	pinctrl<span class="hljs-number">-0</span> = <span class="hljs-params">&lt;<span class="hljs-variable">&amp;wifi_enable_h</span>&gt;</span><span class="hljs-punctuation">;</span>
+	<span class="hljs-attr">reset-gpios</span> <span class="hljs-operator">=</span> <span class="hljs-params">&lt;<span class="hljs-variable">&amp;gpio0</span> <span class="hljs-number">10</span> GPIO_ACTIVE_LOW&gt;</span><span class="hljs-punctuation">;</span>  <span class="hljs-comment">/* GPIO0_B2 = WL_REG_ON */</span>
+<span class="hljs-punctuation">};</span>
+</code></pre></div></code></pre>
+<p><code>mmc-pwrseq-simple</code> 是 MMC 子系统的通用上电时序驱动。它的做法是：在 SDIO 控制器 probe 之前，按 <code>reset-gpios</code> 和 <code>clocks</code> 的配置把芯片拉起来，等时钟稳定，再交给 SDIO 去枚举。</p>
+<p><strong>为什么放这儿而不放 <code>rfkill-wlan.c</code>？</strong> 因为 Wi-Fi 芯片挂在 SDIO 上，<strong>必须先上电才能被 SDIO 枚举到</strong>。而 <code>rfkill-wlan</code> 这个 platform 驱动的 probe 时机不保证在 SDIO 枚举之前。放进 pwrseq 就由 MMC 核心保证了顺序。</p>
+<p>所以这块板子上的上电链路是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>sdio-pwrseq (GPIO0_B2 拉高) → 芯片上电
+       ↓
+SDIO 控制器枚举 → 发现 Wi-Fi 芯片 → brcmfmac 加载固件
+       ↓
+rfkill-wlan probe → 检查 vbat/reset（都没配，什么都不做）
+       ↓
+bluetooth probe → 拉 BT_REG_ON 给蓝牙上电
+</code></pre></div></code></pre>
+<p>Wi-Fi 的上电由 pwrseq 负责，蓝牙的上电由 <code>rfkill-bt.c</code> 负责。两个芯片在同一个封装里，但上电是分开管的两条路。</p>
+<h2 id="五蓝牙驱动这次真的用了-rfkill" tabindex="-1">五、蓝牙驱动：这次真的用了 rfkill <a class="header-anchor" href="#五蓝牙驱动这次真的用了-rfkill"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>rfkill_rk_probe()</code> 是完整实现。九步：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>分配 <code>rfkill_rk_platform_data</code>，调 <code>bluetooth_platdata_parse_dt()</code> 从设备树填</td>
+</tr>
+<tr>
+<td>2</td>
+<td>在 <code>/proc/bluetooth/sleep/</code> 下建 <code>lpm</code>、<code>btwrite</code> 两个文件</td>
+</tr>
+<tr>
+<td>3</td>
+<td>为电源、复位、RTS 引脚申请 GPIO</td>
+</tr>
+<tr>
+<td>4</td>
+<td>初始化 <code>wake_lock</code></td>
+</tr>
+<tr>
+<td>5</td>
+<td>为 <code>BT_HOST_WAKE</code> 申请 GPIO 并申请中断</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>rfkill_alloc()</code> 分配 rfkill 设备，操作集设为 <code>rfkill_rk_ops</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>rfkill_register()</code> 注册</td>
+</tr>
+<tr>
+<td>8</td>
+<td>初始化延时工作 <code>bt_sleep_delay_work</code></td>
+</tr>
+<tr>
+<td>9</td>
+<td>拉 <code>BT_REG_ON</code> 给蓝牙上电</td>
+</tr>
+</tbody>
+</table></div><p>代码骨架：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">rfkill_rk_probe</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> platform_device *pdev)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_data</span> *<span class="hljs-title">rfkill</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_platform_data</span> *<span class="hljs-title">pdata</span> =</span> pdev-&gt;dev.platform_data;
+	<span class="hljs-type">int</span> ret = <span class="hljs-number">-1</span>;
+
+	<span class="hljs-comment">/* 1. 从设备树解析平台数据 */</span>
+	<span class="hljs-keyword">if</span> (!pdata) {
+		pdata = kzalloc(<span class="hljs-keyword">sizeof</span>(*pdata), GFP_KERNEL);
+		<span class="hljs-keyword">if</span> (!pdata)
+			<span class="hljs-keyword">return</span> -ENOMEM;
+		ret = bluetooth_platdata_parse_dt(&amp;pdev-&gt;dev, pdata);
+		<span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) {
+			kfree(pdata);
+			<span class="hljs-keyword">return</span> ret;
+		}
+	}
+
+	rfkill = kzalloc(<span class="hljs-keyword">sizeof</span>(*rfkill), GFP_KERNEL);
+	<span class="hljs-keyword">if</span> (!rfkill)
+		<span class="hljs-keyword">goto</span> fail;
+
+	rfkill-&gt;pdev   = pdev;
+	rfkill-&gt;pdata  = pdata;
+	g_rfkill       = rfkill;
+
+	<span class="hljs-comment">/* 2. 建 /proc 节点 */</span>
+	bluesleep_init();   <span class="hljs-comment">/* 内部 proc_mkdir + create_proc_entry */</span>
+
+	<span class="hljs-comment">/* 3. 申请 GPIO */</span>
+	ret = rfkill_rk_setup_gpio(pdev, &amp;pdata-&gt;poweron_gpio, pdata-&gt;name, <span class="hljs-string">&quot;poweron&quot;</span>);
+	<span class="hljs-keyword">if</span> (ret)
+		<span class="hljs-keyword">goto</span> fail;
+
+	ret = rfkill_rk_setup_gpio(pdev, &amp;pdata-&gt;reset_gpio, pdata-&gt;name, <span class="hljs-string">&quot;reset&quot;</span>);
+	<span class="hljs-keyword">if</span> (ret)
+		<span class="hljs-keyword">goto</span> fail;
+
+	rfkill_rk_setup_gpio(pdev, &amp;pdata-&gt;rts_gpio, pdata-&gt;name, <span class="hljs-string">&quot;rts&quot;</span>);
+
+	<span class="hljs-comment">/* 4. 唤醒锁 */</span>
+	wake_lock_init(&amp;rfkill-&gt;bt_irq_wl, WAKE_LOCK_SUSPEND, <span class="hljs-string">&quot;rfkill_bt_wake&quot;</span>);
+
+	<span class="hljs-comment">/* 5. 中断 */</span>
+	rfkill_rk_setup_wake_irq(rfkill);
+
+	<span class="hljs-comment">/* 6. 分配 rfkill 设备 */</span>
+	rfkill-&gt;rfkill_dev = rfkill_alloc(pdata-&gt;name, &amp;pdev-&gt;dev,
+					  pdata-&gt;type, &amp;rfkill_rk_ops, rfkill);
+	<span class="hljs-keyword">if</span> (!rfkill-&gt;rfkill_dev) {
+		ret = -ENOMEM;
+		<span class="hljs-keyword">goto</span> fail;
+	}
+
+	<span class="hljs-comment">/* 7. 注册 */</span>
+	ret = rfkill_register(rfkill-&gt;rfkill_dev);
+	<span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>)
+		<span class="hljs-keyword">goto</span> fail;
+
+	<span class="hljs-comment">/* 8. 延时工作：用于自动睡眠 */</span>
+	INIT_DELAYED_WORK(&amp;rfkill-&gt;bt_sleep_delay_work, rfkill_rk_delay_sleep_bt);
+
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_BT_AUTOSLEEP</span>
+	rfkill-&gt;bt_sleep_delay_work.timeout = ...;
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+
+	<span class="hljs-comment">/* 9. 上电 */</span>
+	<span class="hljs-keyword">if</span> (gpio_is_valid(pdata-&gt;poweron_gpio.io))
+		gpio_direction_output(pdata-&gt;poweron_gpio.io,
+				      pdata-&gt;poweron_gpio.enable);
+
+	<span class="hljs-keyword">if</span> (gpio_is_valid(pdata-&gt;reset_gpio.io))
+		gpio_direction_output(pdata-&gt;reset_gpio.io,
+				      pdata-&gt;reset_gpio.enable);
+
+	platform_set_drvdata(pdev, rfkill);
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+fail:
+	<span class="hljs-comment">/* 逐级回滚 */</span>
+	<span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<h3 id="5.1-平台数据结构" tabindex="-1">5.1 平台数据结构 <a class="header-anchor" href="#5.1-平台数据结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_platform_data</span> {</span>
+	<span class="hljs-type">char</span> *name;                       <span class="hljs-comment">/* 设备名，显示在 rfkill list 里 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">rfkill_type</span> <span class="hljs-title">type</span>;</span>            <span class="hljs-comment">/* RFKILL_TYPE_BLUETOOTH */</span>
+	<span class="hljs-type">bool</span> power_toggle;                <span class="hljs-comment">/* 上电前是否要先给整个模块上电 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">pinctrl</span> *<span class="hljs-title">pinctrl</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_gpio</span>  <span class="hljs-title">poweron_gpio</span>;</span>   <span class="hljs-comment">/* VDDIO */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_gpio</span>  <span class="hljs-title">reset_gpio</span>;</span>     <span class="hljs-comment">/* BT_REG_ON */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_gpio</span>  <span class="hljs-title">wake_gpio</span>;</span>      <span class="hljs-comment">/* BT_WAKE */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_irq</span>   <span class="hljs-title">wake_host_irq</span>;</span>  <span class="hljs-comment">/* BT_HOST_WAKE */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_gpio</span>  <span class="hljs-title">rts_gpio</span>;</span>       <span class="hljs-comment">/* UART_CTS_N */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">clk</span> *<span class="hljs-title">ext_clk</span>;</span>
+};
+</code></pre></div></code></pre>
+<p><code>power_toggle</code> 是个开关：如果 Wi-Fi 和蓝牙共用一路电源（AP6356 就是这样），蓝牙上电前得先把整个模块的电给了。看 <code>set_block</code> 的实现能确认这一点。</p>
+<h3 id="5.2-驱动私有数据" tabindex="-1">5.2 驱动私有数据 <a class="header-anchor" href="#5.2-驱动私有数据"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_data</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_platform_data</span> *<span class="hljs-title">pdata</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">platform_device</span> *<span class="hljs-title">pdev</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill</span> *<span class="hljs-title">rfkill_dev</span>;</span>        <span class="hljs-comment">/* 内核的 rfkill 设备 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">wake_lock</span> <span class="hljs-title">bt_irq_wl</span>;</span>       <span class="hljs-comment">/* 中断唤醒锁 */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">delayed_work</span> <span class="hljs-title">bt_sleep_delay_work</span>;</span>
+	<span class="hljs-type">int</span> irq_req;                      <span class="hljs-comment">/* 中断是否已申请 */</span>
+};
+</code></pre></div></code></pre>
+<p><code>rfkill_dev</code> 是框架那边的对象，<code>rfkill</code> 这个名字被这个结构体占了，读代码时容易混。</p>
+<h2 id="六set_block唯一真正干活的回调" tabindex="-1">六、set_block：唯一真正干活的回调 <a class="header-anchor" href="#六set_block唯一真正干活的回调"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>操作集只实现一个回调：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_ops</span> <span class="hljs-title">rfkill_rk_ops</span> =</span> {
+	.set_block = rfkill_rk_set_power,
+};
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">rfkill_rk_set_power</span><span class="hljs-params">(<span class="hljs-type">void</span> *data, <span class="hljs-type">bool</span> blocked)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_data</span> *<span class="hljs-title">rfkill</span> =</span> data;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_gpio</span> *<span class="hljs-title">wake_host</span> =</span> &amp;rfkill-&gt;pdata-&gt;wake_host_irq.gpio;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_gpio</span> *<span class="hljs-title">poweron</span>   =</span> &amp;rfkill-&gt;pdata-&gt;poweron_gpio;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_gpio</span> *<span class="hljs-title">reset</span>     =</span> &amp;rfkill-&gt;pdata-&gt;reset_gpio;
+	<span class="hljs-type">bool</span> toggle = rfkill-&gt;pdata-&gt;power_toggle;
+
+	<span class="hljs-keyword">if</span> (!blocked) {                    <span class="hljs-comment">/* blocked=false → 开启蓝牙 */</span>
+		<span class="hljs-keyword">if</span> (toggle) {
+			rfkill_set_wifi_bt_power(<span class="hljs-number">1</span>);   <span class="hljs-comment">/* 先把整个模块的电给了 */</span>
+			msleep(<span class="hljs-number">100</span>);
+		}
+
+		rfkill_rk_sleep_bt(BT_WAKEUP);     <span class="hljs-comment">/* 先唤醒，避免它睡着不理人 */</span>
+
+		<span class="hljs-keyword">if</span> (gpio_is_valid(wake_host-&gt;io)) {
+			gpio_direction_output(wake_host-&gt;io, <span class="hljs-number">1</span>);
+			msleep(<span class="hljs-number">20</span>);
+		}
+
+		<span class="hljs-keyword">if</span> (gpio_is_valid(reset-&gt;io)) {
+			gpio_direction_output(reset-&gt;io, !reset-&gt;enable);
+			msleep(<span class="hljs-number">100</span>);
+			gpio_direction_output(reset-&gt;io, reset-&gt;enable);
+		}
+
+		<span class="hljs-keyword">if</span> (gpio_is_valid(poweron-&gt;io))
+			gpio_direction_output(poweron-&gt;io, poweron-&gt;enable);
+
+	} <span class="hljs-keyword">else</span> {                           <span class="hljs-comment">/* blocked=true → 关闭蓝牙 */</span>
+		<span class="hljs-keyword">if</span> (gpio_is_valid(reset-&gt;io))
+			gpio_direction_output(reset-&gt;io, !reset-&gt;enable);
+
+		<span class="hljs-keyword">if</span> (gpio_is_valid(poweron-&gt;io))
+			gpio_direction_output(poweron-&gt;io, !poweron-&gt;enable);
+	}
+
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>开蓝牙的顺序值得记：<strong>先上电 → 再唤醒 → 再复位 → 最后拉电源使能</strong>。</p>
+<p>复位那一段是标准的低脉冲：先拉低 100ms，再拉高。低脉冲期间芯片处于复位态，拉高后开始跑内部固件。100ms 不是随便给的，BCM 芯片的固件启动时间在数据手册里有标，短了会初始化失败。</p>
+<p>关蓝牙只做了两件事：拉低 <code>BT_REG_ON</code>、拉低电源使能。没有握手协商，rfkill 的语义就是直接切断。</p>
+<h2 id="七bt_host_wake蓝牙怎么叫醒主机" tabindex="-1">七、BT_HOST_WAKE：蓝牙怎么叫醒主机 <a class="header-anchor" href="#七bt_host_wake蓝牙怎么叫醒主机"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>BT_HOST_WAKE</code>（GPIO0_A4）配成中断，处理函数很短：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">irqreturn_t</span> <span class="hljs-title function_">rfkill_rk_wake_host_irq</span><span class="hljs-params">(<span class="hljs-type">int</span> irq, <span class="hljs-type">void</span> *dev_id)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_data</span> *<span class="hljs-title">rfkill</span> =</span> dev_id;
+
+	<span class="hljs-comment">/* 保持系统 10 秒内不进入休眠，避免蓝牙数据丢失 */</span>
+	wake_lock_timeout(&amp;rfkill-&gt;bt_irq_wl,
+			  msecs_to_jiffies(BT_IRQ_WAKELOCK_TIMEOUT));
+	<span class="hljs-keyword">return</span> IRQ_HANDLED;
+}
+</code></pre></div></code></pre>
+<p><code>BT_IRQ_WAKELOCK_TIMEOUT</code> 是 10000ms。</p>
+<p>逻辑是：蓝牙有数据要给主机，拉高 <code>BT_HOST_WAKE</code> → 触发中断 → 驱动持锁 10 秒 → 系统在这 10 秒内不会进 suspend → 上层有时间把数据取走 → 锁超时自动释放。</p>
+<p>这是 Android 时代典型的 <code>wake_lock</code> 用法。主线内核的等价物是 <code>pm_wakeup_event()</code> / <code>pm_stay_awake()</code>，语义更细（能区分 wakeup source 和事件计数），但没有 <code>wake_lock</code> 那么简单直接。</p>
+<h2 id="八procbluetoothsleep一个半死的接口" tabindex="-1">八、/proc/bluetooth/sleep：一个半死的接口 <a class="header-anchor" href="#八procbluetoothsleep一个半死的接口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>probe 里创建了 <code>/proc/bluetooth/sleep/</code> 目录，下面两个文件：<code>lpm</code> 和 <code>btwrite</code>。</p>
+<h3 id="8.1-lpm完全没实现" tabindex="-1">8.1 lpm：完全没实现 <a class="header-anchor" href="#8.1-lpm完全没实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">ssize_t</span> <span class="hljs-title function_">bluesleep_read_proc_lpm</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *file, <span class="hljs-type">char</span> __user *buffer,
+				       <span class="hljs-type">size_t</span> count, <span class="hljs-type">loff_t</span> *data)</span>
+{
+	<span class="hljs-keyword">return</span> <span class="hljs-built_in">sprintf</span>(buffer, <span class="hljs-string">&quot;unsupported to read\n&quot;</span>);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">ssize_t</span> <span class="hljs-title function_">bluesleep_write_proc_lpm</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *file,
+					<span class="hljs-type">const</span> <span class="hljs-type">char</span> __user *buffer,
+					<span class="hljs-type">size_t</span> count, <span class="hljs-type">loff_t</span> *data)</span>
+{
+	<span class="hljs-keyword">return</span> count;    <span class="hljs-comment">/* 什么都不做 */</span>
+}
+</code></pre></div></code></pre>
+<p>读只会告诉你&quot;不支持读&quot;，写直接返回成功但什么也不做。这个接口是留给&quot;蓝牙低功耗模式&quot;的，注释说没支持。</p>
+<blockquote>
+<p>顺带一个真实 bug：<code>sprintf(buffer, ...)</code> 里的 <code>buffer</code> 是 <code>char __user *</code>，用户态指针。在核心里直接 <code>sprintf</code> 到用户地址是错的，正确做法是 <code>copy_to_user()</code>。在 ARM 上因为内核能直接访问用户空间（<code>set_fs</code> 还没删的时代）它&quot;能工作&quot;，但这是把两个地址空间混用，换个架构或开了 <code>HARDENED_USERCOPY</code> 就会出事。</p>
+</blockquote>
+<h3 id="8.2-btwrite语义绕了三个弯" tabindex="-1">8.2 btwrite：语义绕了三个弯 <a class="header-anchor" href="#8.2-btwrite语义绕了三个弯"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">ssize_t</span> <span class="hljs-title function_">bluesleep_write_proc_btwrite</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> file *file,
+					    <span class="hljs-type">const</span> <span class="hljs-type">char</span> __user *buffer,
+					    <span class="hljs-type">size_t</span> count, <span class="hljs-type">loff_t</span> *data)</span>
+{
+	<span class="hljs-type">char</span> b;
+
+	<span class="hljs-keyword">if</span> (count &lt; <span class="hljs-number">1</span>)
+		<span class="hljs-keyword">return</span> -EINVAL;
+
+	<span class="hljs-keyword">if</span> (copy_from_user(&amp;b, buffer, <span class="hljs-number">1</span>))
+		<span class="hljs-keyword">return</span> -EFAULT;
+
+	<span class="hljs-keyword">if</span> (b != <span class="hljs-string">&#x27;0&#x27;</span>)
+		rfkill_rk_sleep_bt(BT_WAKEUP);
+	<span class="hljs-keyword">else</span>
+		rfkill_rk_sleep_bt(BT_SLEEP);
+
+	<span class="hljs-keyword">return</span> count;
+}
+</code></pre></div></code></pre>
+<p>看起来正常：写非 0 就唤醒，写 0 就睡眠。但配合宏定义一看就出问题：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> BT_SLEEP   true</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> BT_WAKEUP  false</span>
+</code></pre></div></code></pre>
+<p><strong><code>BT_WAKEUP</code> 是 <code>false</code>，<code>BT_SLEEP</code> 是 <code>true</code>。</strong> 名字和值反着。</p>
+<p>再往下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">rfkill_rk_sleep_bt_internal</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> rfkill_rk_data *rfkill,
+					       <span class="hljs-type">bool</span> sleep)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rfkill_rk_gpio</span> *<span class="hljs-title">wake</span> =</span> &amp;rfkill-&gt;pdata-&gt;wake_gpio;
+
+	<span class="hljs-keyword">if</span> (!sleep) {          <span class="hljs-comment">/* 只有 sleep == false 才做事 */</span>
+		<span class="hljs-keyword">if</span> (rfkill_rk_setup_gpio(rfkill-&gt;pdev, wake,
+					 rfkill-&gt;pdata-&gt;name, <span class="hljs-string">&quot;wake&quot;</span>) != <span class="hljs-number">0</span>)
+			<span class="hljs-keyword">return</span>;
+
+		gpio_direction_output(wake-&gt;io, wake-&gt;enable);    <span class="hljs-comment">/* 拉高 */</span>
+		usleep_range(<span class="hljs-number">10</span>, <span class="hljs-number">20</span>);
+		gpio_direction_output(wake-&gt;io, !wake-&gt;enable);   <span class="hljs-comment">/* 拉低 */</span>
+
+		gpio_free(wake-&gt;io);
+	}
+}
+</code></pre></div></code></pre>
+<p>连起来看，实际行为是：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>写入</th>
+<th>传入</th>
+<th><code>sleep</code> 值</th>
+<th>实际动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>1</code>（非 '0'）</td>
+<td><code>BT_WAKEUP</code></td>
+<td><code>false</code></td>
+<td>拉高 10~20μs 再拉低，<strong>一个唤醒脉冲</strong></td>
+</tr>
+<tr>
+<td><code>0</code></td>
+<td><code>BT_SLEEP</code></td>
+<td><code>true</code></td>
+<td><code>if (!sleep)</code> 不成立，<strong>什么都不做</strong></td>
+</tr>
+</tbody>
+</table></div><p>所以这个接口的真实行为是：</p>
+<ul>
+<li><strong>写非 0 = 给 BT_WAKE 一个高电平脉冲</strong>（高 10~20μs，然后回低）。脉冲结束后引脚是低电平，蓝牙被通知&quot;有事&quot;，之后可以继续睡。</li>
+<li><strong>写 0 = 完全没反应。</strong></li>
+</ul>
+<p>这解释了测试章节里那句&quot;<code>echo 1 &gt; btwrite</code> 会将 AP6536 的 BT_WAKE 引脚拉低&quot;。观察到的确实是最终的低电平，但那是一次脉冲的尾巴，不是直接拉低。</p>
+<p>而且 <code>bt_sleep_delay_work</code>（延时工作）最终调的也是 <code>rfkill_rk_sleep_bt_internal(rfkill, BT_SLEEP)</code>，也就是<strong>永远不做事</strong>。所以 <code>CONFIG_BT_AUTOSLEEP</code> 那条自动休眠路径是死的。</p>
+<p><strong>读这段代码的教训</strong>：看到 <code>#define XXX_SLEEP true</code> 这种&quot;名字是动作、值是布尔&quot;的组合，必须一路跟到 <code>if</code> 条件里，否则会把语义完全搞反。这个驱动里至少有三层嵌套的反转（宏名 → 函数参数名 → <code>if (!sleep)</code>）。</p>
+<h3 id="8.3-gpio_free-在热路径里" tabindex="-1">8.3 gpio_free 在热路径里 <a class="header-anchor" href="#8.3-gpio_free-在热路径里"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>rfkill_rk_sleep_bt_internal</code> 每次调用都 <code>rfkill_rk_setup_gpio()</code> 申请 + <code>gpio_free()</code> 释放同一个 GPIO。</p>
+<p>这个写法效率很低（申请/释放要走 gpiolib 的链表和锁），但它有个副作用是&quot;安全的&quot;：如果这个 GPIO 已经被别的驱动申请了，<code>setup</code> 失败就直接返回，不会误操作。</p>
+<p>更好的做法是 probe 时申请一次，之后只改方向。但厂商代码这么写也说明他们吃过&quot;重复申请&quot;的亏。</p>
+<h2 id="九验证" tabindex="-1">九、验证 <a class="header-anchor" href="#九验证"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="9.1-设备注册情况" tabindex="-1">9.1 设备注册情况 <a class="header-anchor" href="#9.1-设备注册情况"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ <span class="hljs-built_in">ls</span> /sys/class/rfkill/
+rfkill0  rfkill1
+
+$ <span class="hljs-built_in">cat</span> /sys/class/rfkill/rfkill0/name
+bt_default
+
+$ <span class="hljs-built_in">cat</span> /sys/class/rfkill/rfkill0/type
+bluetooth
+</code></pre></div></code></pre>
+<p><code>rfkill0</code> 就是 <code>rfkill-bt.c</code> 注册的蓝牙设备。</p>
+<p><code>rfkill1</code>（<code>phy0</code>，Wireless LAN）<strong>和 <code>rfkill-wlan.c</code> 完全无关</strong>，它是 <code>brcmfmac</code> 或 <code>cfg80211</code> 自己注册的。这一点在测试章节里也印证了：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ <span class="hljs-built_in">ls</span> -l /sys/class/rfkill/rfkill1
+rfkill1 -&gt; ../../devices/platform/fe310000.sdhci/mmc_host/mmc0/mmc0:0001/...
+</code></pre></div></code></pre>
+<p>路径落在 SDIO 主机控制器下面，说明它属于 SDIO 上的 Wi-Fi 芯片，不是 platform 设备的产物。</p>
+<h3 id="9.2-平台设备与驱动的链接关系" tabindex="-1">9.2 平台设备与驱动的链接关系 <a class="header-anchor" href="#9.2-平台设备与驱动的链接关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ <span class="hljs-built_in">ls</span> -l /sys/devices/platform/wireless-bluetooth/
+drivers  driver  subsystem  uevent  of_node  ...
+
+$ <span class="hljs-built_in">ls</span> -l /sys/bus/platform/drivers/rfkill_bt
+</code></pre></div></code></pre>
+<p>按前一篇文章里的思路，这些链接合起来就是&quot;目录是结构体、文件是成员、链接是指针&quot;：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>链接</th>
+<th>指向</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>of_node</code></td>
+<td><code>/sys/firmware/devicetree/base/wireless-bluetooth/</code></td>
+<td>设备树节点，属性和值都在这里</td>
+</tr>
+<tr>
+<td><code>subsystem</code></td>
+<td><code>/sys/bus/platform</code></td>
+<td>挂在 platform 总线下</td>
+</tr>
+<tr>
+<td><code>driver</code></td>
+<td><code>/sys/bus/platform/drivers/rfkill_bt</code></td>
+<td>匹配到的驱动</td>
+</tr>
+<tr>
+<td><code>rfkill/rfkill0</code></td>
+<td>同级的 rfkill 设备</td>
+<td><code>rfkill_register()</code> 建的子系统链接</td>
+</tr>
+</tbody>
+</table></div><h3 id="9.3-开关测试" tabindex="-1">9.3 开关测试 <a class="header-anchor" href="#9.3-开关测试"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ rfkill block 0
+$ rfkill list
+0: bt_default: Bluetooth
+	Soft blocked: <span class="hljs-built_in">yes</span>
+	Hard blocked: no
+
+$ rfkill unblock 0
+</code></pre></div></code></pre>
+<p><code>block 0</code> 会走到 <code>rfkill_rk_set_power(data, true)</code>，拉低 <code>BT_REG_ON</code>，蓝牙断电。</p>
+<p>也可以直接写 sysfs：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">echo</span> 1 &gt; /sys/class/rfkill/rfkill0/soft   <span class="hljs-comment"># 等价于 block</span>
+<span class="hljs-built_in">echo</span> 0 &gt; /sys/class/rfkill/rfkill0/soft   <span class="hljs-comment"># 等价于 unblock</span>
+</code></pre></div></code></pre>
+<p>注意 <code>soft = 1</code> 是&quot;关&quot;。老资料里写的 <code>/sys/class/rfkill/rfkill0/state</code> 接口已被内核删除，别再照着写。</p>
+<h3 id="9.4-用万用表验证-btwrite" tabindex="-1">9.4 用万用表验证 btwrite <a class="header-anchor" href="#9.4-用万用表验证-btwrite"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ <span class="hljs-built_in">echo</span> 1 &gt; /proc/bluetooth/sleep/btwrite
+$ <span class="hljs-built_in">echo</span> 0 &gt; /proc/bluetooth/sleep/btwrite   <span class="hljs-comment"># 无反应</span>
+</code></pre></div></code></pre>
+<p>量 GPIO2_D2：</p>
+<ul>
+<li>写 <code>1</code> 时能抓到一次短暂的高电平（10~20μs，普通万用表可能抓不到，得用示波器或逻辑分析仪），之后稳定在低电平；</li>
+<li>写 <code>0</code> 时电平不变。</li>
+</ul>
+<p>这就是第八节分析出来的结论：只有&quot;唤醒脉冲&quot;，没有&quot;睡眠&quot;。</p>
+<h2 id="十排错" tabindex="-1">十、排错 <a class="header-anchor" href="#十排错"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>排查</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rfkill list</code> 里没有蓝牙设备</td>
+<td><code>bluetooth-platdata</code> 节点没匹配上</td>
+<td><code>dmesg | grep rfkill</code>；<code>ls /sys/bus/platform/drivers/rfkill_bt</code></td>
+</tr>
+<tr>
+<td>有 rfkill0 但开关无反应</td>
+<td><code>poweron_gpio</code> / <code>reset_gpio</code> 都没配</td>
+<td>看设备树；<code>cat /sys/kernel/debug/gpio</code></td>
+</tr>
+<tr>
+<td>Wi-Fi 起不来但蓝牙正常</td>
+<td><code>sdio-pwrseq</code> 的 <code>reset-gpios</code> 没配或引脚错</td>
+<td><code>dmesg | grep mmc</code>；查 GPIO0_B2</td>
+</tr>
+<tr>
+<td>蓝牙上电了但枚举不到</td>
+<td><code>UART_CTS_N</code> 流控没配</td>
+<td>检查 <code>uart_rts_gpios</code> 与 <code>pinctrl-1</code></td>
+</tr>
+<tr>
+<td>关闭后重新打开失败</td>
+<td>复位低脉冲时间不够</td>
+<td>确认 <code>msleep(100)</code> 存在</td>
+</tr>
+<tr>
+<td>系统睡下去后蓝牙断连</td>
+<td><code>BT_HOST_WAKE</code> 中断没申请</td>
+<td><code>cat /proc/interrupts | grep -i wake</code></td>
+</tr>
+<tr>
+<td>写 btwrite 写 0 没反应</td>
+<td>设计如此</td>
+<td>见第八节，只有写非 0 才动作</td>
+</tr>
+<tr>
+<td><code>/dev/rfkill</code> 不存在</td>
+<td><code>CONFIG_RFKILL</code> 没开</td>
+<td><code>zcat /proc/config.gz | grep RFKILL</code></td>
+</tr>
+<tr>
+<td>加载模块报 <code>Unknown symbol</code></td>
+<td><code>CONFIG_RFKILL</code> 没开，或 <code>wake_lock</code> 缺失</td>
+<td>主线内核没有 <code>wake_lock</code>，只能用 SDK</td>
+</tr>
+</tbody>
+</table></div><p>最后一条值得单说：<code>wake_lock</code> 从未进入主线内核。如果你的板子跑的是主线 Linux 而不是 Rockchip SDK，这两个文件根本编译不过，得把 <code>wake_lock_*</code> 换成 <code>pm_wakeup_event()</code> 一族。</p>
+<h2 id="参考资料" tabindex="-1">参考资料 <a class="header-anchor" href="#参考资料"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<ul>
+<li>内核文档 <code>Documentation/driver-api/rfkill.rst</code></li>
+<li>Rockchip 4.19 SDK：<code>net/rfkill/rfkill-wlan.c</code>、<code>net/rfkill/rfkill-bt.c</code></li>
+<li><code>Documentation/devicetree/bindings/mmc/mmc-pwrseq-simple.yaml</code>（sdio_pwrseq）</li>
+<li>NanoPC-T4 原理图（AP6356 电源与 GPIO 部分）</li>
+</ul>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一两个文件怎么互相挂钩" data-toc-target="一两个文件怎么互相挂钩">一、两个文件怎么互相挂钩</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二硬件ap6356-在-nanopc-t4-上怎么接" data-toc-target="二硬件ap6356-在-nanopc-t4-上怎么接">二、硬件：AP6356 在 NanoPC-T4 上怎么接</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.1-电源" data-toc-target="2.1-电源">2.1 电源</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.2-时钟" data-toc-target="2.2-时钟">2.2 时钟</a>
+                    
+                    <a class="toc-item toc-lv3" href="#2.3-控制引脚" data-toc-target="2.3-控制引脚">2.3 控制引脚</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三设备树两个-platdata-节点" data-toc-target="三设备树两个-platdata-节点">三、设备树：两个 platdata 节点</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.1-wi-fi-节点" data-toc-target="3.1-wi-fi-节点">3.1 Wi-Fi 节点</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.2-蓝牙节点" data-toc-target="3.2-蓝牙节点">3.2 蓝牙节点</a>
+                    
+                    <a class="toc-item toc-lv3" href="#3.3-bt_wake-的语义" data-toc-target="3.3-bt_wake-的语义">3.3 BT_WAKE 的语义</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四wi-fi-驱动一个名不副实的文件" data-toc-target="四wi-fi-驱动一个名不副实的文件">四、Wi-Fi 驱动：一个名不副实的文件</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.1-私有数据结构" data-toc-target="4.1-私有数据结构">4.1 私有数据结构</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.2-平台数据struct-rksdmmc_gpio_wifi_moudle" data-toc-target="4.2-平台数据struct-rksdmmc_gpio_wifi_moudle">4.2 平台数据：struct rksdmmc_gpio_wifi_moudle</a>
+                    
+                    <a class="toc-item toc-lv3" href="#4.3-wl_reg_on-去哪了sdio_pwrseq" data-toc-target="4.3-wl_reg_on-去哪了sdio_pwrseq">4.3 WL_REG_ON 去哪了：sdio_pwrseq</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五蓝牙驱动这次真的用了-rfkill" data-toc-target="五蓝牙驱动这次真的用了-rfkill">五、蓝牙驱动：这次真的用了 rfkill</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.1-平台数据结构" data-toc-target="5.1-平台数据结构">5.1 平台数据结构</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.2-驱动私有数据" data-toc-target="5.2-驱动私有数据">5.2 驱动私有数据</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六set_block唯一真正干活的回调" data-toc-target="六set_block唯一真正干活的回调">六、set_block：唯一真正干活的回调</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七bt_host_wake蓝牙怎么叫醒主机" data-toc-target="七bt_host_wake蓝牙怎么叫醒主机">七、BT_HOST_WAKE：蓝牙怎么叫醒主机</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八procbluetoothsleep一个半死的接口" data-toc-target="八procbluetoothsleep一个半死的接口">八、/proc/bluetooth/sleep：一个半死的接口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.1-lpm完全没实现" data-toc-target="8.1-lpm完全没实现">8.1 lpm：完全没实现</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.2-btwrite语义绕了三个弯" data-toc-target="8.2-btwrite语义绕了三个弯">8.2 btwrite：语义绕了三个弯</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.3-gpio_free-在热路径里" data-toc-target="8.3-gpio_free-在热路径里">8.3 gpio_free 在热路径里</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九验证" data-toc-target="九验证">九、验证</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.1-设备注册情况" data-toc-target="9.1-设备注册情况">9.1 设备注册情况</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.2-平台设备与驱动的链接关系" data-toc-target="9.2-平台设备与驱动的链接关系">9.2 平台设备与驱动的链接关系</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.3-开关测试" data-toc-target="9.3-开关测试">9.3 开关测试</a>
+                    
+                    <a class="toc-item toc-lv3" href="#9.4-用万用表验证-btwrite" data-toc-target="9.4-用万用表验证-btwrite">9.4 用万用表验证 btwrite</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十排错" data-toc-target="十排错">十、排错</a>
+                    
+                    <a class="toc-item toc-lv2" href="#参考资料" data-toc-target="参考资料">参考资料</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","title":"RK3399 的 Wi-Fi 与蓝牙 rfkill 实现","url":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","type":"current"},{"id":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","title":"ADC 与 DS18B20 传感器驱动","url":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","type":"neighbor"},{"id":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","title":"LED 与 PWM 字符设备驱动","url":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","type":"neighbor"},{"id":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","title":"Linux下用户空间修改设备寄存器或者物理内存的实现","url":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","type":"neighbor"},{"id":"/C.驱动/13-杂项/RTC-驱动：实时时钟子系统/","title":"RTC 驱动：实时时钟子系统","url":"/C.驱动/13-杂项/RTC-驱动：实时时钟子系统/","type":"neighbor"}],"links":[{"source":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","target":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","type":"neighbor"},{"source":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","target":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","type":"neighbor"},{"source":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","target":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","type":"neighbor"},{"source":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","target":"/C.驱动/13-杂项/RTC-驱动：实时时钟子系统/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

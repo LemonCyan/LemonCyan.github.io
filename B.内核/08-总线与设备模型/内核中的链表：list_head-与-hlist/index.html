@@ -1,0 +1,1790 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>内核中的链表：list_head 与 hlist · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">内核中的链表：list_head 与 hlist</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/B.内核/08-总线与设备模型/内核中的链表：list_head-与-hlist/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">内核中的链表：list_head 与 hlist</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">内核中的链表：list_head 与 hlist</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <p>Linux 内核里链表无处不在。<code>struct device</code> 挂在总线的设备链上，<code>struct task_struct</code> 挂在进程表里，<code>struct inode</code> 挂在超级块的 inode 链上，协议栈的哈希桶里挂着一堆 <code>struct sock</code>。这些表全由两套结构撑起来：<code>list_head</code> 和 <code>hlist</code>。两者都在 <code>include/linux/list.h</code>，代码加起来不到一千行，是读内核源码的前置条件。</p>
+<p>本文讲四件事：这两个结构长什么样，为什么非得长这样，<code>list.h</code> 里那些接口的真实实现，以及怎么写出一个能编译加载的内核模块去用它们。</p>
+<p>不谈的：RCU 版接口（<code>list_for_each_entry_rcu</code>、<code>hlist_for_each_entry_rcu</code>）在第十一章只划一条边界线；不讲 <code>klist</code>、<code>slist</code>、红黑树、XArray；不讲自旋锁与 RCU 的内部机制，并发只说「该加锁的地方要加锁」。</p>
+<p>要往下读的：设备模型怎么把 <code>struct device</code> 挂进 <code>list_head</code>，看本目录的「总线、设备与驱动模型」；<code>hlist</code> 在网络栈里的实际用法，看 <code>F.通信与协议/01-TCPIP与套接字</code> 下的协议栈分层几篇。</p>
+<p>前置：会读 C 的结构体指针，知道 <code>offsetof</code> 在算什么，见过 <code>module_init</code> / <code>module_exit</code>。</p>
+<h2 id="一内核为什么需要自己的链表" tabindex="-1">一、内核为什么需要自己的链表 <a class="header-anchor" href="#一内核为什么需要自己的链表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>链表是物理存储上不连续的结构。元素的逻辑顺序不靠地址相邻，靠指针串起来。结点在运行时动态生成，用完就放。</p>
+<p>它换掉的是「必须预先知道数据规模」这个约束，内存按需分配。付出的代价有两个：丢掉随机访问，每次定位都得从头走指针；多出指针域的空间开销，一个结点存两个指针是常事。</p>
+<p>按指针域的组织方式，链表分三种形态。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>形态</th>
+<th>指针域</th>
+<th>遍历方向</th>
+<th>尾结点特征</th>
+<th>判空方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单链表</td>
+<td><code>next</code></td>
+<td>只能从头向后</td>
+<td><code>next == NULL</code></td>
+<td><code>head == NULL</code></td>
+</tr>
+<tr>
+<td>双向链表</td>
+<td><code>next</code> + <code>prev</code></td>
+<td>双向</td>
+<td><code>next == NULL</code></td>
+<td><code>head == NULL</code></td>
+</tr>
+<tr>
+<td>双向循环链表</td>
+<td><code>next</code> + <code>prev</code></td>
+<td>双向</td>
+<td>绕回第一个结点</td>
+<td><code>head-&gt;next == head</code></td>
+</tr>
+</tbody>
+</table></div><p>单链表只有 <code>next</code>，走到尾就停。双向链表加了 <code>prev</code>，能从两头走。把首结点的 <code>prev</code> 指到尾结点、尾结点的 <code>next</code> 指回首结点，就成了双向循环链表——从任意一个结点出发，沿任一方向都能走遍全表，空表则退化成一个自己指向自己的环。</p>
+<p>内核选了第三种。原因是循环结构让「插入」和「删除」不需要对首尾做特判：头结点永远存在，谁都有前驱和后继，边界条件被吃掉了一整类。</p>
+<p>这三个形态本身没什么稀奇，教材上都有。内核动手改的是另一个地方。</p>
+<h3 id="数据组织方式的翻转" tabindex="-1">数据组织方式的翻转 <a class="header-anchor" href="#数据组织方式的翻转"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>课本上的链表定义长这样（单链表为例）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_node</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_node</span> *<span class="hljs-title">next</span>;</span>
+	ElemType data;
+};
+</code></pre></div></code></pre>
+<p>要串 <code>ElemType A</code>，写一套；要串 <code>ElemType B</code>，再写一套。节点类型里写死了数据域的类型，链表代码和数据强绑定。</p>
+<p>内核面对的场景是：同一套「把东西串起来」的需求，出现在几百个结构上。设备、驱动、inode、socket、路由表项、挂载点……如果每个类型自带一套 <code>xxx_list_add</code> / <code>xxx_list_del</code> / <code>xxx_list_for_each</code>，<code>drivers/</code> 和 <code>net/</code> 会膨胀到没法维护。</p>
+<p>内核的解法是：链表节点不带数据。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> *<span class="hljs-title">next</span>, *<span class="hljs-title">prev</span>;</span>
+};
+</code></pre></div></code></pre>
+<p>两个指针，都指向同类型。没有数据域，没有类型标记，没有任何业务语义。</p>
+<p>需要链表的数据结构，在自己的定义里塞一个 <code>struct list_head</code> 成员。链表代码只认这个成员，不认宿主是谁。于是同一份 <code>list_add()</code> 能往设备表里插设备，也能往 inode 链上插 inode。</p>
+<p>这就是 C 语言里做出「泛型 + 复用」的经典手法。C++ 用模板让容器对任意类型实例化，内核用「把节点嵌进宿主 + 从节点地址反算宿主地址」达到同样的效果，只是反算那一步得手工做——用 <code>container_of</code>，第四章细讲。</p>
+<p>3.14 版本的 <code>list_head</code> 定义在 <code>include/linux/types.h</code> 里，后来的版本挪到了 <code>include/linux/list.h</code> 顶部。本文的代码以现在的 <code>list.h</code> 为准，涉及旧版本差异的地方会单独标出来。</p>
+<h2 id="二list_head双向循环链表" tabindex="-1">二、list_head：双向循环链表 <a class="header-anchor" href="#二list_head双向循环链表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>结构定义只有两行：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> *<span class="hljs-title">next</span>, *<span class="hljs-title">prev</span>;</span>
+};
+</code></pre></div></code></pre>
+<p><code>next</code> 指向后一个结点，<code>prev</code> 指向前一个结点。两个指针的类型都是 <code>struct list_head *</code>，不是 <code>void *</code>，也不是宿主类型。这个选择很重要——它让链表操作完全不依赖宿主类型，代价是把类型恢复的责任推给了调用方。</p>
+<h3 id="它被数据包含而不是包含数据" tabindex="-1">它被数据包含，而不是包含数据 <a class="header-anchor" href="#它被数据包含而不是包含数据"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>list_head</code> 不是拿来单独用的。它必须嵌进某个宿主结构：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">file_node</span> {</span>
+	<span class="hljs-type">char</span> c;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">node</span>;</span>
+};
+</code></pre></div></code></pre>
+<p>对比两种组织方式：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 课本式：链表结点包住数据 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_node</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_node</span> *<span class="hljs-title">next</span>;</span>
+	ElemType data;
+};
+
+<span class="hljs-comment">/* 内核式：数据包住链表结点 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">file_node</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">list</span>;</span>
+	ElemType data;
+};
+</code></pre></div></code></pre>
+<p><strong><code>list_head</code> 最精妙的地方就是这一句：它不包含数据，而是被数据包含。</strong></p>
+<p>由此带来的直接后果是：链表里存的地址不是宿主结构的地址，而是宿主中那个 <code>list_head</code> 成员的地址。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        struct file_node（宿主，编译器会插入填充字节）
+        +-------------------------------+
+        |  char c;                      |  offset 0
+        |  ...padding...                |
+        |  struct list_head list;       |  offset 8（举例）
+        |    +------------------------+ |
+        |    | next ----------------------&gt; 下一个宿主的 list
+        |    | prev ----------------------&gt; 上一个宿主的 list
+        |    +------------------------+ |
+        |  ElemType data;               |
+        +-------------------------------+
+                 ^
+                 |
+        head-&gt;next 指向这里，不是指向宿主首地址
+</code></pre></div></code></pre>
+<p>想拿到 <code>struct file_node *</code>，得把 <code>list</code> 的地址往回减掉 <code>list</code> 在结构里的偏移量。这一步由 <code>container_of</code> 完成，第四章展开。</p>
+<p>这个设计的收益是彻底的解耦：<code>list.h</code> 不需要知道 <code>struct file_node</code> 存在，<code>struct file_node</code> 也不需要为链表写任何专属函数。同一个宿主还能同时挂进多条链表——只要嵌多个 <code>list_head</code> 成员，比如 <code>struct sock</code> 就有 <code>sk_node</code>、<code>sk_bind_node</code>、<code>sk_null_node</code> 等多套挂载点，同时被哈希表、绑定链、NULL 链引用。</p>
+<h3 id="空链表自己指向自己" tabindex="-1">空链表：自己指向自己 <a class="header-anchor" href="#空链表自己指向自己"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>内核没有专门的链表头类型。链表头就是一个 <code>list_head</code>，它不承载数据，只当哨兵。</p>
+<p>初始化有三个入口：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> LIST_HEAD_INIT(name) { &amp;(name), &amp;(name) }</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> LIST_HEAD(name) \
+	struct list_head name = LIST_HEAD_INIT(name)</span>
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">INIT_LIST_HEAD</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *<span class="hljs-built_in">list</span>)</span>
+{
+	<span class="hljs-built_in">list</span>-&gt;next = <span class="hljs-built_in">list</span>;
+	<span class="hljs-built_in">list</span>-&gt;prev = <span class="hljs-built_in">list</span>;
+}
+</code></pre></div></code></pre>
+<p><code>LIST_HEAD(my_list);</code> 展开后是：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">my_list</span> =</span> { &amp;my_list, &amp;my_list };
+</code></pre></div></code></pre>
+<p><code>next</code> 和 <code>prev</code> 都指向自己。这就是空链表——一个长度为 1 的环，只含哨兵。</p>
+<p><code>INIT_LIST_HEAD()</code> 做同一件事，区别在运行期可用：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">head</span>;</span>
+
+INIT_LIST_HEAD(&amp;head);        <span class="hljs-comment">/* 栈上或 kmalloc 出来的头，运行期初始化 */</span>
+</code></pre></div></code></pre>
+<p><code>LIST_HEAD()</code> 是声明并初始化，只能用在定义处；<code>INIT_LIST_HEAD()</code> 是赋值，可以重复调用。搞混这两个是最常见的编译错误来源之一：把 <code>LIST_HEAD(&amp;head)</code> 写进函数体，会得到一个「声明了一个叫 <code>&amp;head</code> 的变量」之类的报错。</p>
+<p>判空直接用「<code>next</code> 是否指回自己」：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">list_empty</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> list_head *head)</span>
+{
+	<span class="hljs-keyword">return</span> head-&gt;next == head;
+}
+</code></pre></div></code></pre>
+<p>空表只有哨兵一个结点，<code>head-&gt;next == head</code> 成立。表里有一个元素时，<code>head-&gt;next</code> 指向那个元素的 <code>list</code> 成员，<code>head-&gt;prev</code> 也指向同一个成员，此时 <code>head-&gt;next == head-&gt;prev</code> 但都不等于 <code>head</code>。</p>
+<p>头结点自身不存数据。遍历时要跳过它——所有遍历宏的终止条件都写成「<code>pos</code> 又回到了 <code>head</code>」，靠的就是这一点。</p>
+<h3 id="内存布局头结点和第一个元素" tabindex="-1">内存布局：头结点和第一个元素 <a class="header-anchor" href="#内存布局头结点和第一个元素"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>往空表里插第一个元素，<code>__list_add(new, head, head-&gt;next)</code> 会让：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>插入前（空表）：
+    head.next ──┐
+    head.prev ──┴──&gt; &amp;head
+
+插入 A 之后：
+    head.next ──&gt; &amp;A.list
+    head.prev ──&gt; &amp;A.list
+    A.list.next ──&gt; &amp;head
+    A.list.prev ──&gt; &amp;head
+</code></pre></div></code></pre>
+<p>再插 B 到表尾（<code>list_add_tail</code>）：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>    head.next ──&gt; &amp;A.list ──&gt; &amp;B.list ──┐
+         ^                              │
+         └──────────────────────────────┘
+    head.prev ──&gt; &amp;B.list
+</code></pre></div></code></pre>
+<p>环闭合。最后的 <code>&amp;B.list.next</code> 指回 <code>&amp;head</code>，<code>&amp;head.prev</code> 指回 <code>&amp;B.list</code>。</p>
+<p>这里要记住一个容易翻车的点：<strong>链表头本身也是一个结点，它参与链接</strong>。所以「长度为 N 的链表」在结构上是 N+1 个 <code>list_head</code> 串成的环。写 <code>while (pos-&gt;next)</code> 这种判空是错的，因为环里永远没有 <code>NULL</code>，只有回到哨兵。</p>
+<h2 id="三list_head-的几个精妙之处" tabindex="-1">三、list_head 的几个精妙之处 <a class="header-anchor" href="#三list_head-的几个精妙之处"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把前面几段拆开看，这个设计有四个值得单独拎出来的点。</p>
+<p><strong>第一，节点与数据彻底分离。</strong> 链表代码只认 <code>struct list_head</code>，宿主是什么类型它不知道也不关心。加一个新型号的数据结构要挂链，只需在结构体里加一行 <code>struct list_head list;</code>，一行代码都不用多写。这是「复用」在 C 里的最高效形态——不是靠语言机制，靠数据布局。</p>
+<p><strong>第二，一个对象可以同时属于多条链。</strong> 因为挂载点是宿主的成员，而宿主可以有多个成员。<code>struct sock</code> 同时挂在协议栈的 established 哈希表、bind 哈希表、监听队列上，各自用一个 <code>hlist_node</code> / <code>list_head</code>。一个对象进几个容器，就嵌几个节点，容器之间互不干扰。</p>
+<p><strong>第三，哨兵头结点吃掉边界的特判。</strong> 双向循环链表里没有 <code>NULL</code>，每个结点都有前驱和后继。插入不用判「是不是第一个」，删除不用判「是不是最后一个」。<code>__list_add()</code> 四行代码就能覆盖所有位置。</p>
+<p><strong>第四，接口全是 <code>static inline</code>。</strong> 没有函数调用开销，编译器直接内联展开。代价是代码体积，好处是这些操作能出现在内核最热的路径上而不心疼。</p>
+<p>用宏而不是函数来做遍历，是被类型逼的。<code>list_for_each_entry()</code> 需要在循环里把 <code>list_head *</code> 转成宿主指针，转换目标类型由调用方传入，函数做不到这件事（<code>typeof</code> 推导和结果类型都要在调用点确定），只能写成宏。</p>
+<h2 id="四container_of从成员反推宿主" tabindex="-1">四、container_of：从成员反推宿主 <a class="header-anchor" href="#四container_of从成员反推宿主"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>链表中存的是 <code>list_head</code> 成员地址。要拿到宿主，得做一次地址反算。这个转换是整篇文章的技术核心，理解它，剩下的都是背接口。</p>
+<p>入口是先有的 <code>list_entry</code> 宏：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> list_entry(ptr, type, member) \
+	container_of(ptr, type, member)</span>
+</code></pre></div></code></pre>
+<p>三个参数：<code>ptr</code> 是链表里存的地址，也就是宿主中 <code>list_head</code> 成员的地址；<code>type</code> 是宿主类型；<code>member</code> 是 <code>list_head</code> 成员在宿主里的变量名。</p>
+<p><code>container_of</code> 定义在 <code>include/linux/kernel.h</code>，<code>offsetof</code> 定义在 <code>include/linux/stddef.h</code>。这两个宏不只服务链表，内核里凡是要「从成员反推宿主」的地方都用它们。</p>
+<h3 id="第一步offsetof-算偏移量" tabindex="-1">第一步：offsetof 算偏移量 <a class="header-anchor" href="#第一步offsetof-算偏移量"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> offsetof(TYPE, MEMBER) ((size_t) &amp;((TYPE *)0)-&gt;MEMBER)</span>
+</code></pre></div></code></pre>
+<p>拆开看。<code>(TYPE *)0</code> 把 0 地址强制转成 <code>TYPE *</code> 类型的指针，得到一个「指向地址 0 的 TYPE 结构」的指针。<code>-&gt;MEMBER</code> 访问它的成员。<code>&amp;</code> 取这个成员的地址。最后 <code>(size_t)</code> 转成整数。</p>
+<p>0 地址的内容不能读，但 0 地址的地址可以取。整个表达式里没有任何访存——编译器在编译期就算完了，结果是一个常量：<code>MEMBER</code> 在 <code>TYPE</code> 里的字节偏移。</p>
+<p>代入具体结构：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">file_node</span> {</span>
+	<span class="hljs-type">char</span> c;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">node</span>;</span>
+};
+</code></pre></div></code></pre>
+<p><code>offsetof(struct file_node, node)</code> 展开成：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>((<span class="hljs-type">size_t</span>)&amp;((<span class="hljs-keyword">struct</span> file_node *)<span class="hljs-number">0</span>)-&gt;node)
+</code></pre></div></code></pre>
+<p>换个写法更直白：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">file_node</span> *<span class="hljs-title">p</span> =</span> <span class="hljs-literal">NULL</span>;
+
+&amp;p-&gt;node;   <span class="hljs-comment">/* 就是 node 相对结构体首地址的偏移 */</span>
+</code></pre></div></code></pre>
+<p><code>p</code> 是 0，<code>p-&gt;node</code> 的地址自然就是 <code>node</code> 相对 0 的偏移量。<code>offsetof</code> 做的就是这个。</p>
+<p>对上面的结构，假设 <code>char</code> 占 1 字节、指针占 8 字节、<code>list_head</code> 对齐到 8，那么 <code>c</code> 在 offset 0，填充 7 字节，<code>node</code> 在 offset 8。<code>offsetof(struct file_node, node)</code> 返回 8。</p>
+<h3 id="第二步地址减去偏移量" tabindex="-1">第二步：地址减去偏移量 <a class="header-anchor" href="#第二步地址减去偏移量"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> container_of(ptr, type, member) ({ \
+	const typeof( ((type *)0)-&gt;member ) *__mptr = (ptr); \
+	(type *)( (char *)__mptr - offsetof(type,member) );})</span>
+</code></pre></div></code></pre>
+<p>两个语句，用 GCC 的语句表达式 <code>({ ... })</code> 包起来，整个宏的值是最后一个表达式的值。</p>
+<p>第一个语句声明中间变量 <code>__mptr</code>，类型是「宿主中 <code>member</code> 成员的类型」的指针，也就是 <code>struct list_head *</code>，初始化为传进来的 <code>ptr</code>。<code>typeof( ((type *)0)-&gt;member )</code> 靠的又是 0 地址技巧：不访问数据，只借编译器推导出成员的类型。</p>
+<p>第二个语句做减法。<code>(char *)__mptr</code> 把地址转成字节指针，减去偏移量，再 <code>(type *)</code> 转回宿主指针。</p>
+<h3 id="为什么必须转成-char-" tabindex="-1">为什么必须转成 char * <a class="header-anchor" href="#为什么必须转成-char-"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>指针算术以「所指类型的大小」为单位。如果直接写 <code>__mptr - offsetof(...)</code>，而 <code>__mptr</code> 是 <code>struct list_head *</code>，编译器会按 <code>sizeof(struct list_head)</code> 即 16 字节为单位去减——偏移 8 会被理解成减掉 8 个结点，也就是 128 字节，地址飞到天上去。</p>
+<p><code>char</code> 的大小定义为 1 字节，转成 <code>char *</code> 之后，减法就按字节算，偏移量是多少就减多少。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>      宿主首地址                     list_head 成员地址
+          |                                 |
+          v                                 v
+    +-----+---------------------------------+-----------+
+    | c   | padding | struct list_head node |   data    |
+    +-----+---------------------------------+-----------+
+          |&lt;------ offsetof(...) = 8 -------&gt;|
+                                          ^
+                                          |
+                            __mptr 在这里，减去 8 得到宿主首地址
+</code></pre></div></code></pre>
+<h3 id="为什么要中间变量" tabindex="-1">为什么要中间变量 <a class="header-anchor" href="#为什么要中间变量"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>ptr</code> 在表达式里只出现一次，那为什么还要绕一道 <code>__mptr</code>？</p>
+<p>因为传进来的实参允许带副作用。如果写成</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> BAD_CONTAINER_OF(ptr, type, member) \
+	(type *)((char *)(ptr) - offsetof(type, member))</span>
+</code></pre></div></code></pre>
+<p>调用方传 <code>container_of(p++, ...)</code>，<code>p++</code> 在展开后只出现一次，看着没事。但更复杂的表达式比如 <code>(type *)((char *)(ptr) - offsetof(type, member))</code> 里如果 <code>ptr</code> 出现两次（老版本的某些实现确实这样），副作用就会被求值两次，自增跑两遍。</p>
+<p>先把 <code>ptr</code> 落到一个局部变量里，副作用只发生一次，后面怎么用都安全。</p>
+<p>现代内核的 <code>container_of</code> 还加了一道编译期类型检查：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> container_of(ptr, type, member) ({				\
+	void *__mptr = (void *)(ptr);					\
+	static_assert(__builtin_types_compatible_p(typeof(*(ptr)),	\
+			 typeof(((type *)0)-&gt;member)),			\
+		      <span class="hljs-string">&quot;pointer type mismatch in container_of()&quot;</span>);	\
+	((type *)(__mptr - offsetof(type, member))); })</span>
+</code></pre></div></code></pre>
+<p>传错的指针类型在编译期就报出来，不用等到运行时地址错乱才发现。</p>
+<h3 id="完整链条" tabindex="-1">完整链条 <a class="header-anchor" href="#完整链条"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>把三个宏串起来看，一次 <code>list_entry</code> 调用实际发生的事：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>head-&gt;next  ──&gt; 某个宿主里的 &amp;item-&gt;list
+                     │
+                     │  typeof 推导出成员类型为 struct list_head
+                     │  减去 offsetof(宿主, list)
+                     ▼
+                &amp;item（宿主首地址）
+                     │
+                     │  (type *) 转换
+                     ▼
+                struct demo_item *
+</code></pre></div></code></pre>
+<p>用法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> *<span class="hljs-title">pos</span>;</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">demo_item</span> *<span class="hljs-title">item</span>;</span>
+
+list_for_each(pos, &amp;my_list) {
+	item = list_entry(pos, <span class="hljs-keyword">struct</span> demo_item, <span class="hljs-built_in">list</span>);
+	<span class="hljs-comment">/* 现在 item 是完整的宿主，item-&gt;id、item-&gt;name 都能访问 */</span>
+}
+</code></pre></div></code></pre>
+<p>写 <code>list_entry(pos, struct demo_item, list)</code> 时，第三个参数 <code>list</code> 必须是宿主里那个 <code>list_head</code> 成员的真实名字。写错成别的成员名，编译能过（只要那个成员也是 <code>list_head</code> 类型），运行起来地址全错——这是排查起来最费时间的一类 bug。</p>
+<p><code>list_entry</code> 和 <code>list_for_each()</code> 几乎总是成对出现。内核干脆把这个组合封成了一个宏，见第五章。</p>
+<h2 id="五list_head-的常用接口" tabindex="-1">五、list_head 的常用接口 <a class="header-anchor" href="#五list_head-的常用接口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>所有接口都在 <code>include/linux/list.h</code>，全部 <code>static inline</code>。分成插入、删除、判空、取宿主、遍历五组。</p>
+<h3 id="插入两个公开接口一个内部实现" tabindex="-1">插入：两个公开接口，一个内部实现 <a class="header-anchor" href="#插入两个公开接口一个内部实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>真正干活的只有 <code>__list_add()</code>。它把 <code>new</code> 插进 <code>prev</code> 和 <code>next</code> 这两个已知相邻结点之间：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> __list_add(<span class="hljs-keyword">struct</span> list_head *new,
+			      <span class="hljs-keyword">struct</span> list_head *prev,
+			      <span class="hljs-keyword">struct</span> list_head *next)
+{
+	next-&gt;prev = new;
+	new-&gt;next = next;
+	new-&gt;prev = prev;
+	prev-&gt;next = new;
+}
+</code></pre></div></code></pre>
+<p>四行赋值，没有循环，没有判断。前后两个结点由调用者保证相邻。</p>
+<p>两个公开接口都是它的薄包装：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 插在 head 之后，即表头（LIFO，适合栈） */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">list_add</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *new, <span class="hljs-keyword">struct</span> list_head *head)</span>
+{
+	__list_add(new, head, head-&gt;next);
+}
+
+<span class="hljs-comment">/* 插在 head 之前，即表尾（FIFO，适合队列） */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">list_add_tail</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *new, <span class="hljs-keyword">struct</span> list_head *head)</span>
+{
+	__list_add(new, head-&gt;prev, head);
+}
+</code></pre></div></code></pre>
+<p>因为链表是环，<code>head-&gt;prev</code> 就是尾结点，<code>head-&gt;next</code> 就是首结点。所以「表头插入」= 插在 <code>head</code> 和 <code>head-&gt;next</code> 之间，「表尾插入」= 插在 <code>head-&gt;prev</code> 和 <code>head</code> 之间。两者的区别只在这两个实参。</p>
+<p>看一次实际调用：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">demo_item</span> *<span class="hljs-title">item</span> =</span> kzalloc(<span class="hljs-keyword">sizeof</span>(*item), GFP_KERNEL);
+
+list_add(&amp;item-&gt;<span class="hljs-built_in">list</span>, &amp;my_list);        <span class="hljs-comment">/* item 成为首元素 */</span>
+list_add_tail(&amp;item-&gt;<span class="hljs-built_in">list</span>, &amp;my_list);   <span class="hljs-comment">/* item 成为尾元素 */</span>
+</code></pre></div></code></pre>
+<p>注意传的是 <code>&amp;item-&gt;list</code>，不是 <code>item</code>。链表只接收成员地址。</p>
+<h3 id="删除list_del-与-list_del_init" tabindex="-1">删除：list_del 与 list_del_init <a class="header-anchor" href="#删除list_del-与-list_del_init"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> __list_del(<span class="hljs-keyword">struct</span> list_head *prev, <span class="hljs-keyword">struct</span> list_head *next)
+{
+	next-&gt;prev = prev;
+	prev-&gt;next = next;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">list_del</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *entry)</span>
+{
+	__list_del(entry-&gt;prev, entry-&gt;next);
+	entry-&gt;next = LIST_POISON1;
+	entry-&gt;prev = LIST_POISON2;
+}
+</code></pre></div></code></pre>
+<p><code>__list_del()</code> 让前驱和后继互相指过去，把 <code>entry</code> 从环里摘出来。摘完之后 <code>entry</code> 的两个指针还指着原来的邻居，那对邻居已经不认它了。</p>
+<p><code>list_del()</code> 多做一步：把 <code>entry-&gt;next</code> / <code>entry-&gt;prev</code> 写成 <code>LIST_POISON1</code> / <code>LIST_POISON2</code>。这两个是内核故意选的非法地址（<code>0x00100100</code> 和 <code>0x00200200</code> 加上 <code>POISON_POINTER_DELTA</code> 偏移）。</p>
+<p>3.14 时代的代码里它们叫 <code>LIST_POSITION1</code> / <code>LIST_POSITION2</code>，作用一样。</p>
+<p>为什么要毒化？为了让「删完还用」立刻崩。节点被摘下来后如果代码还顺着 <code>entry-&gt;next</code> 走，访问 <code>0x00100100</code> 会直接触发页故障，现场就在出问题的那一行。如果不毒化，指针指向一块仍然可读的邻居内存，程序会安静地跑下去，等到别处才炸，排查成本高一个量级。</p>
+<p><code>list_del_init()</code> 是另一条路：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">list_del_init</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *entry)</span>
+{
+	__list_del(entry-&gt;prev, entry-&gt;next);
+	INIT_LIST_HEAD(entry);
+}
+</code></pre></div></code></pre>
+<p>摘下来之后把节点重新初始化成「自己指向自己」的空环。这样它还是一个合法结点，可以再用 <code>list_add()</code> 挂到别处，也可以用 <code>list_empty()</code> 判断它当前没挂在任何表上。</p>
+<p>选哪个？节点删完就 <code>kfree()</code>，用 <code>list_del()</code>；节点还要复用或者你不知道它挂在哪条表上，用 <code>list_del_init()</code>。</p>
+<h3 id="判空list_empty-与-list_empty_careful" tabindex="-1">判空：list_empty 与 list_empty_careful <a class="header-anchor" href="#判空list_empty-与-list_empty_careful"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">list_empty</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> list_head *head)</span>
+{
+	<span class="hljs-keyword">return</span> head-&gt;next == head;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">list_empty_careful</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> list_head *head)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> *<span class="hljs-title">next</span> =</span> head-&gt;next;
+
+	<span class="hljs-keyword">return</span> (next == head) &amp;&amp; (next == head-&gt;prev);
+}
+</code></pre></div></code></pre>
+<p><code>list_empty()</code> 只看 <code>next</code>。单线程下够用。</p>
+<p><code>list_empty_careful()</code> 把 <code>next</code> 先存到局部变量，再判断 <code>next == head &amp;&amp; next == head-&gt;prev</code>。它防的是另一个 CPU 正在改同一条链，导致 <code>next</code> 和 <code>prev</code> 短暂不一致的窗口。</p>
+<p>但代码注释自己承认这个保护能力有限：只有对方也走 <code>list_del_init()</code> 这类「一次写两边」的路径才成立。别的 CPU 要是先改了 <code>next</code> 再改 <code>prev</code>，读到的中间态照样骗人。<strong>并发访问链表要加锁，<code>list_empty_careful()</code> 不能替代锁。</strong></p>
+<h3 id="取宿主list_entry-的四个常用封装" tabindex="-1">取宿主：list_entry 的四个常用封装 <a class="header-anchor" href="#取宿主list_entry-的四个常用封装"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> list_first_entry(ptr, type, member) \
+	list_entry((ptr)-&gt;next, type, member)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> list_last_entry(ptr, type, member) \
+	list_entry((ptr)-&gt;prev, type, member)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> list_next_entry(pos, member) \
+	list_entry((pos)-&gt;member.next, typeof(*(pos)), member)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> list_prev_entry(pos, member) \
+	list_entry((pos)-&gt;member.prev, typeof(*(pos)), member)</span>
+</code></pre></div></code></pre>
+<p><code>list_first_entry()</code> / <code>list_last_entry()</code> 的入参是链表头，返回第一个/最后一个宿主。空表上调用它们是错的——空表的 <code>head-&gt;next</code> 就是 <code>head</code> 自己，转出来的「宿主」是哨兵前面的一块内存。调之前先 <code>list_empty()</code>。</p>
+<p><code>list_next_entry()</code> / <code>list_prev_entry()</code> 的入参是宿主指针，返回相邻宿主。它们内部靠 <code>typeof(*(pos))</code> 自动拿到宿主类型，不用再手写 <code>type</code>。</p>
+<h3 id="遍历list_for_each-与-list_for_each_entry" tabindex="-1">遍历：list_for_each 与 list_for_each_entry <a class="header-anchor" href="#遍历list_for_each-与-list_for_each_entry"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> list_for_each(pos, head) \
+	for (pos = (head)-&gt;next; pos != (head); pos = pos-&gt;next)</span>
+</code></pre></div></code></pre>
+<p>就一个 <code>for</code> 循环。<code>pos</code> 是 <code>struct list_head *</code>，从哨兵的后继开始，每轮走一步 <code>next</code>，走回哨兵就停。</p>
+<p>老版本的写法带 <code>prefetch</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> list_for_each(pos, head) \
+	for (pos = (head)-&gt;next; prefetch(pos-&gt;next), pos != (head); \
+	     pos = pos-&gt;next)</span>
+</code></pre></div></code></pre>
+<p><code>prefetch()</code> 是 GCC 的 <code>__builtin_prefetch()</code>，提前把下一个结点的缓存行拉进来，属于纯性能优化，去掉不影响正确性。</p>
+<p><code>list_for_each()</code> 只给你 <code>list_head *</code>，想访问数据还得套一层 <code>list_entry()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> *<span class="hljs-title">pos</span>;</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">demo_item</span> *<span class="hljs-title">item</span>;</span>
+
+list_for_each(pos, &amp;my_list) {
+	item = list_entry(pos, <span class="hljs-keyword">struct</span> demo_item, <span class="hljs-built_in">list</span>);
+	printk(<span class="hljs-string">&quot;id=%d\n&quot;</span>, item-&gt;id);
+}
+</code></pre></div></code></pre>
+<p>这个组合太常见，内核封成了 <code>list_for_each_entry()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> list_for_each_entry(pos, head, member)				\
+	for (pos = list_entry((head)-&gt;next, typeof(*pos), member);	\
+	     &amp;pos-&gt;member != (head);					\
+	     pos = list_entry(pos-&gt;member.next, typeof(*pos), member))</span>
+</code></pre></div></code></pre>
+<p>三处变化：<code>pos</code> 变成宿主指针类型（靠 <code>typeof(*pos)</code> 推出来）；终止条件从 <code>pos != head</code> 变成 <code>&amp;pos-&gt;member != head</code>，因为 <code>pos</code> 现在是宿主指针，要拿它的成员地址去和哨兵比；步进改成从 <code>pos-&gt;member.next</code> 反推下一个宿主。</p>
+<p>用起来干净得多：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">demo_item</span> *<span class="hljs-title">item</span>;</span>
+
+list_for_each_entry(item, &amp;my_list, <span class="hljs-built_in">list</span>)
+	printk(<span class="hljs-string">&quot;id=%d name=%s\n&quot;</span>, item-&gt;id, item-&gt;name);
+</code></pre></div></code></pre>
+<p><code>type</code> 参数消失了，因为 <code>typeof(*pos)</code> 能从 <code>pos</code> 的声明里推出来。这也是这类遍历只能写成宏的原因——函数没法凭空知道调用方想要的类型。</p>
+<h3 id="接口总表" tabindex="-1">接口总表 <a class="header-anchor" href="#接口总表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>作用</th>
+<th>关键点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LIST_HEAD(name)</code></td>
+<td>定义并初始化链表头</td>
+<td>只能在定义处用</td>
+</tr>
+<tr>
+<td><code>LIST_HEAD_INIT(name)</code></td>
+<td>初始化表达式</td>
+<td><code>{ &amp;(name), &amp;(name) }</code></td>
+</tr>
+<tr>
+<td><code>INIT_LIST_HEAD(ptr)</code></td>
+<td>运行期初始化</td>
+<td>可重复调用</td>
+</tr>
+<tr>
+<td><code>__list_add(n, prev, next)</code></td>
+<td>在已知相邻结点间插入</td>
+<td>内部函数，prev/next 必须相邻</td>
+</tr>
+<tr>
+<td><code>list_add(n, head)</code></td>
+<td>插入表头</td>
+<td>LIFO</td>
+</tr>
+<tr>
+<td><code>list_add_tail(n, head)</code></td>
+<td>插入表尾</td>
+<td>FIFO</td>
+</tr>
+<tr>
+<td><code>__list_del(prev, next)</code></td>
+<td>摘除结点</td>
+<td>内部函数</td>
+</tr>
+<tr>
+<td><code>list_del(entry)</code></td>
+<td>摘除并毒化指针</td>
+<td>节点不可再用</td>
+</tr>
+<tr>
+<td><code>list_del_init(entry)</code></td>
+<td>摘除并重置为空环</td>
+<td>节点可复用</td>
+</tr>
+<tr>
+<td><code>list_empty(head)</code></td>
+<td>判空</td>
+<td>只看 <code>next</code></td>
+</tr>
+<tr>
+<td><code>list_empty_careful(head)</code></td>
+<td>判空（并发弱保护）</td>
+<td>不能替代锁</td>
+</tr>
+<tr>
+<td><code>list_entry(p, type, m)</code></td>
+<td>从成员反推宿主</td>
+<td>即 <code>container_of</code></td>
+</tr>
+<tr>
+<td><code>list_first_entry(h, t, m)</code></td>
+<td>取第一个宿主</td>
+<td>空表禁用</td>
+</tr>
+<tr>
+<td><code>list_last_entry(h, t, m)</code></td>
+<td>取最后一个宿主</td>
+<td>空表禁用</td>
+</tr>
+<tr>
+<td><code>list_next_entry(p, m)</code></td>
+<td>取下一个宿主</td>
+<td>不判边界</td>
+</tr>
+<tr>
+<td><code>list_prev_entry(p, m)</code></td>
+<td>取上一个宿主</td>
+<td>不判边界</td>
+</tr>
+<tr>
+<td><code>list_for_each(pos, head)</code></td>
+<td>遍历 <code>list_head</code></td>
+<td>不能边遍历边删</td>
+</tr>
+<tr>
+<td><code>list_for_each_entry(pos, head, m)</code></td>
+<td>遍历宿主</td>
+<td>不能边遍历边删</td>
+</tr>
+</tbody>
+</table></div><h2 id="六list_head-的变体操作" tabindex="-1">六、list_head 的变体操作 <a class="header-anchor" href="#六list_head-的变体操作"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>基础接口之外，<code>list.h</code> 还提供一批「一步到位」的变体。它们内部都是 <code>__list_del()</code> / <code>__list_add()</code> 的组合，理解原理之后不用背。</p>
+<h3 id="搬移list_move-与-list_move_tail" tabindex="-1">搬移：list_move 与 list_move_tail <a class="header-anchor" href="#搬移list_move-与-list_move_tail"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>把一个节点从当前链表摘下来，挂到另一条链表上：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">list_move</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *<span class="hljs-built_in">list</span>, <span class="hljs-keyword">struct</span> list_head *head)</span>
+{
+	__list_del(<span class="hljs-built_in">list</span>-&gt;prev, <span class="hljs-built_in">list</span>-&gt;next);
+	list_add(<span class="hljs-built_in">list</span>, head);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">list_move_tail</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *<span class="hljs-built_in">list</span>, <span class="hljs-keyword">struct</span> list_head *head)</span>
+{
+	__list_del(<span class="hljs-built_in">list</span>-&gt;prev, <span class="hljs-built_in">list</span>-&gt;next);
+	list_add_tail(<span class="hljs-built_in">list</span>, head);
+}
+</code></pre></div></code></pre>
+<p><code>list_move(&amp;item-&gt;list, &amp;other_list)</code> 的效果是：<code>item</code> 从原表消失，成为 <code>other_list</code> 的首元素。两条链表的哨兵不用变。</p>
+<p>两个调用都省掉了「先 <code>list_del()</code> 再 <code>list_add()</code>」的中间状态，也不会误用毒化指针。</p>
+<h3 id="替换list_replace" tabindex="-1">替换：list_replace <a class="header-anchor" href="#替换list_replace"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>把一个节点就地换成另一个：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">list_replace</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *old,
+				<span class="hljs-keyword">struct</span> list_head *new)</span>
+{
+	new-&gt;next = old-&gt;next;
+	new-&gt;next-&gt;prev = new;
+	new-&gt;prev = old-&gt;prev;
+	new-&gt;prev-&gt;next = new;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">list_replace_init</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *old,
+				     <span class="hljs-keyword">struct</span> list_head *new)</span>
+{
+	list_replace(old, new);
+	INIT_LIST_HEAD(old);
+}
+</code></pre></div></code></pre>
+<p>接替 <code>old</code> 的位置，前后邻居的指针改指 <code>new</code>。<code>list_replace_init()</code> 额外把 <code>old</code> 重置成空环。</p>
+<p>这组接口在「热替换」场景里用：要换一个配置项，但它在链表里的位置有意义，不能摘了再插到表尾。</p>
+<h3 id="合并list_splice-系列" tabindex="-1">合并：list_splice 系列 <a class="header-anchor" href="#合并list_splice-系列"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>把整条 <code>list</code> 挂到 <code>head</code> 上。先看内部实现：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> __list_splice(<span class="hljs-keyword">struct</span> list_head *<span class="hljs-built_in">list</span>,
+				 <span class="hljs-keyword">struct</span> list_head *head)
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> *<span class="hljs-title">first</span> =</span> <span class="hljs-built_in">list</span>-&gt;next;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> *<span class="hljs-title">last</span> =</span> <span class="hljs-built_in">list</span>-&gt;prev;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> *<span class="hljs-title">at</span> =</span> head-&gt;next;
+
+	first-&gt;prev = head;
+	head-&gt;next = first;
+
+	last-&gt;next = at;
+	at-&gt;prev = last;
+}
+</code></pre></div></code></pre>
+<p>四步：<code>list</code> 的首元素的前驱改指 <code>head</code>；<code>head-&gt;next</code> 改指 <code>list</code> 的首元素；<code>list</code> 的尾元素的后继改指 <code>head</code> 原来的首元素；那个首元素的前驱改指 <code>list</code> 的尾元素。</p>
+<p>结果是 <code>list</code> 的全部内容被塞进 <code>head</code> 和它原来的首元素之间，新表以 <code>list</code> 的首元素打头，<code>list</code> 的尾元素接上 <code>head</code> 原来的首元素。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">list_splice</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *<span class="hljs-built_in">list</span>, <span class="hljs-keyword">struct</span> list_head *head)</span>
+{
+	<span class="hljs-keyword">if</span> (!list_empty(<span class="hljs-built_in">list</span>))
+		__list_splice(<span class="hljs-built_in">list</span>, head);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">list_splice_init</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *<span class="hljs-built_in">list</span>,
+				    <span class="hljs-keyword">struct</span> list_head *head)</span>
+{
+	<span class="hljs-keyword">if</span> (!list_empty(<span class="hljs-built_in">list</span>)) {
+		__list_splice(<span class="hljs-built_in">list</span>, head);
+		INIT_LIST_HEAD(<span class="hljs-built_in">list</span>);
+	}
+}
+</code></pre></div></code></pre>
+<p><code>list_splice()</code> 只搬内容，搬完 <code>list</code> 这个哨兵的 <code>next</code> / <code>prev</code> 还指着原来的结点——它变成了一个悬空的、指向别人家元素的头，误用会出事。<code>list_splice_init()</code> 多调一次 <code>INIT_LIST_HEAD(list)</code>，把源表重置成合法空表。</p>
+<p><strong>除了明确要靠源表指针做点什么的场合，一律用 <code>list_splice_init()</code>。</strong></p>
+<p>新版本内核把 <code>__list_splice()</code> 拆成了三参数形式 <code>__list_splice(list, prev, next)</code>，为了支持挂到表尾：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">list_splice_tail</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *<span class="hljs-built_in">list</span>,
+				    <span class="hljs-keyword">struct</span> list_head *head)</span>
+{
+	<span class="hljs-keyword">if</span> (!list_empty(<span class="hljs-built_in">list</span>))
+		__list_splice(<span class="hljs-built_in">list</span>, head-&gt;prev, head);
+}
+</code></pre></div></code></pre>
+<p><code>list_splice_tail()</code> 把 <code>list</code> 挂到 <code>head</code> 的尾部。看到三参数版本不用奇怪，原理和两参数的一样，只是把「插入点」从单一 <code>head</code> 扩成了 <code>prev</code> 和 <code>next</code> 两个已知相邻结点。</p>
+<h3 id="截断list_cut_position" tabindex="-1">截断：list_cut_position <a class="header-anchor" href="#截断list_cut_position"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>把一条链从中间切开，前半段搬到新表：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> __list_cut_position(<span class="hljs-keyword">struct</span> list_head *<span class="hljs-built_in">list</span>,
+		<span class="hljs-keyword">struct</span> list_head *head, <span class="hljs-keyword">struct</span> list_head *entry)
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> *<span class="hljs-title">new_first</span> =</span> entry-&gt;next;
+	<span class="hljs-built_in">list</span>-&gt;next = head-&gt;next;
+	<span class="hljs-built_in">list</span>-&gt;next-&gt;prev = <span class="hljs-built_in">list</span>;
+	<span class="hljs-built_in">list</span>-&gt;prev = entry;
+	entry-&gt;next = <span class="hljs-built_in">list</span>;
+	head-&gt;next = new_first;
+	new_first-&gt;prev = head;
+}
+</code></pre></div></code></pre>
+<p>切点在 <code>entry</code>：<code>head</code> 到 <code>entry</code>（含）留在原表，<code>entry</code> 之后的元素搬到 <code>list</code>。</p>
+<p>外面包一层边界处理：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">list_cut_position</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> list_head *<span class="hljs-built_in">list</span>,
+		<span class="hljs-keyword">struct</span> list_head *head, <span class="hljs-keyword">struct</span> list_head *entry)</span>
+{
+	<span class="hljs-keyword">if</span> (list_empty(head))
+		<span class="hljs-keyword">return</span>;
+	<span class="hljs-keyword">if</span> (list_is_singular(head) &amp;&amp;
+		(head-&gt;next != entry &amp;&amp; head != entry))
+		<span class="hljs-keyword">return</span>;
+	<span class="hljs-keyword">if</span> (entry == head)
+		INIT_LIST_HEAD(<span class="hljs-built_in">list</span>);
+	<span class="hljs-keyword">else</span>
+		__list_cut_position(<span class="hljs-built_in">list</span>, head, entry);
+}
+</code></pre></div></code></pre>
+<p>空表直接返回；只有一个元素且切点不是它，返回；切点就是哨兵本身，说明要搬的是空集，把目标初始化成空表。</p>
+<h3 id="反向与接续遍历" tabindex="-1">反向与接续遍历 <a class="header-anchor" href="#反向与接续遍历"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>从尾往头走：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> list_for_each_prev(pos, head) \
+	for (pos = (head)-&gt;prev; pos != (head); pos = pos-&gt;prev)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> list_for_each_entry_reverse(pos, head, member)			\
+	for (pos = list_last_entry(head, typeof(*pos), member);		\
+	     &amp;pos-&gt;member != (head);					\
+	     pos = list_prev_entry(pos, member))</span>
+</code></pre></div></code></pre>
+<p>早期的内核把 <code>list_for_each_entry_reverse</code> 直接写成 <code>list_entry((head)-&gt;prev, typeof(*pos), member)</code> 和 <code>list_entry(pos-&gt;member.prev, typeof(*pos), member)</code>，语义完全一致，只是没用 <code>list_last_entry()</code> / <code>list_prev_entry()</code> 这两个封装。看到老代码不用困惑。</p>
+<p>从中间某个位置接着往后走：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> list_for_each_entry_continue(pos, head, member)		\
+	for (pos = list_next_entry(pos, member);		\
+	     &amp;pos-&gt;member != (head);				\
+	     pos = list_next_entry(pos, member))</span>
+</code></pre></div></code></pre>
+<p>注意它是从 <code>pos</code> 的<strong>下一个</strong>开始，不是从 <code>pos</code> 本身。想包含当前节点，得用 <code>list_for_each_entry_from()</code>（新版本才有）。</p>
+<p>还有一种常见写法：某个游标允许为空，第一次调用从表头开始，之后从游标继续。内核给了 <code>list_prepare_entry()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> list_prepare_entry(pos, head, member) \
+	((pos) ? : list_entry(head, typeof(*pos), member))</span>
+</code></pre></div></code></pre>
+<p><code>?:</code> 是 GNU 扩展，<code>pos</code> 非空就取 <code>pos</code>，否则取 <code>list_entry(head, ...)</code>——把哨兵地址当成宿主地址用，这样下一轮 <code>continue</code> 里的 <code>list_next_entry()</code> 正好落到第一个真实元素上。</p>
+<p>配合起来是标准写法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>pos = list_prepare_entry(pos, &amp;my_list, <span class="hljs-built_in">list</span>);
+list_for_each_entry_continue(pos, &amp;my_list, <span class="hljs-built_in">list</span>) {
+	<span class="hljs-comment">/* 处理 pos */</span>
+}
+</code></pre></div></code></pre>
+<p><code>pos</code> 为 <code>NULL</code> 时从表头开始，非空时从 <code>pos</code> 之后开始。</p>
+<h3 id="位置判断" tabindex="-1">位置判断 <a class="header-anchor" href="#位置判断"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">list_is_last</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> list_head *<span class="hljs-built_in">list</span>,
+			       <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> list_head *head)</span>
+{
+	<span class="hljs-keyword">return</span> <span class="hljs-built_in">list</span>-&gt;next == head;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">list_is_singular</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> list_head *head)</span>
+{
+	<span class="hljs-keyword">return</span> !list_empty(head) &amp;&amp; (head-&gt;next == head-&gt;prev);
+}
+</code></pre></div></code></pre>
+<p><code>list_is_last()</code> 判断给定节点是不是最后一个——它的 <code>next</code> 指向哨兵。<code>list_is_singular()</code> 判断链表是否只有一个元素——首尾指向同一个节点。</p>
+<h2 id="七hlist哈希链表" tabindex="-1">七、hlist：哈希链表 <a class="header-anchor" href="#七hlist哈希链表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>hlist</code> 是内核里另一套链表，专门给哈希表用。它同样定义在 <code>include/linux/list.h</code>，同一份头文件里两套结构并存。</p>
+<p>它由两个结构配合：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 哈希桶的头结点 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_head</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> *<span class="hljs-title">first</span>;</span>   <span class="hljs-comment">/* 指向该桶的第一个结点 */</span>
+};
+
+<span class="hljs-comment">/* 哈希桶的普通结点 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> *<span class="hljs-title">next</span>;</span>    <span class="hljs-comment">/* 指向下一个结点，末尾为 NULL */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> **<span class="hljs-title">pprev</span>;</span>  <span class="hljs-comment">/* 指向前一个结点的 next 指针的地址 */</span>
+};
+</code></pre></div></code></pre>
+<p>两套结构，而不是一套。这就是 <code>hlist</code> 和 <code>list_head</code> 最根本的分歧。</p>
+<p>为什么会多出一个 <code>hlist_head</code>？因为哈希表的桶数量大。内核里一张哈希表的桶数动辄几千上万（<code>struct sock</code> 的 established 表按内存规模伸缩，<code>inode</code> 哈希表按页数算）。如果每个桶都用 <code>struct list_head</code> 做哨兵，光桶头就吃掉 16 字节 × 桶数；而桶里大多数时候是空的，这 16 字节基本白扔。</p>
+<p><code>hlist_head</code> 只有一个 <code>first</code> 指针，8 字节，正好省一半。桶越多，省得越明显。</p>
+<p>代价是：桶头和普通结点类型不同，不再是同一个类型，<code>list_head</code> 那套「哨兵也是结点」的对称性没了。<code>hlist</code> 的全部复杂度都来自这个不对称。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>     hlist_head（桶头，8 字节）
+     +-----------+
+     | first ----+----+
+     +-----------+    |
+                      v
+     hlist_node（普通结点，16 字节）
+     +-----------+     +-----------+     +-----------+
+     | next -----+----&gt;| next -----+----&gt;| next =NULL|
+     | pprev ----+--+  | pprev ----+--+  | pprev ----+--+
+     +-----------+  |  +-----------+  |  +-----------+  |
+          ^         |       ^         |        ^        |
+          |         |       |         |        |        |
+          +---------+-------+---------+--------+--------+
+            pprev 指向前一个 next 的地址
+</code></pre></div></code></pre>
+<h2 id="八hlist_head-与-hlist_node-的不对称设计" tabindex="-1">八、hlist_head 与 hlist_node 的不对称设计 <a class="header-anchor" href="#八hlist_head-与-hlist_node-的不对称设计"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先把「不对称」这件事讲明白。</p>
+<p><code>hlist_head</code> 里只有 <code>first</code>，没有 <code>next</code>，没有 <code>prev</code>。<code>hlist_node</code> 里有 <code>next</code>，还有一个二级指针 <code>pprev</code>。</p>
+<p><code>next</code> 好理解，指向下一个兄弟，末尾是 <code>NULL</code>，不绕环。</p>
+<p><code>pprev</code> 是关键。它<strong>不是指向前一个结点，而是指向前一个结点的 <code>next</code> 指针的地址</strong>。</p>
+<p>对第一个结点来说，前一个「结点」其实是桶头 <code>hlist_head</code>，而桶头没有 <code>next</code> 域，只有 <code>first</code> 域。<code>pprev</code> 就指向 <code>&amp;h-&gt;first</code>。因为 <code>first</code> 和 <code>next</code> 都是 <code>struct hlist_node *</code> 类型，取它们的地址得到的都是 <code>struct hlist_node **</code>，类型上完全一致。</p>
+<p>这一步类型上的凑合，换来了代码路径上的统一。</p>
+<h3 id="删除一条路径通吃" tabindex="-1">删除：一条路径通吃 <a class="header-anchor" href="#删除一条路径通吃"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> __hlist_del(<span class="hljs-keyword">struct</span> hlist_node *n)
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> *<span class="hljs-title">next</span> =</span> n-&gt;next;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> **<span class="hljs-title">pprev</span> =</span> n-&gt;pprev;
+
+	*pprev = next;
+	<span class="hljs-keyword">if</span> (next)
+		next-&gt;pprev = pprev;
+}
+</code></pre></div></code></pre>
+<p><code>*pprev = next</code> 这一句同时覆盖两种情况：</p>
+<ul>
+<li>删的是桶里第一个结点：<code>pprev == &amp;h-&gt;first</code>，<code>*pprev = next</code> 就是 <code>h-&gt;first = next</code>，桶头指向第二个结点。</li>
+<li>删的是中间或末尾结点：<code>pprev == &amp;prev-&gt;next</code>，<code>*pprev = next</code> 就是 <code>prev-&gt;next = next</code>，前驱跨过它。</li>
+</ul>
+<p>后面那个 <code>if (next)</code> 也是必需的：删的是最后一个结点时 <code>next</code> 是 <code>NULL</code>，没有下一个结点可以改 <code>pprev</code>。</p>
+<p><strong>删除第一个普通结点和删除非第一个普通结点，代码完全一样。</strong> 没有 <code>if (this is the first)</code> 分支。</p>
+<h3 id="反证如果用-nextprev" tabindex="-1">反证：如果用 next/prev <a class="header-anchor" href="#反证如果用-nextprev"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>假设 <code>hlist_node</code> 老老实实写成双向链表：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node_bad</span> {</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node_bad</span> *<span class="hljs-title">next</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node_bad</span> *<span class="hljs-title">prev</span>;</span>
+};
+</code></pre></div></code></pre>
+<p>删除一个普通结点的标准写法是：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>n-&gt;next-&gt;prev = n-&gt;prev;
+n-&gt;prev-&gt;next = n-&gt;next;
+</code></pre></div></code></pre>
+<p>删中间结点没事。删桶里第一个结点就出问题：它的 <code>prev</code> 得指向桶头，可桶头是 <code>hlist_head</code> 类型，里面<strong>没有 <code>next</code> 域</strong>，<code>n-&gt;prev-&gt;next</code> 这一句访问不到任何合法字段。</p>
+<p>要么给桶头加一个 <code>next</code> 域（那就退化成 16 字节，省内存的初衷没了），要么在删除处加一句 <code>if (n-&gt;prev == NULL) h-&gt;first = n-&gt;next; else ...</code> 的特判（每个删除点都得判，还容易漏）。</p>
+<p>插入同理。往空桶里插第一个结点时，要改的是 <code>h-&gt;first</code>；往非空桶里插，要改的是某个结点的 <code>next</code>。两处代码不同，就得两套分支。</p>
+<p><code>pprev</code> 把「改谁的指针」这件事抽象成了一个指针的指针，两种情况都是「往 <code>*pprev</code> 里写」，于是分支消失。</p>
+<h3 id="插入pprev-的两行赋值" tabindex="-1">插入：pprev 的两行赋值 <a class="header-anchor" href="#插入pprev-的两行赋值"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">hlist_add_head</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> hlist_node *n, <span class="hljs-keyword">struct</span> hlist_head *h)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> *<span class="hljs-title">first</span> =</span> h-&gt;first;
+
+	n-&gt;next = first;
+	<span class="hljs-keyword">if</span> (first)
+		first-&gt;pprev = &amp;n-&gt;next;
+	h-&gt;first = n;
+	n-&gt;pprev = &amp;h-&gt;first;
+}
+</code></pre></div></code></pre>
+<p><code>n-&gt;pprev = &amp;h-&gt;first</code> 是整段的关键。新结点成为桶里第一个，它的前驱「指针槽位」就是桶头的 <code>first</code> 域。</p>
+<p><code>first ? first-&gt;pprev = &amp;n-&gt;next : ...</code> 这半句也要注意顺序：先把 <code>n-&gt;next</code> 赋成 <code>first</code>，才能取 <code>&amp;n-&gt;next</code> 交给 <code>first-&gt;pprev</code>。顺序反过来，<code>first-&gt;pprev</code> 就指向了错误的槽位。</p>
+<h2 id="九hlist-的常用接口" tabindex="-1">九、hlist 的常用接口 <a class="header-anchor" href="#九hlist-的常用接口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>初始化有四个入口，两两配对。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 桶头 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> HLIST_HEAD_INIT { .first = NULL }</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> HLIST_HEAD(name) struct hlist_head name = { .first = NULL }</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> INIT_HLIST_HEAD(ptr) ((ptr)-&gt;first = NULL)</span>
+
+<span class="hljs-comment">/* 普通结点 */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">INIT_HLIST_NODE</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> hlist_node *h)</span>
+{
+	h-&gt;next = <span class="hljs-literal">NULL</span>;
+	h-&gt;pprev = <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p><code>INIT_HLIST_NODE()</code> 把 <code>pprev</code> 置 <code>NULL</code>，这里有个约定：<code>pprev == NULL</code> 就表示这个结点不在任何桶里。判断函数就是靠它：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">hlist_unhashed</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> hlist_node *h)</span>
+{
+	<span class="hljs-keyword">return</span> !h-&gt;pprev;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">int</span> <span class="hljs-title function_">hlist_empty</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> hlist_head *h)</span>
+{
+	<span class="hljs-keyword">return</span> !h-&gt;first;
+}
+</code></pre></div></code></pre>
+<p><code>hlist_unhashed()</code> 判结点，<code>hlist_empty()</code> 判桶。</p>
+<p>删除接口：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">hlist_del</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> hlist_node *n)</span>
+{
+	__hlist_del(n);
+	n-&gt;next = LIST_POISON1;
+	n-&gt;pprev = LIST_POISON2;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">hlist_del_init</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> hlist_node *n)</span>
+{
+	<span class="hljs-keyword">if</span> (!hlist_unhashed(n)) {
+		__hlist_del(n);
+		INIT_HLIST_NODE(n);
+	}
+}
+</code></pre></div></code></pre>
+<p><code>hlist_del()</code> 走毒化路线，删完即废。<code>hlist_del_init()</code> 先查 <code>hlist_unhashed()</code>，已经不在桶里就什么都不做——这让它可以被重复调用而不出错，清理路径上特别好用。</p>
+<p>插入三个位置：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 插到桶头，成为第一个结点 */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">hlist_add_head</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> hlist_node *n, <span class="hljs-keyword">struct</span> hlist_head *h)</span>;
+
+<span class="hljs-comment">/* 插到 next 之前 */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">hlist_add_before</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> hlist_node *n,
+				    <span class="hljs-keyword">struct</span> hlist_node *next)</span>
+{
+	n-&gt;pprev = next-&gt;pprev;
+	n-&gt;next = next;
+	next-&gt;pprev = &amp;n-&gt;next;
+	*(n-&gt;pprev) = n;
+}
+
+<span class="hljs-comment">/* 插到 n 之后 */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">hlist_add_after</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> hlist_node *n,
+				   <span class="hljs-keyword">struct</span> hlist_node *next)</span>
+{
+	next-&gt;next = n-&gt;next;
+	n-&gt;next = next;
+	next-&gt;pprev = &amp;n-&gt;next;
+	<span class="hljs-keyword">if</span> (next-&gt;next)
+		next-&gt;next-&gt;pprev = &amp;next-&gt;next;
+}
+</code></pre></div></code></pre>
+<p><code>hlist_add_before()</code> 能直接插到第一个位置，因为它先把 <code>next-&gt;pprev</code>（此时指向 <code>&amp;h-&gt;first</code>）抄进自己的 <code>pprev</code>，最后一句 <code>*(n-&gt;pprev) = n</code> 就自动改对了那个槽位。</p>
+<p><code>hlist_add_after()</code> 在 4.x 之后改了名字，现在的内核里叫 <code>hlist_add_behind(n, prev)</code>，语义是「把 <code>n</code> 插到 <code>prev</code> 之后」。看到老代码里的 <code>hlist_add_after</code> 不用当回事，那是同一个函数。</p>
+<p>整表搬移：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">hlist_move_list</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> hlist_head *old,
+				   <span class="hljs-keyword">struct</span> hlist_head *new)</span>
+{
+	new-&gt;first = old-&gt;first;
+	<span class="hljs-keyword">if</span> (new-&gt;first)
+		new-&gt;first-&gt;pprev = &amp;new-&gt;first;
+	old-&gt;first = <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p>只改三处：目标桶的 <code>first</code> 接管整条链，链首结点的 <code>pprev</code> 改指新桶的 <code>first</code> 槽位，源桶清空。O(1)，不碰任何中间结点。</p>
+<p>取宿主和遍历：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> hlist_entry(ptr, type, member) container_of(ptr, type, member)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> hlist_for_each(pos, head) \
+	for (pos = (head)-&gt;first; pos &amp;&amp; ({ prefetch(pos-&gt;next); 1; }); \
+	     pos = pos-&gt;next)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> hlist_for_each_safe(pos, n, head) \
+	for (pos = (head)-&gt;first; pos &amp;&amp; ({ n = pos-&gt;next; 1; }); \
+	     pos = n)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> hlist_for_each_entry(tpos, pos, head, member)			\
+	for (pos = (head)-&gt;first;					\
+	     pos &amp;&amp; ({ prefetch(pos-&gt;next); 1;}) &amp;&amp;			\
+		({ tpos = hlist_entry(pos, typeof(*tpos), member); 1;}); \
+	     pos = pos-&gt;next)</span>
+</code></pre></div></code></pre>
+<p><code>({ ...; 1; })</code> 这个写法是 GCC 语句表达式，把「干事」和「产出 1」塞进同一个条件里。<code>pos &amp;&amp;</code> 保证结点非空才取 <code>pos-&gt;next</code>，否则末尾那个 <code>NULL</code> 会直接解引用崩掉。</p>
+<p><code>hlist_for_each_entry()</code> 比 <code>list</code> 版本多一个 <code>pos</code> 参数——它需要一个 <code>struct hlist_node *</code> 类型的游标。原因在第十一章说。</p>
+<p><code>hlist_for_each_entry_safe()</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> hlist_for_each_entry_safe(tpos, pos, n, head, member)		\
+	for (pos = (head)-&gt;first;					\
+	     pos &amp;&amp; ({ n = pos-&gt;next; 1; }) &amp;&amp;				\
+		({ tpos = hlist_entry(pos, typeof(*tpos), member); 1;}); \
+	     pos = n)</span>
+</code></pre></div></code></pre>
+<p><code>safe</code> 版本把 <code>pos-&gt;next</code> 提前存进 <code>n</code>，步进时用 <code>pos = n</code> 而不是 <code>pos = pos-&gt;next</code>。这样删掉当前结点后，循环还能继续。</p>
+<p>接续遍历还有两个变体：<code>hlist_for_each_entry_continue(tpos, pos, member)</code> 从 <code>pos-&gt;next</code> 开始；<code>hlist_for_each_entry_from(tpos, pos, member)</code> 从 <code>pos</code> 本身开始。前者要求 <code>pos</code> 已知非空，后者不需要。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>作用</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HLIST_HEAD(name)</code></td>
+<td>定义并初始化桶头</td>
+<td><code>first = NULL</code></td>
+</tr>
+<tr>
+<td><code>INIT_HLIST_HEAD(ptr)</code></td>
+<td>运行期初始化桶头</td>
+<td>可重复调用</td>
+</tr>
+<tr>
+<td><code>INIT_HLIST_NODE(h)</code></td>
+<td>初始化普通结点</td>
+<td><code>pprev = NULL</code> 表示未挂载</td>
+</tr>
+<tr>
+<td><code>hlist_unhashed(h)</code></td>
+<td>结点是否未挂载</td>
+<td>看 <code>pprev</code></td>
+</tr>
+<tr>
+<td><code>hlist_empty(h)</code></td>
+<td>桶是否为空</td>
+<td>看 <code>first</code></td>
+</tr>
+<tr>
+<td><code>__hlist_del(n)</code></td>
+<td>摘除结点</td>
+<td>头结点无需特判</td>
+</tr>
+<tr>
+<td><code>hlist_del(n)</code></td>
+<td>摘除并毒化</td>
+<td>删完即废</td>
+</tr>
+<tr>
+<td><code>hlist_del_init(n)</code></td>
+<td>摘除并重置</td>
+<td>可重复调用</td>
+</tr>
+<tr>
+<td><code>hlist_add_head(n, h)</code></td>
+<td>插入桶头</td>
+<td>最常用的插入</td>
+</tr>
+<tr>
+<td><code>hlist_add_before(n, next)</code></td>
+<td>插到结点之前</td>
+<td>可插到第一位</td>
+</tr>
+<tr>
+<td><code>hlist_add_after(n, next)</code></td>
+<td>插到结点之后</td>
+<td>新名 <code>hlist_add_behind</code></td>
+</tr>
+<tr>
+<td><code>hlist_move_list(o, n)</code></td>
+<td>整表搬移</td>
+<td>O(1)</td>
+</tr>
+<tr>
+<td><code>hlist_entry(p, t, m)</code></td>
+<td>从成员反推宿主</td>
+<td>同 <code>container_of</code></td>
+</tr>
+<tr>
+<td><code>hlist_for_each(pos, head)</code></td>
+<td>遍历结点</td>
+<td>不能边遍历边删</td>
+</tr>
+<tr>
+<td><code>hlist_for_each_safe</code></td>
+<td>安全遍历</td>
+<td>可删当前项</td>
+</tr>
+<tr>
+<td><code>hlist_for_each_entry</code></td>
+<td>遍历宿主</td>
+<td>需额外游标</td>
+</tr>
+<tr>
+<td><code>hlist_for_each_entry_safe</code></td>
+<td>安全遍历宿主</td>
+<td>可删当前项</td>
+</tr>
+<tr>
+<td><code>hlist_for_each_entry_continue</code></td>
+<td>从 <code>pos-&gt;next</code> 接续</td>
+<td><code>pos</code> 须非空</td>
+</tr>
+<tr>
+<td><code>hlist_for_each_entry_from</code></td>
+<td>从 <code>pos</code> 接续</td>
+<td><code>pos</code> 可为空</td>
+</tr>
+</tbody>
+</table></div><h2 id="十list-与-hlist-的取舍" tabindex="-1">十、list 与 hlist 的取舍 <a class="header-anchor" href="#十list-与-hlist-的取舍"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>两套结构并存不是历史包袱，是各管一段。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th><code>list_head</code></th>
+<th><code>hlist</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>头结点大小</td>
+<td>16 字节（<code>next</code> + <code>prev</code>）</td>
+<td>8 字节（<code>first</code>）</td>
+</tr>
+<tr>
+<td>普通结点大小</td>
+<td>16 字节</td>
+<td>16 字节</td>
+</tr>
+<tr>
+<td>涉及的结构体数</td>
+<td>1 个</td>
+<td>2 个</td>
+</tr>
+<tr>
+<td>判空</td>
+<td><code>head-&gt;next == head</code></td>
+<td><code>!h-&gt;first</code></td>
+</tr>
+<tr>
+<td>尾结点的后继</td>
+<td>绕回哨兵</td>
+<td><code>NULL</code></td>
+</tr>
+<tr>
+<td>删除首元素</td>
+<td>无需特判</td>
+<td>无需特判（靠 <code>pprev</code>）</td>
+</tr>
+<tr>
+<td>反向遍历</td>
+<td>支持</td>
+<td>不支持</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>设备表、进程表、队列、挂载链</td>
+<td>哈希桶</td>
+</tr>
+</tbody>
+</table></div><p>关键一点：<strong>两套结构的普通结点都是 16 字节，<code>hlist</code> 省的是头，不是结点。</strong></p>
+<p>这条决定了选择标准。看「容器个数」和「容器里的元素个数」的比值：</p>
+<ul>
+<li>容器多、元素少——哈希表。桶数上千，每桶平均一两个结点。头像数才是内存大头，<code>hlist</code> 每桶省 8 字节，一千个桶就是 8 KB。</li>
+<li>容器少、元素多——普通链表。一张设备总表挂几十上百个设备，头结点那 16 字节根本不用算。用 <code>list_head</code>，换来反向遍历和统一的类型。</li>
+</ul>
+<p>另一条标准是需求。要 <code>list_for_each_entry_reverse()</code> 往回走，要 <code>list_splice()</code> 合并，要当队列用，选 <code>list_head</code>。只在桶里从头往后扫、插入后顺序不重要，选 <code>hlist</code>。</p>
+<p>网络栈的用法正好落在两边：<code>struct sock</code> 的 established 表用 <code>hlist</code>（桶多、只按哈希值扫）；<code>struct net_device</code> 的 <code>dev_base_head</code> 用 <code>list_head</code>（一条总表、要遍历全部、偶尔要反向）。</p>
+<h2 id="十一遍历时的删除与安全性" tabindex="-1">十一、遍历时的删除与安全性 <a class="header-anchor" href="#十一遍历时的删除与安全性"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一章讲一个必须踩过一次才能记住的坑。</p>
+<p><code>list_for_each_entry()</code> 的步进表达式是：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>pos = list_entry(pos-&gt;member.next, <span class="hljs-keyword">typeof</span>(*pos), member)
+</code></pre></div></code></pre>
+<p>每轮结束前，它要读 <code>pos-&gt;member.next</code> 才能算出下一个宿主。</p>
+<p>循环体里如果删掉当前项：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>list_for_each_entry(item, &amp;my_list, <span class="hljs-built_in">list</span>) {
+	<span class="hljs-keyword">if</span> (item-&gt;id == <span class="hljs-number">3</span>) {
+		list_del(&amp;item-&gt;<span class="hljs-built_in">list</span>);
+		kfree(item);
+	}
+}
+</code></pre></div></code></pre>
+<p>这一轮结束时，<code>pos-&gt;member.next</code> 已经在 <code>list_del()</code> 里被写成 <code>LIST_POISON1</code>，而 <code>item</code> 本身已经被 <code>kfree()</code> 掉。下一轮要读的地址要么是 <code>0x00100100</code>（立刻页故障），要么是一块已经还给 slab 的内存（use-after-free，问题延后爆发，更难查）。</p>
+<p>只 <code>list_del()</code> 不 <code>kfree()</code> 同样错：毒化指针还在，读它照样崩。</p>
+<p>解法是 <code>list_for_each_entry_safe()</code>，多传一个同类型指针 <code>n</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> list_for_each_entry_safe(pos, n, head, member)			\
+	for (pos = list_entry((head)-&gt;next, typeof(*pos), member),	\
+	     n = list_entry(pos-&gt;member.next, typeof(*pos), member);	\
+	     &amp;pos-&gt;member != (head);					\
+	     pos = n, n = list_entry(n-&gt;member.next, typeof(*n), member))</span>
+</code></pre></div></code></pre>
+<p>初始化时同时算出 <code>pos</code> 和 <code>n</code>（<code>pos</code> 的下一个）。步进是 <code>pos = n</code> —— <code>n</code> 早在上一轮就存好了，跟 <code>pos</code> 现在是什么状态无关；然后再从 <code>n</code> 算下一轮的 <code>n</code>。</p>
+<p>就算 <code>pos</code> 在这一轮里被删掉、被释放，<code>n</code> 还活着，循环能继续。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>list_for_each_entry_safe(item, next, &amp;my_list, <span class="hljs-built_in">list</span>) {
+	<span class="hljs-keyword">if</span> (item-&gt;id == <span class="hljs-number">3</span>) {
+		list_del(&amp;item-&gt;<span class="hljs-built_in">list</span>);
+		kfree(item);
+	}
+}
+</code></pre></div></code></pre>
+<p><code>list_for_each_safe(pos, n, head)</code> 同理，只是操作的是裸 <code>list_head *</code>。</p>
+<p><code>hlist</code> 的对应版本：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>hlist_for_each_entry_safe(tpos, pos, n, head, member)
+</code></pre></div></code></pre>
+<p>它比 <code>list</code> 版本多一个参数，因为需要一个 <code>struct hlist_node *</code> 游标 <code>pos</code>。原因就在终止条件：<code>hlist</code> 的末尾是 <code>NULL</code>，而 <code>NULL</code> 不包含在任何宿主结构里，没法通过 <code>&amp;tpos-&gt;member</code> 这种地址比较来判断结束，只能直接判 <code>pos</code> 本身是否为空。所以 <code>pos</code> 必须单独拎出来当循环变量。</p>
+<p><code>list</code> 版本没这个问题——它的终止条件是「回到哨兵」，哨兵地址是真的，能参与比较。</p>
+<p>安全版不等于线程安全。这套 <code>_safe</code> 宏只解决「单线程里边遍历边删」，不解决并发。链表接口本身一把锁都不加，两个 CPU 同时 <code>list_add()</code> 到同一条链，指针必然写乱。要并发就自己加锁：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>spin_lock(&amp;my_lock);
+list_for_each_entry_safe(item, next, &amp;my_list, <span class="hljs-built_in">list</span>) {
+	<span class="hljs-keyword">if</span> (should_remove(item)) {
+		list_del(&amp;item-&gt;<span class="hljs-built_in">list</span>);
+		kfree(item);
+	}
+}
+spin_unlock(&amp;my_lock);
+</code></pre></div></code></pre>
+<p><code>list_empty_careful()</code> 顶不住这个场景，它只是安慰剂。要无锁读，得用 RCU 版接口（<code>list_for_each_entry_rcu()</code>、<code>hlist_for_each_entry_rcu()</code>）配合 <code>call_rcu()</code> 延迟释放，那是另一套机制，不在本篇范围。</p>
+<h2 id="十二实战自己写一个用链表的模块" tabindex="-1">十二、实战：自己写一个用链表的模块 <a class="header-anchor" href="#十二实战自己写一个用链表的模块"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>下面这个模块同时用上了 <code>list_head</code> 和 <code>hlist</code>：一条有序的设备链，一张 8 个桶的哈希表，两种遍历方式，以及一次安全的批量删除。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">// SPDX-License-Identifier: GPL-2.0</span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/module.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/kernel.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/slab.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/list.h&gt;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> DEMO_BUCKETS 8</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> DEMO_ITEMS   6</span>
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">demo_item</span> {</span>
+	<span class="hljs-type">int</span> id;
+	<span class="hljs-type">char</span> name[<span class="hljs-number">24</span>];
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">list</span>;</span>    <span class="hljs-comment">/* 挂进 demo_list */</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> <span class="hljs-title">hnode</span>;</span>  <span class="hljs-comment">/* 挂进 demo_hash[] */</span>
+};
+
+<span class="hljs-type">static</span> <span class="hljs-title function_">LIST_HEAD</span><span class="hljs-params">(demo_list)</span>;
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_head</span> <span class="hljs-title">demo_hash</span>[<span class="hljs-title">DEMO_BUCKETS</span>];</span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> <span class="hljs-title function_">demo_bucket</span><span class="hljs-params">(<span class="hljs-type">int</span> id)</span>
+{
+	<span class="hljs-keyword">return</span> id &amp; (DEMO_BUCKETS - <span class="hljs-number">1</span>);
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">demo_purge</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">demo_item</span> *<span class="hljs-title">pos</span>, *<span class="hljs-title">next</span>;</span>
+
+	list_for_each_entry_safe(pos, next, &amp;demo_list, <span class="hljs-built_in">list</span>) {
+		list_del(&amp;pos-&gt;<span class="hljs-built_in">list</span>);
+		hlist_del_init(&amp;pos-&gt;hnode);
+		kfree(pos);
+	}
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> __init <span class="hljs-title function_">demo_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	<span class="hljs-type">int</span> i, left = <span class="hljs-number">0</span>;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">demo_item</span> *<span class="hljs-title">pos</span>, *<span class="hljs-title">next</span>, *<span class="hljs-title">hit</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> *<span class="hljs-title">cur</span>;</span>
+
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; DEMO_BUCKETS; i++)
+		INIT_HLIST_HEAD(&amp;demo_hash[i]);
+
+	<span class="hljs-comment">/* 建表：链按 id 顺序追加，哈希按桶插入 */</span>
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; DEMO_ITEMS; i++) {
+		pos = kzalloc(<span class="hljs-keyword">sizeof</span>(*pos), GFP_KERNEL);
+		<span class="hljs-keyword">if</span> (!pos) {
+			demo_purge();
+			<span class="hljs-keyword">return</span> -ENOMEM;
+		}
+		pos-&gt;id = i;
+		<span class="hljs-built_in">snprintf</span>(pos-&gt;name, <span class="hljs-keyword">sizeof</span>(pos-&gt;name), <span class="hljs-string">&quot;item-%d&quot;</span>, i);
+		INIT_LIST_HEAD(&amp;pos-&gt;<span class="hljs-built_in">list</span>);
+		INIT_HLIST_NODE(&amp;pos-&gt;hnode);
+		list_add_tail(&amp;pos-&gt;<span class="hljs-built_in">list</span>, &amp;demo_list);
+		hlist_add_head(&amp;pos-&gt;hnode, &amp;demo_hash[demo_bucket(i)]);
+	}
+
+	pr_info(<span class="hljs-string">&quot;demo: list, head -&gt; tail\n&quot;</span>);
+	list_for_each_entry(pos, &amp;demo_list, <span class="hljs-built_in">list</span>)
+		pr_info(<span class="hljs-string">&quot;demo:   id=%d name=%s\n&quot;</span>, pos-&gt;id, pos-&gt;name);
+
+	pr_info(<span class="hljs-string">&quot;demo: list, tail -&gt; head\n&quot;</span>);
+	list_for_each_entry_reverse(pos, &amp;demo_list, <span class="hljs-built_in">list</span>)
+		pr_info(<span class="hljs-string">&quot;demo:   id=%d name=%s\n&quot;</span>, pos-&gt;id, pos-&gt;name);
+
+	<span class="hljs-comment">/* 哈希查找：只扫目标桶 */</span>
+	hit = <span class="hljs-literal">NULL</span>;
+	hlist_for_each_entry(pos, cur, &amp;demo_hash[demo_bucket(<span class="hljs-number">3</span>)], hnode) {
+		<span class="hljs-keyword">if</span> (pos-&gt;id == <span class="hljs-number">3</span>) {
+			hit = pos;
+			<span class="hljs-keyword">break</span>;
+		}
+	}
+	pr_info(<span class="hljs-string">&quot;demo: lookup id=3 -&gt; %s\n&quot;</span>, hit ? hit-&gt;name : <span class="hljs-string">&quot;miss&quot;</span>);
+
+	<span class="hljs-comment">/* 遍历中删除：必须用 _safe */</span>
+	pr_info(<span class="hljs-string">&quot;demo: drop even ids\n&quot;</span>);
+	list_for_each_entry_safe(pos, next, &amp;demo_list, <span class="hljs-built_in">list</span>) {
+		<span class="hljs-keyword">if</span> (pos-&gt;id &amp; <span class="hljs-number">1</span>)
+			<span class="hljs-keyword">continue</span>;
+		list_del(&amp;pos-&gt;<span class="hljs-built_in">list</span>);
+		hlist_del_init(&amp;pos-&gt;hnode);
+		kfree(pos);
+	}
+
+	list_for_each_entry(pos, &amp;demo_list, <span class="hljs-built_in">list</span>)
+		left++;
+	pr_info(<span class="hljs-string">&quot;demo: %d item(s) left\n&quot;</span>, left);
+
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> __exit <span class="hljs-title function_">demo_exit</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	demo_purge();
+	pr_info(<span class="hljs-string">&quot;demo: exit\n&quot;</span>);
+}
+
+module_init(demo_init);
+module_exit(demo_exit);
+
+MODULE_LICENSE(<span class="hljs-string">&quot;GPL&quot;</span>);
+MODULE_DESCRIPTION(<span class="hljs-string">&quot;list_head and hlist demo&quot;</span>);
+</code></pre></div></code></pre>
+<p>几个要盯住的细节。</p>
+<p><code>struct demo_item</code> 里同时嵌了 <code>list</code> 和 <code>hnode</code>。删除时必须两个都摘：只 <code>list_del()</code> 就 <code>kfree()</code>，哈希桶里还留着 <code>hnode</code> 的地址，下次哈希查找会读到已释放内存。</p>
+<p>错误路径调 <code>demo_purge()</code>。它从 <code>demo_list</code> 上摘，对已挂过的项逐个释放，半成品状态也能清干净。</p>
+<p><code>hlist_del_init()</code> 而不是 <code>hlist_del()</code>，因为 <code>demo_purge()</code> 会在 <code>hlist_add_head()</code> 之前被调用（<code>kzalloc</code> 失败时），此时 <code>hnode</code> 还没进桶。<code>hlist_del_init()</code> 内部的 <code>hlist_unhashed()</code> 判断让这次调用变成空操作。</p>
+<p><code>demo_init()</code> 里那段 <code>list_for_each_entry_reverse()</code> 能验证 <code>prev</code> 指针真被维护对了——正向能走通、反向也能走通，说明双向链接没断。</p>
+<p>配一个 Makefile：</p>
+<pre><code class="language-makefile"><div class="code-block" data-lang="makefile"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">makefile</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>obj-m += list_demo.o
+
+KDIR ?= /lib/modules/<span class="hljs-variable">$(<span class="hljs-built_in">shell</span> uname -r)</span>/build
+PWD  := <span class="hljs-variable">$(<span class="hljs-built_in">shell</span> pwd)</span>
+
+<span class="hljs-section">all:</span>
+	<span class="hljs-variable">$(MAKE)</span> -C <span class="hljs-variable">$(KDIR)</span> M=<span class="hljs-variable">$(PWD)</span> modules
+
+<span class="hljs-section">clean:</span>
+	<span class="hljs-variable">$(MAKE)</span> -C <span class="hljs-variable">$(KDIR)</span> M=<span class="hljs-variable">$(PWD)</span> clean
+</code></pre></div></code></pre>
+<p>编译、加载、看日志、卸载：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>make
+sudo insmod list_demo.ko
+sudo dmesg | tail -n 30
+sudo rmmod list_demo
+</code></pre></div></code></pre>
+<p>想先在用户态跑一遍，把 <code>include/linux/list.h</code> 拷出来做点减法：删掉 <code>prefetch()</code> 的定义或改成空宏，去掉对 <code>linux/kernel.h</code>、<code>linux/poison.h</code> 的依赖，把 <code>LIST_POISON1/2</code> 换成 <code>NULL</code> 或 <code>(void *)0xdeadbeef</code>，<code>container_of</code> / <code>offsetof</code> 用 GCC 的就能编译。<code>typeof</code> 是 GCC 扩展，<code>-std=gnu99</code> 以上可用。</p>
+<p>用户态验证代码和内核模块的逻辑一样，把 <code>pr_info</code> 换成 <code>printf</code>、<code>kzalloc/kfree</code> 换成 <code>malloc/free</code> 即可：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdlib.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&quot;list.h&quot;</span></span>
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">test_struct</span> {</span>
+	<span class="hljs-type">int</span> test_a;
+	<span class="hljs-type">char</span> test_b;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> <span class="hljs-title">list</span>;</span>
+};
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+	<span class="hljs-type">int</span> i;
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">test_struct</span> *<span class="hljs-title">p</span>, *<span class="hljs-title">next</span>;</span>
+	<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">list_head</span> *<span class="hljs-title">ptr</span>;</span>
+	LIST_HEAD(head);
+
+	<span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-number">10</span>; i++) {
+		p = <span class="hljs-built_in">malloc</span>(<span class="hljs-keyword">sizeof</span>(*p));
+		p-&gt;test_a = i;
+		p-&gt;test_b = i + <span class="hljs-number">1</span>;
+		list_add(&amp;p-&gt;<span class="hljs-built_in">list</span>, &amp;head);
+	}
+
+	list_for_each(ptr, &amp;head) {
+		p = list_entry(ptr, <span class="hljs-keyword">struct</span> test_struct, <span class="hljs-built_in">list</span>);
+		<span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;%d %d\n&quot;</span>, p-&gt;test_a, p-&gt;test_b);
+	}
+
+	list_for_each_entry_safe(p, next, &amp;head, <span class="hljs-built_in">list</span>) {
+		list_del(&amp;p-&gt;<span class="hljs-built_in">list</span>);
+		<span class="hljs-built_in">free</span>(p);
+	}
+
+	<span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>_safe</code> 系列必须传两个独立指针。把同一个变量同时交给 <code>pos</code> 和 <code>n</code>，<code>n = pos</code> 之后 <code>pos = n</code> 永远不动，循环要么卡死要么只删一个，编译器不管这事。</p>
+<h2 id="十三易错点速查" tabindex="-1">十三、易错点速查 <a class="header-anchor" href="#十三易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>症状</th>
+<th>原因</th>
+<th>正确处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>编译报参数类型不符</td>
+<td><code>list_add(item, &amp;head)</code> 传了宿主指针</td>
+<td>传 <code>&amp;item-&gt;list</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>编译报声明错误</td>
+<td>函数体里写了 <code>LIST_HEAD(&amp;head)</code></td>
+<td>用 <code>INIT_LIST_HEAD(&amp;head)</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>遍历时页故障或静默 UAF</td>
+<td><code>list_for_each_entry</code> 里删当前项</td>
+<td>换 <code>list_for_each_entry_safe</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>编译通过、运行地址错乱</td>
+<td><code>list_entry()</code> 的 <code>member</code> 写错成别的成员</td>
+<td>核对宿主里 <code>list_head</code> 成员的变量名</td>
+</tr>
+<tr>
+<td>5</td>
+<td>拿到野指针</td>
+<td>空表上调用 <code>list_first_entry</code></td>
+<td>先 <code>list_empty()</code> 判断</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>list_empty()</code> 结果反常</td>
+<td>对 <code>list_del()</code> 摘下的节点判空</td>
+<td>用 <code>list_del_init()</code>，或用 <code>list_empty_careful</code> 的语义重新审视</td>
+</tr>
+<tr>
+<td>7</td>
+<td>源链表头指向别人的元素</td>
+<td>用了 <code>list_splice()</code></td>
+<td>换 <code>list_splice_init()</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>指针字段随机损坏</td>
+<td>两条线程同时改同一条链</td>
+<td>自己加锁；读多写少用 RCU 版接口</td>
+</tr>
+<tr>
+<td>9</td>
+<td>编译报参数个数不符</td>
+<td><code>hlist_for_each_entry</code> 少传游标</td>
+<td>补上 <code>struct hlist_node *</code> 参数</td>
+</tr>
+<tr>
+<td>10</td>
+<td>二次删除崩在 <code>0x00200200</code></td>
+<td><code>hlist_del()</code> 后重复删除</td>
+<td>换 <code>hlist_del_init()</code>，它有 <code>hlist_unhashed</code> 保护</td>
+</tr>
+<tr>
+<td>11</td>
+<td>哈希桶里出现重复项</td>
+<td>同一个 <code>hnode</code> 插进两个桶</td>
+<td>一个节点只进一个桶；要进多个就嵌多个 <code>hlist_node</code></td>
+</tr>
+<tr>
+<td>12</td>
+<td>释放后哈希查找读到脏数据</td>
+<td>只摘了 <code>list</code> 没摘 <code>hnode</code> 就 <code>kfree()</code></td>
+<td>每个挂载点都要摘干净</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>_safe</code> 循环只删一个或卡死</td>
+<td><code>pos</code> 和 <code>n</code> 传了同一个变量</td>
+<td>声明两个独立指针</td>
+</tr>
+<tr>
+<td>14</td>
+<td>反向遍历拿到垃圾</td>
+<td>在 <code>hlist</code> 上找 <code>_reverse</code> 版本</td>
+<td><code>hlist</code> 没有 <code>prev</code>，不支持反向遍历</td>
+</tr>
+</tbody>
+</table></div><p>最后一条要单独记一下：<code>hlist_node</code> 里那个二级指针叫 <code>pprev</code>，不是 <code>prev</code>。它指向前驱的 <code>next</code> 槽位，不是前驱结点本身。想顺着它往回走，得先 <code>*(n-&gt;pprev)</code> 拿到前驱结点，但这一步只对「前驱是 <code>hlist_node</code>」的情况成立——桶里第一个结点的前驱是 <code>hlist_head</code>，解引用得到的是另一层含义。所以 <code>hlist</code> 干脆不提供反向遍历，写代码时也别自己绕。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一内核为什么需要自己的链表" data-toc-target="一内核为什么需要自己的链表">一、内核为什么需要自己的链表</a>
+                    
+                    <a class="toc-item toc-lv3" href="#数据组织方式的翻转" data-toc-target="数据组织方式的翻转">数据组织方式的翻转</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二list_head双向循环链表" data-toc-target="二list_head双向循环链表">二、list_head：双向循环链表</a>
+                    
+                    <a class="toc-item toc-lv3" href="#它被数据包含而不是包含数据" data-toc-target="它被数据包含而不是包含数据">它被数据包含，而不是包含数据</a>
+                    
+                    <a class="toc-item toc-lv3" href="#空链表自己指向自己" data-toc-target="空链表自己指向自己">空链表：自己指向自己</a>
+                    
+                    <a class="toc-item toc-lv3" href="#内存布局头结点和第一个元素" data-toc-target="内存布局头结点和第一个元素">内存布局：头结点和第一个元素</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三list_head-的几个精妙之处" data-toc-target="三list_head-的几个精妙之处">三、list_head 的几个精妙之处</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四container_of从成员反推宿主" data-toc-target="四container_of从成员反推宿主">四、container_of：从成员反推宿主</a>
+                    
+                    <a class="toc-item toc-lv3" href="#第一步offsetof-算偏移量" data-toc-target="第一步offsetof-算偏移量">第一步：offsetof 算偏移量</a>
+                    
+                    <a class="toc-item toc-lv3" href="#第二步地址减去偏移量" data-toc-target="第二步地址减去偏移量">第二步：地址减去偏移量</a>
+                    
+                    <a class="toc-item toc-lv3" href="#为什么必须转成-char-" data-toc-target="为什么必须转成-char-">为什么必须转成 char *</a>
+                    
+                    <a class="toc-item toc-lv3" href="#为什么要中间变量" data-toc-target="为什么要中间变量">为什么要中间变量</a>
+                    
+                    <a class="toc-item toc-lv3" href="#完整链条" data-toc-target="完整链条">完整链条</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五list_head-的常用接口" data-toc-target="五list_head-的常用接口">五、list_head 的常用接口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#插入两个公开接口一个内部实现" data-toc-target="插入两个公开接口一个内部实现">插入：两个公开接口，一个内部实现</a>
+                    
+                    <a class="toc-item toc-lv3" href="#删除list_del-与-list_del_init" data-toc-target="删除list_del-与-list_del_init">删除：list_del 与 list_del_init</a>
+                    
+                    <a class="toc-item toc-lv3" href="#判空list_empty-与-list_empty_careful" data-toc-target="判空list_empty-与-list_empty_careful">判空：list_empty 与 list_empty_careful</a>
+                    
+                    <a class="toc-item toc-lv3" href="#取宿主list_entry-的四个常用封装" data-toc-target="取宿主list_entry-的四个常用封装">取宿主：list_entry 的四个常用封装</a>
+                    
+                    <a class="toc-item toc-lv3" href="#遍历list_for_each-与-list_for_each_entry" data-toc-target="遍历list_for_each-与-list_for_each_entry">遍历：list_for_each 与 list_for_each_entry</a>
+                    
+                    <a class="toc-item toc-lv3" href="#接口总表" data-toc-target="接口总表">接口总表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六list_head-的变体操作" data-toc-target="六list_head-的变体操作">六、list_head 的变体操作</a>
+                    
+                    <a class="toc-item toc-lv3" href="#搬移list_move-与-list_move_tail" data-toc-target="搬移list_move-与-list_move_tail">搬移：list_move 与 list_move_tail</a>
+                    
+                    <a class="toc-item toc-lv3" href="#替换list_replace" data-toc-target="替换list_replace">替换：list_replace</a>
+                    
+                    <a class="toc-item toc-lv3" href="#合并list_splice-系列" data-toc-target="合并list_splice-系列">合并：list_splice 系列</a>
+                    
+                    <a class="toc-item toc-lv3" href="#截断list_cut_position" data-toc-target="截断list_cut_position">截断：list_cut_position</a>
+                    
+                    <a class="toc-item toc-lv3" href="#反向与接续遍历" data-toc-target="反向与接续遍历">反向与接续遍历</a>
+                    
+                    <a class="toc-item toc-lv3" href="#位置判断" data-toc-target="位置判断">位置判断</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七hlist哈希链表" data-toc-target="七hlist哈希链表">七、hlist：哈希链表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八hlist_head-与-hlist_node-的不对称设计" data-toc-target="八hlist_head-与-hlist_node-的不对称设计">八、hlist_head 与 hlist_node 的不对称设计</a>
+                    
+                    <a class="toc-item toc-lv3" href="#删除一条路径通吃" data-toc-target="删除一条路径通吃">删除：一条路径通吃</a>
+                    
+                    <a class="toc-item toc-lv3" href="#反证如果用-nextprev" data-toc-target="反证如果用-nextprev">反证：如果用 next/prev</a>
+                    
+                    <a class="toc-item toc-lv3" href="#插入pprev-的两行赋值" data-toc-target="插入pprev-的两行赋值">插入：pprev 的两行赋值</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九hlist-的常用接口" data-toc-target="九hlist-的常用接口">九、hlist 的常用接口</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十list-与-hlist-的取舍" data-toc-target="十list-与-hlist-的取舍">十、list 与 hlist 的取舍</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一遍历时的删除与安全性" data-toc-target="十一遍历时的删除与安全性">十一、遍历时的删除与安全性</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二实战自己写一个用链表的模块" data-toc-target="十二实战自己写一个用链表的模块">十二、实战：自己写一个用链表的模块</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三易错点速查" data-toc-target="十三易错点速查">十三、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/B.内核/08-总线与设备模型/内核中的链表：list_head-与-hlist/","title":"内核中的链表：list_head 与 hlist","url":"/B.内核/08-总线与设备模型/内核中的链表：list_head-与-hlist/","type":"current"},{"id":"/B.内核/08-总线与设备模型/DMA-子系统与-PCIe：从地址映射到事务层/","title":"DMA 子系统与 PCIe：从地址映射到事务层","url":"/B.内核/08-总线与设备模型/DMA-子系统与-PCIe：从地址映射到事务层/","type":"neighbor"},{"id":"/B.内核/08-总线与设备模型/GPIO、pinctrl-与-I2C：三个子系统框架/","title":"GPIO、pinctrl 与 I2C：三个子系统框架","url":"/B.内核/08-总线与设备模型/GPIO、pinctrl-与-I2C：三个子系统框架/","type":"neighbor"},{"id":"/B.内核/08-总线与设备模型/Linux-总线设备驱动模型：bus、class、device-与-driver/","title":"Linux 总线设备驱动模型：bus、class、device 与 driver","url":"/B.内核/08-总线与设备模型/Linux-总线设备驱动模型：bus、class、device-与-driver/","type":"neighbor"},{"id":"/B.内核/08-总线与设备模型/device、driver、bus、class：四个注册表/","title":"device、driver、bus、class：四个注册表","url":"/B.内核/08-总线与设备模型/device、driver、bus、class：四个注册表/","type":"neighbor"}],"links":[{"source":"/B.内核/08-总线与设备模型/内核中的链表：list_head-与-hlist/","target":"/B.内核/08-总线与设备模型/DMA-子系统与-PCIe：从地址映射到事务层/","type":"neighbor"},{"source":"/B.内核/08-总线与设备模型/内核中的链表：list_head-与-hlist/","target":"/B.内核/08-总线与设备模型/GPIO、pinctrl-与-I2C：三个子系统框架/","type":"neighbor"},{"source":"/B.内核/08-总线与设备模型/内核中的链表：list_head-与-hlist/","target":"/B.内核/08-总线与设备模型/Linux-总线设备驱动模型：bus、class、device-与-driver/","type":"neighbor"},{"source":"/B.内核/08-总线与设备模型/内核中的链表：list_head-与-hlist/","target":"/B.内核/08-总线与设备模型/device、driver、bus、class：四个注册表/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

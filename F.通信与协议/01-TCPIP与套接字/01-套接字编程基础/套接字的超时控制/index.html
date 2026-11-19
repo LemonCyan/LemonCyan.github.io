@@ -1,0 +1,1450 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>套接字的超时控制 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">套接字的超时控制</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/套接字的超时控制/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">套接字的超时控制</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">套接字的超时控制</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>这一篇只讲一件事：网络调用不能永远等下去。超时怎么设，设在哪一层，设完返回什么，返回之后代码该往哪走。</p>
+<p>不讲套接字选项的全表和广播组播的配置，那部分在同组另一篇《套接字选项与广播组播》。也不讲 epoll 事件循环怎么写，I/O 模型在同组《IO 模型：从阻塞到 epoll》。</p>
+<p>代码按 Linux + C（POSIX）写，gcc 编译。示例只留能说明问题的部分，头文件在该写全的地方写全。</p>
+</blockquote>
+<h2 id="一为什么网络调用必须设超时" tabindex="-1">一、为什么网络调用必须设超时 <a class="header-anchor" href="#一为什么网络调用必须设超时"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>阻塞式套接字上，<code>recv</code>、<code>recvfrom</code>、<code>accept</code>、<code>connect</code>、<code>send</code> 都有不返回的时候。对面不发数据，<code>recv</code> 就一直在等；三次握手没人应，<code>connect</code> 就在等；对端窗口满了，<code>send</code> 也在等。</p>
+<p>单连接的原型程序不在乎这个，Ctrl-C 就完事。一上生产就是事故：一个客户端连上来不发数据，服务端那条线程就永久挂在 <code>recv</code> 上，线程池少一个；来上一千个这样的客户端，线程池空，整个服务不再响应任何人。日志不写、心跳不发、信号也不处理。</p>
+<p>UDP 上更直接。TCP 有重传和超时机制，链路断了协议栈自己会告诉你连接出问题；UDP 发出去就不管了，数据丢了没人通知。所以「没有数据」和「数据没到」这两件事，在 UDP 上只能由程序自己判。判的办法只有超时。</p>
+<p>超时的意义不是「让程序更健壮」这种空话，是让失败早点暴露：</p>
+<ul>
+<li>卡住的调用会占住线程、fd、内存，故障从点扩到面。</li>
+<li>没有超时就没有失败，没有失败就没有重试，没有重试就没有降级。</li>
+<li>上游的健康检查探不到你卡住，负载均衡照样往你这台机器打流量。</li>
+</ul>
+<p>一句话：超时是把「不确定的等待」换成「确定的失败」。失败可以处理，等待不能。</p>
+<h2 id="二超时该设在哪一层" tabindex="-1">二、超时该设在哪一层 <a class="header-anchor" href="#二超时该设在哪一层"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>从下往上数，能挂超时的地方有六处：TCP 连接层、套接字选项、I/O 多路复用、应用协议心跳、业务 deadline，还有一条老路——信号。跨篇的 I/O 模型、套接字选项全集不在这里重复，只看它们各自能管住哪段时间。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层</th>
+<th>手段</th>
+<th>管到哪</th>
+<th>粒度</th>
+<th>影响别的线程</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>业务</td>
+<td>请求进来记时间戳，链路里一路传 deadline</td>
+<td>一整次请求</td>
+<td>任意</td>
+<td>否</td>
+</tr>
+<tr>
+<td>应用协议</td>
+<td>心跳、ping/pong</td>
+<td>连接是否还活着</td>
+<td>秒级</td>
+<td>否</td>
+</tr>
+<tr>
+<td>多路复用</td>
+<td><code>select</code> / <code>poll</code> / <code>epoll_wait</code> 的超时参数</td>
+<td>等事件的时间</td>
+<td>微秒到毫秒</td>
+<td>否</td>
+</tr>
+<tr>
+<td>套接字选项</td>
+<td><code>SO_RCVTIMEO</code> / <code>SO_SNDTIMEO</code></td>
+<td>单次 <code>recv</code> / <code>send</code></td>
+<td>微秒</td>
+<td>否</td>
+</tr>
+<tr>
+<td>信号</td>
+<td><code>alarm</code> + <code>SIGALRM</code></td>
+<td>被中断的那个调用</td>
+<td>秒</td>
+<td>是</td>
+</tr>
+<tr>
+<td>TCP</td>
+<td><code>TCP_USER_TIMEOUT</code>、<code>TCP_KEEPIDLE</code></td>
+<td>已建立连接的数据确认</td>
+<td>毫秒 / 秒</td>
+<td>否</td>
+</tr>
+</tbody>
+</table></div><p>三条选型原则：</p>
+<p>第一，单次 I/O 用套接字选项，等事件用多路复用的超时参数，整体请求用应用层 deadline。别指望一个 <code>SO_RCVTIMEO</code> 管住整条链路。</p>
+<p>第二，别把超时设成同一个值。请求总超时 3 秒，链路里五跳每跳都设 3 秒，最坏情况就是 15 秒，上游早就判你死了。每一跳的超时必须小于上游给你的剩余时间。</p>
+<p>第三，<code>alarm</code> 那一层现在不要用。原因在第六章讲透，先记住结论：它是进程级共享的，多线程下一用就错。</p>
+<h2 id="三套接字选项so_rcvtimeo-与-so_sndtimeo" tabindex="-1">三、套接字选项：SO_RCVTIMEO 与 SO_SNDTIMEO <a class="header-anchor" href="#三套接字选项so_rcvtimeo-与-so_sndtimeo"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>socket(7)</code> 里定义的两个选项，挂在 <code>SOL_SOCKET</code> 层，值是 <code>struct timeval</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/socket.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/time.h&gt;</span></span>
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timeval</span> {</span>
+    <span class="hljs-type">time_t</span>      tv_sec;   <span class="hljs-comment">/* 秒 */</span>
+    <span class="hljs-type">suseconds_t</span> tv_usec;  <span class="hljs-comment">/* 微秒，0 ~ 999999 */</span>
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timeval</span> <span class="hljs-title">tv</span> =</span> { .tv_sec = <span class="hljs-number">5</span>, .tv_usec = <span class="hljs-number">0</span> };
+
+setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &amp;tv, <span class="hljs-keyword">sizeof</span>(tv));
+setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &amp;tv, <span class="hljs-keyword">sizeof</span>(tv));
+</code></pre></div></code></pre>
+<p>几个语义要点，一条条说：</p>
+<ul>
+<li><code>SO_RCVTIMEO</code> 管读：<code>read</code>、<code>recv</code>、<code>recvfrom</code>、<code>recvmsg</code>，Linux 上还包括 <code>accept</code>。</li>
+<li><code>SO_SNDTIMEO</code> 管写：<code>write</code>、<code>send</code>、<code>sendto</code>、<code>sendmsg</code>。它管的是「发送缓冲区腾不出地方」这件事，不是「对方收到没有」。数据进了内核缓冲区，<code>send</code> 就返回了。</li>
+<li>值设成 <code>{0, 0}</code> 表示不超时，回到永久阻塞。</li>
+<li>超时是每次调用重新计时的。设 5 秒，循环里调一百次 <code>recv</code>，每次都有独立的 5 秒。</li>
+<li>超时不影响套接字状态。超时之后这个 fd 仍然可读可写，接着调 <code>recv</code> 就行，不需要重连。</li>
+<li>精度写着微秒，实际受内核时钟节拍和调度延迟影响。要毫秒级精确的超时，别指望它。</li>
+</ul>
+<p>最要紧的一条是返回值。<strong>超时的时候 <code>recv</code> 返回 -1，<code>errno</code> 是 <code>EAGAIN</code>（或 <code>EWOULDBLOCK</code>）</strong>，和「真出错」长得一模一样，都是 -1。</p>
+<p>用 <code>SO_RCVTIMEO</code> 给 <code>accept</code> 加超时，代码长这样：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timeval</span> <span class="hljs-title">t</span> =</span> {<span class="hljs-number">5</span>, <span class="hljs-number">0</span>};
+
+<span class="hljs-keyword">if</span> (setsockopt(listenfd, SOL_SOCKET, SO_RCVTIMEO, &amp;t, <span class="hljs-keyword">sizeof</span>(t)) == <span class="hljs-number">-1</span>) {
+    perror(<span class="hljs-string">&quot;setsockopt&quot;</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+
+<span class="hljs-built_in">memset</span>(&amp;peeraddr, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(peeraddr));
+len = <span class="hljs-keyword">sizeof</span>(peeraddr);
+
+<span class="hljs-keyword">if</span> ((connfd = accept(listenfd, (<span class="hljs-keyword">struct</span> sockaddr *)&amp;peeraddr, &amp;len)) == <span class="hljs-number">-1</span>) {
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;errno=%d: %s\n&quot;</span>, errno, strerror(errno));
+    <span class="hljs-keyword">if</span> (errno == EAGAIN) {
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;timeout\n&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+}
+</code></pre></div></code></pre>
+<p>这里注意两处：</p>
+<p>第一，<code>struct timeval t = {5, 0}</code> 这种写法依赖 <code>tv_sec</code>、<code>tv_usec</code> 的声明顺序，POSIX 不保证。老实写 <code>.tv_sec = 5, .tv_usec = 0</code>。</p>
+<p>第二，时间到没等到连接，<code>accept</code> 返回 -1，<code>errno == EAGAIN</code>。但 <code>accept</code> 返回 -1 还有别的缘故：连接在握手中被对端复位、fd 用尽（<code>EMFILE</code> / <code>ENFILE</code>）、被信号打断（<code>EINTR</code>）。只判 <code>EAGAIN</code> 就以为「超时」是错的，其余情况一律得按错误处理。</p>
+<p>这就是「两种 -1」的问题，必须分开判：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>返回值</th>
+<th>errno</th>
+<th>含义</th>
+<th>该怎么办</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>-1</td>
+<td><code>EAGAIN</code> / <code>EWOULDBLOCK</code></td>
+<td>超时，时间到了没数据</td>
+<td>可以继续等，可以重试，也可以收摊</td>
+</tr>
+<tr>
+<td>-1</td>
+<td><code>EINTR</code></td>
+<td>被信号打断，不一定超时</td>
+<td>看是哪个信号，多数情况重试</td>
+</tr>
+<tr>
+<td>-1</td>
+<td><code>ECONNRESET</code></td>
+<td>对端复位了连接</td>
+<td>连接已废，关掉重建</td>
+</tr>
+<tr>
+<td>-1</td>
+<td><code>ETIMEDOUT</code></td>
+<td>协议栈层面判定超时（常见于带超时的 <code>connect</code>）</td>
+<td>连接没建成，别复用</td>
+</tr>
+<tr>
+<td>-1</td>
+<td><code>EBADF</code> / <code>ENOTSOCK</code></td>
+<td>fd 不对，或根本不是套接字</td>
+<td>代码 bug，别重试</td>
+</tr>
+<tr>
+<td>-1</td>
+<td><code>EINVAL</code></td>
+<td>参数不合法</td>
+<td>代码 bug</td>
+</tr>
+<tr>
+<td>0</td>
+<td>—</td>
+<td>对端有序关闭（TCP）</td>
+<td>读到 EOF，收摊</td>
+</tr>
+<tr>
+<td>&gt;0</td>
+<td>—</td>
+<td>真读到字节数</td>
+<td>正常</td>
+</tr>
+</tbody>
+</table></div><p><code>EAGAIN</code> 和 <code>EWOULDBLOCK</code> 在 Linux 上是同一个值，判断写哪个都行，写成 <code>errno == EAGAIN || errno == EWOULDBLOCK</code> 可移植性更好。</p>
+<p>还有一个常被忽略的点：<code>SO_RCVTIMEO</code> 的返回是「两次 <code>recv</code> 之间的空档」超时，不是「整个请求」。对端每隔 4 秒发一个字节，你设的 5 秒超时永远不触发，可这条连接已经慢得没法用了。这种场景要靠应用层 deadline 兜住，不是靠套接字选项。</p>
+<p><code>SO_RCVTIMEO</code> 对 <code>accept</code> 的作用在 Linux 上成立（<code>accept</code> 在 <code>socket(7)</code> 的说明里被算作读操作），上面那种写法能跑。别的 Unix 不保证，跨平台就退回 <code>select</code>。</p>
+<h2 id="四select-与-poll-的超时参数" tabindex="-1">四、select 与 poll 的超时参数 <a class="header-anchor" href="#四select-与-poll-的超时参数"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>套接字选项管单次调用，多路复用管「等事件」。等的过程中最多等多久，由最后一个参数决定：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/select.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;poll.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">select</span><span class="hljs-params">(<span class="hljs-type">int</span> nfds, fd_set *readfds, fd_set *writefds,
+           fd_set *exceptfds, <span class="hljs-keyword">struct</span> timeval *timeout)</span>;
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">poll</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> pollfd *fds, <span class="hljs-type">nfds_t</span> nfds, <span class="hljs-type">int</span> timeout)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">epoll_wait</span><span class="hljs-params">(<span class="hljs-type">int</span> epfd, <span class="hljs-keyword">struct</span> epoll_event *events,
+               <span class="hljs-type">int</span> maxevents, <span class="hljs-type">int</span> timeout)</span>;
+</code></pre></div></code></pre>
+<p>三个函数表达超时的方式不一样：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>函数</th>
+<th>超时参数类型与单位</th>
+<th>传什么表示永久等</th>
+<th>传什么表示立刻返回</th>
+<th>返回后参数被修改</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>select</code></td>
+<td><code>struct timeval *</code>，秒 + 微秒</td>
+<td><code>NULL</code></td>
+<td><code>{0, 0}</code></td>
+<td>会，改写成剩余时间</td>
+</tr>
+<tr>
+<td><code>poll</code></td>
+<td><code>int</code>，毫秒</td>
+<td><code>-1</code></td>
+<td><code>0</code></td>
+<td>不会</td>
+</tr>
+<tr>
+<td><code>epoll_wait</code></td>
+<td><code>int</code>，毫秒</td>
+<td><code>-1</code></td>
+<td><code>0</code></td>
+<td>不会</td>
+</tr>
+</tbody>
+</table></div><p><code>select</code> 的返回值三种：<code>&gt;0</code> 是就绪的 fd 个数，<code>0</code> 是超时，<code>-1</code> 是出错（<code>errno</code> 里看原因）。</p>
+<p>一个常见写法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timeval</span> <span class="hljs-title">t</span> =</span> {<span class="hljs-number">3</span>, <span class="hljs-number">0</span>};
+
+<span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+    <span class="hljs-comment">/* ... */</span>
+
+    t.tv_sec  = <span class="hljs-number">3</span>;
+    t.tv_usec = <span class="hljs-number">0</span>;
+
+    <span class="hljs-keyword">if</span> ((ret = select(maxfd + <span class="hljs-number">1</span>, &amp;rdfs, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>, &amp;t)) == <span class="hljs-number">-1</span>) {
+        perror(<span class="hljs-string">&quot;select&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    <span class="hljs-comment">/* ... 处理就绪的 fd ... */</span>
+}
+</code></pre></div></code></pre>
+<p><code>t.tv_sec = 3; t.tv_usec = 0;</code> 这两行放在循环里不是随手写的，有硬原因：<strong>Linux 上 <code>select</code> 返回时会把 <code>timeout</code> 改写成「还剩多久」</strong>。第一轮等了 1 秒后返回，<code>t</code> 变成 <code>{2, 0}</code>；第二轮直接拿它当上限，就只等 2 秒。循环套几轮，超时越缩越短，最后变成 0 —— 退化成忙轮询，CPU 跑满。</p>
+<p>同理，<code>fd_set</code> 也会被内核改。每轮进 <code>select</code> 之前必须重新 <code>FD_ZERO</code> + <code>FD_SET</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>fd_set rdfs;
+<span class="hljs-type">int</span> ret;
+
+<span class="hljs-keyword">for</span> (;;) {
+    FD_ZERO(&amp;rdfs);
+    FD_SET(connfd, &amp;rdfs);
+
+    t.tv_sec  = <span class="hljs-number">3</span>;
+    t.tv_usec = <span class="hljs-number">0</span>;
+
+    ret = select(connfd + <span class="hljs-number">1</span>, &amp;rdfs, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>, &amp;t);
+    <span class="hljs-keyword">if</span> (ret == <span class="hljs-number">0</span>) {
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;3 秒没数据，超时\n&quot;</span>);
+        <span class="hljs-keyword">break</span>;
+    }
+    <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) {
+        <span class="hljs-keyword">if</span> (errno == EINTR) {
+            <span class="hljs-keyword">continue</span>;              <span class="hljs-comment">/* 被信号打断不算错，重来 */</span>
+        }
+        perror(<span class="hljs-string">&quot;select&quot;</span>);
+        <span class="hljs-keyword">break</span>;
+    }
+    <span class="hljs-keyword">if</span> (FD_ISSET(connfd, &amp;rdfs)) {
+        n = recv(connfd, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);
+        <span class="hljs-keyword">if</span> (n &lt;= <span class="hljs-number">0</span>) {
+            <span class="hljs-keyword">break</span>;
+        }
+    }
+}
+</code></pre></div></code></pre>
+<p>这段代码里 <code>select</code> 返回 -1 就直接 <code>perror</code> + <code>return -1</code>，把 <code>EINTR</code> 当成了致命错误。信号一来进程就退出，这在带 <code>SIGCHLD</code>、<code>SIGALRM</code> 的程序里会出大问题，<code>EINTR</code> 必须 <code>continue</code>。</p>
+<p><code>poll</code> 的写法不需要重置超时，因为它把超时当输入参数，不会写回去：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">pollfd</span> <span class="hljs-title">pfd</span>;</span>
+<span class="hljs-type">int</span> ret;
+
+pfd.fd     = connfd;
+pfd.events = POLLIN;
+
+ret = poll(&amp;pfd, <span class="hljs-number">1</span>, <span class="hljs-number">3000</span>);      <span class="hljs-comment">/* 最多等 3000 毫秒 */</span>
+<span class="hljs-keyword">if</span> (ret == <span class="hljs-number">0</span>) {
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;超时\n&quot;</span>);
+} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) {
+    <span class="hljs-comment">/* errno == EINTR 就重来，其余是错 */</span>
+} <span class="hljs-keyword">else</span> {
+    <span class="hljs-keyword">if</span> (pfd.revents &amp; POLLIN) {
+        n = recv(connfd, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);
+    }
+}
+</code></pre></div></code></pre>
+<p><code>epoll_wait</code> 的 <code>timeout</code> 语义和 <code>poll</code> 一样，毫秒，<code>-1</code> 永久，<code>0</code> 立刻返回。区别是它返回的是事件数组，不是 fd 集合。</p>
+<p>两张常用的坑：</p>
+<ul>
+<li><code>select</code> 的 <code>nfds</code> 是「最大 fd 加一」，不是 fd 个数。传成 fd 个数是常见 bug，小 fd 下看不出问题，一上量就漏事件。</li>
+<li><code>select</code> 受 <code>FD_SETSIZE</code> 限制，默认 1024 个 fd。要上千连接别用 <code>select</code>，用 <code>poll</code> 或 <code>epoll</code>。</li>
+</ul>
+<p>一条选型建议：连接数少、跨平台，<code>select</code>；连接数中等，<code>poll</code>；Linux 上高并发，<code>epoll</code> + 在业务层算 deadline。别用 <code>epoll_wait</code> 的长超时当请求超时，它的超时是「等事件」，不是「处理请求」。</p>
+<h2 id="五alarm--信号的老办法" tabindex="-1">五、alarm + 信号的老办法 <a class="header-anchor" href="#五alarm--信号的老办法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>在 <code>SO_RCVTIMEO</code> 还没被广泛信任的年代，超时是靠 <code>alarm</code> 做的。这套写法现在老了，可大量存量代码里还有它，读得懂才改得动。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+
+<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> <span class="hljs-title function_">alarm</span><span class="hljs-params">(<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> seconds)</span>;
+</code></pre></div></code></pre>
+<p>返回值是「上一个定时器还剩多少秒」，之前没设过定时器就返回 0。</p>
+<p>语义一条条列：</p>
+<ul>
+<li><code>alarm</code> 又叫闹钟函数，在进程里设一个定时器，时间到了向进程发送 <code>SIGALRM</code> 信号。</li>
+<li><strong>一个进程只有一个定时器。</strong> 后设的覆盖前设的，不是排队。</li>
+<li>子进程继承父进程的报警时钟值，但实际的时钟并不共享。父子各自计时，互不干扰。</li>
+<li>执行 <code>exec</code> 之后，报警时钟仍然保持其设置。换了程序映像，定时器还在，这一点容易吓人。</li>
+<li><code>seconds</code> 传 0 表示关闭报警时钟。</li>
+</ul>
+<p>关闭这件事必须做，而且要写在超时正常结束的路径上。道理很直白：如果 <code>recvfrom</code> 读到数据、没到设定时钟值就返回了，而你忘了关闭报警时钟，它会在不久后照样报警。在计算机看来 1 秒都是很漫长的时间，这声迟到的报警会打断本进程里其他函数的执行。因为一个进程只有一个定时器，用完一定要关。</p>
+<p>完整写法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;signal.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;errno.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">volatile</span> <span class="hljs-type">sig_atomic_t</span> timed_out;
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">dealSigAlarm</span><span class="hljs-params">(<span class="hljs-type">int</span> signo)</span>
+{
+    (<span class="hljs-type">void</span>)signo;
+    timed_out = <span class="hljs-number">1</span>;
+    <span class="hljs-keyword">return</span>;              <span class="hljs-comment">/* 只做一件事：打断 recvfrom */</span>
+}
+
+<span class="hljs-type">void</span> <span class="hljs-title function_">setup_alarm_handler</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sigaction</span> <span class="hljs-title">alrmact</span>;</span>
+
+    bzero(&amp;alrmact, <span class="hljs-keyword">sizeof</span>(alrmact));
+    alrmact.sa_handler  = dealSigAlarm;
+    alrmact.sa_flags    = <span class="hljs-number">0</span>;      <span class="hljs-comment">/* 关键：不写 SA_RESTART */</span>
+    alrmact.sa_restorer = <span class="hljs-literal">NULL</span>;
+    sigemptyset(&amp;alrmact.sa_mask);
+
+    sigaction(SIGALRM, &amp;alrmact, <span class="hljs-literal">NULL</span>);
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">recv_with_alarm</span><span class="hljs-params">(<span class="hljs-type">int</span> peerSocket, <span class="hljs-type">char</span> *recvbuf, <span class="hljs-type">size_t</span> buflen,
+                    <span class="hljs-keyword">struct</span> sockaddr *peer_Addr, <span class="hljs-type">socklen_t</span> *peer_len)</span>
+{
+    <span class="hljs-type">int</span> n;
+
+    <span class="hljs-keyword">for</span> (;;) {
+        timed_out = <span class="hljs-number">0</span>;
+        alarm(<span class="hljs-number">5</span>);                          <span class="hljs-comment">/* 每次调用前重新设 */</span>
+
+        n = recvfrom(peerSocket, recvbuf, <span class="hljs-number">1420</span>, <span class="hljs-number">0</span>,
+                     peer_Addr, peer_len);
+
+        <span class="hljs-keyword">if</span> (n &lt; <span class="hljs-number">0</span>) {
+            <span class="hljs-keyword">if</span> (errno == EINTR &amp;&amp; timed_out) {
+                <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;recvfrom timeout.\n&quot;</span>);
+                <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+            }
+            <span class="hljs-keyword">if</span> (errno == EINTR) {
+                <span class="hljs-keyword">continue</span>;                  <span class="hljs-comment">/* 别的信号，重来 */</span>
+            }
+            <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;recvfrom error.\n&quot;</span>);
+            <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+        }
+
+        alarm(<span class="hljs-number">0</span>);                          <span class="hljs-comment">/* 很重要：读到就关定时器 */</span>
+        <span class="hljs-keyword">return</span> n;
+    }
+}
+</code></pre></div></code></pre>
+<p>另一种写法把 <code>n</code> 设成全局变量、在信号处理函数里置 -1，思路一样：让被中断的调用返回，然后靠 <code>errno</code> 判断。这里的差别在于用 <code>volatile sig_atomic_t</code> 标志区分「这声 <code>EINTR</code> 是不是我自己的闹钟」，<code>n</code> 留给 <code>recvfrom</code> 的返回值，不混用。</p>
+<p><code>sig_atomic_t</code> 的含义：读写它不会被信号处理函数打断到一半，这是信号处理函数与主流程共享变量的最低要求。<code>volatile</code> 防止编译器把它优化进寄存器。两个限定词都不能省。</p>
+<p><code>bzero</code> 是老 BSD 的函数，<code>memset</code> 也行，<code>sigemptyset(&amp;alrmact.sa_mask)</code> 该写。<code>sa_restorer</code> 是 Linux 的历史遗留字段，新代码里不用碰。</p>
+<h3 id="signal-与-sigaction-的区别" tabindex="-1">signal 与 sigaction 的区别 <a class="header-anchor" href="#signal-与-sigaction-的区别"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这是整套老办法里最容易踩的地方。</p>
+<p><code>sigaction</code> 能自己设是否重启动被中断的系统调用：</p>
+<ul>
+<li><code>alrmact.sa_flags = 0</code>，不带 <code>SA_RESTART</code>：不重启动，中断已经阻塞的函数 <code>recvfrom</code>，程序继续往下执行。超时才能被看见。</li>
+<li><code>alrmact.sa_flags = SA_RESTART</code>：重启动函数，效果与 <code>signal</code> 相同，<code>recvfrom</code> 被中断后自动重新阻塞，超时等于没设。</li>
+</ul>
+<p>不少老代码会把这件事记在 <code>SA_NOMASK</code> 上：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>alrmact.sa_flags = SA_NOMASK;   <span class="hljs-comment">/* 使用 SA_RESTART 将会阻塞在 recvfrom，
+                                   与直接使用 signal 效果相同 */</span>
+</code></pre></div></code></pre>
+<p><code>SA_NOMASK</code> 在现代 Linux 里是 <code>SA_NODEFER</code> 的旧别名，管的是「处理函数执行期间不屏蔽这个信号」。真正决定是否重启的是 <code>SA_RESTART</code> 有没有出现。那种注释的结论是对的（没写 <code>SA_RESTART</code> 就不重启），但这个 flag 名字本身不背这个责任——写新代码直接写 <code>0</code>，意图清楚。</p>
+<p><code>signal</code> 的行为：</p>
+<ul>
+<li>老的 <code>signal</code> 装的处理函数默认是重启动的。信号的默认语义是先重置回 <code>SIG_DFL</code> 再调用处理函数，重启行为在各 Unix 上一直不统一，POSIX 干脆让 <code>sigaction</code> 接管。</li>
+<li>用 <code>signal</code> 装处理器，超时到了 <code>recvfrom</code> 会被重新拉起来继续阻塞。给人的感觉是：明明用了 <code>alarm</code>，程序依然卡在 <code>recvfrom</code> 上不往下走；如果在处理函数里 <code>printf</code>，能看到超时后输出了一条超时信息，然后 <code>signal</code> 又把 <code>recvfrom</code> 启动起来，继续阻塞。</li>
+</ul>
+<p>所以要让 <code>recvfrom</code> 在 <code>SIGALRM</code> 到了之后真的跳出来，必须用 <code>sigaction</code>，而且不能带 <code>SA_RESTART</code>。</p>
+<p>还有个更细的控制手段：<code>int siginterrupt(int sig, int flag);</code>，<code>flag</code> 传 1 表示「这个信号打断系统调用」，传 0 表示「重启」。它改的是某个信号自身的重启属性，<code>sigaction</code> 的 <code>SA_RESTART</code> 是按处理器设的。两者别混着用，一个信号只挑一种方式配。</p>
+<h3 id="用-alarm-给-accept-加超时" tabindex="-1">用 alarm 给 accept 加超时 <a class="header-anchor" href="#用-alarm-给-accept-加超时"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>还有一种版本，拿闹钟兜住 <code>accept</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sigaction</span> <span class="hljs-title">act</span>;</span>
+
+sigaction(SIGALRM, <span class="hljs-literal">NULL</span>, &amp;act);      <span class="hljs-comment">/* 先取 SIGALRM 当前的属性 */</span>
+act.sa_handler = handler;            <span class="hljs-comment">/* 只换处理函数，其余沿用 */</span>
+sigaction(SIGALRM, &amp;act, <span class="hljs-literal">NULL</span>);      <span class="hljs-comment">/* 写回去 */</span>
+
+alarm(<span class="hljs-number">3</span>);                            <span class="hljs-comment">/* 定时器设 3 秒 */</span>
+
+<span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+    <span class="hljs-keyword">if</span> ((connfd = accept(listenfd, (<span class="hljs-keyword">struct</span> sockaddr *)&amp;peeraddr, &amp;len)) == <span class="hljs-number">-1</span>) {
+        <span class="hljs-keyword">if</span> (errno == EINTR) {
+            <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;timeout\n&quot;</span>);
+            <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+        }
+    }
+    <span class="hljs-comment">/* ... */</span>
+}
+</code></pre></div></code></pre>
+<p>先 <code>sigaction(SIGALRM, NULL, &amp;act)</code> 取旧值再改，比从零填一个 <code>struct sigaction</code> 稳，<code>sa_mask</code>、<code>sa_flags</code> 这些字段就不用自己猜该填什么。这个技巧值得记。</p>
+<p>注意这段代码的 <code>alarm(3)</code> 在循环外，只设了一次。后果是：第一个连接如果在 1 秒内就来了，<code>accept</code> 返回成功，定时器还剩 2 秒，它在循环下一轮 <code>accept</code> 阻塞时到点，把这个 <code>accept</code> 打断，代码打印「timeout」然后 <code>return -1</code>。明明有连接，程序却报超时退出。把 <code>alarm(3)</code> 挪进循环、<code>accept</code> 成功后立刻 <code>alarm(0)</code>，才对。</p>
+<p>这里有个容易漏的点：定时器 3 秒内没有数据到来，内核产生 <code>SIGALRM</code> 中断当前操作。设置信号捕捉函数可以用 <code>signal</code> 或 <code>sigaction</code>，但这里只能使用 <code>sigaction</code>，因为 <code>signal</code> 设的处理函数执行完后会重新执行被中断的操作。</p>
+<h2 id="六信号方式的三个问题" tabindex="-1">六、信号方式的三个问题 <a class="header-anchor" href="#六信号方式的三个问题"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>上一章那套代码能跑，条件是「单线程、只做一件事」。条件一变就崩。它被淘汰不是因为写法丑，是因为三个硬伤。</p>
+<h3 id="问题一信号是进程级的定时器只有一个" tabindex="-1">问题一：信号是进程级的，定时器只有一个 <a class="header-anchor" href="#问题一信号是进程级的定时器只有一个"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这是根本原因，必须讲透。</p>
+<p><code>alarm</code> 属于进程，不属于线程。<code>SIGALRM</code> 的递送目标是进程，内核从进程里挑<strong>任意一个没有屏蔽 <code>SIGALRM</code> 的线程</strong>去执行处理函数。你不控制它挑谁。</p>
+<p>多线程下会变成这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>线程 A：alarm(5)  -&gt;  recv()，本意是等 5 秒
+线程 B：alarm(3)  -&gt;  recv()，本意是等 3 秒
+                     ^
+                     |
+        后设的覆盖前设的，进程里只剩 3 秒这一个定时器
+
+3 秒后内核发 SIGALRM
+  -&gt; 送到哪个线程？内核挑，不保证是 B
+  -&gt; 送给了 A 的 recv，A 返回 -1/EINTR，A 认为「我超时了」
+  -&gt; B 还在原地等，永远等不到自己的超时
+</code></pre></div></code></pre>
+<p>结果就是超时设置错乱：谁的调用被打断，谁就误判超时；真正的超时方一直挂着。线程越多、越复杂，错乱越随机，复现越难。</p>
+<p>多进程里有另一份麻烦。子进程继承父进程的报警时钟值，父进程在 fork 前设了 5 秒，子进程落地时也带着这 5 秒的倒计时，<code>exec</code> 之后还在。父子的时钟不共享，但那个值被继承了，子进程会在毫无预期的时候收到一声 <code>SIGALRM</code>，而它根本没调过 <code>alarm</code>。</p>
+<p>所以那条铁律是：<strong><code>alarm</code> + 信号的方式在单线程程序里能用，在多线程、多进程程序里不能用。</strong> 现代做法是 <code>SO_RCVTIMEO</code> 或者 <code>select</code> / <code>poll</code>，超时状态挂在 fd 上，天然是每个 fd 独立的。</p>
+<p>推论：库代码里绝对不能调 <code>alarm</code>。你调一次，就把调用者进程的定时器改掉了，还顺手给调用者塞了一个 <code>SIGALRM</code> 处理器。</p>
+<h3 id="问题二和-sa_restart-打架超时静默失效" tabindex="-1">问题二：和 SA_RESTART 打架，超时静默失效 <a class="header-anchor" href="#问题二和-sa_restart-打架超时静默失效"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>信号到了，处理函数也跑了，可被中断的调用被内核自动重启，超时看起来毫无效果。程序照样挂在 <code>recvfrom</code> 上。</p>
+<p>要让它生效，必须用 <code>sigaction</code> 且不带 <code>SA_RESTART</code>。用 <code>signal</code> 装的处理器在多数平台上默认重启，白干。</p>
+<p>更绕的是：就算你改好了，程序里别的库、别的模块也会给 <code>SIGALRM</code> 装处理器，或者把 <code>sa_flags</code> 改成带 <code>SA_RESTART</code>。信号处理器是进程级全局状态，谁都能改，改完还不通知你。</p>
+<h3 id="问题三粒度只有秒且状态是全局的" tabindex="-1">问题三：粒度只有秒，且状态是全局的 <a class="header-anchor" href="#问题三粒度只有秒且状态是全局的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>alarm</code> 的参数是 <code>unsigned int</code> 秒。要 200 毫秒的超时，做不到。<code>setitimer</code> 能给到微秒，可它同样是进程级、同样发信号，前面两个问题一个不少。</p>
+<p>全局状态带来的第二个麻烦是嵌套。A 函数设了 5 秒闹钟，调 B；B 也设了 3 秒闹钟；B 返回后没关，A 的 5 秒已经不存在了，A 剩下来那段代码在一个 3 秒的闹钟底下跑。</p>
+<p>历史遗留的坑还有一个：老实现里 <code>sleep</code> 就是 <code>alarm</code> 的一层包装，程序里同时用 <code>sleep</code> 和 <code>alarm</code> 会互相打断、互相吞掉对方的定时器。现代 glibc 的 <code>sleep</code> 用 <code>nanosleep</code> 实现，不抢 <code>SIGALRM</code> 了，但源码里的老习惯还是别留。</p>
+<p>三个问题合起来，结论落成一张表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>alarm 能不能用</th>
+<th>该用什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>单线程，单连接，原型验证</td>
+<td>能，够用</td>
+<td><code>alarm</code> 或干脆 <code>SO_RCVTIMEO</code></td>
+</tr>
+<tr>
+<td>单线程，多连接</td>
+<td>勉强，要自己管定时器队列</td>
+<td><code>select</code> / <code>poll</code></td>
+</tr>
+<tr>
+<td>多线程</td>
+<td>不能用</td>
+<td><code>SO_RCVTIMEO</code> + <code>select</code></td>
+</tr>
+<tr>
+<td>多进程</td>
+<td>不能用</td>
+<td><code>SO_RCVTIMEO</code> + <code>select</code></td>
+</tr>
+<tr>
+<td>库函数内部</td>
+<td>绝对不能用</td>
+<td><code>SO_RCVTIMEO</code></td>
+</tr>
+<tr>
+<td>要毫秒级</td>
+<td>不能用</td>
+<td><code>poll</code> / <code>epoll_wait</code></td>
+</tr>
+</tbody>
+</table></div><h2 id="七eintr-与重试" tabindex="-1">七、EINTR 与重试 <a class="header-anchor" href="#七eintr-与重试"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>信号打断一个阻塞的系统调用，调用没做任何工作就返回 -1，<code>errno</code> 是 <code>EINTR</code>。这叫「中断」，不是「失败」。</p>
+<p>哪些调用会被重启，取决于两件事：调用本身是否可重启，以及处理器有没有 <code>SA_RESTART</code>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>调用</th>
+<th>带 SA_RESTART 时</th>
+<th>不带 SA_RESTART 时</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>read</code> / <code>recv</code> / <code>recvfrom</code></td>
+<td>自动重启，不返回</td>
+<td>返回 -1 / <code>EINTR</code></td>
+</tr>
+<tr>
+<td><code>write</code> / <code>send</code></td>
+<td>自动重启</td>
+<td>返回 -1 / <code>EINTR</code>，或返回已写的字节数</td>
+</tr>
+<tr>
+<td><code>accept</code></td>
+<td>自动重启</td>
+<td>返回 -1 / <code>EINTR</code></td>
+</tr>
+<tr>
+<td><code>connect</code>（阻塞式）</td>
+<td>不重启</td>
+<td>返回 -1 / <code>EINTR</code>，连接状态不确定</td>
+</tr>
+<tr>
+<td><code>select</code> / <code>poll</code> / <code>epoll_wait</code></td>
+<td>不重启</td>
+<td>返回 -1 / <code>EINTR</code></td>
+</tr>
+<tr>
+<td><code>nanosleep</code></td>
+<td>不重启，返回剩余时间</td>
+<td>同左</td>
+</tr>
+</tbody>
+</table></div><p><code>select</code> 和 <code>poll</code> 即使带 <code>SA_RESTART</code> 也会返回 <code>EINTR</code>。它们有超时参数，重启一次等于把超时重新算一遍，内核不做这种事。所以事件循环里收到 <code>EINTR</code> 必须自己 <code>continue</code>。</p>
+<p><code>connect</code> 被中断后连接是否还在推进，标准里没有明确定义，最稳的处理是关掉重来。</p>
+<p>重试的写法要点：</p>
+<ul>
+<li>只对 <code>EINTR</code> 重试，其他 errno 一律不重试。</li>
+<li>重试要带上限。<code>alarm</code> 每 5 秒来一声，无限重试就等于没有超时。</li>
+<li>重试前先判断这次中断是不是「我自己要的超时」。用 <code>alarm</code> 时这一点靠标志位，不能只靠 <code>errno</code>。</li>
+</ul>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;errno.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;signal.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-keyword">volatile</span> <span class="hljs-type">sig_atomic_t</span> alarm_fired;
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">recv_retry</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-type">void</span> *buf, <span class="hljs-type">size_t</span> len)</span>
+{
+    <span class="hljs-type">ssize_t</span> n;
+    <span class="hljs-type">int</span> saved_errno;
+
+    <span class="hljs-keyword">for</span> (;;) {
+        n = recv(fd, buf, len, <span class="hljs-number">0</span>);
+        <span class="hljs-keyword">if</span> (n &gt;= <span class="hljs-number">0</span>) {
+            <span class="hljs-keyword">return</span> (<span class="hljs-type">int</span>)n;
+        }
+
+        saved_errno = errno;
+        <span class="hljs-keyword">if</span> (saved_errno == EINTR) {
+            <span class="hljs-keyword">if</span> (alarm_fired) {
+                errno = saved_errno;
+                <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;              <span class="hljs-comment">/* 这才是超时 */</span>
+            }
+            <span class="hljs-keyword">continue</span>;                   <span class="hljs-comment">/* 别的信号，重来 */</span>
+        }
+
+        errno = saved_errno;
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+}
+</code></pre></div></code></pre>
+<p>一个细节：信号处理函数里如果调了 <code>printf</code>，<code>printf</code> 会改 <code>errno</code>，主流程回来就判错了。处理函数里只写 <code>sig_atomic_t</code> 是最省事的做法；非要调函数，进出各存一次 <code>errno</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">handler</span><span class="hljs-params">(<span class="hljs-type">int</span> signo)</span>
+{
+    <span class="hljs-type">int</span> saved_errno = errno;
+    <span class="hljs-comment">/* ... */</span>
+    errno = saved_errno;
+}
+</code></pre></div></code></pre>
+<h2 id="八connect-的超时控制" tabindex="-1">八、connect 的超时控制 <a class="header-anchor" href="#八connect-的超时控制"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>TCP 的 <code>connect</code> 在三次握手期间会停在 <code>SYN_SENT</code>。对端不回 <code>SYN+ACK</code>，内核就重传 <code>SYN</code>，重传多少轮、总共等多久，<strong>视系统配置而定</strong>，量级在几十秒到两分钟以上。这个默认值对线上服务太长了：一个不可达的地址能把你的线程按住一分多钟。</p>
+<p><code>SO_SNDTIMEO</code> 在这里帮不上忙。POSIX 没有规定 <code>connect</code> 受 <code>SO_SNDTIMEO</code> 约束，各系统行为不一致，Linux 上也不能依赖它当连接超时。谁在代码里靠 <code>SO_SNDTIMEO</code> 掐 <code>connect</code>，谁就是在赌。</p>
+<p>可用的手段有三个：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>手段</th>
+<th>平台</th>
+<th>管到哪</th>
+<th>靠不靠得住</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>非阻塞 <code>connect</code> + <code>select</code>/<code>poll</code> 等可写</td>
+<td>全平台</td>
+<td>单次连接建立</td>
+<td>靠得住，标准做法</td>
+</tr>
+<tr>
+<td><code>TCP_USER_TIMEOUT</code></td>
+<td>Linux 专有</td>
+<td>已建立连接上的数据确认</td>
+<td>治不了握手阶段</td>
+</tr>
+<tr>
+<td><code>SO_SNDTIMEO</code></td>
+<td>—</td>
+<td>阻塞 <code>connect</code></td>
+<td>不能依赖</td>
+</tr>
+</tbody>
+</table></div><h3 id="非阻塞-connect-的完整套路" tabindex="-1">非阻塞 connect 的完整套路 <a class="header-anchor" href="#非阻塞-connect-的完整套路"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;fcntl.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/select.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/socket.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;errno.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">connect_timeout</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> sockaddr *addr, <span class="hljs-type">socklen_t</span> addrlen,
+                    <span class="hljs-type">int</span> timeout_ms)</span>
+{
+    <span class="hljs-type">int</span> flags, ret, err = <span class="hljs-number">0</span>;
+    <span class="hljs-type">socklen_t</span> errlen = <span class="hljs-keyword">sizeof</span>(err);
+    fd_set wfds;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timeval</span> <span class="hljs-title">tv</span>;</span>
+
+    flags = fcntl(fd, F_GETFL, <span class="hljs-number">0</span>);
+    <span class="hljs-keyword">if</span> (flags &lt; <span class="hljs-number">0</span>) {
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    <span class="hljs-keyword">if</span> (fcntl(fd, F_SETFL, flags | O_NONBLOCK) &lt; <span class="hljs-number">0</span>) {
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    ret = connect(fd, addr, addrlen);
+    <span class="hljs-keyword">if</span> (ret == <span class="hljs-number">0</span>) {
+        <span class="hljs-comment">/* 本机地址或立刻成功，不用等 */</span>
+        fcntl(fd, F_SETFL, flags);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+    }
+    <span class="hljs-keyword">if</span> (errno != EINPROGRESS) {
+        fcntl(fd, F_SETFL, flags);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;                 <span class="hljs-comment">/* 立刻失败，比如 ECONNREFUSED */</span>
+    }
+
+    FD_ZERO(&amp;wfds);
+    FD_SET(fd, &amp;wfds);
+    tv.tv_sec  = timeout_ms / <span class="hljs-number">1000</span>;
+    tv.tv_usec = (timeout_ms % <span class="hljs-number">1000</span>) * <span class="hljs-number">1000</span>;
+
+    ret = select(fd + <span class="hljs-number">1</span>, <span class="hljs-literal">NULL</span>, &amp;wfds, <span class="hljs-literal">NULL</span>, &amp;tv);
+
+    <span class="hljs-keyword">if</span> (ret == <span class="hljs-number">0</span>) {
+        errno = ETIMEDOUT;
+        close(fd);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;                 <span class="hljs-comment">/* 超时 */</span>
+    }
+    <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) {
+        fcntl(fd, F_SETFL, flags);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;                 <span class="hljs-comment">/* EINTR 或其他错误 */</span>
+    }
+
+    <span class="hljs-comment">/* 可写了不代表连上了，必须取 SO_ERROR */</span>
+    <span class="hljs-keyword">if</span> (getsockopt(fd, SOL_SOCKET, SO_ERROR, &amp;err, &amp;errlen) &lt; <span class="hljs-number">0</span>) {
+        fcntl(fd, F_SETFL, flags);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    <span class="hljs-keyword">if</span> (err != <span class="hljs-number">0</span>) {
+        errno = err;
+        close(fd);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;                 <span class="hljs-comment">/* ECONNREFUSED / EHOSTUNREACH / ETIMEDOUT */</span>
+    }
+
+    fcntl(fd, F_SETFL, flags);     <span class="hljs-comment">/* 恢复原来的阻塞属性 */</span>
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>几个必须知道的点：</p>
+<ul>
+<li><code>connect</code> 在非阻塞 fd 上返回 -1 / <code>EINPROGRESS</code>，是「正在连」，不是错误。</li>
+<li><code>select</code> 报可写之后 <code>getsockopt</code> 拿 <code>SO_ERROR</code>。**可写不等于是连上了。**连接失败时 fd 同样可写，错误藏在 <code>SO_ERROR</code> 里。不查 <code>SO_ERROR</code> 就发数据，会在下一次 <code>send</code> 上收到 <code>EPIPE</code>，还附赠一个 <code>SIGPIPE</code>（默认动作是杀进程）。</li>
+<li><code>getsockopt</code> 本身返回 0 只说明「取到了」，不代表连接成功。判成功要看 <code>err == 0</code>。</li>
+<li>超时之后直接 <code>close</code>。不要对同一个 fd 再 <code>connect</code> 一次，状态是脏的。</li>
+<li>上面保留了 <code>fcntl</code> 恢复阻塞属性这一步。高并发服务里常不恢复，直接把 fd 丢进 <code>epoll</code>，全程非阻塞，那样就不用每次都改 flag。</li>
+</ul>
+<h3 id="tcp_user_timeout" tabindex="-1">TCP_USER_TIMEOUT <a class="header-anchor" href="#tcp_user_timeout"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>Linux 2.6.37 之后有的选项，<code>IPPROTO_TCP</code> 层，值是毫秒：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;netinet/tcp.h&gt;</span></span>
+
+<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> ms = <span class="hljs-number">30000</span>;
+
+setsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &amp;ms, <span class="hljs-keyword">sizeof</span>(ms));
+</code></pre></div></code></pre>
+<p>它的语义是：发出去了但一直没被确认的数据，最多能留多久，超过就掐掉连接。适用于 <code>ESTABLISHED</code>、<code>FIN_WAIT_1</code>、<code>FIN_WAIT_2</code>、<code>CLOSE_WAIT</code>、<code>CLOSING</code>、<code>LAST_ACK</code> 这些同步状态。</p>
+<p>关键限制：<strong>它不管 <code>SYN_SENT</code>。</strong> 握手阶段连接还没建立，这个选项不生效。所以 <code>TCP_USER_TIMEOUT</code> 替代不了非阻塞 <code>connect</code> + <code>select</code>，它解决的是另一个问题——连接建起来了，对端突然静默，内核还在那儿重传，你以为连接活着。这个场景留到第九章。</p>
+<h2 id="九长连接的保活检测" tabindex="-1">九、长连接的保活检测 <a class="header-anchor" href="#九长连接的保活检测"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面几章处理的都是「调用卡住」。还有一种情况更阴：连接早断了，本地 fd 还稳稳地躺在 <code>ESTABLISHED</code> 里，<code>recv</code> 一点返回的意思都没有。</p>
+<p>断的原因跟两头都没关系：中间那台 NAT 把表项回收了，防火墙静默丢包，对端机器断电，网线被人踢了。这些都不产生 <code>RST</code>，协议栈毫不知情。你的线程就挂在那儿，一直到进程重启。</p>
+<p>保活要解决的就是这件事：<strong>怎么知道对面还在。</strong></p>
+<h3 id="tcp-层的-keepalive" tabindex="-1">TCP 层的 keepalive <a class="header-anchor" href="#tcp-层的-keepalive"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;netinet/tcp.h&gt;</span></span>
+
+<span class="hljs-type">int</span> on = <span class="hljs-number">1</span>;
+setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &amp;on, <span class="hljs-keyword">sizeof</span>(on));
+
+<span class="hljs-type">int</span> idle = <span class="hljs-number">30</span>;    <span class="hljs-comment">/* 连接空闲多久开始探测，秒 */</span>
+<span class="hljs-type">int</span> intvl = <span class="hljs-number">5</span>;    <span class="hljs-comment">/* 探测间隔，秒 */</span>
+<span class="hljs-type">int</span> cnt = <span class="hljs-number">3</span>;      <span class="hljs-comment">/* 探测几次没回应判死 */</span>
+
+setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE,  &amp;idle,  <span class="hljs-keyword">sizeof</span>(idle));
+setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &amp;intvl, <span class="hljs-keyword">sizeof</span>(intvl));
+setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT,   &amp;cnt,   <span class="hljs-keyword">sizeof</span>(cnt));
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>选项</th>
+<th>层</th>
+<th>单位</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SO_KEEPALIVE</code></td>
+<td><code>SOL_SOCKET</code></td>
+<td>int 开关</td>
+<td>打开 TCP 保活探测</td>
+</tr>
+<tr>
+<td><code>TCP_KEEPIDLE</code></td>
+<td><code>IPPROTO_TCP</code></td>
+<td>秒</td>
+<td>空闲多久发出第一个探测</td>
+</tr>
+<tr>
+<td><code>TCP_KEEPINTVL</code></td>
+<td><code>IPPROTO_TCP</code></td>
+<td>秒</td>
+<td>探测之间的间隔</td>
+</tr>
+<tr>
+<td><code>TCP_KEEPCNT</code></td>
+<td><code>IPPROTO_TCP</code></td>
+<td>次</td>
+<td>连续失败几次判定连接已死</td>
+</tr>
+<tr>
+<td><code>TCP_USER_TIMEOUT</code></td>
+<td><code>IPPROTO_TCP</code></td>
+<td>毫秒</td>
+<td>未确认数据最多留多久</td>
+</tr>
+</tbody>
+</table></div><p><code>SO_KEEPALIVE</code> 默认是关的。开了之后，系统默认的空闲阈值很长，按小时计，具体值视系统配置而定，看 <code>/proc/sys/net/ipv4/tcp_keepalive_time</code>。这个量级对线上服务没有意义，必须用 <code>TCP_KEEPIDLE</code> 自己调。</p>
+<p>keepalive 有两个先天局限：</p>
+<ul>
+<li>它只在连接空闲时探测。有数据持续在发，它一次都不探。对端「收得下但不处理」这种状态它看不出来。</li>
+<li>探测失败要等满 <code>KEEPIDLE + KEEPINTVL × KEEPCNT</code> 才判死。这三项一放大，判死时间就很长。</li>
+</ul>
+<p><code>TCP_USER_TIMEOUT</code> 补的是另一个洞：连接上有数据发出去、迟迟没被确认。设成 30 秒，那么任何一段发出去 30 秒还没 <code>ACK</code> 的数据，都会让内核把连接掐掉，<code>recv</code> / <code>send</code> 立刻返回错误。它比 keepalive 敏感，因为触发条件是「有数据没确认」，不要求空闲。</p>
+<h3 id="应用层心跳" tabindex="-1">应用层心跳 <a class="header-anchor" href="#应用层心跳"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>TCP keepalive 有个绕不开的问题：它探的是「TCP 连接通不通」，不是「对面那个进程还活着没」。对端进程死锁了、卡在 GC 了、业务线程池满了，TCP 层照样 <code>ACK</code> 你的探测包，keepalive 一次都不报错。</p>
+<p>所以长连接服务要有自己的心跳：客户端发 <code>ping</code>，服务端回 <code>pong</code>，超过 N 个周期没收到 <code>pong</code> 就判定连接已死。</p>
+<p>心跳包要带序号和时间戳，回来时算 RTT。这样一次心跳同时给三样东西：连接活性、往返时延、丢包线索。</p>
+<p>心跳周期怎么定，取决于链路上最不耐心的那个中间设备。NAT 表项的空闲回收时间往往比你想的短，心跳周期要比它小一截。具体值看设备配置，别照抄。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>手段</th>
+<th>探测谁</th>
+<th>触发条件</th>
+<th>判死依据</th>
+<th>穿透 NAT</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SO_KEEPALIVE</code></td>
+<td>链路</td>
+<td>连接空闲</td>
+<td>探测次数用完</td>
+<td>有包就行</td>
+</tr>
+<tr>
+<td><code>TCP_USER_TIMEOUT</code></td>
+<td>链路</td>
+<td>数据未确认</td>
+<td>超时未 <code>ACK</code></td>
+<td>有包就行</td>
+</tr>
+<tr>
+<td>应用心跳</td>
+<td>对端进程</td>
+<td>应用自己定</td>
+<td>心跳超时</td>
+<td>有包就行</td>
+</tr>
+</tbody>
+</table></div><p>三层一起上不冲突。常规做法是 <code>TCP_USER_TIMEOUT</code> 兜底（管住内核重传），应用心跳做主判据（管住对端进程），<code>SO_KEEPALIVE</code> 可以不刻意调，留着当最后一层。</p>
+<h2 id="十超时值的确定" tabindex="-1">十、超时值的确定 <a class="header-anchor" href="#十超时值的确定"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这事没有标准答案，但有推导方法。</p>
+<p>第一步，量。拿真实链路的 RTT 分布，看 P99，不要看平均值。平均值 2 毫秒、P99 800 毫秒的链路，按平均值设超时会打掉一大批正常请求。</p>
+<p>第二步，算预算。一次请求在路上要经过若干跳，每一跳都分到一段时间，加起来必须小于上游给你的总时限：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>上游（网关）给这个请求 3000 ms
+  |
+  +-- 本服务总预算         2500 ms   （留 500 ms 给网络和序列化）
+        |
+        +-- 建连            300 ms
+        +-- 等后端响应      1500 ms
+        +-- 重试一次        700 ms   （预算已经在缩，不能按原值再来一遍）
+</code></pre></div></code></pre>
+<p>这张图的意思：<strong>超时是减法，不是并列。</strong> 每一层拿到的都是「还剩多少」，不是「我该等多久」。</p>
+<p>第三步，定层次关系。一个不出错的次序：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>连接超时  &lt;  单次 I/O 超时  &lt;  请求总超时  &lt;  上游对我的超时
+</code></pre></div></code></pre>
+<p>反过来的写法一定出事：单次 I/O 超时 5 秒，请求总超时 3 秒，那 5 秒永远用不上，因为业务层早就放弃了，而线程还卡在那 5 秒里。</p>
+<p>第四步，加抖动。同一批客户端、同一批下游，超时值完全相同的话，下游一抖，它们会在同一毫秒集体放弃、又会在同一毫秒集体重试，下游被自己人打第二遍。给超时乘一个 <code>[0.8, 1.2)</code> 的随机系数，把这批请求摊开。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>要设的超时</th>
+<th>定值依据</th>
+<th>常见反例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>连接建立</td>
+<td>目标机房跨地域还是同机房，量出来</td>
+<td>直接抄内核默认，一卡一分多钟</td>
+</tr>
+<tr>
+<td>单次读写</td>
+<td>链路 RTT 的 P99 乘以几倍</td>
+<td>设 5 秒，业务总超时才 3 秒</td>
+</tr>
+<tr>
+<td>空闲心跳</td>
+<td>链路上 NAT 表项回收时间的一半以下</td>
+<td>设 30 分钟，中间设备 5 分钟就回收了</td>
+</tr>
+<tr>
+<td>请求总时限</td>
+<td>上游 SLA 减去留给自己的余量</td>
+<td>每一跳都设成一样，累加成 N 倍</td>
+</tr>
+<tr>
+<td>重试总预算</td>
+<td>总时限减去首次尝试耗时</td>
+<td>每次重试都用原始超时值</td>
+</tr>
+</tbody>
+</table></div><p>一个纪律：这些数字必须写在配置里，别硬编码在代码里。不同机房、不同下游，合适的值不一样，改配置比改代码快。</p>
+<h2 id="十一超时与重试的配合" tabindex="-1">十一、超时与重试的配合 <a class="header-anchor" href="#十一超时与重试的配合"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>超时之后干什么，是另一半问题。超时本身不产生价值，把超时接上重试、降级、熔断才有。</p>
+<p>先问三个问题：</p>
+<ul>
+<li>这个操作幂等吗？<code>GET</code>、查询、按主键读，可以重试。扣款、下单、发消息，不能随便重试，除非对端有去重。</li>
+<li>现在还有时间重试吗？总预算还剩 200 毫秒，而一次正常往返要 300 毫秒，重试就是纯浪费，还多压一次下游。</li>
+<li>重试会不会放大故障？下游已经过载，所有客户端一起重试，等于给它加了两三倍流量。</li>
+</ul>
+<p>把 deadline 传下去，比传「超时值」靠谱：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;time.h&gt;</span></span>
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">deadline</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timespec</span> <span class="hljs-title">expire</span>;</span>
+};
+
+<span class="hljs-type">static</span> <span class="hljs-type">long</span> <span class="hljs-title function_">ms_left</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> deadline *d)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timespec</span> <span class="hljs-title">now</span>;</span>
+    <span class="hljs-type">long</span> ms;
+
+    clock_gettime(CLOCK_MONOTONIC, &amp;now);
+    ms = (d-&gt;expire.tv_sec - now.tv_sec) * <span class="hljs-number">1000L</span>
+       + (d-&gt;expire.tv_nsec - now.tv_nsec) / <span class="hljs-number">1000000L</span>;
+
+    <span class="hljs-keyword">return</span> ms &gt; <span class="hljs-number">0</span> ? ms : <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>用 <code>CLOCK_MONOTONIC</code>，不要用 <code>CLOCK_REALTIME</code>。墙上时间会被 NTP 调，调一次你的超时就算歪了。</p>
+<p>每次调用前算剩余，拿剩余去设本次的 <code>SO_RCVTIMEO</code> 或 <code>select</code> 超时：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">long</span> left = ms_left(&amp;d);
+<span class="hljs-keyword">if</span> (left &lt;= <span class="hljs-number">0</span>) {
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;                     <span class="hljs-comment">/* 预算用完，直接失败，别再发请求 */</span>
+}
+
+tv.tv_sec  = left / <span class="hljs-number">1000</span>;
+tv.tv_usec = (left % <span class="hljs-number">1000</span>) * <span class="hljs-number">1000</span>;
+setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &amp;tv, <span class="hljs-keyword">sizeof</span>(tv));
+</code></pre></div></code></pre>
+<p>重试的几条纪律：</p>
+<ul>
+<li>指数退避加抖动。第二次等 100 毫秒，第三次 200 毫秒，每次乘一个随机系数。不要固定间隔重试，那是同步攻击。</li>
+<li>重试次数有上限，总时长也有上限。两个都要，只限次数不限时长会在慢链路上拖死。</li>
+<li>只在一层重试。网关重试 3 次、服务重试 3 次、客户端重试 3 次，下游看到的是 27 次。这就是重试风暴。</li>
+<li>超时后不要拿同一个连接立刻重发。TCP 上超时的连接状态不确定：请求说不定已经到了对端，只是响应慢；重发就变成重复请求。要么关掉重建，要么业务层带去重 ID。</li>
+<li>连续失败到阈值就熔断，让请求快速失败，给下游恢复的时间。熔断期间的重试是纯浪费预算。</li>
+</ul>
+<p>还有一条容易忘：<code>send</code> 超时和 <code>recv</code> 超时的后果不一样。<code>recv</code> 超时，数据没来，连接完好，重试读就行。<code>send</code> 超时，你不知道内核到底发出去了多少字节，这条连接上的数据流说不定已经错位，最稳的处理是关掉重建。</p>
+<h2 id="十二易错点速查" tabindex="-1">十二、易错点速查 <a class="header-anchor" href="#十二易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>改法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>多线程下超时随机错乱，谁被打断谁报超时</td>
+<td>用 <code>alarm</code> 做超时，定时器进程级唯一，<code>SIGALRM</code> 送给任意线程</td>
+<td>换 <code>SO_RCVTIMEO</code> 或 <code>select</code></td>
+</tr>
+<tr>
+<td>用了 <code>alarm</code>，程序还是卡在 <code>recvfrom</code> 上</td>
+<td>处理器带了 <code>SA_RESTART</code>，或用 <code>signal</code> 装的处理器默认重启</td>
+<td>用 <code>sigaction</code>，<code>sa_flags</code> 写 0</td>
+</tr>
+<tr>
+<td>循环里 <code>select</code> 的超时越跑越短，最后忙轮询</td>
+<td><code>select</code> 返回时改写了 <code>timeval</code></td>
+<td>每轮重置 <code>tv_sec</code> / <code>tv_usec</code></td>
+</tr>
+<tr>
+<td><code>select</code> 第二轮开始漏事件</td>
+<td><code>fd_set</code> 每轮没重新 <code>FD_ZERO</code> / <code>FD_SET</code></td>
+<td>进 <code>select</code> 前重建集合</td>
+</tr>
+<tr>
+<td><code>select</code> 的 <code>nfds</code> 传成 fd 个数</td>
+<td>少了一个，最后一个 fd 的事件看不到</td>
+<td>传 <code>maxfd + 1</code></td>
+</tr>
+<tr>
+<td>把 <code>EAGAIN</code> 当成唯一失败原因</td>
+<td>只有超时才返回 <code>EAGAIN</code>，<code>EINTR</code> / <code>ECONNRESET</code> / <code>EMFILE</code> 也是 -1</td>
+<td>按 errno 分支处理，别一网打尽</td>
+</tr>
+<tr>
+<td>fd 用尽时 <code>accept</code> 死循环</td>
+<td><code>EMFILE</code> / <code>ENFILE</code> 被当成「再来一次」，<code>accept</code> 立刻又失败</td>
+<td>识别这两个 errno，停一下再接受</td>
+</tr>
+<tr>
+<td><code>accept</code> 超时后连接丢了</td>
+<td>用了 <code>SO_RCVTIMEO</code> 但没处理「已完成的连接还在队列里」</td>
+<td>超时后继续收，不要 <code>close</code> 监听 fd</td>
+</tr>
+<tr>
+<td><code>SO_SNDTIMEO</code> 设了，<code>connect</code> 还是卡一分多钟</td>
+<td><code>connect</code> 不受 <code>SO_SNDTIMEO</code> 可靠约束</td>
+<td>非阻塞 + <code>select</code> 等可写</td>
+</tr>
+<tr>
+<td>非阻塞 <code>connect</code> 可写了就以为成功</td>
+<td>忘了 <code>getsockopt(SO_ERROR)</code></td>
+<td>可写后必须查 <code>SO_ERROR</code></td>
+</tr>
+<tr>
+<td><code>SO_ERROR</code> 取完不判，<code>send</code> 收到 <code>SIGPIPE</code> 进程被杀</td>
+<td>连接失败时 fd 也可写，错误藏在 <code>SO_ERROR</code></td>
+<td>判 <code>err == 0</code>，并在全局 <code>SIG_IGN</code> 掉 <code>SIGPIPE</code></td>
+</tr>
+<tr>
+<td>超时后同一个 fd 又 <code>connect</code> 一次</td>
+<td><code>connect</code> 超时后 fd 状态不确定，不能复用</td>
+<td><code>close</code> 后重建</td>
+</tr>
+<tr>
+<td>心跳设了 30 分钟，连接早断了却不知道</td>
+<td>中间设备空闲回收远快于心跳周期</td>
+<td>心跳周期压到回收时间一半以下</td>
+</tr>
+<tr>
+<td>keepalive 开了，对端进程死锁照样不断</td>
+<td>keepalive 只探链路，探不到进程</td>
+<td>加应用层心跳</td>
+</tr>
+<tr>
+<td><code>TCP_USER_TIMEOUT</code> 治不了连不上</td>
+<td>它只管已建立连接的未确认数据，不管 <code>SYN_SENT</code></td>
+<td>握手阶段用非阻塞 <code>connect</code></td>
+</tr>
+<tr>
+<td>超时后 NTP 一跳，超时立刻触发</td>
+<td>用 <code>CLOCK_REALTIME</code> 算剩余时间</td>
+<td>换 <code>CLOCK_MONOTONIC</code></td>
+</tr>
+<tr>
+<td>信号处理函数把 <code>errno</code> 改了，主流程判错</td>
+<td>处理函数里调了 <code>printf</code> 之类</td>
+<td>进出存一次 <code>errno</code>，或用 <code>sig_atomic_t</code> 标志</td>
+</tr>
+<tr>
+<td>重试 3 次，下游收到 27 次请求</td>
+<td>每一层各重试 3 次</td>
+<td>只在一层重试</td>
+</tr>
+<tr>
+<td>重试把过载的下游打死</td>
+<td>固定间隔、所有客户端同步重试</td>
+<td>指数退避加抖动，加熔断</td>
+</tr>
+<tr>
+<td>超时返回 -1 后按真错误关闭连接</td>
+<td>没区分「超时」和「真错」</td>
+<td>按 errno 分流，超时不关 fd</td>
+</tr>
+</tbody>
+</table></div><p>最后一条放在最前面也成立：<strong>先分清 -1 是超时还是错误，再谈重试。</strong> 这两种情况走错方向，后面的代码写得再漂亮也没用。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一为什么网络调用必须设超时" data-toc-target="一为什么网络调用必须设超时">一、为什么网络调用必须设超时</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二超时该设在哪一层" data-toc-target="二超时该设在哪一层">二、超时该设在哪一层</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三套接字选项so_rcvtimeo-与-so_sndtimeo" data-toc-target="三套接字选项so_rcvtimeo-与-so_sndtimeo">三、套接字选项：SO_RCVTIMEO 与 SO_SNDTIMEO</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四select-与-poll-的超时参数" data-toc-target="四select-与-poll-的超时参数">四、select 与 poll 的超时参数</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五alarm--信号的老办法" data-toc-target="五alarm--信号的老办法">五、alarm + 信号的老办法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#signal-与-sigaction-的区别" data-toc-target="signal-与-sigaction-的区别">signal 与 sigaction 的区别</a>
+                    
+                    <a class="toc-item toc-lv3" href="#用-alarm-给-accept-加超时" data-toc-target="用-alarm-给-accept-加超时">用 alarm 给 accept 加超时</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六信号方式的三个问题" data-toc-target="六信号方式的三个问题">六、信号方式的三个问题</a>
+                    
+                    <a class="toc-item toc-lv3" href="#问题一信号是进程级的定时器只有一个" data-toc-target="问题一信号是进程级的定时器只有一个">问题一：信号是进程级的，定时器只有一个</a>
+                    
+                    <a class="toc-item toc-lv3" href="#问题二和-sa_restart-打架超时静默失效" data-toc-target="问题二和-sa_restart-打架超时静默失效">问题二：和 SA_RESTART 打架，超时静默失效</a>
+                    
+                    <a class="toc-item toc-lv3" href="#问题三粒度只有秒且状态是全局的" data-toc-target="问题三粒度只有秒且状态是全局的">问题三：粒度只有秒，且状态是全局的</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七eintr-与重试" data-toc-target="七eintr-与重试">七、EINTR 与重试</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八connect-的超时控制" data-toc-target="八connect-的超时控制">八、connect 的超时控制</a>
+                    
+                    <a class="toc-item toc-lv3" href="#非阻塞-connect-的完整套路" data-toc-target="非阻塞-connect-的完整套路">非阻塞 connect 的完整套路</a>
+                    
+                    <a class="toc-item toc-lv3" href="#tcp_user_timeout" data-toc-target="tcp_user_timeout">TCP_USER_TIMEOUT</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九长连接的保活检测" data-toc-target="九长连接的保活检测">九、长连接的保活检测</a>
+                    
+                    <a class="toc-item toc-lv3" href="#tcp-层的-keepalive" data-toc-target="tcp-层的-keepalive">TCP 层的 keepalive</a>
+                    
+                    <a class="toc-item toc-lv3" href="#应用层心跳" data-toc-target="应用层心跳">应用层心跳</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十超时值的确定" data-toc-target="十超时值的确定">十、超时值的确定</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一超时与重试的配合" data-toc-target="十一超时与重试的配合">十一、超时与重试的配合</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二易错点速查" data-toc-target="十二易错点速查">十二、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/套接字的超时控制/","title":"套接字的超时控制","url":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/套接字的超时控制/","type":"current"},{"id":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/IO-模型：从阻塞到-epoll/","title":"IO 模型：从阻塞到 epoll","url":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/IO-模型：从阻塞到-epoll/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/TCP-套接字编程/","title":"TCP 套接字编程","url":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/TCP-套接字编程/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/主机与开发板通信/","title":"主机与开发板通信","url":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/主机与开发板通信/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/协议分析与报文格式/","title":"协议分析与报文格式","url":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/协议分析与报文格式/","type":"neighbor"}],"links":[{"source":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/套接字的超时控制/","target":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/IO-模型：从阻塞到-epoll/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/套接字的超时控制/","target":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/TCP-套接字编程/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/套接字的超时控制/","target":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/主机与开发板通信/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/套接字的超时控制/","target":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/协议分析与报文格式/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

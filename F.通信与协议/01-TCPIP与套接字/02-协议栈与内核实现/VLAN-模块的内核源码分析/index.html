@@ -1,0 +1,1910 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VLAN 模块的内核源码分析 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">VLAN 模块的内核源码分析</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-模块的内核源码分析/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">VLAN 模块的内核源码分析</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">VLAN 模块的内核源码分析</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>本篇只讲内核源码：VLAN 虚拟设备在内核里是什么结构、怎么注册出来、发的时候标签插在哪、收的时候标签在哪剥。不讲「VLAN 是什么」「VID 和 PVID 怎么配」——那些在《VLAN 原理与配置》里。也不讲网桥转发算法本身，只在第八章说清楚 VLAN 设备进网桥后收发走哪条路。代码基准是 linux 3.14 的 <code>net/8021q/</code>，遇到 2.6.x 的老实现会在关键处点一句，因为网上流传的分析文章大半是 2.6 时代的，混着看会迷惑。</p>
+<p>一句话抓住主线：VLAN 设备是一个虚拟网络设备，它没有自己的硬件，<code>vlan_dev_priv</code> 建在一个真实设备之上。收的时候由它剥掉帧头那 4 字节，发的时候由它插进去。内核视角里它和物理网卡没有区别——都是 <code>struct net_device</code>，所以能配 IP、能进网桥、能被策略路由选中，这也是整个模块设计的立足点。</p>
+</blockquote>
+<h2 id="一vlan-模块在内核里的位置" tabindex="-1">一、VLAN 模块在内核里的位置 <a class="header-anchor" href="#一vlan-模块在内核里的位置"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先看目录。VLAN 功能的代码在 <code>net/8021q/</code> 下，编译出来是一个独立模块 <code>8021q.ko</code>，也可以直接编进内核。别去 <code>net/core/</code> 或驱动目录找，那些地方只有配合它的钩子。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>文件</th>
+<th>职责</th>
+<th>关键符号</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>vlan.c</code></td>
+<td>设备注册/注销、ioctl、GVRP/MVRP 入口、模块初始化</td>
+<td><code>register_vlan_dev</code>、<code>vlan_ioctl_handler</code>、<code>vlan_proto_init</code></td>
+</tr>
+<tr>
+<td><code>vlan_dev.c</code></td>
+<td><code>netdev_ops</code> 回调、收发包函数、统计</td>
+<td><code>vlan_dev_hard_start_xmit</code>、<code>vlan_dev_init</code></td>
+</tr>
+<tr>
+<td><code>vlan_core.c</code></td>
+<td>与协议栈主干的交接</td>
+<td><code>vlan_do_receive</code>、<code>vlan_skb_recv</code>、<code>__vlan_find_dev_deep</code></td>
+</tr>
+<tr>
+<td><code>vlan_netlink.c</code></td>
+<td>rtnetlink 接口</td>
+<td><code>vlan_link_ops</code>、<code>vlan_newlink</code></td>
+</tr>
+<tr>
+<td><code>vlan_gvrp.c</code></td>
+<td>GVRP 协议帧收发</td>
+<td><code>vlan_gvrp_request_join</code></td>
+</tr>
+<tr>
+<td><code>vlan_mvrp.c</code></td>
+<td>MVRP 协议帧收发</td>
+<td><code>vlan_mvrp_request_join</code></td>
+</tr>
+<tr>
+<td><code>vlanproc.c</code></td>
+<td>procfs 调试入口</td>
+<td><code>vlan_proc_init</code></td>
+</tr>
+<tr>
+<td><code>vlan.h</code></td>
+<td>内部声明</td>
+<td><code>vlan_dev_priv</code></td>
+</tr>
+</tbody>
+</table></div><p>这堆文件对外的门面只有三处注册，记住这三处，整章就有了骨架：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 1. 协议类型注册：收到 0x8100 的帧交给 vlan_skb_recv */</span>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">packet_type</span> <span class="hljs-title">vlan_packet_type</span> __<span class="hljs-title">read_mostly</span> =</span> {
+    .type = cpu_to_be16(ETH_P_8021Q),
+    .func = vlan_skb_recv,
+};
+
+<span class="hljs-comment">/* 2. rtnetlink 注册：ip link add link eth0 name eth0.100 type vlan id 100 */</span>
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rtnl_link_ops</span> <span class="hljs-title">vlan_link_ops</span> __<span class="hljs-title">read_mostly</span> =</span> {
+    .kind     = <span class="hljs-string">&quot;vlan&quot;</span>,
+    .maxtype  = IFLA_VLAN_MAX,
+    .policy   = vlan_policy,
+    .priv_size = <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> vlan_dev_priv),
+    .setup    = vlan_setup,
+    .validate = vlan_validate,
+    .newlink  = vlan_newlink,
+    .dellink  = vlan_dellink,
+};
+
+<span class="hljs-comment">/* 3. ioctl 钩子注册：老接口 vconfig 走 SIOCSIFVLAN/SIOCGIFVLAN */</span>
+vlan_ioctl_set(vlan_ioctl_handler);
+</code></pre></div></code></pre>
+<p>第三处在 <code>vlan_proto_init</code> 里完成。<code>vlan_ioctl_set</code> 本身很薄，就是给函数指针赋值，加锁是为了防止并发改指针：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">vlan_ioctl_set</span><span class="hljs-params">(<span class="hljs-type">int</span> (*hook)(<span class="hljs-keyword">struct</span> net *, <span class="hljs-type">void</span> __user *))</span>
+{
+    mutex_lock(&amp;vlan_ioctl_mutex);
+    vlan_ioctl_hook = hook;
+    mutex_unlock(&amp;vlan_ioctl_mutex);
+}
+</code></pre></div></code></pre>
+<p><code>sock_ioctl</code> 里遇到 <code>SIOCGIFVLAN</code>、<code>SIOCSIFVLAN</code> 两个命令号，就转给 <code>vlan_ioctl_hook</code>。这个钩子的设计意图是把 VLAN 从 socket 层解耦——<code>net/socket.c</code> 不需要知道 VLAN 存在，只需要知道有个钩子。你读 <code>sock_ioctl</code> 时看到 <code>vlan_ioctl_hook</code> 是 <code>NULL</code> 判断，原因就在这：模块没加载时它是空的。再看层次，一个 <code>eth0.100</code> 在协议栈里长这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>发送：IP 层选中 eth0.100 --&gt; vlan_dev_hard_start_xmit（dev=eth0.100）
+       --&gt; skb-&gt;dev 改成 eth0 --&gt; dev_queue_xmit --&gt; 驱动 --&gt; 带 4 字节标签出线
+
+接收：网卡 DMA --&gt; netif_receive_skb --&gt; 0x8100 --&gt; vlan_skb_recv
+       --&gt; skb-&gt;dev 改成 eth0.100，剥掉标签 --&gt; netif_rx 再走一遍
+       --&gt; IP 层看到的是 eth0.100 收的包
+</code></pre></div></code></pre>
+<p>这张图里有个点值得停一下：<strong>VLAN 设备对外是一个完整的 <code>net_device</code>，所以上层完全不知道标签这回事</strong>。你给 <code>eth0.100</code> 配 IP，路由表里出接口写 <code>eth0.100</code>，ARP 邻居表挂在 <code>eth0.100</code> 上，iptables 的 <code>-i eth0.100</code> 能用——这些能够成立，全靠 <code>net_device</code> 这一层抽象。内核没有为 VLAN 设备另造一套对象体系，这是它简洁的地方。</p>
+<p><code>register_vlan_device</code> 的注释写得很直白：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* Attach a VLAN device to a mac address (ie Ethernet Card).
+ * Returns 0 if the device was created or a negative error code otherwise.
+ */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">register_vlan_device</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net_device *real_dev, u16 vlan_id)</span>
+</code></pre></div></code></pre>
+<p>「Attach a VLAN device to a mac address」——挂到一块网卡的 MAC 地址上。这句话就是模块的全部含义。</p>
+<p>模块的整体架构可以拆成四块，后文按这四块展开：</p>
+<ol>
+<li><code>struct net_device</code> 的接口函数实现。VLAN 设备也是 <code>net_device</code>，就必须提供 <code>header_ops</code> 和 <code>netdev_ops</code>，包括 <code>vlan_dev_hard_header</code>、<code>vlan_dev_hard_start_xmit</code>、<code>vlan_dev_open</code>、<code>vlan_dev_stop</code>。</li>
+<li>和 socket 模块的关联。应用层要能建/删 VLAN 设备、设优先级映射，走的就是 ioctl 那条路。</li>
+<li>协议栈的收发处理函数。发送走 <code>ndo_start_xmit</code>，接收走 <code>packet_type.func</code> 加 <code>netif_receive_skb</code> 里的预剥标签。</li>
+<li>调试手段。一个成熟模块得能看状态，VLAN 在 procfs 里注册了 <code>/proc/net/vlan/</code>。</li>
+</ol>
+<p>把这四块记住，再看任何一个具体函数，你都知道它在哪一格。</p>
+<h2 id="二核心数据结构-vlan_dev_priv" tabindex="-1">二、核心数据结构 vlan_dev_priv <a class="header-anchor" href="#二核心数据结构-vlan_dev_priv"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先看帧头，这是理解一切的起点。802.1Q 标签就是 4 个字节：2 字节 TCI（Priority 3 bit + DEI 1 bit + VID 12 bit）加 2 字节内层协议类型。内核把它拆成两个结构体。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/**
+ * struct vlan_ethhdr - vlan ethernet header (ethhdr + vlan_hdr)
+ * @h_dest: destination ethernet address
+ * @h_source: source ethernet address
+ * @h_vlan_proto: ethernet protocol
+ * @h_vlan_TCI: priority and VLAN ID
+ * @h_vlan_encapsulated_proto: packet type ID or len
+ */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_ethhdr</span> {</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> h_dest[ETH_ALEN];
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> h_source[ETH_ALEN];
+    __be16        h_vlan_proto;
+    __be16        h_vlan_TCI;
+    __be16        h_vlan_encapsulated_proto;
+};
+
+<span class="hljs-comment">/*
+ * struct vlan_hdr - vlan header
+ * @h_vlan_TCI: priority and VLAN ID
+ * @h_vlan_encapsulated_proto: packet type ID or len
+ */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_hdr</span> {</span>
+    __be16 h_vlan_TCI;
+    __be16 h_vlan_encapsulated_proto;
+};
+</code></pre></div></code></pre>
+<p>两个结构体的关系是包含：<code>vlan_hdr</code> 是 <code>vlan_ethhdr</code> 的后 4 字节。<code>vlan_ethhdr</code> 用于「从帧头开始看整帧」，<code>vlan_hdr</code> 用于「<code>skb-&gt;data</code> 已经指到标签位置」的场景。<code>sizeof(struct vlan_ethhdr)</code> 是 <code>VLAN_ETH_HLEN</code> 即 18，<code>sizeof(struct vlan_hdr)</code> 是 <code>VLAN_HLEN</code> 即 4，<code>ETH_HLEN</code> 是 14。这三个常量在收发代码里到处出现，记牢。</p>
+<p><code>h_vlan_proto</code> 的注释写「Should always be 0x8100」，但内核留了扩展余地：<code>VLAN_PROTO_NUM</code> 支持两种，<code>ETH_P_8021Q</code>（0x8100）和 <code>ETH_P_8021AD</code>（0x88a8，QinQ 外层）。所以后续很多函数签名里带一个 <code>__be16 vlan_proto</code> 参数，用 <code>vlan_proto_idx()</code> 换算成数组下标。</p>
+<p>外层还有个容易搞混的点：帧里有两个「类型」字段。<code>h_vlan_proto</code> 是 0x8100，告诉对端「这是个 802.1Q 标签帧」；<code>h_vlan_encapsulated_proto</code> 是内层真实协议，比如 0x0800（IP）或 0x0806（ARP）。读代码时看到 <code>vlan_set_encap_proto</code> 从后者取值往 <code>skb-&gt;protocol</code> 里塞，不要惊讶。</p>
+<p>接下来是本篇的主角：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/**
+ * struct vlan_dev_priv - VLAN private device data
+ * @nr_ingress_mappings: number of ingress priority mappings
+ * @ingress_priority_map: ingress priority mappings
+ * @nr_egress_mappings: number of egress priority mappings
+ * @egress_priority_map: hash of egress priority mappings
+ * @vlan_id: VLAN identifier
+ * @flags: device flags
+ * @real_dev: underlying netdevice
+ * @real_dev_addr: address of underlying netdevice
+ * @dent: proc dir entry
+ * @cnt_inc_headroom_on_tx: statistic - number of skb expansions on TX
+ * @cnt_encap_on_xmit: statistic - number of skb encapsulations on TX
+ */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_dev_priv</span> {</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>                nr_ingress_mappings;
+    u32                         ingress_priority_map[<span class="hljs-number">8</span>];
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span>                nr_egress_mappings;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_priority_tci_mapping</span> *<span class="hljs-title">egress_priority_map</span>[16];</span>
+
+    u16                         vlan_id;
+    u16                         flags;
+    __be16                      vlan_proto;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span>           *<span class="hljs-title">real_dev</span>;</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span>               real_dev_addr[ETH_ALEN];
+
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">proc_dir_entry</span>       *<span class="hljs-title">dent</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_pcpu_stats</span> __<span class="hljs-title">percpu</span> *<span class="hljs-title">vlan_pcpu_stats</span>;</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>               cnt_inc_headroom_on_tx;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>               cnt_encap_on_xmit;
+
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">netdev_hw_addr_list</span>  <span class="hljs-title">mc</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span>           <span class="hljs-title">hlist</span>;</span>
+};
+</code></pre></div></code></pre>
+<p>字段逐个过一遍，这张表建议记住前五个：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+<th>读代码时注意什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>vlan_id</code></td>
+<td>这个虚拟设备的 VID，12 bit</td>
+<td>建好之后不可改，改 VID 要删了重建</td>
+</tr>
+<tr>
+<td><code>flags</code></td>
+<td><code>VLAN_FLAG_REORDER_HDR</code> / <code>GVRP</code> / <code>LOOSE_BINDING</code> / <code>MVRP</code></td>
+<td>决定收发路径走哪一支，最关键的开关</td>
+</tr>
+<tr>
+<td><code>real_dev</code></td>
+<td>底下那块真实网卡</td>
+<td>所有收发的终点，<code>skb-&gt;dev</code> 最终指向它</td>
+</tr>
+<tr>
+<td><code>real_dev_addr</code></td>
+<td>建设备时抄下来的真实网卡 MAC</td>
+<td>真实网卡 MAC 变了不影响已建好的 VLAN 设备</td>
+</tr>
+<tr>
+<td><code>vlan_proto</code></td>
+<td>0x8100 或 0x88a8</td>
+<td>决定发出去的标签外层协议号</td>
+</tr>
+<tr>
+<td><code>egress_priority_map[16]</code></td>
+<td>发送方向 skb 优先级到 802.1p 的映射哈希</td>
+<td>数组下标是 <code>skb_prio &amp; 0xF</code>，冲突挂链</td>
+</tr>
+<tr>
+<td><code>ingress_priority_map[8]</code></td>
+<td>接收方向 802.1p 到 skb 优先级的映射</td>
+<td>下标是 <code>vlan_prio &amp; 0x7</code>，3 bit 直接寻址</td>
+</tr>
+<tr>
+<td><code>dent</code></td>
+<td><code>/proc/net/vlan/&lt;name&gt;</code> 的目录项</td>
+<td>卸载设备要记得摘掉</td>
+</tr>
+<tr>
+<td><code>vlan_pcpu_stats</code></td>
+<td>每 CPU 统计</td>
+<td>无锁累加，读的时候要处理撕裂</td>
+</tr>
+<tr>
+<td><code>hlist</code></td>
+<td>挂到 <code>real_dev-&gt;vlan_list</code> 上的节点</td>
+<td>3.10 之后靠它找设备</td>
+</tr>
+<tr>
+<td><code>mc</code></td>
+<td>组播 MAC 列表</td>
+<td>配合 IGMP Snooping 用</td>
+</tr>
+</tbody>
+</table></div><p>内存怎么来的？<code>alloc_netdev(sizeof(struct vlan_dev_priv), name, vlan_setup)</code>。<code>alloc_netdev</code> 会在 <code>net_device</code> 后面多分配这么一块私有空间，<code>vlan_dev_priv(dev)</code> 就是 <code>netdev_priv(dev)</code> 的包装：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-keyword">struct</span> vlan_dev_priv *<span class="hljs-title function_">vlan_dev_priv</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> net_device *dev)</span>
+{
+    <span class="hljs-keyword">return</span> netdev_priv(dev);
+}
+</code></pre></div></code></pre>
+<p>所以拿到 <code>net_device *</code> 就等于拿到了全部 VLAN 私有数据，一次指针偏移而已，没有查表。</p>
+<p>一个坑：老文章里这个结构体叫 <code>struct vlan_dev_info</code>，取数据的宏叫 <code>vlan_dev_info(dev)</code>。这个命名在 linux 3.10 左右被改成了 <code>vlan_dev_priv</code>。你照 2.6 的文章去 3.14 的代码里搜 <code>vlan_dev_info</code>，搜不到，别以为代码被删了。</p>
+<p>还差一个历史包袱要交代：<code>struct vlan_group</code>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_group</span> {</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> nr_vlan_devs;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_node</span> <span class="hljs-title">hlist</span>;</span>                        <span class="hljs-comment">/* linked list */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> **<span class="hljs-title">vlan_devices_arrays</span>[<span class="hljs-title">VLAN_PROTO_NUM</span>]
+                                             [<span class="hljs-title">VLAN_GROUP_ARRAY_SPLIT_PARTS</span>];</span>
+};
+</code></pre></div></code></pre>
+<p>这是 2.6 / 早期 3.x 的做法：一块真实网卡上挂的所有 VLAN 设备，塞进一个二维指针数组，第一维是协议（0x8100 / 0x88a8），第二维是 VID 分段；数组本身又挂在一个全局哈希表上：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">hlist_head</span> <span class="hljs-title">vlan_group_hash</span>[<span class="hljs-title">VLAN_GRP_HASH_SIZE</span>];</span>
+</code></pre></div></code></pre>
+<p>为什么不把链表头直接塞进 <code>struct net_device</code>？源码作者自己讨论过这个问题：塞进去查找更快，省掉哈希计算；但每个 <code>net_device</code> 都要多一个链表指针，全系统几万个设备就是几万次额外内存。这是内存和性能的取舍。</p>
+<p>查找和设置就围绕这个二维数组：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 功能：根据 vlan id 以及 vlan_group 变量，查找符合条件的 vlan device */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-keyword">struct</span> net_device *<span class="hljs-title function_">vlan_group_get_device</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> vlan_group *vg,
+                                                       __be16 vlan_proto,
+                                                       u16 vlan_id)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> **<span class="hljs-title">array</span>;</span>
+    <span class="hljs-built_in">array</span> = vg-&gt;vlan_devices_arrays[vlan_proto_idx(vlan_proto)]
+                                   [vlan_id / VLAN_GROUP_ARRAY_PART_LEN];
+    <span class="hljs-keyword">return</span> <span class="hljs-built_in">array</span> ? <span class="hljs-built_in">array</span>[vlan_id % VLAN_GROUP_ARRAY_PART_LEN] : <span class="hljs-literal">NULL</span>;
+}
+
+<span class="hljs-comment">/* 功能：在 vlan_devices_arrays 中增加相应的 vlan 设备。
+ * 由于是直接增加设备，没有进行存在性判断，因此在调用该函数之前，
+ * 应该调用 vlan_group_get_device 判断要添加的 vlan 设备是否已存在。 */</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">vlan_group_set_device</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> vlan_group *vg, __be16 vlan_proto,
+                                         u16 vlan_id, <span class="hljs-keyword">struct</span> net_device *dev)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> **<span class="hljs-title">array</span>;</span>
+    <span class="hljs-keyword">if</span> (!vg)
+        <span class="hljs-keyword">return</span>;
+    <span class="hljs-built_in">array</span> = vg-&gt;vlan_devices_arrays[vlan_proto_idx(vlan_proto)]
+                                   [vlan_id / VLAN_GROUP_ARRAY_PART_LEN];
+    <span class="hljs-built_in">array</span>[vlan_id % VLAN_GROUP_ARRAY_PART_LEN] = dev;
+}
+</code></pre></div></code></pre>
+<p>用 CIDR 分段是为了省内存：VID 有 4096 个，一次性铺满太浪费，按 <code>VLAN_GROUP_ARRAY_PART_LEN</code> 切段，用到哪段才分配哪段。</p>
+<p>到了 3.10 之后，<code>vlan_group</code> 被整个删掉了，取而代之的是 <code>struct net_device</code> 里一个 <code>struct list_head vlan_list</code>，所有 VLAN 设备通过 <code>vlan_dev_priv(dev)-&gt;hlist</code> 挂上去。查找退化成遍历链表：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *__<span class="hljs-title">vlan_find_dev_deep</span>(<span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *<span class="hljs-title">real_dev</span>,
+                                        __<span class="hljs-title">be16</span> <span class="hljs-title">vlan_proto</span>, <span class="hljs-title">u16</span> <span class="hljs-title">vlan_id</span>)
+{</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_dev_priv</span> *<span class="hljs-title">vlan</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *<span class="hljs-title">dev</span>, *<span class="hljs-title">found</span> =</span> <span class="hljs-literal">NULL</span>;
+
+    <span class="hljs-keyword">if</span> (vlan_id &lt; VLAN_VID_MASK) {
+        rcu_read_lock();
+        vlan = vlan_dev_priv(real_dev);
+        <span class="hljs-keyword">if</span> (vlan-&gt;vlan_id == vlan_id &amp;&amp; vlan-&gt;vlan_proto == vlan_proto)
+            found = real_dev;
+        <span class="hljs-keyword">else</span>
+            hlist_for_each_entry_rcu(vlan, &amp;real_dev-&gt;vlan_list, hlist) {
+                dev = vlan-&gt;real_dev;
+                <span class="hljs-keyword">if</span> (vlan-&gt;vlan_id == vlan_id &amp;&amp;
+                    vlan-&gt;vlan_proto == vlan_proto) {
+                    found = dev;
+                    <span class="hljs-keyword">break</span>;
+                }
+            }
+        rcu_read_unlock();
+    }
+    <span class="hljs-keyword">return</span> found;
+}
+</code></pre></div></code></pre>
+<p>一块网卡上挂不了几个 VLAN，遍历比哈希更快也更好写。老代码里的 <code>VLAN_GROUP_ARRAY_SPLIT_PARTS</code>、<code>vlan_group_hash</code> 这些符号在新内核里全没了，读到相关分析要能分清年代。</p>
+<p>数据结构的账到此结清。后面所有流程都只操作这几样东西：<code>vlan_dev_priv</code> 里的 <code>vlan_id</code>、<code>flags</code>、<code>real_dev</code>，外加 <code>skb</code> 上的 <code>vlan_tci</code> 字段。</p>
+<h2 id="三vlan-设备的注册与创建" tabindex="-1">三、VLAN 设备的注册与创建 <a class="header-anchor" href="#三vlan-设备的注册与创建"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>建一个 VLAN 设备有两条入口，殊途同归：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ip link add link eth0 name eth0.100 type vlan id 100
+        └─&gt; rtnl_link_ops-&gt;newlink = vlan_newlink
+                                        └─&gt; register_vlan_dev
+
+vconfig add eth0 100
+        └─&gt; ioctl(SIOCSIFVLAN) -&gt; vlan_ioctl_handler
+                                        └─&gt; ADD_VLAN_CMD
+                                                └─&gt; register_vlan_device
+</code></pre></div></code></pre>
+<p><code>register_vlan_device</code> 是两条路的汇合点，也是整个模块最值得读的函数之一。它做的事用一句话说清：申请一个 <code>net_device</code>，把 VLAN 私有数据填好，把 <code>netdev_ops</code> 指到 VLAN 自己的那套回调上，然后注册进系统。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* Attach a VLAN device to a mac address (ie Ethernet Card).
+ * Returns 0 if the device was created or a negative error code otherwise.
+ */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">register_vlan_device</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net_device *real_dev, u16 vlan_id)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *<span class="hljs-title">new_dev</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_dev_priv</span> *<span class="hljs-title">vlan</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net</span> *<span class="hljs-title">net</span> =</span> dev_net(real_dev);
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_net</span> *<span class="hljs-title">vn</span> =</span> net_generic(net, vlan_net_id);
+    <span class="hljs-type">char</span> name[IFNAMSIZ];
+    <span class="hljs-type">int</span> err;
+
+    <span class="hljs-keyword">if</span> (vlan_id &gt;= VLAN_VID_MASK)
+        <span class="hljs-keyword">return</span> -ERANGE;
+
+    err = vlan_check_real_dev(real_dev, htons(ETH_P_8021Q), vlan_id);
+    <span class="hljs-keyword">if</span> (err &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">return</span> err;
+
+    <span class="hljs-comment">/* Gotta set up the fields for the device. */</span>
+    <span class="hljs-keyword">switch</span> (vn-&gt;name_type) {
+    <span class="hljs-keyword">case</span> VLAN_NAME_TYPE_RAW_PLUS_VID:
+        <span class="hljs-comment">/* name will look like: eth1.0005 */</span>
+        <span class="hljs-built_in">snprintf</span>(name, IFNAMSIZ, <span class="hljs-string">&quot;%s.%.4i&quot;</span>, real_dev-&gt;name, vlan_id);
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">case</span> VLAN_NAME_TYPE_PLUS_VID_NO_PAD:
+        <span class="hljs-comment">/* Put our vlan.VID in the name.
+         * Name will look like: vlan5
+         */</span>
+        <span class="hljs-built_in">snprintf</span>(name, IFNAMSIZ, <span class="hljs-string">&quot;vlan%i&quot;</span>, vlan_id);
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">case</span> VLAN_NAME_TYPE_RAW_PLUS_VID_NO_PAD:
+        <span class="hljs-comment">/* Put our vlan.VID in the name.
+         * Name will look like: eth0.5
+         */</span>
+        <span class="hljs-built_in">snprintf</span>(name, IFNAMSIZ, <span class="hljs-string">&quot;%s.%i&quot;</span>, real_dev-&gt;name, vlan_id);
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">case</span> VLAN_NAME_TYPE_PLUS_VID:
+        <span class="hljs-comment">/* Put our vlan.VID in the name.
+         * Name will look like: vlan0005
+         */</span>
+    <span class="hljs-keyword">default</span>:
+        <span class="hljs-built_in">snprintf</span>(name, IFNAMSIZ, <span class="hljs-string">&quot;vlan%.4i&quot;</span>, vlan_id);
+    }
+
+    new_dev = alloc_netdev(<span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> vlan_dev_priv), name, vlan_setup);
+    <span class="hljs-keyword">if</span> (new_dev == <span class="hljs-literal">NULL</span>)
+        <span class="hljs-keyword">return</span> -ENOBUFS;
+
+    dev_net_set(new_dev, net);
+    <span class="hljs-comment">/* need 4 bytes for extra VLAN header info,
+     * hope the underlying device can handle it. */</span>
+    new_dev-&gt;mtu = real_dev-&gt;mtu;
+    new_dev-&gt;priv_flags |= (real_dev-&gt;priv_flags &amp; IFF_UNICAST_FLT);
+
+    vlan = vlan_dev_priv(new_dev);
+    vlan-&gt;vlan_proto = htons(ETH_P_8021Q);
+    vlan-&gt;vlan_id = vlan_id;
+    vlan-&gt;real_dev = real_dev;
+    vlan-&gt;dent = <span class="hljs-literal">NULL</span>;
+    vlan-&gt;flags = VLAN_FLAG_REORDER_HDR;
+
+    new_dev-&gt;rtnl_link_ops = &amp;vlan_link_ops;
+
+    err = register_vlan_dev(new_dev);
+    <span class="hljs-keyword">if</span> (err &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> out_free_newdev;
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+out_free_newdev:
+    free_netdev(new_dev);
+    <span class="hljs-keyword">return</span> err;
+}
+</code></pre></div></code></pre>
+<p>按段落拆开看。</p>
+<p>第一段是参数校验。<code>VLAN_VID_MASK</code> 是 <code>0x0fff</code>，<code>vlan_id &gt;= 0x0fff</code> 直接返回 <code>-ERANGE</code>。注意这里用的是 <code>&gt;=</code> 不是 <code>&gt;</code>，所以 VID 0 到 4094 合法，4095（<code>0x0fff</code>）被挡掉。0 和 4095 是协议保留值，4095 尤其不能碰——它在某些实现里表示「任意 VLAN」。</p>
+<p><code>vlan_check_real_dev</code> 检查两件事：真实网卡支不支持 VLAN，以及这个 VID 在此网卡上是不是已经建过了。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">vlan_check_real_dev</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net_device *real_dev,
+                               __be16 protocol, u16 vlan_id)</span>
+{
+    <span class="hljs-type">const</span> <span class="hljs-type">char</span> *name = real_dev-&gt;name;
+
+    <span class="hljs-keyword">if</span> (real_dev-&gt;features &amp; NETIF_F_VLAN_CHALLENGED) {
+        pr_info(<span class="hljs-string">&quot;VLANs not supported on %s\n&quot;</span>, name);
+        <span class="hljs-keyword">return</span> -EOPNOTSUPP;
+    }
+
+    <span class="hljs-keyword">if</span> (vlan_find_dev(real_dev, protocol, vlan_id) != <span class="hljs-literal">NULL</span>)
+        <span class="hljs-keyword">return</span> -EEXIST;
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>NETIF_F_VLAN_CHALLENGE</code>（代码里是 <code>NETIF_F_VLAN_CHALLENGED</code>）这个 feature 标记的意思是「这块网卡发不出超过自身 MTU 的帧」。有些老网卡、还有部分软件设备会置这个位，因为插了 4 字节标签后帧长超了它承受上限。这也是为什么 <code>new_dev-&gt;mtu</code> 直接照抄 <code>real_dev-&gt;mtu</code>——标签的 4 字节要从报文里挪出空间，而不是把 MTU 撑大。</p>
+<p><code>-EEXIST</code> 那条保证了「一个真实网卡的每个 VID 只对应一个 VLAN 设备」。这个唯一性是整个模块的地基，查找函数都建立在这个前提上。</p>
+<p>第二段是命名。四种命名策略由网络命名空间级的 <code>/proc/net/vlan/config</code> 里那一行 <code>VLAN Dev name | VLAN ID</code> 控制，用 <code>SET_VLAN_NAME_TYPE_CMD</code> 改：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>策略</th>
+<th>结果示例</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>VLAN_NAME_TYPE_RAW_PLUS_VID</code></td>
+<td><code>eth0.0100</code></td>
+<td>默认值，四位补零</td>
+</tr>
+<tr>
+<td><code>VLAN_NAME_TYPE_PLUS_VID_NO_PAD</code></td>
+<td><code>vlan100</code></td>
+<td>名字里不带真实网卡名</td>
+</tr>
+<tr>
+<td><code>VLAN_NAME_TYPE_RAW_PLUS_VID_NO_PAD</code></td>
+<td><code>eth0.100</code></td>
+<td>不补零，最符合直觉</td>
+</tr>
+<tr>
+<td><code>VLAN_NAME_TYPE_PLUS_VID</code></td>
+<td><code>vlan0100</code></td>
+<td>不补零的反面</td>
+</tr>
+</tbody>
+</table></div><p>注意 <code>vlan_newlink</code>（netlink 那条路）用的是用户指定的名字，不走这个 switch；<code>name_type</code> 只影响老 ioctl 接口和按默认规则生成的设备。</p>
+<p>第三段是 <code>alloc_netdev</code>。三个参数要看清：私有数据大小 <code>sizeof(struct vlan_dev_priv)</code>、设备名、以及 <code>vlan_setup</code>。<code>vlan_setup</code> 是设备的初始化回调，在 <code>alloc_netdev</code> 内部就被调用，负责把以太网那一套默认值铺好：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">vlan_setup</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net_device *dev)</span>
+{
+    ether_setup(dev);
+
+    dev-&gt;priv_flags     |= IFF_802_1Q_VLAN;
+    dev-&gt;priv_flags     &amp;= ~IFF_XMIT_DST_RELEASE;
+    dev-&gt;tx_queue_len   = <span class="hljs-number">0</span>;
+
+    dev-&gt;netdev_ops     = &amp;vlan_netdev_ops;
+    dev-&gt;destructor     = vlan_dev_free;
+    dev-&gt;ethtool_ops    = &amp;vlan_ethtool_ops;
+
+    <span class="hljs-built_in">memset</span>(dev-&gt;broadcast, <span class="hljs-number">0</span>, ETH_ALEN);
+}
+</code></pre></div></code></pre>
+<p><code>IFF_802_1Q_VLAN</code> 是关键标记，<code>is_vlan_dev(dev)</code> 就是查它：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">bool</span> <span class="hljs-title function_">is_vlan_dev</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> net_device *dev)</span>
+{
+    <span class="hljs-keyword">return</span> dev-&gt;priv_flags &amp; IFF_802_1Q_VLAN;
+}
+</code></pre></div></code></pre>
+<p><code>tx_queue_len = 0</code> 意思是不给这个设备排队——VLAN 设备只是个转发层，真正的队列在下面的真实网卡上，再排一次队纯属浪费。</p>
+<p>第四段填私有数据，五个字段：</p>
+<ul>
+<li><code>vlan_proto = htons(ETH_P_8021Q)</code>，标签外层 0x8100。</li>
+<li><code>vlan_id = vlan_id</code>，VID。</li>
+<li><code>real_dev = real_dev</code>，挂靠的真实网卡。</li>
+<li><code>dent = NULL</code>，procfs 目录项等注册成功后再加。</li>
+<li><code>flags = VLAN_FLAG_REORDER_HDR</code>，默认开<strong>重排头</strong>。这个位决定收发时标签的插入时机，第五章细说。</li>
+</ul>
+<p>第五段 <code>register_vlan_dev</code>，光看名字像是「注册设备」，实际还多两件事：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">register_vlan_dev</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net_device *dev)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_dev_priv</span> *<span class="hljs-title">vlan</span> =</span> vlan_dev_priv(dev);
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *<span class="hljs-title">real_dev</span> =</span> vlan-&gt;real_dev;
+    <span class="hljs-type">int</span> err;
+
+    <span class="hljs-comment">/* Account for reference in struct vlan_dev_priv */</span>
+    dev_hold(real_dev);
+
+    err = netdev_upper_dev_link(real_dev, dev);
+    <span class="hljs-keyword">if</span> (err)
+        <span class="hljs-keyword">goto</span> unregister;
+
+    err = register_netdevice(dev);
+    <span class="hljs-keyword">if</span> (err &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> unregister_netdev;
+
+    <span class="hljs-comment">/* Account for the class address for this device */</span>
+    dev_hold(dev);
+    vlan-&gt;dent = vlan_proc_add_dev(dev);
+    pr_info(<span class="hljs-string">&quot;adding VLAN %d to %s\n&quot;</span>, vlan-&gt;vlan_id, real_dev-&gt;name);
+
+    hlist_add_head_rcu(&amp;vlan-&gt;hlist, &amp;real_dev-&gt;vlan_list);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+    ...
+}
+</code></pre></div></code></pre>
+<p>三件事：<code>dev_hold(real_dev)</code> 给真实网卡加引用计数，<code>netdev_upper_dev_link</code> 建立上下层从属关系（<code>ip link</code> 输出里那层 <code>master</code>/<code>vlan</code> 的缩进就是它），<code>hlist_add_head_rcu</code> 挂进 <code>real_dev-&gt;vlan_list</code> 供查找。<code>dev_hold(dev)</code> 是给 procfs 那个 class 地址加的账。卸载时逐项反向拆掉，<code>unregister_vlan_dev</code> 里一一对应。</p>
+<p>老 ioctl 那条路由 <code>vlan_ioctl_handler</code> 走。它先 <code>copy_from_user</code> 把参数捞进来，然后加 <code>rtnl_lock</code>——因为接下来要动设备链表，必须拿全局 RTNL 锁：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">vlan_ioctl_handler</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net *net, <span class="hljs-type">void</span> __user *arg)</span>
+{
+    <span class="hljs-type">int</span> err;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_ioctl_args</span> <span class="hljs-title">args</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *<span class="hljs-title">dev</span> =</span> <span class="hljs-literal">NULL</span>;
+
+    <span class="hljs-keyword">if</span> (copy_from_user(&amp;args, arg, <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> vlan_ioctl_args)))
+        <span class="hljs-keyword">return</span> -EFAULT;
+
+    <span class="hljs-comment">/* Null terminate this sucker, just in case. */</span>
+    args.device1[<span class="hljs-number">23</span>] = <span class="hljs-number">0</span>;
+    args.u.device2[<span class="hljs-number">23</span>] = <span class="hljs-number">0</span>;
+
+    rtnl_lock();
+
+    <span class="hljs-comment">/* 第一个 switch 只做公共前置检查：设备存在、是不是 VLAN 设备 */</span>
+    <span class="hljs-keyword">switch</span> (args.cmd) {
+    <span class="hljs-keyword">case</span> SET_VLAN_INGRESS_PRIORITY_CMD:
+    <span class="hljs-keyword">case</span> SET_VLAN_EGRESS_PRIORITY_CMD:
+    <span class="hljs-keyword">case</span> SET_VLAN_FLAG_CMD:
+    <span class="hljs-keyword">case</span> ADD_VLAN_CMD:
+    <span class="hljs-keyword">case</span> DEL_VLAN_CMD:
+    <span class="hljs-keyword">case</span> GET_VLAN_REALDEV_NAME_CMD:
+    <span class="hljs-keyword">case</span> GET_VLAN_VID_CMD:
+        err = -ENODEV;
+        dev = __dev_get_by_name(net, args.device1);
+        <span class="hljs-keyword">if</span> (!dev)
+            <span class="hljs-keyword">goto</span> out;
+
+        err = -EINVAL;
+        <span class="hljs-keyword">if</span> (args.cmd != ADD_VLAN_CMD &amp;&amp; !is_vlan_dev(dev))
+            <span class="hljs-keyword">goto</span> out;
+    }
+
+    <span class="hljs-keyword">switch</span> (args.cmd) {
+    <span class="hljs-keyword">case</span> ADD_VLAN_CMD:
+        err = -EPERM;
+        <span class="hljs-keyword">if</span> (!ns_capable(net-&gt;user_ns, CAP_NET_ADMIN))
+            <span class="hljs-keyword">break</span>;
+        err = register_vlan_device(dev, args.u.VID);
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> DEL_VLAN_CMD:
+        err = -EPERM;
+        <span class="hljs-keyword">if</span> (!ns_capable(net-&gt;user_ns, CAP_NET_ADMIN))
+            <span class="hljs-keyword">break</span>;
+        unregister_vlan_dev(dev, <span class="hljs-literal">NULL</span>);
+        err = <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> GET_VLAN_REALDEV_NAME_CMD:
+        err = <span class="hljs-number">0</span>;
+        vlan_dev_get_realdev_name(dev, args.u.device2);
+        <span class="hljs-keyword">if</span> (copy_to_user(arg, &amp;args, <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> vlan_ioctl_args)))
+            err = -EFAULT;
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> GET_VLAN_VID_CMD:
+        err = <span class="hljs-number">0</span>;
+        args.u.VID = vlan_dev_vlan_id(dev);
+        <span class="hljs-keyword">if</span> (copy_to_user(arg, &amp;args, <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> vlan_ioctl_args)))
+            err = -EFAULT;
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> SET_VLAN_INGRESS_PRIORITY_CMD:
+        err = -EPERM;
+        <span class="hljs-keyword">if</span> (!ns_capable(net-&gt;user_ns, CAP_NET_ADMIN))
+            <span class="hljs-keyword">break</span>;
+        vlan_dev_set_ingress_priority(dev, args.u.skb_priority, args.vlan_qos);
+        err = <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-keyword">case</span> SET_VLAN_NAME_TYPE_CMD:
+        err = -EPERM;
+        <span class="hljs-keyword">if</span> (!ns_capable(net-&gt;user_ns, CAP_NET_ADMIN))
+            <span class="hljs-keyword">break</span>;
+        <span class="hljs-keyword">if</span> ((args.u.name_type &gt;= <span class="hljs-number">0</span>) &amp;&amp;
+            (args.u.name_type &lt; VLAN_NAME_TYPE_HIGHEST)) {
+            <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_net</span> *<span class="hljs-title">vn</span>;</span>
+            vn = net_generic(net, vlan_net_id);
+            vn-&gt;name_type = args.u.name_type;
+            err = <span class="hljs-number">0</span>;
+        } <span class="hljs-keyword">else</span> {
+            err = -EINVAL;
+        }
+        <span class="hljs-keyword">break</span>;
+
+    <span class="hljs-comment">/* 为省篇幅略去两个 case 的完整代码：
+     * SET_VLAN_EGRESS_PRIORITY_CMD -&gt; vlan_dev_set_egress_priority
+     * SET_VLAN_FLAG_CMD           -&gt; vlan_dev_change_flags */</span>
+
+    <span class="hljs-keyword">default</span>:
+        err = -EOPNOTSUPP;
+        <span class="hljs-keyword">break</span>;
+    }
+
+out:
+    rtnl_unlock();
+    <span class="hljs-keyword">return</span> err;
+}
+</code></pre></div></code></pre>
+<p>两个 switch 的写法值得学：第一个 switch 只做「参数里指定的设备是否存在、是不是 VLAN 设备」的公共前置检查，靠 fallthrough 空 case 把命令聚成一组；第二个 switch 才真正执行。<code>ADD_VLAN_CMD</code> 是唯一允许操作非 VLAN 设备的命令——它要传真实网卡名字，本来就是普通设备。</p>
+<p><code>args.device1[23] = 0</code> 那两行是防越界的兜底。<code>IFNAMSIZ</code> 是 16，但结构体里这个字段开了 24 字节，用户态塞满不带 <code>\0</code> 也能用。</p>
+<p>两个小函数顺手看完，都只做一次指针偏移，没有查表：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 根据 vlan device 的名称，获取其所依附的 real device 的名称 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">vlan_dev_get_realdev_name</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> net_device *dev, <span class="hljs-type">char</span> *result)</span>
+{
+    <span class="hljs-built_in">strncpy</span>(result, vlan_dev_priv(dev)-&gt;real_dev-&gt;name, <span class="hljs-number">23</span>);
+}
+</code></pre></div></code></pre>
+<p><code>vlan_dev_vlan_id(dev)</code> 同理，返回 <code>vlan_dev_priv(dev)-&gt;vlan_id</code>。那个 <code>23</code> 就是 <code>IFNAMSIZ</code> 减一，是上面 <code>args.device1[23] = 0</code> 的来源。</p>
+<p>设备建好之后，<code>eth0.100</code> 出现在 <code>ip link</code> 里，但还没有 IP、没有 up。它能不能工作，取决于底下 <code>eth0</code> 的状态，也取决于它自己的 <code>netdev_ops</code>——下一章。</p>
+<h2 id="四vlan_opsnetdev_ops-的实现" tabindex="-1">四、vlan_ops：netdev_ops 的实现 <a class="header-anchor" href="#四vlan_opsnetdev_ops-的实现"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>vlan_setup</code> 里把 <code>dev-&gt;netdev_ops</code> 指向了 <code>vlan_netdev_ops</code>，但这只是一份「兜底」赋值。真正定下来是在 <code>vlan_dev_init</code> 里，它会根据真实网卡有没有硬件 VLAN 能力，在两个 ops 表之间选一个：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">vlan_dev_init</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net_device *dev)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_dev_priv</span> *<span class="hljs-title">vlan</span> =</span> vlan_dev_priv(dev);
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *<span class="hljs-title">real_dev</span> =</span> vlan-&gt;real_dev;
+
+    <span class="hljs-comment">/* 根据 real device 是否支持 NETIF_F_HW_VLAN_TX，
+     * 让 vlan device 的 netdev_ops 指向不同的接口函数。 */</span>
+    <span class="hljs-keyword">if</span> (real_dev-&gt;features &amp; NETIF_F_HW_VLAN_CTAG_TX) {
+        dev-&gt;header_ops      = real_dev-&gt;header_ops;
+        dev-&gt;hard_header_len = real_dev-&gt;hard_header_len;
+        dev-&gt;netdev_ops      = &amp;vlan_netdev_accel_ops;
+        dev-&gt;vlan_features   = real_dev-&gt;vlan_features;
+    } <span class="hljs-keyword">else</span> {
+        dev-&gt;header_ops      = &amp;vlan_header_ops;
+        dev-&gt;hard_header_len = real_dev-&gt;hard_header_len + VLAN_HLEN;
+        dev-&gt;netdev_ops      = &amp;vlan_netdev_ops;
+    }
+
+    dev-&gt;needed_headroom = real_dev-&gt;needed_headroom;
+
+    <span class="hljs-keyword">if</span> (is_vlan_dev(real_dev))
+        dev-&gt;features &amp;= ~(NETIF_F_TSO | NETIF_F_TSO6);
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>这段是硬件加速和软件路径的分岔口，第七、八两章反复回来看它。现在先记住两点结论：</p>
+<ul>
+<li>网卡能自己插标签（<code>NETIF_F_HW_VLAN_CTAG_TX</code>）→ 用 <code>vlan_netdev_accel_ops</code>，<code>hard_header_len</code> 不含那 4 字节，也不改 <code>header_ops</code>。</li>
+<li>网卡不能 → 用 <code>vlan_netdev_ops</code>，<code>hard_header_len = real_dev-&gt;hard_header_len + VLAN_HLEN</code>（18 而不是 14），<code>header_ops</code> 换成 VLAN 自己那套。</li>
+</ul>
+<p><code>hard_header_len</code> 加 4 不是摆设。上层按它算 headroom，<code>skb_realloc_headroom</code> 会多留 4 字节，正好够 <code>skb_push</code> 塞标签。</p>
+<p><code>vlan_dev_init</code> 挂在哪？它是 <code>netdev_ops-&gt;ndo_init</code>。设备注册时 <code>register_netdevice</code> 会调一次，返回非 0 就注册失败。对应的 <code>ndo_uninit</code> 是 <code>vlan_dev_uninit</code>，负责 <code>vlan_vid_del</code> 撤掉协议注册。</p>
+<p><code>vlan_netdev_ops</code> 这张表不长，逐项都有明确用意：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>回调</th>
+<th>VLAN 实现</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ndo_init</code></td>
+<td><code>vlan_dev_init</code></td>
+<td>选 ops 表、设 header_ops 和 hard_header_len</td>
+</tr>
+<tr>
+<td><code>ndo_uninit</code></td>
+<td><code>vlan_dev_uninit</code></td>
+<td>撤掉 VID 相关的协议注册</td>
+</tr>
+<tr>
+<td><code>ndo_open</code></td>
+<td><code>vlan_dev_open</code></td>
+<td>同步单播/组播地址、检查下层状态</td>
+</tr>
+<tr>
+<td><code>ndo_stop</code></td>
+<td><code>vlan_dev_stop</code></td>
+<td>摘掉组播同步</td>
+</tr>
+<tr>
+<td><code>ndo_start_xmit</code></td>
+<td><code>vlan_dev_hard_start_xmit</code></td>
+<td>发送，插标签的入口</td>
+</tr>
+<tr>
+<td><code>ndo_change_rx_flags</code></td>
+<td><code>vlan_dev_change_rx_flags</code></td>
+<td>透传混杂模式开关到真实网卡</td>
+</tr>
+<tr>
+<td><code>ndo_set_rx_mode</code></td>
+<td><code>vlan_dev_set_rx_mode</code></td>
+<td>组播地址表同步</td>
+</tr>
+<tr>
+<td><code>ndo_fix_features</code></td>
+<td><code>vlan_fix_features</code></td>
+<td>按真实网卡能力裁 capabilities</td>
+</tr>
+<tr>
+<td><code>ndo_get_stats64</code></td>
+<td><code>vlan_dev_get_stats64</code></td>
+<td>汇总每 CPU 计数器</td>
+</tr>
+<tr>
+<td><code>ndo_neigh_setup</code></td>
+<td><code>vlan_neigh_setup</code></td>
+<td>让邻居表知道接口类型</td>
+</tr>
+</tbody>
+</table></div><p><code>open</code> 和 <code>stop</code> 得看行为。VLAN 设备没有自己的收发队列，<code>ndo_open</code>（<code>vlan_dev_open</code>）主要干四件事：</p>
+<ol>
+<li>查底层状态：<code>if (!(real_dev-&gt;flags &amp; IFF_UP) &amp;&amp; !(vlan-&gt;flags &amp; VLAN_FLAG_LOOSE_BINDING)) return -ENETDOWN;</code></li>
+<li><code>dev_uc_add(real_dev, dev-&gt;dev_addr)</code>：VLAN 设备的 MAC 和真实网卡不同时，把它注册到真实网卡的单播地址表。</li>
+<li><code>IFF_ALLMULTI</code> 时 <code>dev_set_allmulti(real_dev, 1)</code>，<code>IFF_PROMISC</code> 时 <code>dev_set_promiscuity(real_dev, 1)</code>。</li>
+<li><code>netif_carrier_off(dev)</code>，随后等真实网卡 carrier 变化时由 <code>netdev_upper_dev_link</code> 建的上层关系通知下来。</li>
+</ol>
+<p>第 1 条里的 <code>VLAN_FLAG_LOOSE_BINDING</code> 是实用开关。默认情况下底层网卡 down 了，VLAN 设备 up 会失败并返回 <code>-ENETDOWN</code>；打开 loose binding（<code>ip link set eth0.100 type vlan loose_binding on</code>）就允许在底层没 up 时先把 VLAN 设备 up 起来，等底层起来再通。做网络自动化脚本时这个位能省不少事。</p>
+<p>第 2、3 条是把 VLAN 设备的状态<strong>透传</strong>给真实网卡。为什么必须透传？因为真实网卡不认识 VLAN 设备，收到的帧是带标签的，混杂模式必须由真实网卡打开，才能把不属于自己 MAC 的帧也捞上来给 VLAN 层处理。</p>
+<p><code>ndo_stop</code>（<code>vlan_dev_stop</code>）是上面每一步的逆操作，逐个 <code>dev_uc_del</code>、<code>dev_set_allmulti(-1)</code>、<code>dev_set_promiscuity(-1)</code>、<code>dev_mc_unsync</code>。这类成对函数读源码时建议一起看，只读一半容易漏掉引用计数配平。</p>
+<p><code>ndo_change_rx_flags</code> 就是把上层改 <code>IFF_PROMISC</code>、<code>IFF_ALLMULTI</code> 的请求转给真实网卡：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">vlan_dev_change_rx_flags</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net_device *dev, <span class="hljs-type">int</span> change)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *<span class="hljs-title">real_dev</span> =</span> vlan_dev_priv(dev)-&gt;real_dev;
+
+    <span class="hljs-keyword">if</span> (dev-&gt;flags &amp; IFF_UP) {
+        <span class="hljs-keyword">if</span> (change &amp; IFF_ALLMULTI)
+            dev_set_allmulti(real_dev, dev-&gt;flags &amp; IFF_ALLMULTI ? <span class="hljs-number">1</span> : <span class="hljs-number">-1</span>);
+        <span class="hljs-keyword">if</span> (change &amp; IFF_PROMISC)
+            dev_set_promiscuity(real_dev,
+                                dev-&gt;flags &amp; IFF_PROMISC ? <span class="hljs-number">1</span> : <span class="hljs-number">-1</span>);
+    }
+}
+</code></pre></div></code></pre>
+<p><code>ndo_get_stats64</code>（<code>vlan_dev_get_stats64</code>）的处理方式在这里很有代表性。统计是 per-CPU 的，它 <code>for_each_possible_cpu</code> 逐个累加，读的时候用一对序列计数器函数 <code>u64_stats_fetch_begin_irq()</code> / <code>u64_stats_fetch_retry_irq()</code> 包住，写侧在 <code>u64_stats_update_begin/end</code> 里把 <code>syncp</code> 加一，读侧发现前后不一致就重读。VLAN 的收发统计全走这个机制，所以 <code>vlan_pcpu_stats</code> 里没有锁。</p>
+<p><code>header_ops</code> 这块是 VLAN 特有的，单独看。普通以太网设备的 <code>header_ops</code> 是 <code>eth_header</code> / <code>eth_rebuild_header</code>，VLAN 换成了自己的两个：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">const</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">header_ops</span> <span class="hljs-title">vlan_header_ops</span> =</span> {
+    .create  = vlan_dev_hard_header,
+    .rebuild = vlan_dev_rebuild_header,
+    .parse   = eth_header_parse,
+};
+</code></pre></div></code></pre>
+<p>先看 <code>vlan_dev_rebuild_header</code>。它只在一种场景被调用：第一次 <code>dev-&gt;hard_header</code> 时目的 IP 还没解析，目的 MAC 填不出来，等 ARP 回来后由它补上：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">vlan_dev_rebuild_header</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff *skb)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *<span class="hljs-title">dev</span> =</span> skb-&gt;dev;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_ethhdr</span> *<span class="hljs-title">veth</span> =</span> (<span class="hljs-keyword">struct</span> vlan_ethhdr *)(skb-&gt;data);
+
+    <span class="hljs-keyword">switch</span> (veth-&gt;h_vlan_encapsulated_proto) {
+<span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> CONFIG_INET</span>
+    <span class="hljs-keyword">case</span> <span class="hljs-title function_">htons</span><span class="hljs-params">(ETH_P_IP)</span>:
+        <span class="hljs-comment">/* <span class="hljs-doctag">TODO:</span> Confirm this will work with VLAN headers... */</span>
+        <span class="hljs-keyword">return</span> <span class="hljs-title function_">arp_find</span><span class="hljs-params">(veth-&gt;h_dest, skb)</span>;
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+    <span class="hljs-keyword">default</span>:
+        pr_debug(<span class="hljs-string">&quot;%s: unable to resolve type %X addresses\n&quot;</span>,
+                 dev-&gt;name, ntohs(veth-&gt;h_vlan_encapsulated_proto));
+        ether_addr_copy(veth-&gt;h_source, dev-&gt;dev_addr);
+        <span class="hljs-keyword">break</span>;
+    }
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>注意它是从 <code>h_vlan_encapsulated_proto</code> 取协议号的——因为 VLAN 设备的 <code>skb-&gt;data</code> 指向的是一个已经带标签的帧头，第 13、14 字节是 0x8100，真正的类型在偏移 16、17。</p>
+<p>再看 <code>vlan_dev_hard_header</code>，这个函数背后有个老问题，源码作者自己都在注释里打问号：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/*
+ * Create the VLAN header for an arbitrary protocol layer
+ *
+ * saddr=NULL means use device source address
+ * daddr=NULL means leave destination address (eg unresolved arp)
+ *
+ * This is called when the SKB is moving down the stack towards the
+ * physical devices.
+ */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">vlan_dev_hard_header</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff *skb, <span class="hljs-keyword">struct</span> net_device *dev,
+                                <span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> type,
+                                <span class="hljs-type">const</span> <span class="hljs-type">void</span> *daddr, <span class="hljs-type">const</span> <span class="hljs-type">void</span> *saddr,
+                                <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> len)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_dev_priv</span> *<span class="hljs-title">vlan</span> =</span> vlan_dev_priv(dev);
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_hdr</span> *<span class="hljs-title">vhdr</span>;</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> vhdrlen = <span class="hljs-number">0</span>;
+    u16 vlan_tci = <span class="hljs-number">0</span>;
+    <span class="hljs-type">int</span> rc;
+
+    <span class="hljs-keyword">if</span> (!(vlan-&gt;flags &amp; VLAN_FLAG_REORDER_HDR)) {
+        vhdr = (<span class="hljs-keyword">struct</span> vlan_hdr *) skb_push(skb, VLAN_HLEN);
+
+        vlan_tci = vlan-&gt;vlan_id;
+        vlan_tci |= vlan_dev_get_egress_qos_mask(dev, skb-&gt;priority);
+        vhdr-&gt;h_vlan_TCI = htons(vlan_tci);
+
+        <span class="hljs-comment">/*
+         * Set the protocol type. For a packet of type ETH_P_802_3/2 we
+         * put the length in here instead.
+         */</span>
+        <span class="hljs-keyword">if</span> (type != ETH_P_802_3 &amp;&amp; type != ETH_P_802_2)
+            vhdr-&gt;h_vlan_encapsulated_proto = htons(type);
+        <span class="hljs-keyword">else</span>
+            vhdr-&gt;h_vlan_encapsulated_proto = htons(len);
+
+        skb-&gt;protocol = vlan-&gt;vlan_proto;
+        type = ntohs(vlan-&gt;vlan_proto);
+        vhdrlen = VLAN_HLEN;
+    }
+
+    <span class="hljs-comment">/* Before delegating work to the lower layer, enter our MAC-address */</span>
+    <span class="hljs-keyword">if</span> (saddr == <span class="hljs-literal">NULL</span>)
+        saddr = dev-&gt;dev_addr;
+
+    <span class="hljs-comment">/* Now make the underlying real hard header */</span>
+    dev = vlan-&gt;real_dev;
+    rc = dev_hard_header(skb, dev, type, daddr, saddr, len + vhdrlen);
+    <span class="hljs-keyword">if</span> (rc &gt; <span class="hljs-number">0</span>)
+        rc += vhdrlen;
+    <span class="hljs-keyword">return</span> rc;
+}
+</code></pre></div></code></pre>
+<p>两条分支对应两种 <code>flags</code>：</p>
+<ol>
+<li><strong>支持重排头</strong>（<code>VLAN_FLAG_REORDER_HDR</code> 置位，默认）：这里只造普通二层头，不动标签。标签留给 <code>vlan_dev_hard_start_xmit</code> 加。</li>
+<li><strong>不支持重排头</strong>：这里就把 4 字节标签塞进去了，<code>vlan_dev_hard_start_xmit</code> 里不会再塞。</li>
+</ol>
+<p>源码作者留了个疑问：既然有不支持重排头的设备，那 <code>vlan_dev_hard_start_xmit</code> 里为什么没有按 <code>vlan-&gt;flags</code> 判断，而是去判断「包上是否已经有标签」？</p>
+<p>答案在 <code>vlan_dev_hard_start_xmit</code> 的判断条件里：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (veth-&gt;h_vlan_proto != vlan-&gt;vlan_proto ||
+    vlan-&gt;flags &amp; VLAN_FLAG_REORDER_HDR) {
+</code></pre></div></code></pre>
+<p>它既看 <code>h_vlan_proto</code> 又看 <code>flags</code>。只要包上已经有 0x8100，第一个条件就不成立，配合 <code>flags</code> 一或，整体为假，跳过插标签。所以不必再单独判断一次 <code>flags</code>。</p>
+<p>但这个写法本身有缺陷：<strong>它只看最外层有没有标签，判断不出是单层还是双层</strong>。想发 QinQ 双标签，第二次插标签的动作会被这个条件挡掉。要做双层标签只能改架构——把 <code>vlan_hwaccel_put_tag</code> 的检查逻辑换成语义化的「需要几层」，而不是「有没有」。这也是为什么内核后来引入了 <code>vlan_dev_priv-&gt;flags</code> 之外的 QinQ 支持（<code>8021ad</code> 模块），单靠 <code>8021q</code> 塞两层是做不到的。</p>
+<p><code>ndo_fix_features</code> 和 <code>vlan_features</code> 这条链要单独提一句：VLAN 设备对外宣告的 TSO/GSO/GRO 能力，来自真实网卡的 <code>vlan_features</code> 而不是 <code>features</code>。原因很直白——网卡如果连标签都处理不了，那它的分段卸载能力对带标签的帧也没意义。所以真实网卡驱动填 <code>vlan_features</code> 时只填「带标签也能做」的那部分能力。读驱动时看到 <code>netdev-&gt;vlan_features = ...</code> 就是填这个。</p>
+<h2 id="五发送路径加标签" tabindex="-1">五、发送路径：加标签 <a class="header-anchor" href="#五发送路径加标签"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>发送走两个函数，一个造头，一个发射。造头的是 <code>vlan_dev_hard_header</code>（上一章看过），发射的是 <code>ndo_start_xmit</code> 指向的 <code>vlan_dev_hard_start_xmit</code>。3.14 的实现：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">netdev_tx_t</span> <span class="hljs-title function_">vlan_dev_hard_start_xmit</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff *skb,
+                                            <span class="hljs-keyword">struct</span> net_device *dev)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_dev_priv</span> *<span class="hljs-title">vlan</span> =</span> vlan_dev_priv(dev);
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_ethhdr</span> *<span class="hljs-title">veth</span> =</span> (<span class="hljs-keyword">struct</span> vlan_ethhdr *)(skb-&gt;data);
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> len;
+    <span class="hljs-type">int</span> ret;
+
+    <span class="hljs-comment">/* Handle non-VLAN frames if they are sent to us, for example by DHCP.
+     *
+     * <span class="hljs-doctag">NOTE:</span> THIS ASSUMES DIX ETHERNET, SPECIFICALLY NOT SUPPORTING
+     * OTHER THINGS LIKE FDDI/TokenRing/802.3 SNAPs...
+     */</span>
+    <span class="hljs-keyword">if</span> (veth-&gt;h_vlan_proto != vlan-&gt;vlan_proto ||
+        vlan-&gt;flags &amp; VLAN_FLAG_REORDER_HDR) {
+        u16 vlan_tci;
+        vlan_tci = vlan-&gt;vlan_id;
+        vlan_tci |= vlan_dev_get_egress_qos_mask(dev, skb-&gt;priority);
+        skb = __vlan_hwaccel_put_tag(skb, vlan-&gt;vlan_proto, vlan_tci);
+    }
+
+    skb-&gt;dev = vlan-&gt;real_dev;
+    len = skb-&gt;len;
+    <span class="hljs-keyword">if</span> (unlikely(netpoll_tx_running(dev)))
+        <span class="hljs-keyword">return</span> vlan_netpoll_send_skb(vlan, skb);
+
+    ret = dev_queue_xmit(skb);
+
+    <span class="hljs-keyword">if</span> (likely(ret == NET_XMIT_SUCCESS || ret == NET_XMIT_CN)) {
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_pcpu_stats</span> *<span class="hljs-title">stats</span>;</span>
+        stats = this_cpu_ptr(vlan-&gt;vlan_pcpu_stats);
+        u64_stats_update_begin(&amp;stats-&gt;syncp);
+        stats-&gt;tx_packets++;
+        stats-&gt;tx_bytes += len;
+        u64_stats_update_end(&amp;stats-&gt;syncp);
+    } <span class="hljs-keyword">else</span> {
+        this_cpu_inc(vlan-&gt;vlan_pcpu_stats-&gt;tx_dropped);
+    }
+
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<p>四步，一步不能少：</p>
+<ol>
+<li>判断要不要打标签，要就打。</li>
+<li><code>skb-&gt;dev</code> 改成真实网卡。</li>
+<li><code>dev_queue_xmit</code> 交给下一层。</li>
+<li>记统计。</li>
+</ol>
+<p><strong>第 1 步是重点，也是最容易被误读的地方</strong>：<code>__vlan_hwaccel_put_tag</code> 并不往帧里插 4 个字节，它只改 <code>skb</code> 的两个字段：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sk_buff</span> *__<span class="hljs-title">vlan_hwaccel_put_tag</span>(<span class="hljs-keyword">struct</span> <span class="hljs-title">sk_buff</span> *<span class="hljs-title">skb</span>,
+                                                     __<span class="hljs-title">be16</span> <span class="hljs-title">vlan_proto</span>,
+                                                     <span class="hljs-title">u16</span> <span class="hljs-title">vlan_tci</span>)
+{</span>
+    skb-&gt;vlan_proto = vlan_proto;
+    skb-&gt;vlan_tci = vlan_tci | VLAN_TAG_PRESENT;
+    <span class="hljs-keyword">return</span> skb;
+}
+</code></pre></div></code></pre>
+<p><code>skb-&gt;vlan_tci</code> 是非线性区之外的一个 <code>__u16</code> 字段，<code>VLAN_TAG_PRESENT</code> 是 <code>0x1000</code>，用它当「这个 skb 声明自己带标签」的标记位。真正的 4 字节插入发生在后面 <code>dev_hard_start_xmit</code> 里——或者根本不在软件里发生，网卡自己插。</p>
+<p>所以 3.x 的发送路径可以这样概括：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>vlan_dev_hard_start_xmit  --&gt; 只设置 skb-&gt;vlan_tci，skb-&gt;dev = real_dev
+        |
+        v
+dev_queue_xmit --&gt; dev_hard_start_xmit
+        |
+        +--&gt; 网卡支持 HW VLAN TX：把 skb-&gt;vlan_tci 交给驱动，
+        |    驱动写进硬件的插入寄存器，网卡自己往帧里塞 4 字节
+        |
+        +--&gt; 网卡不支持：__vlan_insert_tag 在软件里 skb_push 4 字节
+</code></pre></div></code></pre>
+<p><code>vlan_dev_hard_start_xmit</code> 里那个 <code>if</code> 的语义值得抠一遍：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (veth-&gt;h_vlan_proto != vlan-&gt;vlan_proto ||
+    vlan-&gt;flags &amp; VLAN_FLAG_REORDER_HDR)
+</code></pre></div></code></pre>
+<p>第一种情况 <code>h_vlan_proto != vlan-&gt;vlan_proto</code>：帧头上不是 0x8100（也不是 0x88a8），说明这个包是干净的、没标签，得补上。这也是注释里说的「Handle non-VLAN frames if they are sent to us, for example by DHCP」——DHCP 客户端会在 VLAN 设备上直接发不带标签的帧。</p>
+<p>第二种情况 <code>flags &amp; VLAN_FLAG_REORDER_HDR</code>：默认位，见上一章的分析——<code>hard_header</code> 阶段没插标签，所以这里补。</p>
+<p>两个条件一或，覆盖了「该插标签」的全部场景；反过来说，帧头已经是 0x8100 且没有重排头标志时，说明标签已经在 <code>hard_header</code> 里插好了，跳过。</p>
+<p><code>vlan_dev_get_egress_qos_mask</code> 负责把 <code>skb-&gt;priority</code> 翻译成 802.1p 的三个 bit，填进 TCI 的高位：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>u16 <span class="hljs-title function_">vlan_dev_get_egress_qos_mask</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> net_device *dev, u32 skb_prio)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_priority_tci_mapping</span> *<span class="hljs-title">mp</span>;</span>
+
+    smp_rmb(); <span class="hljs-comment">/* coupled with smp_wmb() in vlan_dev_set_egress_priority() */</span>
+
+    mp = vlan_dev_priv(dev)-&gt;egress_priority_map[(skb_prio &amp; <span class="hljs-number">0xF</span>)];
+    <span class="hljs-keyword">while</span> (mp) {
+        <span class="hljs-keyword">if</span> (mp-&gt;priority == skb_prio)
+            <span class="hljs-keyword">return</span> mp-&gt;vlan_qos;
+        mp = mp-&gt;next;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>smp_rmb()</code> 和设置端（<code>vlan_dev_set_egress_priority</code>）的 <code>smp_wmb()</code> 配成一对。哈希桶是 <code>(skb_prio &amp; 0xF)</code>，桶内挂链。返回的 <code>vlan_qos</code> 已经左移好了：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>u32 vlan_qos = (vlan_prio &lt;&lt; VLAN_PRIO_SHIFT) &amp; VLAN_PRIO_MASK;
+</code></pre></div></code></pre>
+<p><code>VLAN_PRIO_SHIFT</code> 是 13，<code>VLAN_PRIO_MASK</code> 是 <code>0xe000</code>。TCI 的 bit15-13 是优先级，紧挨其上的 bit12 是 DEI，低 12 位是 VID，所以优先级要左移 13 位。<code>vlan_dev_set_egress_priority</code> 分两步：先在 <code>(skb_prio &amp; 0xF)</code> 那个桶的链表里找同 <code>priority</code> 的节点，找到就改 <code>vlan_qos</code> 并维护 <code>nr_egress_mappings</code>（只在值从 0 变非 0 或反之时动计数）；找不到就 <code>kmalloc</code> 一个新节点插到桶头，插之前先 <code>smp_wmb()</code> 保证字段都已落内存，再发布指针。</p>
+<p>第 2 步 <code>skb-&gt;dev = vlan-&gt;real_dev</code> 是整个发送路径的枢纽。在它之前 <code>dev</code> 是 <code>eth0.100</code>，之后 <code>skb-&gt;dev</code> 是 <code>eth0</code>。为什么必须在 <code>dev_queue_xmit</code> 之前改？因为 <code>dev_queue_xmit</code> 会拿 <code>skb-&gt;dev</code> 找发送队列、找 qdisc、找驱动的 <code>ndo_start_xmit</code>。指向虚拟设备会直接空指针。</p>
+<p>第 3 步前面那个 <code>netpoll_tx_running</code> 分支是网络控制台（netpoll）专用的旁路。netconsole 打印日志时走的是轮询模式，不能进正常队列，所以直接调 <code>vlan_netpoll_send_skb</code> 把标签插好再 <code>ndo_start_xmit</code>。</p>
+<p>第 4 步统计，注意 <code>len = skb-&gt;len</code> 是在 <code>dev_queue_xmit</code> <strong>之前</strong>取的——<code>dev_queue_xmit</code> 会改 skb（比如 GSO 分段），取完再用会算错字节数。</p>
+<p>老版本（2.6 / 早期 3.x）的发送函数长得不一样，标签是用 <code>__vlan_put_tag</code> 真往帧里插的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* linux 3.x 之前的实现，对照用 */</span>
+vlan_tci = vlan_dev_info(dev)-&gt;vlan_id;
+vlan_tci |= vlan_dev_get_egress_qos_mask(dev, skb);
+skb = __vlan_put_tag(skb, vlan_tci);   <span class="hljs-comment">/* 真往帧里插 4 字节 */</span>
+...
+skb-&gt;dev = vlan_dev_info(dev)-&gt;real_dev;   <span class="hljs-comment">/* 插完标签才改 dev */</span>
+</code></pre></div></code></pre>
+<p>差别列成表，读源码时按年代对号入座：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>项</th>
+<th>linux 3.x 以下</th>
+<th>linux 3.x 以上</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>插标签的函数</td>
+<td><code>__vlan_put_tag</code>，<code>skb_push</code> 4 字节</td>
+<td><code>__vlan_hwaccel_put_tag</code>，只写 <code>skb-&gt;vlan_tci</code></td>
+</tr>
+<tr>
+<td>插标签的位置</td>
+<td>VLAN 设备的 <code>ndo_start_xmit</code> 里</td>
+<td><code>dev_hard_start_xmit</code> 里，或网卡硬件里</td>
+</tr>
+<tr>
+<td><code>skb-&gt;dev</code> 何时改</td>
+<td>插完标签之后</td>
+<td>插标签之前</td>
+</tr>
+<tr>
+<td>需不需要算 headroom</td>
+<td>需要，还带计数器</td>
+<td><code>hard_header_len</code> 已经多算 4 字节</td>
+</tr>
+<tr>
+<td>双层标签</td>
+<td>同样不支持</td>
+<td>同样不支持</td>
+</tr>
+</tbody>
+</table></div><p>老实现还有个 <code>orig_headroom &lt; VLAN_HLEN</code> 的判断，不够就 <code>cnt_inc_headroom_on_tx++</code>。这两个统计字段（还有 <code>cnt_encap_on_xmit</code>）、以及 <code>vlan_dev_info</code> 这个旧名字，在新内核里都没了，老文章里出现时不要在新代码里找。</p>
+<h2 id="六接收路径剥标签" tabindex="-1">六、接收路径：剥标签 <a class="header-anchor" href="#六接收路径剥标签"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>接收比发送绕，因为有两条路径同时存在，取决于网卡有没有硬件 VLAN 能力：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>路径</th>
+<th>触发条件</th>
+<th>skb 状态</th>
+<th>处理函数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>硬件加速</td>
+<td>网卡剥离标签，置 <code>skb-&gt;vlan_tci</code></td>
+<td>帧里没有标签，<code>protocol</code> 已是内层类型</td>
+<td><code>vlan_hwaccel_do_receive</code></td>
+</tr>
+<tr>
+<td>软件路径</td>
+<td>帧里带 0x8100，<code>skb-&gt;protocol == 0x8100</code></td>
+<td>帧里 4 字节还在</td>
+<td><code>vlan_skb_recv</code></td>
+</tr>
+</tbody>
+</table></div><p>两条路径都在 <code>netif_receive_skb</code> 这个交汇点上分出来。3.14 的主干逻辑（裁掉和 VLAN 无关的）：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">netif_receive_skb</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff *skb)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">packet_type</span> *<span class="hljs-title">ptype</span>, *<span class="hljs-title">pt_prev</span>;</span>
+
+    <span class="hljs-comment">/* 这里是重点，但是只有网卡支持 VLAN 时才会设置 skb-&gt;vlan_tci */</span>
+    <span class="hljs-keyword">if</span> (skb-&gt;vlan_tci &amp;&amp; vlan_hwaccel_do_receive(skb))
+        <span class="hljs-keyword">return</span> NET_RX_SUCCESS;
+
+    <span class="hljs-comment">/* ……遍历 ptype_all 链表（ptype 为 ETH_P_ALL 的那些）…… */</span>
+
+    <span class="hljs-comment">/* bridge 逻辑（可以看到 bridge 逻辑在 VLAN 处理之前） */</span>
+    skb = handle_bridge(skb, &amp;pt_prev, &amp;ret, orig_dev);
+
+    <span class="hljs-comment">/* 这里和 VLAN 没有关系，而是 mac-vlan 的相关功能，
+     * 编译内核时选上 MAC_VLAN 模块，下面才会执行 */</span>
+    skb = handle_macvlan(skb, &amp;pt_prev, &amp;ret, orig_dev);
+
+    <span class="hljs-comment">/* 这里的 type 被置为 VLAN 协议，即 0x8100 */</span>
+    type = skb-&gt;protocol;
+
+    <span class="hljs-comment">/* 处理 ptype_base[ntohs(type) &amp; PTYPE_HASH_MASK] 上所有 packet_type-&gt;func() */</span>
+    list_for_each_entry_rcu(ptype,
+            &amp;ptype_base[ntohs(type) &amp; PTYPE_HASH_MASK], <span class="hljs-built_in">list</span>) {
+        <span class="hljs-keyword">if</span> (ptype-&gt;type == type &amp;&amp;
+            (ptype-&gt;dev == null_or_orig || ptype-&gt;dev == skb-&gt;dev ||
+             ptype-&gt;dev == orig_dev)) {
+            <span class="hljs-keyword">if</span> (pt_prev)          <span class="hljs-comment">/* 此时 orig_dev 为物理 dev，如 eth0 */</span>
+                ret = deliver_skb(skb, pt_prev, orig_dev);
+            pt_prev = ptype;
+        }
+    }
+}
+</code></pre></div></code></pre>
+<p>三个观察点。</p>
+<p>第一，<code>skb-&gt;vlan_tci &amp;&amp; vlan_hwaccel_do_receive(skb)</code> 这一行是硬件加速路径的入口，它在 <code>ptype_all</code> 遍历之前就把包处理掉了，直接返回。所以开了硬件 VLAN offload 的机器上，抓包工具在物理网卡上看到的是剥掉标签的帧。</p>
+<p>第二，为什么软件路径能命中？因为<strong>不支持 VLAN 的网卡把 0x8100 当普通 ethertype 收上来</strong>。驱动填 <code>skb-&gt;protocol</code> 的规则是「取帧的第 13、14 字节」，也就是 <code>h_vlan_proto</code>，于是 <code>skb-&gt;protocol</code> 就成了 0x8100。这行为在协议栈看来和收到了一个「以太网类型为 0x8100 的帧」没区别，于是按常规去 <code>ptype_base</code> 哈希桶里找注册了这个类型的处理函数。</p>
+<p>第三，<code>handle_bridge</code> 排在 VLAN 之前。这个顺序有实际影响，第八章讲。</p>
+<p><code>ptype_base</code> 里那个 0x8100 的处理函数，是模块加载时注册的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">packet_type</span> <span class="hljs-title">vlan_packet_type</span> __<span class="hljs-title">read_mostly</span> =</span> {
+    .type = cpu_to_be16(ETH_P_8021Q),
+    .func = vlan_skb_recv,   <span class="hljs-comment">/* VLAN receive method */</span>
+};
+</code></pre></div></code></pre>
+<p>所以软件路径的下一步就是 <code>vlan_skb_recv</code>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">vlan_skb_recv</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff *skb, <span class="hljs-keyword">struct</span> net_device *dev,
+                  <span class="hljs-keyword">struct</span> packet_type *ptype, <span class="hljs-keyword">struct</span> net_device *orig_dev)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_hdr</span> *<span class="hljs-title">vhdr</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device_stats</span> *<span class="hljs-title">stats</span>;</span>
+    u16 vlan_id;
+    u16 vlan_tci;
+
+    <span class="hljs-comment">/* skb_share_check() 会调用 3 个函数：skb_shared()、skb_clone()、kfree_skb()，
+     * 都很重要。skb_shared() 检查 skb-&gt;users 数目是否为 1，不为 1 则表示有多个
+     * 协议栈模块要处理它，此时就需要使用 skb_clone() 来复制一份 skb；
+     * kfree_skb() 并不一定释放 skb，只有当 skb-&gt;users 为 1 时，才会释放；
+     * 否则只是递减 skb-&gt;users。 */</span>
+    skb = skb_share_check(skb, GFP_ATOMIC);
+    <span class="hljs-keyword">if</span> (skb == <span class="hljs-literal">NULL</span>)
+        <span class="hljs-keyword">goto</span> err_free;
+
+    <span class="hljs-comment">/* VLAN_HLEN 的值为 4 */</span>
+    <span class="hljs-keyword">if</span> (unlikely(!pskb_may_pull(skb, VLAN_HLEN)))
+        <span class="hljs-keyword">goto</span> err_free;
+
+    <span class="hljs-comment">/* 从 skb 中获取到 vlan_id */</span>
+    vhdr = (<span class="hljs-keyword">struct</span> vlan_hdr *)skb-&gt;data;
+    vlan_tci = ntohs(vhdr-&gt;h_vlan_TCI);
+    vlan_id = vlan_tci &amp; VLAN_VID_MASK;
+
+    rcu_read_lock();
+
+    <span class="hljs-comment">/* 这一步是核心，此时 skb-&gt;dev 为真正的设备，经过 vlan 处理后，
+     * 报文应该被上层协议看作是由 vlan 虚拟设备接收的，
+     * 因此这里设置 skb-&gt;dev 为虚拟的 vlan 设备。 */</span>
+    skb-&gt;dev = __find_vlan_dev(dev, vlan_id);
+    <span class="hljs-keyword">if</span> (!skb-&gt;dev)
+        <span class="hljs-keyword">goto</span> err_unlock;
+
+    <span class="hljs-comment">/* 更新设备统计计数 */</span>
+    stats = &amp;skb-&gt;dev-&gt;stats;
+    stats-&gt;rx_packets++;
+    stats-&gt;rx_bytes += skb-&gt;len;
+
+    <span class="hljs-comment">/* 更新校验和，此时 data 指向了真正的数据字段，如 ip 或 arp 头 */</span>
+    skb_pull_rcsum(skb, VLAN_HLEN);
+
+    skb-&gt;priority = vlan_get_ingress_priority(skb-&gt;dev, vlan_tci);
+
+    vlan_set_encap_proto(skb, vhdr);   <span class="hljs-comment">/* 重新设置 skb-&gt;protocol */</span>
+
+    skb = vlan_check_reorder_header(skb);   <span class="hljs-comment">/* 去掉报文中的 VLAN tag */</span>
+    <span class="hljs-keyword">if</span> (!skb)
+        <span class="hljs-keyword">goto</span> err_unlock;
+
+    netif_rx(skb);   <span class="hljs-comment">/* 再次送回协议栈 */</span>
+
+    rcu_read_unlock();
+    <span class="hljs-keyword">return</span> NET_RX_SUCCESS;
+
+err_unlock:
+    rcu_read_unlock();
+err_free:
+    kfree_skb(skb);
+    <span class="hljs-keyword">return</span> NET_RX_DROP;
+}
+</code></pre></div></code></pre>
+<p>逐段读。</p>
+<p><code>skb_share_check</code> 是必需的。这个 skb 走到这里时会被别的模块引用着（比如抓包程序、或者 <code>ptype_all</code> 上其他协议的处理函数），要改它就得先复制。<code>skb-&gt;users</code> 为 1 原样返回，大于 1 就 <code>skb_clone</code> 一份。</p>
+<p><code>pskb_may_pull(skb, VLAN_HLEN)</code> 保证 <code>skb-&gt;data</code> 处至少有 4 个字节线性可读。标签如果落在非线性（分页）的片段里，这时 <code>pskb_may_pull</code> 会把它拉到线性区。没这一步，直接解引用 <code>vhdr-&gt;h_vlan_TCI</code> 就是读越界。</p>
+<p><code>SKB 数据结构</code>这块有个细节容易错：<code>vhdr = (struct vlan_hdr *)skb-&gt;data</code>。此时 <code>skb-&gt;data</code> 指向的是标签起点，不是帧头。因为驱动在 <code>eth_type_trans</code> 里已经 <code>skb_pull</code> 过 14 字节了。所以 <code>skb-&gt;data</code> 正好落在 TCI 上。</p>
+<p><code>__find_vlan_dev(dev, vlan_id)</code> 用真实设备和 VID 找到虚拟设备。找不到就丢弃——说明这块网卡上没建过这个 VID 的 VLAN 设备，这个带标签的帧没人要。</p>
+<p><code>skb_pull_rcsum(skb, VLAN_HLEN)</code> 同时做两件事：<code>skb_pull</code> 把 4 字节标签从线性区摘掉（<code>data</code> 后移 4），<code>rcsum</code> 修正校验和。如果上一步是硬件校验和卸载（<code>CHECKSUM_UNNECESSARY</code>），<code>rcsum</code> 会改成 <code>CHECKSUM_COMPLETE</code> 让后面的协议层重算。<strong>注意它只动 <code>data</code> 指针，帧内容没变</strong>——标签 4 字节还留在那块内存里，只是不在 <code>data</code> 之前了。</p>
+<p><code>vlan_set_encap_proto</code> 把 <code>skb-&gt;protocol</code> 从 0x8100 改成内层的真实类型：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-type">void</span> <span class="hljs-title function_">vlan_set_encap_proto</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff *skb,
+                                        <span class="hljs-keyword">struct</span> vlan_hdr *vhdr)</span>
+{
+    __be16 proto;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">char</span> *rawp;
+
+    <span class="hljs-comment">/* 根据 VLAN 的报文格式可知，vhdr-&gt;h_vlan_encapsulated_proto
+     * 就是真正以太网帧的类型，如 IP、ARP */</span>
+    proto = vhdr-&gt;h_vlan_encapsulated_proto;
+
+    <span class="hljs-keyword">if</span> (ntohs(proto) &gt;= <span class="hljs-number">1536</span>) {
+        skb-&gt;protocol = proto;
+        <span class="hljs-keyword">return</span>;
+    }
+
+    rawp = skb-&gt;data;
+    <span class="hljs-keyword">if</span> (*(<span class="hljs-type">unsigned</span> <span class="hljs-type">short</span> *)rawp == <span class="hljs-number">0xFFFF</span>)
+        skb-&gt;protocol = htons(ETH_P_802_3);
+    <span class="hljs-keyword">else</span>
+        skb-&gt;protocol = htons(ETH_P_802_2);
+}
+</code></pre></div></code></pre>
+<p>1536 是 0x0600，以太网 II 与 802.3 的分界线。小于它说明那个字段是长度而不是类型，于是按 802.3 处理：以 0xFFFF 开头是 <code>ETH_P_802_3</code>（原生的 802.3 帧），否则 <code>ETH_P_802_2</code>（带 LLC 的）。</p>
+<p><code>vlan_check_reorder_header</code> 处理标签残留在报文里的问题：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-keyword">struct</span> sk_buff *<span class="hljs-title function_">vlan_check_reorder_header</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff *skb)</span>
+{
+    <span class="hljs-keyword">if</span> (vlan_dev_priv(skb-&gt;dev)-&gt;flags &amp; VLAN_FLAG_REORDER_HDR) {
+        <span class="hljs-keyword">if</span> (skb_cow(skb, skb_headroom(skb)) &lt; <span class="hljs-number">0</span>)
+            skb = <span class="hljs-literal">NULL</span>;
+        <span class="hljs-keyword">if</span> (skb) {
+            <span class="hljs-comment">/* 这个是重点，ETH_HLEN＝14，VLAN_ETH_HLEN＝18 */</span>
+            memmove(skb-&gt;data - ETH_HLEN,
+                    skb-&gt;data - VLAN_ETH_HLEN, <span class="hljs-number">12</span>);
+            skb-&gt;mac_header += VLAN_HLEN;   <span class="hljs-comment">/* VLAN_HLEN=4 */</span>
+        }
+    }
+    <span class="hljs-keyword">return</span> skb;
+}
+</code></pre></div></code></pre>
+<p>为什么不直接 <code>skb_pull</code>？因为 <code>skb_pull</code> 只挪 <code>data</code> 指针，帧头里那 4 字节的洞还在。上层拿到帧后按「14 字节以太网头 + payload」解释，中间夹着 4 字节垃圾就全乱了。所以这里要把 MAC 头挪回去，用拷贝覆盖的方式消掉那个洞。</p>
+<p><code>memmove</code> 的三个参数：目的 <code>skb-&gt;data - ETH_HLEN</code>（离开 14 字节处），源 <code>skb-&gt;data - VLAN_ETH_HLEN</code>（离开 18 字节处），长度 12——只搬两个 MAC 地址（6+6），因为后面两个类型字段已经被 <code>skb_pull</code> 处理掉了。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>处理前：  [dst 6B][src 6B][0x8100 2B][TCI 2B][内层类型 2B][payload]
+                                     ^data 指向这里（已 pull 14 字节）
+处理后：  [dst 6B][src 6B][内层类型 2B][payload]
+          ^---------- memmove 12 字节把 dst+src 前移 4 字节 ----------^
+</code></pre></div></code></pre>
+<p><code>skb-&gt;mac_header += VLAN_HLEN</code> 同步 MAC 头偏移，不然 <code>skb_mac_header(skb)</code> 会指错位置，后面 netfilter 取 MAC 头就取到标签上去了。</p>
+<p>开 <code>skb_cow</code> 是因为要原地改帧内容，得先确保这块 skb 是私有的、可写的。</p>
+<p>最后 <code>netif_rx(skb)</code> 把包<strong>再送回协议栈一次</strong>。因为 <code>skb-&gt;dev</code> 已经变成了 <code>eth0.100</code>、<code>skb-&gt;protocol</code> 已经变成内层类型、标签已经抹掉，第二次进 <code>netif_receive_skb</code> 时走的完全是另一条路：bridge 不会重复处理（有标志位）、0x8100 的 <code>packet_type</code> 不会再命中（<code>protocol</code> 变了），直接进 IP/ARP 的处理函数。</p>
+<p><code>netif_receive_skb</code> 这个函数在报文接收中会<strong>多次进入</strong>，这一点读代码时要有心理准备：网卡驱动收到报文是第一趟（<code>dev=eth0</code>），bridge 处理完后重入一趟（<code>dev</code> 换成 <code>br0</code> 或另一个口），vlan 处理完成后又重入一趟（<code>dev=eth0.100</code>）。</p>
+<p>bridge 处理完会设置标志，再次进入时 <code>handle_bridge</code> 会跳过，所以不会死循环。VLAN 这一趟同理——<code>skb-&gt;vlan_tci</code> 已被清零、<code>protocol</code> 已改，硬件加速分支和 0x8100 分支都不会再命中。</p>
+<p>3.x 还有另一条更常用的路径，不再走 <code>netif_rx</code> 重入，而是在 <code>netif_receive_skb</code> 内部就地转换。这就是 <code>vlan_untag</code> 加 <code>vlan_do_receive</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">bool</span> <span class="hljs-title function_">vlan_do_receive</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff **skbp)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sk_buff</span> *<span class="hljs-title">skb</span> =</span> *skbp;
+    __be16 vlan_proto = skb-&gt;vlan_proto;
+    u16 vlan_id = vlan_tx_tag_get_id(skb);
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">net_device</span> *<span class="hljs-title">vlan_dev</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_pcpu_stats</span> *<span class="hljs-title">rx_stats</span>;</span>
+
+    vlan_dev = vlan_find_dev(skb-&gt;dev, vlan_proto, vlan_id);
+    <span class="hljs-keyword">if</span> (!vlan_dev)
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+
+    skb = *skbp = skb_share_check(skb, GFP_ATOMIC);
+    <span class="hljs-keyword">if</span> (unlikely(!skb))
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+
+    skb-&gt;dev = vlan_dev;
+    <span class="hljs-keyword">if</span> (skb-&gt;pkt_type == PACKET_OTHERHOST) {
+        <span class="hljs-comment">/* 下层认为不是本机的，再比一次：允许 VLAN 设备的 MAC 与底层不同 */</span>
+        <span class="hljs-keyword">if</span> (ether_addr_equal(eth_hdr(skb)-&gt;h_dest, vlan_dev-&gt;dev_addr))
+            skb-&gt;pkt_type = PACKET_HOST;
+    }
+
+    <span class="hljs-keyword">if</span> (!(vlan_dev_priv(vlan_dev)-&gt;flags &amp; VLAN_FLAG_REORDER_HDR)) {
+        <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> offset = skb-&gt;data - skb_mac_header(skb);
+        <span class="hljs-comment">/* vlan_insert_tag 要求 skb-&gt;data 指向 mac header，
+         * 所以先挪回去，插完再挪回原位 */</span>
+        skb_push(skb, offset);
+        skb = *skbp = vlan_insert_tag(skb, skb-&gt;vlan_proto, skb-&gt;vlan_tci);
+        <span class="hljs-keyword">if</span> (!skb)
+            <span class="hljs-keyword">return</span> <span class="hljs-literal">false</span>;
+        skb_pull(skb, offset + VLAN_HLEN);
+        skb_reset_mac_len(skb);
+    }
+
+    skb-&gt;priority = vlan_get_ingress_priority(vlan_dev, skb-&gt;vlan_tci);
+    skb-&gt;vlan_tci = <span class="hljs-number">0</span>;
+
+    rx_stats = this_cpu_ptr(vlan_dev_priv(vlan_dev)-&gt;vlan_pcpu_stats);
+    u64_stats_update_begin(&amp;rx_stats-&gt;syncp);
+    rx_stats-&gt;rx_packets++;
+    rx_stats-&gt;rx_bytes += skb-&gt;len;
+    <span class="hljs-keyword">if</span> (skb-&gt;pkt_type == PACKET_MULTICAST)
+        rx_stats-&gt;rx_multicast++;
+    u64_stats_update_end(&amp;rx_stats-&gt;syncp);
+
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+}
+</code></pre></div></code></pre>
+<p>这个函数有个反直觉的地方：<strong>关掉重排头时它把标签插回去</strong>。因为关了重排头的设备，上层期望看到的帧头里带标签（和发送路径对称），而此时标签已经被剥到 <code>skb-&gt;vlan_tci</code> 里了，得重新 <code>vlan_insert_tag</code> 塞回帧里。插进去之后 <code>skb_pull(offset + VLAN_HLEN)</code> 把 <code>data</code> 挪回原位，<code>skb_reset_mac_len</code> 修正 MAC 长度。</p>
+<p><code>PACKET_OTHERHOST</code> 那一段解决一个实际问题：真实网卡和 VLAN 设备的 MAC 可以不同。驱动判断「目的 MAC 不是我的」就标成 <code>PACKET_OTHERHOST</code> 准备丢掉，但 VLAN 设备认这个 MAC。所以这里再比一次，命中就升级成 <code>PACKET_HOST</code>，否则路由会错。</p>
+<p><code>vlan_do_receive</code> 返回 <code>true</code> 表示「这个包归我处理了」，调用方 <code>__netif_receive_skb_core</code> 会直接进上层协议分发，不再走 <code>netif_rx</code> 那一圈。返回 <code>false</code> 表示不是 VLAN 包或者找不到对应设备，交回主干继续。</p>
+<p>两套实现放一起对照：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>项</th>
+<th>linux 2.6.x</th>
+<th>linux 3.x</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>接收注册方式</td>
+<td><code>dev_add_pack</code>，注册进三层协议链表</td>
+<td><code>packet_type</code> 加 <code>netif_receive_skb</code> 里的 <code>vlan_untag</code></td>
+</tr>
+<tr>
+<td>剥标签的位置</td>
+<td>VLAN 的接收函数里，改完 <code>skb-&gt;dev</code> 之后</td>
+<td><code>netif_receive_skb</code> 里，改 <code>skb-&gt;dev</code> 之前</td>
+</tr>
+<tr>
+<td>二次入栈</td>
+<td><code>netif_rx</code> 送回去</td>
+<td>就地转换，省掉 <code>netif_rx</code></td>
+</tr>
+<tr>
+<td>发送插标签位置</td>
+<td>VLAN 设备的 <code>ndo_start_xmit</code>（<code>__vlan_put_tag</code>）</td>
+<td><code>dev_hard_start_xmit</code> 或硬件（<code>__vlan_hwaccel_put_tag</code>）</td>
+</tr>
+<tr>
+<td>一句话概括</td>
+<td>在 vlan dev 处加/剥标签</td>
+<td>在 real dev 处加/剥标签</td>
+</tr>
+</tbody>
+</table></div><p>最后这张表的最后一行是理解整个演进的钥匙：老实现把 VLAN 当「一个独立设备的事」，新实现把 VLAN 当「一块网卡的事」——标签在真实网卡这一层统一处理，VLAN 设备退化成纯粹的身份标识。这也解释了为什么 <code>skb-&gt;vlan_tci</code> 要设计成一个独立字段而不是帧内数据。</p>
+<h2 id="七硬件加速与软件处理" tabindex="-1">七、硬件加速与软件处理 <a class="header-anchor" href="#七硬件加速与软件处理"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前面两章反复出现「网卡支持就……否则……」的分叉，这一章把两条路合并成一张图看清。</p>
+<p>标志位是这四对，名字随内核版本改过一次（<code>_CTAG_</code> 是 3.10 之后加的）：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>feature 位</th>
+<th>含义</th>
+<th>出现在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NETIF_F_HW_VLAN_CTAG_TX</code></td>
+<td>硬件负责在发送时插标签</td>
+<td>网卡驱动的 <code>features</code></td>
+</tr>
+<tr>
+<td><code>NETIF_F_HW_VLAN_CTAG_RX</code></td>
+<td>硬件负责在接收时剥标签并填 <code>skb-&gt;vlan_tci</code></td>
+<td>网卡驱动的 <code>features</code></td>
+</tr>
+<tr>
+<td><code>NETIF_F_HW_VLAN_CTAG_FILTER</code></td>
+<td>硬件能做 VLAN 过滤</td>
+<td>网卡驱动的 <code>features</code></td>
+</tr>
+<tr>
+<td><code>NETIF_F_HW_VLAN_STAG_TX</code></td>
+<td>对 0x88a8 外层标签的插标签能力</td>
+<td>同上，QinQ 用</td>
+</tr>
+</tbody>
+</table></div><p><code>vlan_dev_init</code> 只看 TX 那一位就决定 ops 表，因为发送路径完全由它决定；RX 那一位不改变 VLAN 设备的代码路径，只改变 skb 进来时的形态。</p>
+<p><strong>软件发送</strong>：<code>__vlan_hwaccel_put_tag</code> 设好 <code>skb-&gt;vlan_tci</code>，<code>skb-&gt;dev</code> 改成真实网卡，<code>dev_queue_xmit</code> 下去。到 <code>dev_hard_start_xmit</code> 里发现有 <code>VLAN_TAG_PRESENT</code> 而网卡没能力，就 <code>__vlan_insert_tag</code> 在软件里 <code>skb_push</code> 4 字节，把 TCI 和 <code>encapsulated_proto</code> 填好，再交给驱动：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* net/core/dev.c，dev_hard_start_xmit 里的关键几行 */</span>
+<span class="hljs-keyword">if</span> (skb_vlan_tag_present(skb) &amp;&amp;
+    !vlan_hw_offload_capable(netif_skb_features(skb), skb-&gt;vlan_proto)) {
+    skb = __vlan_insert_tag(skb, skb-&gt;vlan_proto, skb_vlan_tag_get(skb));
+    skb-&gt;vlan_tci = <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><strong>硬件发送</strong>：<code>dev_hard_start_xmit</code> 把 skb 原样交给驱动，驱动从 <code>skb-&gt;vlan_tci</code> 里取出 TCI 写进网卡的插入寄存器，网卡在发帧时自己补 4 字节。软件里从头到尾没出现过那 4 字节。</p>
+<p><strong>硬件接收</strong>：网卡剥掉标签，把 TCI 放进接收描述符，驱动 <code>__vlan_hwaccel_put_tag</code> 填到 <code>skb-&gt;vlan_tci</code>，<code>skb-&gt;protocol</code> 已经是内层类型。<code>netif_receive_skb</code> 一进门就命中 <code>skb-&gt;vlan_tci &amp;&amp; vlan_hwaccel_do_receive(skb)</code>，直接 <code>return NET_RX_SUCCESS</code>。软件接收则是帧带着 4 字节上来、<code>skb-&gt;protocol == 0x8100</code>，走 <code>vlan_skb_recv</code>。四条路放一张表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th></th>
+<th>软件路径</th>
+<th>硬件路径</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>发送插标签</td>
+<td><code>dev_hard_start_xmit</code> 里 <code>skb_push(4)</code></td>
+<td>网卡硬件插，软件不碰帧</td>
+</tr>
+<tr>
+<td>发送时 <code>skb-&gt;vlan_tci</code></td>
+<td>有值，仅作中转</td>
+<td>有值，驱动读走</td>
+</tr>
+<tr>
+<td>接收剥标签</td>
+<td><code>vlan_skb_recv</code> 里 <code>skb_pull(4)</code> 加 <code>memmove</code></td>
+<td>网卡剥，进栈时已无标签</td>
+</tr>
+<tr>
+<td>接收时 <code>skb-&gt;protocol</code></td>
+<td>0x8100，需要 <code>vlan_set_encap_proto</code> 改</td>
+<td>已是内层类型</td>
+</tr>
+<tr>
+<td>抓包看到什么</td>
+<td>物理网卡上带标签，VLAN 设备上不带</td>
+<td>两边都不带标签</td>
+</tr>
+<tr>
+<td>性能</td>
+<td>每包多一次 <code>skb_push</code>/<code>memmove</code></td>
+<td>零拷贝，省 CPU</td>
+</tr>
+</tbody>
+</table></div><p>那个「抓包看到什么」的差异坑过不少人：在开了 <code>rx-vlan-offload</code> 的机器上 <code>tcpdump -i eth0</code> 看不到 802.1Q 标签，因为标签在驱动层就被摘走了，只有 <code>tcpdump -i eth0.100</code> 能看到解析好的内层报文。想看原始带标签的帧，得 <code>ethtool -K eth0 rxvlan off</code> 关掉卸载。反过来，虚拟化环境里为了让 guest 看到 VLAN，往往要求宿主机关掉 <code>txvlan</code>，否则虚拟机网卡收到的帧没标签，VLAN 感知的 guest 会认为是无标签帧。</p>
+<h2 id="八vlan-与网桥的交互" tabindex="-1">八、VLAN 与网桥的交互 <a class="header-anchor" href="#八vlan-与网桥的交互"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>顺序问题在第六章埋了伏笔：<code>netif_receive_skb</code> 里 <code>handle_bridge</code> 排在 VLAN 分发之前。这意味着<strong>带标签的帧先过网桥，再过 VLAN</strong>。这个顺序决定了两种常见的接法完全不同：</p>
+<p>第一种，把 VLAN 设备加进网桥（<code>brctl addif br1 eth0.100</code>）。帧的处理顺序是：网卡收包 → 网桥看 <code>skb-&gt;dev</code> 是 <code>eth0</code>，不是 <code>br1</code> 的成员，直接放行 → VLAN 剥标签、<code>skb-&gt;dev</code> 变 <code>eth0.100</code> → <code>netif_rx</code> 重入 → 网桥发现 <code>skb-&gt;dev</code> 是 <code>eth0.100</code>，属于 <code>br1</code>，开始转发。VLAN 设备作为网桥端口时，网桥看到的是已经剥干净的帧，转发出去时由出口端口的 VLAN 设备再插标签。</p>
+<p>第二种，把物理网卡加进网桥，让网桥自己做 VLAN 过滤（<code>bridge vlan add</code>）。这条路要求内核开了 <code>CONFIG_BRIDGE_VLAN_FILTERING</code>，网桥在 <code>handle_bridge</code> 里按 802.1Q 标签查 VLAN 表，<code>vlan_filtering=1</code> 时网桥自己解析 TCI。这时 VLAN 设备基本不参与，标签由网桥的 <code>br_handle_frame</code> 处理。</p>
+<p>两种接法别混着用。第一层 <code>eth0</code> 上既有 <code>eth0.100</code> 又在 <code>br0</code> 里，再叠一个 VLAN 感知网桥，帧会被剥两次或标签对不上，排查起来很费劲。</p>
+<p>还有一个细节：VLAN 设备的 <code>priv_flags</code> 带 <code>IFF_802_1Q_VLAN</code>，网桥据此在 <code>br_add_if</code> 里做特殊判断（比如不允许把 VLAN 设备设成 <code>br0</code> 的 <code>vlan_filtering</code> 端口）。读 <code>net/bridge/</code> 时看到 <code>is_vlan_dev()</code> 就知道是这一层。</p>
+<h2 id="九gvrp-与-vlan-的动态注册" tabindex="-1">九、GVRP 与 VLAN 的动态注册 <a class="header-anchor" href="#九gvrp-与-vlan-的动态注册"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>GVRP 是 802.1Q 的动态 VLAN 注册协议，让交换机之间自己协商哪些 VID 需要放行，省掉手工配。内核里的支持很薄，就一个 <code>VLAN_FLAG_GVRP</code>。</p>
+<p>打开这个位走 <code>vlan_dev_change_flags</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">vlan_dev_change_flags</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> net_device *dev, u32 flags, u32 mask)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">vlan_dev_priv</span> *<span class="hljs-title">vlan</span> =</span> vlan_dev_priv(dev);
+    u32 old_flags = vlan-&gt;flags;
+
+    <span class="hljs-keyword">if</span> (mask &amp; ~(VLAN_FLAG_REORDER_HDR | VLAN_FLAG_GVRP |
+                 VLAN_FLAG_LOOSE_BINDING | VLAN_FLAG_MVRP))
+        <span class="hljs-keyword">return</span> -EINVAL;
+
+    vlan-&gt;flags = (old_flags &amp; ~mask) | (flags &amp; mask);
+
+    <span class="hljs-keyword">if</span> (netif_running(dev) &amp;&amp; (vlan-&gt;flags ^ old_flags) &amp; VLAN_FLAG_GVRP) {
+        <span class="hljs-keyword">if</span> (vlan-&gt;flags &amp; VLAN_FLAG_GVRP)
+            vlan_gvrp_request_join(dev);
+        <span class="hljs-keyword">else</span>
+            vlan_gvrp_request_leave(dev);
+    }
+
+    <span class="hljs-keyword">if</span> (netif_running(dev) &amp;&amp; (vlan-&gt;flags ^ old_flags) &amp; VLAN_FLAG_MVRP) {
+        <span class="hljs-keyword">if</span> (vlan-&gt;flags &amp; VLAN_FLAG_MVRP)
+            vlan_mvrp_request_join(dev);
+        <span class="hljs-keyword">else</span>
+            vlan_mvrp_request_leave(dev);
+    }
+
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>两处设计值得记：第一，<code>mask</code> 只允许改四个已定义的位，其他位传进来直接 <code>-EINVAL</code>，避免用户态把保留位写坏。第二，只在 <code>netif_running(dev)</code> 时才去发协议帧——设备没 up 就发了也没意义，等 up 的时候再补。</p>
+<p><code>vlan_gvrp_request_join</code> 在 <code>vlan_gvrp.c</code> 里，做的事就是构造一个 GARP 格式的帧，把本设备的 VID 通告出去。它注册在 <code>garp_init_applicant</code> 上，用 GARP 的通用状态机（<code>net/802/garp.c</code>），自己只提供 <code>vlan_gvrp_attr_*</code> 几个回调。MVRP 是同一套框架的另一个应用（<code>net/802/mrp.c</code>），走 <code>VLAN_FLAG_MVRP</code>。</p>
+<p>模块初始化时把这两个应用挂上去：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>vlan_gvrp_init();   <span class="hljs-comment">/* garp_init_applicant(dev, &amp;vlan_gvrp_app) */</span>
+vlan_mvrp_init();
+</code></pre></div></code></pre>
+<p>反过来，接收到的 GVRP/MVRP 帧由 <code>garp_rcv</code> / <code>mrp_rcv</code> 处理，处理后调 <code>vlan_gvrp_app</code> 的回调，回调里会 <code>register_vlan_dev</code> 或 <code>unregister_vlan_dev</code>。这就是「动态注册」的完整链路：协议帧进来 → GARP 状态机 → VLAN 模块建/删设备。</p>
+<p>生产环境里 GVRP 用得少，多数交换机默认关着，原因是安全性——谁都能往线路上通告 VID 就能蹭进别人的 VLAN。这也是为什么内核默认不开 <code>VLAN_FLAG_GVRP</code>。</p>
+<h2 id="十procfs-与调试信息" tabindex="-1">十、procfs 与调试信息 <a class="header-anchor" href="#十procfs-与调试信息"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>VLAN 模块的调试入口在 <code>/proc/net/vlan/</code>，由 <code>vlanproc.c</code> 注册。两个文件：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>/proc/net/vlan/config      全局配置：命名策略、已有 VLAN 设备列表
+/proc/net/vlan/eth0.100    单个设备的详情：VID、真实设备、flags、统计
+</code></pre></div></code></pre>
+<p><code>config</code> 的内容长这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>VLAN Dev name    | VLAN ID
+Name-Type: VLAN_NAME_TYPE_RAW_PLUS_VID_NO_PAD
+eth0.100         | 100  | eth0
+</code></pre></div></code></pre>
+<p>第二行就是 <code>vn-&gt;name_type</code> 对应的字符串，<code>SET_VLAN_NAME_TYPE_CMD</code> 改的就是它。单设备文件里能看到 <code>VID</code>、<code>Device</code>、<code>Flags</code>（<code>REORDER_HDR</code>、<code>GVRP</code>、<code>LOOSE_BINDING</code> 的开关状态），以及 <code>INGRESS priority mappings</code> 和 <code>EGRESS priority mappings</code> 两段——前面写的 <code>ingress_priority_map[8]</code> 和 <code>egress_priority_map[16]</code> 在这里能直接看到内容，调 QoS 映射时很有用。</p>
+<p>设备创建时 <code>vlan_proc_add_dev</code> 造目录项，把返回值存进 <code>vlan-&gt;dent</code>；卸载时 <code>vlan_proc_rem_dev</code> 拿 <code>dent</code> 删。<code>dent</code> 这个字段就是为了这件事存在的。</p>
+<h2 id="十一读源码的方法" tabindex="-1">十一、读源码的方法 <a class="header-anchor" href="#十一读源码的方法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这套代码自己读一遍比看十篇分析都强。顺序建议这样：</p>
+<ol>
+<li>先读 <code>vlan.h</code> 和 <code>vlan_dev.c</code> 顶部，把 <code>vlan_dev_priv</code> 的字段和 <code>vlan_netdev_ops</code> 的表看全，知道有哪些入口。</li>
+<li>再读 <code>register_vlan_dev</code>，搞清楚设备怎么来的、<code>hlist</code> 挂在哪、<code>dev_hold</code> 谁欠谁的账。</li>
+<li>然后顺着 <code>ndo_start_xmit</code> 读发送，在 <code>dev_hard_start_xmit</code> 上打断点最直观。</li>
+<li>接收方向从 <code>netif_receive_skb</code> 开始，先找 <code>vlan_hwaccel_do_receive</code> 那一行，再找 <code>ptype_base</code> 分发的 <code>vlan_packet_type</code>。</li>
+<li>最后看 <code>vlan_core.c</code> 里的 <code>vlan_do_receive</code>，和 <code>vlan_skb_recv</code> 对照，就能看清两代实现的差别。</li>
+</ol>
+<p>配合三个实战手段：</p>
+<ul>
+<li><code>ethtool -k eth0 | grep vlan</code> 看卸载能力，决定走哪条路。</li>
+<li><code>cat /proc/net/vlan/eth0.100</code> 看 flags 和统计，确认设备真的在收发。</li>
+<li><code>bpftrace -e 'kprobe:vlan_skb_recv { printf(&quot;%s\n&quot;, comm); }'</code> 直接验证软件路径有没有被走到。</li>
+</ul>
+<p>读的时候注意两件事：一是内核版本，网上大量分析基于 2.6，函数名和调用的函数都不一样（<code>vlan_dev_info</code> 对 <code>vlan_dev_priv</code>，<code>__vlan_put_tag</code> 对 <code>__vlan_hwaccel_put_tag</code>）；二是看 <code>flags</code> 的分支，收发两条路上的行为差异大半由 <code>VLAN_FLAG_REORDER_HDR</code> 决定，忽略它就会出现「代码和文章对不上」的困惑。</p>
+<h2 id="十二易错点速查" tabindex="-1">十二、易错点速查 <a class="header-anchor" href="#十二易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>怎么确认</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tcpdump -i eth0</code> 看不到 802.1Q 标签</td>
+<td>网卡 RX offload 已剥标签</td>
+<td><code>ethtool -k eth0 | grep vlan</code></td>
+</tr>
+<tr>
+<td>建 VLAN 设备报 <code>File exists</code></td>
+<td>同 VID 已建过</td>
+<td><code>ip -d link show</code> 查</td>
+</tr>
+<tr>
+<td>建 VLAN 设备报 <code>Operation not supported</code></td>
+<td>真实网卡置了 <code>NETIF_F_VLAN_CHALLENGED</code></td>
+<td><code>dmesg</code> 里有 <code>VLANs not supported on</code></td>
+</tr>
+<tr>
+<td><code>eth0.100</code> up 报 <code>Network is down</code></td>
+<td>底层 <code>eth0</code> 没 up</td>
+<td>开 <code>loose_binding on</code> 或先 up <code>eth0</code></td>
+</tr>
+<tr>
+<td>发出去两层标签只剩一层</td>
+<td><code>hard_start_xmit</code> 只看最外层有没有标签</td>
+<td>只能靠 <code>8021ad</code> 或改代码</td>
+</tr>
+<tr>
+<td>抓包看到标签但协议栈不处理</td>
+<td><code>skb-&gt;protocol</code> 是 0x8100，没有对应 VLAN 设备</td>
+<td><code>cat /proc/net/vlan/config</code></td>
+</tr>
+<tr>
+<td>VLAN 设备能 ping 通自己不通对端</td>
+<td>对端交换机口没放行该 VID</td>
+<td><code>bridge vlan show</code></td>
+</tr>
+<tr>
+<td><code>skb-&gt;dev</code> 打印出来是 <code>eth0</code> 不是 <code>eth0.100</code></td>
+<td>发送路径里 <code>dev</code> 已被换成真实网卡</td>
+<td>在 <code>vlan_dev_hard_start_xmit</code> 入口打印</td>
+</tr>
+<tr>
+<td>进网桥后 VLAN 不通</td>
+<td>网桥端口是 <code>eth0</code> 而不是 <code>eth0.100</code>，且没开 <code>vlan_filtering</code></td>
+<td><code>bridge link</code> / <code>bridge vlan</code></td>
+</tr>
+<tr>
+<td>统计对不上</td>
+<td>per-CPU 计数，<code>rx_bytes</code> 含标签长度</td>
+<td>用 <code>ip -s link</code> 而非自己算</td>
+</tr>
+</tbody>
+</table></div><p>几个容易记混的常量再钉一遍：<code>ETH_HLEN</code> 14，<code>VLAN_HLEN</code> 4，<code>VLAN_ETH_HLEN</code> 18，<code>VLAN_VID_MASK</code> 0x0fff，<code>VLAN_TAG_PRESENT</code> 0x1000，<code>VLAN_PRIO_SHIFT</code> 13，<code>VLAN_PRIO_MASK</code> 0xe000。最后一个判断技巧：读任何一段 VLAN 收发代码，先问自己「此刻 <code>skb-&gt;dev</code> 是虚拟设备还是真实网卡」。这个问题的答案决定了 <code>skb-&gt;data</code> 指向哪里、帧里有没有标签、统计记在谁头上。把这条线索抓住，<code>net/8021q/</code> 里大半函数都能自己推出来。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一vlan-模块在内核里的位置" data-toc-target="一vlan-模块在内核里的位置">一、VLAN 模块在内核里的位置</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二核心数据结构-vlan_dev_priv" data-toc-target="二核心数据结构-vlan_dev_priv">二、核心数据结构 vlan_dev_priv</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三vlan-设备的注册与创建" data-toc-target="三vlan-设备的注册与创建">三、VLAN 设备的注册与创建</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四vlan_opsnetdev_ops-的实现" data-toc-target="四vlan_opsnetdev_ops-的实现">四、vlan_ops：netdev_ops 的实现</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五发送路径加标签" data-toc-target="五发送路径加标签">五、发送路径：加标签</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六接收路径剥标签" data-toc-target="六接收路径剥标签">六、接收路径：剥标签</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七硬件加速与软件处理" data-toc-target="七硬件加速与软件处理">七、硬件加速与软件处理</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八vlan-与网桥的交互" data-toc-target="八vlan-与网桥的交互">八、VLAN 与网桥的交互</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九gvrp-与-vlan-的动态注册" data-toc-target="九gvrp-与-vlan-的动态注册">九、GVRP 与 VLAN 的动态注册</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十procfs-与调试信息" data-toc-target="十procfs-与调试信息">十、procfs 与调试信息</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一读源码的方法" data-toc-target="十一读源码的方法">十一、读源码的方法</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二易错点速查" data-toc-target="十二易错点速查">十二、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-模块的内核源码分析/","title":"VLAN 模块的内核源码分析","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-模块的内核源码分析/","type":"current"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","title":"Linux 网络协议栈的架构与分层","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","title":"NAT 原理与实现","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","title":"Netfilter 与 hook 点","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","title":"Netlink：内核态与用户态通信","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","type":"neighbor"}],"links":[{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-模块的内核源码分析/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-模块的内核源码分析/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-模块的内核源码分析/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-模块的内核源码分析/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

@@ -1,0 +1,1483 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>futex：用户态同步原语 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">futex：用户态同步原语</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/D.操作系统/03-线程与同步/futex：用户态同步原语/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">futex：用户态同步原语</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">futex：用户态同步原语</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <h2 id="一futex-是什么快在哪" tabindex="-1">一、futex 是什么：快在哪 <a class="header-anchor" href="#一futex-是什么快在哪"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>futex 是 Fast Userspace muTEX 的缩写，由 Rusty Russell、Hubertus Franke、Mathew Kirkwood 在 Linux 2.5.7 引入。名字里塞了 mutex，用途却是通用同步底座：互斥锁、读写锁、条件变量都能在它上面搭出来，<code>pthread_mutex</code>、<code>pthread_cond</code>、<code>sem_*</code> 底下共用的正是这一层。</p>
+<p>它只有两半。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>一半</th>
+<th>位置</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内核侧</td>
+<td>内核空间</td>
+<td>等待队列：hash bucket 加挂在上面的等待任务链表</td>
+</tr>
+<tr>
+<td>用户侧</td>
+<td>你的进程</td>
+<td>一个 32-bit 的 futex word，所有平台都是 32 位，64 位平台上也是 32 位</td>
+</tr>
+</tbody>
+</table></div><p>「快」不是修辞。没有竞争时，持锁是一条 <code>cmpxchg</code>，释放是一条 <code>xchg</code>，系统调用一次都不发。只有出现竞争、需要把线程从 runqueue 上摘下来时，才走系统调用。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>用户态动作</th>
+<th>系统调用</th>
+<th>开销量级</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无竞争获取</td>
+<td>一条原子 CAS</td>
+<td>0 次</td>
+<td>十几纳秒，等于一次缓存行独占</td>
+</tr>
+<tr>
+<td>无竞争释放</td>
+<td>一条原子交换</td>
+<td>0 次</td>
+<td>同上</td>
+</tr>
+<tr>
+<td>有竞争获取</td>
+<td>CAS 失败，标记等待位</td>
+<td>1 次 <code>FUTEX_WAIT</code></td>
+<td>微秒级，含两次上下文切换</td>
+</tr>
+<tr>
+<td>有竞争释放</td>
+<td>原子交换发现等待位</td>
+<td>1 次 <code>FUTEX_WAKE</code></td>
+<td>微秒级</td>
+</tr>
+</tbody>
+</table></div><p>把一把锁用裸 futex 写出来，只有三十行：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 状态编码：0 = 空闲，1 = 已锁，2 = 已锁且有等待者 */</span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/futex.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/syscall.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">futex_lock</span><span class="hljs-params">(<span class="hljs-type">int</span> *uaddr)</span>
+{
+    <span class="hljs-type">int</span> c = <span class="hljs-number">0</span>;
+
+    <span class="hljs-comment">/* 快路径：0 -&gt; 1，一条原子指令，不进内核 */</span>
+    <span class="hljs-keyword">if</span> (__atomic_compare_exchange_n(uaddr, &amp;c, <span class="hljs-number">1</span>, <span class="hljs-number">0</span>,
+                                    __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+        <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+    <span class="hljs-comment">/* 慢路径：先把状态升级成 2，再进内核睡 */</span>
+    <span class="hljs-keyword">do</span> {
+        <span class="hljs-keyword">if</span> (c == <span class="hljs-number">2</span> || __atomic_exchange_n(uaddr, <span class="hljs-number">2</span>, __ATOMIC_ACQUIRE) != <span class="hljs-number">0</span>)
+            syscall(SYS_futex, uaddr, FUTEX_WAIT, <span class="hljs-number">2</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-number">0</span>);
+        c = <span class="hljs-number">0</span>;
+    } <span class="hljs-keyword">while</span> (!__atomic_compare_exchange_n(uaddr, &amp;c, <span class="hljs-number">2</span>, <span class="hljs-number">0</span>,
+                                          __ATOMIC_ACQUIRE, __ATOMIC_RELAXED));
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">futex_unlock</span><span class="hljs-params">(<span class="hljs-type">int</span> *uaddr)</span>
+{
+    <span class="hljs-keyword">if</span> (__atomic_exchange_n(uaddr, <span class="hljs-number">0</span>, __ATOMIC_RELEASE) == <span class="hljs-number">2</span>)
+        syscall(SYS_futex, uaddr, FUTEX_WAKE, <span class="hljs-number">1</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-number">0</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>状态码 2 是关键。它把「有人正在等」这件事写进了用户态的一个 bit 里，于是释放路径不看内核、不问队列，只读一个整数就知道要不要发唤醒。少这一次系统调用，就是无竞争路径的全部收益。</p>
+<h2 id="二为什么需要内核参与" tabindex="-1">二、为什么需要内核参与 <a class="header-anchor" href="#二为什么需要内核参与"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先回答一个反问：纯用户态自旋锁不够用吗。</p>
+<p>不够。等待线程占着 CPU 反复读那个 word，持锁线程被抢占或者优先级更低时，等待者把整段时间片烧在缓存行上。线程一多，机器全在做无用功。</p>
+<p>要「不占 CPU 地等」，唯一办法是把线程从 runqueue 摘下来，状态改成睡眠，等条件满足再放回去。调度器归内核管，用户态做不到这件事。唤醒同理，让一个睡着的线程重新可运行，只有内核能改它的状态并重新入队。</p>
+<p>结论很硬：同步原语里「挂起自己」和「唤醒别人」这两个动作必须穿过内核边界，其余动作不该穿。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>方案</th>
+<th>等待方式</th>
+<th>无竞争开销</th>
+<th>有竞争开销</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>纯自旋锁</td>
+<td>空转</td>
+<td>一条 CAS</td>
+<td>等待者烧满时间片，还会饿死</td>
+<td>临界区只有几条指令、核数远多于线程数</td>
+</tr>
+<tr>
+<td>纯内核锁</td>
+<td>睡眠</td>
+<td>两次系统调用</td>
+<td>两次系统调用</td>
+<td>临界区很长、竞争激烈</td>
+</tr>
+<tr>
+<td>futex</td>
+<td>睡在内核队列里</td>
+<td>一条 CAS，0 次系统调用</td>
+<td>两次系统调用</td>
+<td>绝大多数用户态同步原语</td>
+</tr>
+</tbody>
+</table></div><p>还有个必须解决的细节：丢唤醒。假如「检查条件」和「进入睡眠」是两个独立动作，在两者之间冒出来的唤醒就丢了，线程睡到进程退出都没人管。学科里管这现象叫 lost wakeup。</p>
+<p>futex 的解法是把检查合并进系统调用。<code>FUTEX_WAIT</code> 带一个期望值 val，内核在持有 bucket 自旋锁的状态下比对 futex word 与 val，相等才把任务挂进队列，不等就立刻返回 <code>EWOULDBLOCK</code>。比对和入队在同一把锁的保护下完成，唤醒插不进来。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>用户态: 原子检查 word == val  ──┐
+                                │  这两步若分开，唤醒会掉进空隙
+内核态: 挂入等待队列并睡眠    ──┘
+
+futex 的做法：把上面两步并成一次系统调用，val 由内核复核
+</code></pre></div></code></pre>
+<h2 id="三futex-的核心思想用户态快路径" tabindex="-1">三、futex 的核心思想：用户态快路径 <a class="header-anchor" href="#三futex-的核心思想用户态快路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一句话说完：futex 只在你有阻塞风险的时候才进内核。</p>
+<p>这句话拆成三条推论，后面每一章都在用。</p>
+<p>第一，锁状态住在用户态内存里。futex word 就在你的进程地址空间中，读写它不经过任何系统调用，也不需要内核维护副本。</p>
+<p>第二，系统调用自带条件判断。<code>FUTEX_WAIT</code> 不是「无条件睡」，而是「如果这个 word 还等于 val，就睡」。内核先复核再决定，用户态和内核之间不存在判断与动作的缝隙。</p>
+<p>第三，<code>FUTEX_WAKE</code> 不交付锁，只交付 CPU 使用权。内核不维护「锁现在是否空闲」这种语义，它只知道某条队列上挂着哪些任务。被唤醒的线程回到用户态要重新做一次原子 CAS，抢不到就再睡回去。所以多唤醒几个不会错，只会浪费。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>由谁维护</th>
+<th>维护什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>用户态</td>
+<td>锁的语义：谁持有、是否空闲、有没有等待者</td>
+</tr>
+<tr>
+<td>内核态</td>
+<td>等待关系：哪个 word 上挂了哪些任务、谁先醒</td>
+</tr>
+</tbody>
+</table></div><p>决策流程就两条分支：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>持锁尝试
+  ├─ CAS 成功 ──────────────► 返回。0 次系统调用
+  └─ CAS 失败
+       ├─ 置等待标志再 CAS ──► 还是失败
+       └─ FUTEX_WAIT(word, val) ─► 睡
+              └─ 被 FUTEX_WAKE 唤醒 ─► 回到 CAS 起点重试
+</code></pre></div></code></pre>
+<p>注意最后那个回边。被唤醒不等于拿到锁，只是获得了重新竞争的机会。整套机制里没有「移交锁所有权」这回事，那是 PI futex 才做的额外工作。</p>
+<h2 id="四futex-变量与等待队列" tabindex="-1">四、futex 变量与等待队列 <a class="header-anchor" href="#四futex-变量与等待队列"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核里的互斥锁，等待队列头可以直接嵌在 mutex 对象上，因为锁对象本身就是内核对象。futex 没有对应的内核锁对象，用户态那边只有一个 32 位整数，于是问题变成：怎么把一个用户态地址映射到内核的一条等待队列。</p>
+<p>答案是哈希。内核建一张 futex hash 表，用 futex word 算出一个 key，再按 key 哈希到桶。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>三元组（hash key 的组成）</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>process-private</td>
+<td><code>(current-&gt;mm, address, 0)</code></td>
+<td>word 只在一个进程内共享，用地址空间加虚拟地址足够定位</td>
+</tr>
+<tr>
+<td>process-shared</td>
+<td><code>(inode-&gt;i_sequence, page-&gt;index, offset_within_page)</code></td>
+<td>word 在共享内存里（<code>mmap</code> 或 <code>shmat</code>），各进程虚拟地址不同、物理页相同，只能靠页来定位</td>
+</tr>
+</tbody>
+</table></div><p>算出 key 的函数是 <code>get_futex_key</code>。哈希表本体很短：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">futex_hash_bucket</span> *<span class="hljs-title">queues</span>;</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>            hashsize;
+} __futex_data;
+</code></pre></div></code></pre>
+<p>启动时按 hashsize 建好一批桶，每个桶管一条链表，链上挂 key 哈希值相同的所有阻塞任务。桶的结构是这样的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">futex_hash_bucket</span> {</span>
+    <span class="hljs-type">atomic_t</span> waiters;          <span class="hljs-comment">/* 该队列上阻塞的任务个数 */</span>
+    <span class="hljs-type">spinlock_t</span> lock;           <span class="hljs-comment">/* 保护这条队列的自旋锁 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">plist_head</span> <span class="hljs-title">chain</span>;</span>   <span class="hljs-comment">/* 相同 hash key 的阻塞任务挂在这里 */</span>
+} ____cacheline_aligned_in_smp;
+</code></pre></div></code></pre>
+<p>单个等待任务用 <code>futex_q</code> 描述，后面统一叫「futex 阻塞任务对象」：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">futex_q</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">plist_node</span> <span class="hljs-title">list</span>;</span>              <span class="hljs-comment">/* 挂队列的节点，按优先级排序 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">task_struct</span> *<span class="hljs-title">task</span>;</span>            <span class="hljs-comment">/* 等待在这个 futex word 上的任务 */</span>
+    <span class="hljs-type">spinlock_t</span> *lock_ptr;                <span class="hljs-comment">/* 保护队列操作的自旋锁 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">union</span> <span class="hljs-title">futex_key</span> <span class="hljs-title">key</span>;</span>                 <span class="hljs-comment">/* 算 hash key 用 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">futex_pi_state</span> *<span class="hljs-title">pi_state</span>;</span>     <span class="hljs-comment">/* PI 相关：futex 的 pi-aware 由 rt mutex 代理 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rt_mutex_waiter</span> *<span class="hljs-title">rt_waiter</span>;</span>   <span class="hljs-comment">/* 阻塞在 rt mutex 上的任务描述 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">union</span> <span class="hljs-title">futex_key</span> *<span class="hljs-title">requeue_pi_key</span>;</span>     <span class="hljs-comment">/* 与 requeue-PI 相关 */</span>
+    u32 <span class="hljs-built_in">bitset</span>;                          <span class="hljs-comment">/* FUTEX_WAKE 时判断该不该唤醒它 */</span>
+} __randomize_layout;
+</code></pre></div></code></pre>
+<p>有了这层结构，只要手里有一个 futex word，就能算 key、定位桶、找到链表。哈希碰撞由 key 的完全相等来兜底，比对逻辑在 <code>match_futex</code> 里，三元组全部相等才算同一条等待队列。</p>
+<p>三点要知道的细节。</p>
+<p>队列是 <code>plist</code>，即按优先级排序的链表。RT 线程优先级高的插队首，低的排队尾；CFS 任务不按优先级，走 FIFO 的公平策略。同一把锁上混着两种调度类时，插队顺序由这个字段决定。</p>
+<p><code>waiters</code> 计数是给唤醒路径用的快捷判断，避免在不必要的时候抓锁。</p>
+<p><code>pi_state</code> 和 <code>rt_waiter</code> 两个字段只在 PI futex 上用，normal futex 下是空的。它们的存在说明一件事：优先级继承那套东西不是 futex 自己实现的，而是把工作外包给了 rt mutex。</p>
+<h2 id="五futex-的系统调用接口" tabindex="-1">五、futex 的系统调用接口 <a class="header-anchor" href="#五futex-的系统调用接口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>glibc 不给 futex 提供包装函数，头文件只有常量定义，调用要自己走 <code>syscall</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/futex.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/syscall.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">futex</span><span class="hljs-params">(<span class="hljs-type">int</span> *uaddr, <span class="hljs-type">int</span> futex_op, <span class="hljs-type">int</span> val,
+          <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> timespec *timeout,   <span class="hljs-comment">/* 某些操作码下复用为 val2 */</span>
+          <span class="hljs-type">int</span> *uaddr2, <span class="hljs-type">int</span> val3)</span>;
+</code></pre></div></code></pre>
+<p>参数看着简单，麻烦在复用。同一个 <code>val</code>，对 <code>FUTEX_WAIT</code> 是期望值，对 <code>FUTEX_WAKE</code> 是唤醒个数；同一个指针位置，对 <code>FUTEX_WAIT</code> 是超时，对 <code>FUTEX_REQUEUE</code> 是要转移的个数。这是为一个系统调用塞进十几种操作付的代价。</p>
+<p><code>futex_op</code> 本身是位域，拆两半用：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>低 7 位</td>
+<td>操作码，最多支持 128 个 op code</td>
+</tr>
+<tr>
+<td>其余高位</td>
+<td>标志位，用来修饰操作码的行为</td>
+</tr>
+</tbody>
+</table></div><div class="table-wrap"><table><thead>
+<tr>
+<th>标志</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FUTEX_PRIVATE_FLAG</code></td>
+<td>声明 word 仅在本进程内共享（process-private）。内核可以省掉跨进程的 inode 查找，key 直接用 <code>(mm, addr)</code> 算</td>
+</tr>
+<tr>
+<td><code>FUTEX_CLOCK_REALTIME</code></td>
+<td>指定超时基准。置位用 realtime clock，不置位用 monotonic clock</td>
+</tr>
+</tbody>
+</table></div><p><code>PRIVATE</code> 这个标志值得单独说。决定 key 算法的是 word 的共享范围：只在一个进程内共享叫 process-private，跨进程共享叫 process-shared，后者必须是 <code>mmap</code> 的共享映射或 <code>shmat</code> 的共享内存。设对了能省一次 inode 查找，设错了就是错误唤醒或者睡死。<code>pthread_mutex</code> 默认的 <code>PTHREAD_PROCESS_PRIVATE</code> 属性对应的就是这条快路。</p>
+<p>常用操作码：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>操作码</th>
+<th>语义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FUTEX_WAIT</code></td>
+<td>word 里还存着 val 时睡眠，等 <code>FUTEX_WAKE</code> 来唤</td>
+</tr>
+<tr>
+<td><code>FUTEX_WAKE</code></td>
+<td>最多唤醒 val 个等在这个 word 上的线程</td>
+</tr>
+<tr>
+<td><code>FUTEX_WAIT_BITSET</code></td>
+<td>同 WAIT，多带一个 bitset 参数</td>
+</tr>
+<tr>
+<td><code>FUTEX_WAKE_BITSET</code></td>
+<td>同 WAKE，多带一个 bitset 参数筛选唤醒谁</td>
+</tr>
+<tr>
+<td><code>FUTEX_REQUEUE</code></td>
+<td>唤醒 uaddr 上 val 个，剩下的转移到 uaddr2 队列，最多转 val2 个</td>
+</tr>
+<tr>
+<td><code>FUTEX_CMP_REQUEUE</code></td>
+<td>同上，转移前先比对 uaddr 是否等于 val3</td>
+</tr>
+<tr>
+<td><code>FUTEX_LOCK_PI</code></td>
+<td>PI 版本的 WAIT</td>
+</tr>
+<tr>
+<td><code>FUTEX_UNLOCK_PI</code></td>
+<td>PI 版本的 WAKE</td>
+</tr>
+<tr>
+<td><code>FUTEX_WAKE_OP</code></td>
+<td>原子改 uaddr2 的值并唤醒两边的 waiter，专为 glibc 的 <code>sem_post</code> 提速设计</td>
+</tr>
+</tbody>
+</table></div><p><code>FUTEX_WAKE</code> 里的 val 只有两种实际用法：1 表示只唤一个，<code>INT_MAX</code> 表示全唤。中间的数值没有特殊语义，只是上限。</p>
+<h2 id="六futex_wait-与-futex_wake" tabindex="-1">六、FUTEX_WAIT 与 FUTEX_WAKE <a class="header-anchor" href="#六futex_wait-与-futex_wake"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一对是整个机制的骨架，其余操作码都是它们的分支。</p>
+<p><code>FUTEX_WAIT(uaddr, val)</code> 的语义要读准：内核在持有 bucket 自旋锁的前提下复核 <code>*uaddr == val</code>。相等，把当前任务挂进队列并睡眠；不等，立刻返回 <code>EWOULDBLOCK</code>，当前任务根本没睡。后面那个 val 就是抢在内核边界上的那次检查，它负责消灭 lost wakeup。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th><code>FUTEX_WAIT</code></th>
+<th><code>FUTEX_WAKE</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>uaddr</td>
+<td>futex word 地址</td>
+<td>futex word 地址</td>
+</tr>
+<tr>
+<td>val</td>
+<td>word 的期望值，相等才睡</td>
+<td>唤醒的线程个数，1 或 <code>INT_MAX</code></td>
+</tr>
+<tr>
+<td>timeout</td>
+<td>绝对超时时刻；NULL 表示无限等</td>
+<td>未使用</td>
+</tr>
+<tr>
+<td>uaddr2</td>
+<td>未使用</td>
+<td>未使用</td>
+</tr>
+<tr>
+<td>val3</td>
+<td>未使用</td>
+<td>未使用</td>
+</tr>
+<tr>
+<td>bitset</td>
+<td>隐含 <code>FUTEX_BITSET_MATCH_ANY</code></td>
+<td>隐含 <code>FUTEX_BITSET_MATCH_ANY</code></td>
+</tr>
+</tbody>
+</table></div><p>bitset 在基础操作码里被写成固定值 <code>FUTEX_BITSET_MATCH_ANY</code>，意思是等的人不挑、唤的人不筛，谁在这个 word 上都能被唤醒。要精细控制就得换 <code>FUTEX_WAIT_BITSET</code> / <code>FUTEX_WAKE_BITSET</code>，两边 bitset 做按位与非零才算匹配。</p>
+<p><code>futex_wait</code> 的内核流程，按发生顺序摆平：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>步骤</th>
+<th>动作</th>
+<th>为什么要这样</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>有 timeout 就调 <code>futex_setup_timer</code> 建一个 hrtimer</td>
+<td>用它把阻塞状态打断</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>get_futex_key</code> 算 hash key</td>
+<td>private 用 <code>(mm, addr, 0)</code>，shared 用 <code>(inode-&gt;i_sequence, page-&gt;index, offset_within_page)</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>按 key 哈希到 bucket，抓自旋锁</td>
+<td>马上要往队列里塞东西</td>
+</tr>
+<tr>
+<td>4</td>
+<td>复核用户态传下来的期望值</td>
+<td>值变了说明别人改过 word，返回 <code>EWOULDBLOCK</code>，顺手解锁</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>futex_wait_queue_me</code> 把 <code>futex_q</code> 插进链表，解锁</td>
+<td>插队按优先级：RT 线程高的前、低的后，CFS 任务走 FIFO</td>
+</tr>
+<tr>
+<td>6</td>
+<td>启动步骤 1 建好的 hrtimer</td>
+<td>马上就要真睡了，超时从这一刻算</td>
+</tr>
+<tr>
+<td>7</td>
+<td>再验一次自己是否仍在队列上</td>
+<td>上锁到入睡之间会有 wake 或超时先把它摘走，此时不能再睡，睡了就醒不来</td>
+</tr>
+<tr>
+<td>8</td>
+<td>正常醒：被 <code>FUTEX_WAKE</code> 唤醒</td>
+<td>唤醒方已经完成出队，直接返回，记得取消 hrtimer</td>
+</tr>
+<tr>
+<td>9</td>
+<td>异常醒：<code>futex_q</code> 还挂在链上</td>
+<td>说明没人替它出队，得在当前上下文自己摘</td>
+</tr>
+<tr>
+<td>10</td>
+<td>判断是超时还是信号</td>
+<td>超时路径下 timer 回调会把 <code>hrtimer_sleeper-&gt;task</code> 置 NULL，据此区分</td>
+</tr>
+<tr>
+<td>11</td>
+<td>有 pending 信号即被信号打断；没有就是假唤醒</td>
+<td>假唤醒要重试一次入队</td>
+</tr>
+<tr>
+<td>12</td>
+<td>被信号打断返回 <code>ERESTARTSYS</code></td>
+<td>用户态自己决定怎么收尾；但设了 timeout 且未超时的场景要 restart syscall</td>
+</tr>
+</tbody>
+</table></div><p>第 7 步是这套流程里最容易看漏的一步。挂队列、启动定时器、真正调度出去，这三件事之间存在窗口，窗口里任何一次唤醒都能让「睡」变成永别。所以入睡前必须重新确认自己还挂在队列上。</p>
+<p><code>futex_wake</code> 短得多，核心就两个动作：出队、唤醒。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>步骤</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>算 hash key，定位 bucket，同 wait 路径</td>
+</tr>
+<tr>
+<td>2</td>
+<td>遍历链表做匹配，链上 key 哈希相同的任务未必是同一个 word，三元组全等才算匹配</td>
+</tr>
+<tr>
+<td>3</td>
+<td>比对 bitset，筛出允许唤醒的任务</td>
+</tr>
+<tr>
+<td>4</td>
+<td>把匹配到的 <code>futex_q</code> 从 bucket 链表摘下，挪进唤醒队列 wake queue，照 val 数到量为止，全程持 bucket 自旋锁</td>
+</tr>
+<tr>
+<td>5</td>
+<td>扫够数量收工，<code>wake_up_q</code> 逐个唤醒</td>
+</tr>
+</tbody>
+</table></div><p>为什么要单独一个 wake queue，而不是边遍历边唤醒。因为唤醒要抓 runqueue 锁，还会触发调度，不该提着 bucket 自旋锁去做。先在锁内改队列归属，再在锁外做唤醒，是内核里通用的拆锁手法。</p>
+<p>一次典型的等值场景：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 等待方：先看条件，条件不满足才 FUTEX_WAIT */</span>
+<span class="hljs-keyword">while</span> (atomic_load(&amp;flag) != <span class="hljs-number">1</span>)
+    syscall(SYS_futex, &amp;flag, FUTEX_WAIT, <span class="hljs-number">0</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-number">0</span>);
+
+<span class="hljs-comment">/* 唤醒方 */</span>
+atomic_store(&amp;flag, <span class="hljs-number">1</span>);
+syscall(SYS_futex, &amp;flag, FUTEX_WAKE, <span class="hljs-number">1</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-number">0</span>);
+</code></pre></div></code></pre>
+<p><code>while</code> 那圈不能写成 <code>if</code>。被唤醒只代表「重新获得运行权」，不代表条件已成立：别人抢先改了回去、这是假唤醒、或者本来就超时了，三种情况都会让条件不成立。醒来重新验条件，是 futex 编程里关于正确性的底线。</p>
+<p>要超时就传绝对时刻：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timespec</span> <span class="hljs-title">ts</span>;</span>
+clock_gettime(CLOCK_MONOTONIC, &amp;ts);   <span class="hljs-comment">/* 默认基准是 monotonic */</span>
+ts.tv_sec += <span class="hljs-number">2</span>;
+syscall(SYS_futex, &amp;flag, FUTEX_WAIT, <span class="hljs-number">0</span>, &amp;ts, <span class="hljs-literal">NULL</span>, <span class="hljs-number">0</span>);
+</code></pre></div></code></pre>
+<p>基准时钟跟着 <code>FUTEX_CLOCK_REALTIME</code> 走，不设置就吃 monotonic。写死 <code>CLOCK_REALTIME</code> 算超时却传不给内核，是这类代码常见的错误来源。</p>
+<h2 id="七竞争时的慢路径" tabindex="-1">七、竞争时的慢路径 <a class="header-anchor" href="#七竞争时的慢路径"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>慢路径只有一种进入方式：快路径 CAS 失败。失败之后发生什么，取决于持锁者是否还在跑。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>线程 A（持锁）                     线程 B（等锁）
+    |                                  |
+    |                                  +-- CAS 失败
+    |                                  +-- 置等待标志，再 CAS，仍失败
+    |                                  +-- FUTEX_WAIT  ──┐
+    |                                                   |  进入内核
+    |                                                   +-- 算 key、找 bucket
+    |                                                   +-- 复核 val 相等 → 入队
+    |                                                   +-- schedule() 让出 CPU
+    |                                  ┌────────────────┘
+    +-- 解锁，原子交换发现等待标志 ────┐
+    +-- FUTEX_WAKE  ───────────────────┤  进入内核
+                                       +-- 摘出 futex_q
+                                       +-- wake_up_q 置为可运行
+                                       +-- 被调度回来，重做 CAS
+</code></pre></div></code></pre>
+<p>这张图上有四次用户态与内核态的往返点：B 进、A 进、A 出、B 出。每次都伴随一次完整的寄存器保存与恢复，也是慢路径要花几微秒的原因。</p>
+<p>慢路径值得盯的是三件事。</p>
+<p>第一，慢路径不是「一直慢」。它只覆盖真正需要睡的线程。一个 8 核机器上 4 个线程抢一把锁，绝大多数轮次都进不了内核，快路径全部命中。</p>
+<p>第二，进入慢路径的线程仍要做原子操作。唤醒后重试 CAS 又失败，于是再睡。这个「睡—醒—失败—再睡」的循环在极端争抢下会重复多次，表现为 futex 系统调用次数远超线程数。</p>
+<p>第三，纯用户态的等待标志位决定了要不要发系统调用。释放线程读 word 发现没有等待者，就跳过 <code>FUTEX_WAKE</code>，一次系统调用都不发。这条优化把「无竞争」的定义从「没人抢」放宽到了「没人等」。</p>
+<p>慢路径还有个 requeue 变体，能在一次系统调用里完成「唤醒一批 + 转移一批」，专为条件变量设计，细节放在第九章。</p>
+<h2 id="八futex-如何支撑-pthread_mutex" tabindex="-1">八、futex 如何支撑 pthread_mutex <a class="header-anchor" href="#八futex-如何支撑-pthread_mutex"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>pthread_mutex_lock</code> 展开之后就是上面那套。glibc 的普通互斥锁用一个 32 位 <code>__lock</code> 字段编码三种状态，和第一章手写版本同构：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段值</th>
+<th>含义</th>
+<th>释放方动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>未锁</td>
+<td>无</td>
+</tr>
+<tr>
+<td>1</td>
+<td>已锁，无等待者</td>
+<td>原子写回 0，结束</td>
+</tr>
+<tr>
+<td>2</td>
+<td>已锁，有等待者</td>
+<td>原子写回 0，发 <code>FUTEX_WAKE</code>，唤 1 个</td>
+</tr>
+<tr>
+<td>大于 2</td>
+<td>记录了 owner TID 的特殊形态（robust / PI 场景）</td>
+<td>视具体路径而定</td>
+</tr>
+</tbody>
+</table></div><p>调用链这样对上：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>pthread 接口</th>
+<th>底层动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pthread_mutex_lock</code> 快路径</td>
+<td>一条 <code>cmpxchg</code>，把 0 改成 1</td>
+</tr>
+<tr>
+<td><code>pthread_mutex_lock</code> 慢路径</td>
+<td>状态升到 2，<code>FUTEX_WAIT_PRIVATE</code> 睡</td>
+</tr>
+<tr>
+<td><code>pthread_mutex_unlock</code></td>
+<td>原子交换回 0，值为 2 则 <code>FUTEX_WAKE_PRIVATE</code></td>
+</tr>
+<tr>
+<td><code>pthread_mutex_trylock</code></td>
+<td>只做 CAS，失败立即返回 <code>EBUSY</code>，永不进内核</td>
+</tr>
+<tr>
+<td><code>pthread_mutex_destroy</code></td>
+<td>纯用户态，没有内核资源需要回收</td>
+</tr>
+</tbody>
+</table></div><p>注意 <code>_PRIVATE</code> 后缀。默认属性是进程内共享，所以 glibc 走 private 版本，key 直接用 <code>(mm, addr)</code>，不走 inode 查找。把互斥锁放进共享内存做跨进程互斥，属性必须改成 <code>PTHREAD_PROCESS_SHARED</code>，否则两个进程会各睡各的队列，互斥失效。</p>
+<p><code>trylock</code> 这一行值得记住：它是唯一保证不进内核的加锁接口。在信号处理函数里，或者确定临界区极短的场合，用它加上退避比阻塞式加锁可控。</p>
+<h2 id="九futex-如何支撑条件变量" tabindex="-1">九、futex 如何支撑条件变量 <a class="header-anchor" href="#九futex-如何支撑条件变量"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>条件变量的难点不在等，在于等之前必须先放开互斥锁。这两件事有严格的顺序，且中间不能有缝：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>pthread_cond_wait(cond, mutex) 要做三件事
+  1. 把当前线程挂进 cond 对应的等待队列     ← 睡眠
+  2. 释放 mutex                            ← 唤醒别人
+  3. 醒来后重新获取 mutex                   ← 还要再等一次锁
+</code></pre></div></code></pre>
+<p>第 1 步和第 2 步的顺序不能反。先解锁再挂队，中间那点时间里 <code>pthread_cond_signal</code> 就可以把信号发完，等的人还没到，信号丢了。所以挂队必须排在解锁前面，而挂队的动作要睡，睡就不能持锁——这个矛盾正是 <code>FUTEX_REQUEUE</code> 存在的理由。</p>
+<p>看一段 Java 的同构代码，问题会更直白：</p>
+<pre><code class="language-java"><div class="code-block" data-lang="java"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">java</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* A 临界区 */</span>
+<span class="hljs-keyword">synchronized</span> (monitor) {
+    <span class="hljs-keyword">while</span> (!ready)
+        monitor.wait();   <span class="hljs-comment">/* 挂入 cond 队列，之前需释放 monitor lock */</span>
+    <span class="hljs-comment">/* ... */</span>
+}
+
+<span class="hljs-comment">/* B 临界区 */</span>
+<span class="hljs-keyword">synchronized</span> (monitor) {
+    ready = <span class="hljs-literal">true</span>;
+    monitor.notify();     <span class="hljs-comment">/* 唤醒 cond 队列上的一个线程，它随后抢 monitor lock */</span>
+}
+</code></pre></div></code></pre>
+<p><code>wait()</code> 背后是两个等待队列：monitor lock 的队列和 condition variable 的队列。一次 <code>wait()</code> 要同时碰这两条队列——把别的等待者从 monitor 队列唤醒，再把自己挂进 cond 队列。</p>
+<p>没有 requeue 时，这是两次系统调用：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 无 requeue：两次进内核 */</span>
+syscall(SYS_futex, &amp;mutex, FUTEX_WAKE, <span class="hljs-number">1</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-number">0</span>);       <span class="hljs-comment">/* 释放锁，唤醒等锁者 */</span>
+syscall(SYS_futex, &amp;cond,  FUTEX_WAIT, seq, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-number">0</span>);     <span class="hljs-comment">/* 睡在条件变量上 */</span>
+</code></pre></div></code></pre>
+<p>中间那个窗口是实打实的风险。有了 requeue，一次系统调用全办：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 有 requeue：一次进内核，唤醒 0 个，全部转移 */</span>
+syscall(SYS_futex, &amp;mutex, FUTEX_REQUEUE, <span class="hljs-number">0</span>, (<span class="hljs-type">void</span> *)<span class="hljs-number">1</span>, &amp;cond, <span class="hljs-number">0</span>);
+</code></pre></div></code></pre>
+<p><code>FUTEX_REQUEUE</code> 的流程只用四步：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>步骤</th>
+<th>动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>对 uaddr1 和 uaddr2 各算一次 hash key，各自定位 bucket</td>
+</tr>
+<tr>
+<td>2</td>
+<td>若是 <code>FUTEX_CMP_REQUEUE</code>，先校验 uaddr1 的值是否等于 val3。这步要读用户态内存，属于复杂的动作，细节在 <code>get_futex_value_locked</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>遍历 uaddr1 队列，<code>mark_wake_futex</code> 把 nr_wake 个对象暂存进 wake queue，<code>requeue_futex</code> 把 nr_requeue 个对象转移到 uaddr2 队列。两个 bucket 的自旋锁都要持有</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>wake_up_q</code> 唤醒暂存的那批任务</td>
+</tr>
+</tbody>
+</table></div><p>转移的含义要说清：任务并没有被唤醒，它只是从「等 mutex」的链表换到了「等 cond」的链表，继续睡着。这样 <code>pthread_cond_wait</code> 就能在一次系统调用里完成「释放锁并把等锁者转到 cond 队列」，既没有空隙，也省了一次往返。</p>
+<p>参数怎么填是关键：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>uaddr</td>
+<td><code>&amp;mutex</code></td>
+<td>源：等锁的队列</td>
+</tr>
+<tr>
+<td>val</td>
+<td>0</td>
+<td>一个都不唤醒，全部转移</td>
+</tr>
+<tr>
+<td>uaddr2</td>
+<td><code>&amp;cond</code></td>
+<td>目标：条件变量队列</td>
+</tr>
+<tr>
+<td>val2</td>
+<td>1</td>
+<td>最多转移 1 个</td>
+</tr>
+<tr>
+<td>val3</td>
+<td>当前 seq</td>
+<td>只在 <code>CMP_REQUEUE</code> 下校验，防序列号过期</td>
+</tr>
+</tbody>
+</table></div><p><code>pthread_cond_signal</code> 对应 <code>FUTEX_WAKE</code>，<code>pthread_cond_broadcast</code> 对应 val 传 <code>INT_MAX</code> 的 <code>FUTEX_WAKE</code>。glibc 在 cond 里还维护一个序列号 seq，用来区分「信号发生在等之前还是之后」，<code>FUTEX_WAIT</code> 的 val 传的就是它。这也是为什么被唤醒后必须重新检查条件：seq 变了只说明发生过唤醒事件，不说明条件成立。</p>
+<h2 id="十futex-如何支撑信号量" tabindex="-1">十、futex 如何支撑信号量 <a class="header-anchor" href="#十futex-如何支撑信号量"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>信号量比前两个简单，因为它的状态本来就只是个计数器。glibc 的 <code>sem_t</code> 把计数和等待者数塞进同一个 32 位字：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位段</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>高位</td>
+<td>当前计数值</td>
+</tr>
+<tr>
+<td>低位</td>
+<td>正在睡眠的等待者数量</td>
+</tr>
+</tbody>
+</table></div><p><code>sem_wait</code> 走一条和互斥锁同构的路：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 快路径：计数 &gt; 0，原子减 1 直接返回，不进内核 */</span>
+<span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+    <span class="hljs-type">int</span> val = atomic_load(&amp;sem-&gt;value);
+    <span class="hljs-keyword">if</span> (val &gt; <span class="hljs-number">0</span>) {
+        <span class="hljs-keyword">if</span> (__atomic_compare_exchange_n(&amp;sem-&gt;value, &amp;val, val - <span class="hljs-number">1</span>, <span class="hljs-number">0</span>,
+                                        __ATOMIC_ACQUIRE, __ATOMIC_RELAXED))
+            <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+        <span class="hljs-keyword">continue</span>;
+    }
+    <span class="hljs-comment">/* 慢路径：计数为 0，先把等待者数 +1，再睡 */</span>
+    val = atomic_fetch_add(&amp;sem-&gt;value, <span class="hljs-number">1</span>);
+    syscall(SYS_futex, &amp;sem-&gt;value, FUTEX_WAIT, val + <span class="hljs-number">1</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-number">0</span>);
+}
+</code></pre></div></code></pre>
+<p><code>FUTEX_WAIT</code> 的 val 传的是「加 1 之前的快照」加 1，也就是加上等待者位之后的值。这样如果 <code>sem_post</code> 在 <code>fetch_add</code> 之后、进入内核之前就发生了，内核复核会发现 word 已经变了，直接返回 <code>EWOULDBLOCK</code>，重试时能吃到那个增量。丢唤醒又被这套 val 机制堵住一次。</p>
+<p><code>sem_post</code> 只需要两步：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 计数加 1；若加之前存在等待者，唤醒一个 */</span>
+<span class="hljs-type">int</span> val = atomic_fetch_add(&amp;sem-&gt;value, <span class="hljs-number">1u</span> &lt;&lt; SEM_VALUE_SHIFT);
+<span class="hljs-keyword">if</span> (val &amp; SEM_NWAITERS_MASK)
+    syscall(SYS_futex, &amp;sem-&gt;value, FUTEX_WAKE, <span class="hljs-number">1</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-number">0</span>);
+</code></pre></div></code></pre>
+<p><code>FUTEX_WAKE_OP</code> 是给这条路径再砍一刀的设计。它能在一次系统调用里原子地修改 uaddr2 指向的值并唤醒两个队列上的 waiter，避免 <code>sem_post</code> 里「改值 + 唤醒」拆成两次内核往返。</p>
+<p>三种原语放在一起对照：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>原语</th>
+<th>用户态快路径</th>
+<th>慢路径系统调用</th>
+<th>等待队列挂在</th>
+<th>关键点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pthread_mutex</code></td>
+<td><code>cmpxchg</code> 0→1</td>
+<td><code>FUTEX_WAIT_PRIVATE</code> / <code>FUTEX_WAKE_PRIVATE</code></td>
+<td>mutex 字本身</td>
+<td>状态 2 表示有等待者，决定释放方是否唤醒</td>
+</tr>
+<tr>
+<td><code>pthread_cond</code></td>
+<td>不适用，总是慢路径</td>
+<td><code>FUTEX_WAIT</code> + <code>FUTEX_REQUEUE</code> / <code>FUTEX_WAKE</code></td>
+<td>cond 的 seq 字段</td>
+<td>一次 requeue 完成解锁加挂队，不可拆成两次</td>
+</tr>
+<tr>
+<td><code>sem_*</code></td>
+<td>原子减计数</td>
+<td><code>FUTEX_WAIT</code> / <code>FUTEX_WAKE</code> / <code>FUTEX_WAKE_OP</code></td>
+<td><code>sem_t</code> 的 value 字段</td>
+<td>计数与等待者数共用同一个 32 位字</td>
+</tr>
+</tbody>
+</table></div><h2 id="十一优先级继承与-pi-futex" tabindex="-1">十一、优先级继承与 PI futex <a class="header-anchor" href="#十一优先级继承与-pi-futex"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>normal futex 有个硬伤：它不认识优先级。这在实时系统里会直接炸成优先级翻转。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>优先级：A &gt; B &gt; C
+
+C（低优先级）持锁
+  └─ A（高优先级）抢锁失败，进入 D 状态睡下
+       └─ B（中优先级）被唤醒，抢占 C
+            └─ C 拿不到 CPU，A 只能无限期等下去
+</code></pre></div></code></pre>
+<p>C 的临界区本来很短，跑完就解锁，A 立刻能跑。问题出在 B：B 的优先级比 C 高，只要 B 就绪，C 就得让出 CPU。于是所有优先级介于 A 和 C 之间的任务都能插队，A 拿不到确定时间的 CPU 资源。优先级最高的那个反而等得最久。</p>
+<p>PI 就是 priority inheritance，解法很直接：A 持锁失败时，把锁的 owner（也就是 C）临时提到 A 的优先级；C 释放锁时，恢复原值。C 不再被 B 抢占，跑完临界区，A 顺利接手。</p>
+<p>原理就这么简单，实现要记两类账。</p>
+<p>从线程视角，得知道：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>记录项</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>该线程持有哪些锁，每把锁的 top waiter 是谁</td>
+<td>所有 top waiter 按优先级排序，决定自己该被提到多高</td>
+</tr>
+<tr>
+<td>该线程阻塞在哪一把锁上</td>
+<td>向上传递优先级时知道往哪走</td>
+</tr>
+</tbody>
+</table></div><p>从锁视角，得知道：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>记录项</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>这把锁的 owner 是谁</td>
+<td>提优先级时找到目标任务</td>
+</tr>
+<tr>
+<td>阻塞在这把锁上的线程，按优先级排序</td>
+<td>优先级最高的那个叫该锁的 top waiter</td>
+</tr>
+</tbody>
+</table></div><p>有了这两本账，只需维持一条准则：一个任务的临时优先级，等于它持有各把锁的 top waiter 中最高的那个优先级。</p>
+<h3 id="rt-mutexpi-的执行体" tabindex="-1">rt mutex：PI 的执行体 <a class="header-anchor" href="#rt-mutexpi-的执行体"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>PI futex 不自己实现这套逻辑，它把活包给内核的 rt mutex——就是内核里支持 PI 的那版互斥锁。看 rt mutex 怎么记账。</p>
+<p>从锁的视角看任务：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 概念示意：描述一个阻塞在 rt mutex 上的任务 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rt_mutex_waiter</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">task_struct</span> *<span class="hljs-title">task</span>;</span>          <span class="hljs-comment">/* 阻塞的任务 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rt_mutex</span>    *<span class="hljs-title">lock</span>;</span>          <span class="hljs-comment">/* 阻塞在哪把 rt mutex 上 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">rb_node</span>      <span class="hljs-title">tree_entry</span>;</span>    <span class="hljs-comment">/* 挂进 blocker 红黑树的节点 */</span>
+};
+</code></pre></div></code></pre>
+<p><code>rt_mutex</code> 的 <code>waiters</code> 成员就是这棵红黑树的根，<code>wait_lock</code> 保护树操作，<code>owner</code> 指向持锁任务。这棵树按优先级排序，最左节点（left most）就是该锁的 top waiter。</p>
+<p>从任务的视角看锁。<code>task_struct</code> 为此加了几个成员，最关键的是 <code>pi_waiters</code>。一个任务可以持有多把锁，每把锁都有自己的 top waiter，这些 top waiter 又组成一棵按优先级排序的红黑树，<code>pi_waiters</code> 是它的根。这棵树的最左节点对应的优先级，就是 PI 协议要求临时提升到的值。<code>pi_top_task</code> 指向那个最左节点对应的任务，称之为 top pi waiter。<code>pi_blocked_on</code> 则指向自己正在阻塞的那把 rt mutex 的 waiter 对象。</p>
+<h3 id="pi-chain" tabindex="-1">PI chain <a class="header-anchor" href="#pi-chain"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>任务与锁的关系只有两种边，形状被限死了：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>task 1 持有 Lock A、Lock B，阻塞在 Lock C 上
+
+  Lock A ──┐
+           ├──► task 1 ──► Lock C
+  Lock B ──┘
+</code></pre></div></code></pre>
+<p>箭头方向有严格约束。一个任务在任一时刻只能阻塞在一把锁上，所以「任务 → 锁」这条边永远只有一根，不能分叉。「锁 → 任务」可以有多个，因为一个任务可以同时持有多把锁，多把锁汇聚到同一个任务上。</p>
+<p>把这种结构串起来就是 PI chain。四条链的例子：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>链</th>
+<th>形式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Lock D → task 2</td>
+</tr>
+<tr>
+<td>2</td>
+<td>task 4 → Lock D → task 2</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Lock A → task 1 → Lock C → task 2</td>
+</tr>
+<tr>
+<td>4</td>
+<td>task 3 → Lock B → task 1 → Lock C → task 2</td>
+</tr>
+</tbody>
+</table></div><p>要让 PI 正常工作，链上必须维持一条不变式：右端任务的优先级必须大于等于左端任务们的优先级。以第四条链为例，task 2 的优先级要不低于 task 1 和 task 3，task 1 的优先级要不低于 task 3。一旦某个任务被提了优先级，整条链都要跟着往上调整，这就是 rt mutex 里那段传播循环在干的事。</p>
+<h3 id="pi-futex-与-rt-mutex-的分工" tabindex="-1">PI futex 与 rt mutex 的分工 <a class="header-anchor" href="#pi-futex-与-rt-mutex-的分工"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>接口层面区别清晰：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>阻塞</th>
+<th>唤醒</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>normal futex</td>
+<td><code>FUTEX_WAIT</code></td>
+<td><code>FUTEX_WAKE</code></td>
+</tr>
+<tr>
+<td>PI futex</td>
+<td><code>FUTEX_LOCK_PI</code></td>
+<td><code>FUTEX_UNLOCK_PI</code></td>
+</tr>
+</tbody>
+</table></div><p>PI 版本里那个「lock」和「unlock」，作用对象是代理的 rt mutex，不是用户态那把锁。</p>
+<p>两种 futex 下，被阻塞的任务都对应一个 <code>futex_q</code>。normal futex 有它就够了：挂队、唤醒都能实现。PI futex 还得按 PI chain 调整优先级，为此多出两个对象：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>对象</th>
+<th>承载什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rt_mutex_waiter</code></td>
+<td>一个阻塞在 rt mutex 上的任务，<code>lock</code> 指针指明阻塞在哪把 rt mutex 上</td>
+</tr>
+<tr>
+<td><code>futex_pi_state</code></td>
+<td>优先级继承的全部状态：该用户态锁对应的内核 rt mutex、rt mutex 的 owner 任务信息</td>
+</tr>
+</tbody>
+</table></div><p><code>FUTEX_LOCK_PI</code> 的语义常被误读。它不表示「尝试上锁」。线程成功拿到上层锁时，根本没有 futex 系统调用发生——因为此刻 rt mutex 并没有被同时持住、owner 也没设。只有当竞争上层锁失败、准备进内核阻塞时，<code>FUTEX_LOCK_PI</code> 才被调用，它的真实含义是「为 PI 记账而对代理 rt mutex 执行上锁」。</p>
+<p>第一次 <code>FUTEX_LOCK_PI</code> 最复杂，要同时完成两件事：让 owner 在 rt mutex 上持锁，让 current 阻塞在这把 rt mutex 上。</p>
+<p>第一件事是建账。用户态把 owner id 传进内核，内核分配 <code>futex_pi_state</code>、创建一个 rt mutex，然后建立三者关系：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>动作</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>把 <code>futex_pi_state</code> 挂进 owner 任务的 pi_state 链表。一个任务可持多把上层锁，需要链表管理；没有竞争的锁不会产生 pi_state</td>
+</tr>
+<tr>
+<td>2</td>
+<td>把 <code>futex_pi_state-&gt;owner</code> 指向对应的 owner 任务</td>
+</tr>
+</tbody>
+</table></div><p>第二件事是让 current 去抢这把刚设好 owner 的 rt mutex。结果十有八九是阻塞——本来就是要靠这个阻塞关系把 PI 状态挂上链条。要建立的关系有五个：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>动作</th>
+<th>内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>rt_mutex_waiter-&gt;lock</code> 指向对应 rt mutex，<code>-&gt;task</code> 指向当前要阻塞的任务</td>
+</tr>
+<tr>
+<td>2</td>
+<td>把 waiter 插进 rt mutex 的 <code>waiters</code> 红黑树</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>task_struct-&gt;pi_blocked_on</code> 指向这个 waiter</td>
+</tr>
+<tr>
+<td>4</td>
+<td>新任务的优先级若高于当前 top waiter，更新 owner 的 top waiter：旧的从红黑树摘掉，新的插进去</td>
+</tr>
+<tr>
+<td>5</td>
+<td>按新 top waiter 更新 owner 的动态优先级；优先级一动，整条 PI chain 都要跟着调</td>
+</tr>
+</tbody>
+</table></div><p>第二次及以后的 <code>FUTEX_LOCK_PI</code> 便宜得多。rt mutex 已经现成，不必新建：在 bucket 里找到第一个 <code>futex_q</code>，顺它的 <code>pi_state</code> 指针就能定位到 rt mutex，直接在上面上锁让自己阻塞即可。</p>
+<p><code>FUTEX_UNLOCK_PI</code> 走的是反方向：把代理 rt mutex 上的 owner 摘下来，恢复它的原始优先级，再把 rt mutex 交给 top waiter。这条路径的完整细节牵涉到 rt mutex 的 stealer 逻辑和 <code>FUTEX_CMP_REQUEUE_PI</code> 的原子移交，链条比前面十节都长。</p>
+<h2 id="十二futex-的常见误解" tabindex="-1">十二、futex 的常见误解 <a class="header-anchor" href="#十二futex-的常见误解"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一节把容易卡住的点摆成对照表。每一条都能在前面的章节里找到落点。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>误解</th>
+<th>实际情况</th>
+<th>依据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>futex 名字里有 mutex，所以它就是个互斥锁</td>
+<td>它是通用同步原语，互斥锁、读写锁、条件变量都在它上面搭</td>
+<td>内核不认识 normal futex word 的语义</td>
+</tr>
+<tr>
+<td>futex 由内核管理锁状态</td>
+<td>锁状态在用户态，内核只管等待队列</td>
+<td>futex word 是你的进程内存</td>
+</tr>
+<tr>
+<td><code>FUTEX_WAKE</code> 会把锁交给被唤醒的线程</td>
+<td>只赋予重新竞争的机会，醒来必须重做 CAS</td>
+<td>唤醒只改调度状态，不改 word</td>
+</tr>
+<tr>
+<td>每次加解锁都要进内核</td>
+<td>无竞争时 0 次系统调用</td>
+<td>状态 0→1 一条 CAS 就够</td>
+</tr>
+<tr>
+<td>64 位平台上 futex word 是 64 位</td>
+<td>所有平台都是 32 位</td>
+<td>硬件架构无关</td>
+</tr>
+<tr>
+<td><code>FUTEX_WAIT</code> 是无条件睡眠</td>
+<td>带 val 做期望值校验，不等则返回 <code>EWOULDBLOCK</code></td>
+<td>复核在 bucket 自旋锁内完成</td>
+</tr>
+<tr>
+<td>被唤醒说明条件已成立</td>
+<td>只说明发生过唤醒事件，条件得自己再查</td>
+<td>唤醒上限、假唤醒、超时都会发生</td>
+</tr>
+<tr>
+<td>优先级继承是 futex 模块自己实现的</td>
+<td>由 rt mutex 代理完成，futex 只记录 <code>pi_state</code></td>
+<td><code>FUTEX_LOCK_PI</code> 锁的是代理 rt mutex</td>
+</tr>
+<tr>
+<td><code>FUTEX_WAKE</code> 的 val 任意取值有区别</td>
+<td>实际只有 1 和 <code>INT_MAX</code> 两种用法：唤一个或全唤</td>
+<td>中间值只是上限</td>
+</tr>
+<tr>
+<td><code>FUTEX_PRIVATE_FLAG</code> 只是性能提示</td>
+<td>它决定 hash key 算法，设错会导致互斥失效</td>
+<td>private 用 <code>(mm, addr)</code>，shared 用页信息</td>
+</tr>
+<tr>
+<td>条件变量可以「先解锁再等」</td>
+<td>顺序反过来会丢信号，必须一次 requeue 完成</td>
+<td><code>FUTEX_REQUEUE</code> 存在的理由</td>
+</tr>
+<tr>
+<td>RT 线程和 CFS 线程在 futex 队列里先来先服务</td>
+<td>队列是 <code>plist</code>，RT 按优先级插队，CFS 走 FIFO</td>
+<td><code>futex_q.list</code> 是有序链表</td>
+</tr>
+</tbody>
+</table></div><h2 id="十三易错点速查" tabindex="-1">十三、易错点速查 <a class="header-anchor" href="#十三易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>故障现象往前翻，基本都能落到下面几行。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>根因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>偶发死锁，日志里没任何异常</td>
+<td>等待条件写在 <code>if</code> 里，被假唤醒后条件不成立就直接往下走</td>
+<td>一律写成 <code>while</code> 循环重验条件</td>
+</tr>
+<tr>
+<td>唤醒发出去了，等待方还在睡</td>
+<td>检查条件与 <code>FUTEX_WAIT</code> 分两步做，中间出现丢唤醒</td>
+<td>把期望值 val 传给内核，让复核和入队在锁内一次完成</td>
+</tr>
+<tr>
+<td>跨进程互斥失效，两个进程同时进临界区</td>
+<td>word 在共享内存里，但用了 <code>FUTEX_PRIVATE_FLAG</code> 或 <code>PTHREAD_PROCESS_PRIVATE</code></td>
+<td>改用非 private 版本，让 key 走页信息</td>
+</tr>
+<tr>
+<td>线程卡在 <code>FUTEX_WAIT</code> 永不返回</td>
+<td>唤醒方提前用原子操作把 word 改了却没发 <code>FUTEX_WAKE</code>；或 val 传错</td>
+<td>复核 val 的取值，改完 word 后按状态位判断是否唤醒</td>
+</tr>
+<tr>
+<td>RT 任务延迟抖动远超临界区长度</td>
+<td>优先级翻转，低优先级 owner 被中优先级任务抢占</td>
+<td>换用 PI 版互斥锁，走 <code>FUTEX_LOCK_PI</code></td>
+</tr>
+<tr>
+<td>加了 PI 锁但抖动仍在</td>
+<td>PI 只解决锁链上的继承，链外任务照样抢占</td>
+<td>检查 PI chain 之外是否还有未受保护的临界资源</td>
+</tr>
+<tr>
+<td><code>pthread_cond_wait</code> 返回后 mutex 不在手里</td>
+<td>误以为 <code>EWOULDBLOCK</code> 或信号打断的路径也会重新持锁</td>
+<td>按返回值分支处理，被打断时要自己决定是否重入</td>
+</tr>
+<tr>
+<td>超时设了不生效，或提前超时</td>
+<td>超时传的是相对时长而非绝对时刻；基准时钟与 <code>FUTEX_CLOCK_REALTIME</code> 不一致</td>
+<td>用 <code>clock_gettime</code> 取当前时刻再加时长，保证基准一致</td>
+</tr>
+<tr>
+<td>系统调用次数远高于线程数</td>
+<td>高争抢下进入「睡—醒—失败—再睡」循环</td>
+<td>缩短临界区，或降低并发度、改用分批唤醒</td>
+</tr>
+<tr>
+<td>把 <code>FUTEX_WAKE</code> 的 val 传成等待者总数</td>
+<td>传大了只是多唤几个，传小了唤醒不足导致长尾</td>
+<td>记清语义：1 或 <code>INT_MAX</code></td>
+</tr>
+<tr>
+<td>在信号处理函数里调 <code>pthread_mutex_lock</code></td>
+<td>加锁路径不是异步信号安全的，撞上同一把锁就死锁</td>
+<td>信号上下文只碰无锁结构或 <code>trylock</code></td>
+</tr>
+<tr>
+<td>requeue 用在非 cond 场景，行为诡异</td>
+<td>被转移的任务只是换了队列，没有醒来</td>
+<td>记住 requeue 不唤醒，只改归属</td>
+</tr>
+</tbody>
+</table></div><p>三条能压住大部分问题的习惯：</p>
+<p>写等待，永远 <code>while</code> 环加条件复核，因为唤醒只是「你被允许再看一眼」。</p>
+<p>设 val，让内核替你消除空隙。凡是「先判断再 sleep」的写法，都要问一句：判断和 sleep 之间，谁来兜底。</p>
+<p>分清成本归属。无竞争路径是一条原子指令，所有开销都在慢路径上。把它们混为一谈，就会在临界区里塞进不必要的唤醒调用。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一futex-是什么快在哪" data-toc-target="一futex-是什么快在哪">一、futex 是什么：快在哪</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二为什么需要内核参与" data-toc-target="二为什么需要内核参与">二、为什么需要内核参与</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三futex-的核心思想用户态快路径" data-toc-target="三futex-的核心思想用户态快路径">三、futex 的核心思想：用户态快路径</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四futex-变量与等待队列" data-toc-target="四futex-变量与等待队列">四、futex 变量与等待队列</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五futex-的系统调用接口" data-toc-target="五futex-的系统调用接口">五、futex 的系统调用接口</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六futex_wait-与-futex_wake" data-toc-target="六futex_wait-与-futex_wake">六、FUTEX_WAIT 与 FUTEX_WAKE</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七竞争时的慢路径" data-toc-target="七竞争时的慢路径">七、竞争时的慢路径</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八futex-如何支撑-pthread_mutex" data-toc-target="八futex-如何支撑-pthread_mutex">八、futex 如何支撑 pthread_mutex</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九futex-如何支撑条件变量" data-toc-target="九futex-如何支撑条件变量">九、futex 如何支撑条件变量</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十futex-如何支撑信号量" data-toc-target="十futex-如何支撑信号量">十、futex 如何支撑信号量</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一优先级继承与-pi-futex" data-toc-target="十一优先级继承与-pi-futex">十一、优先级继承与 PI futex</a>
+                    
+                    <a class="toc-item toc-lv3" href="#rt-mutexpi-的执行体" data-toc-target="rt-mutexpi-的执行体">rt mutex：PI 的执行体</a>
+                    
+                    <a class="toc-item toc-lv3" href="#pi-chain" data-toc-target="pi-chain">PI chain</a>
+                    
+                    <a class="toc-item toc-lv3" href="#pi-futex-与-rt-mutex-的分工" data-toc-target="pi-futex-与-rt-mutex-的分工">PI futex 与 rt mutex 的分工</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二futex-的常见误解" data-toc-target="十二futex-的常见误解">十二、futex 的常见误解</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三易错点速查" data-toc-target="十三易错点速查">十三、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","title":"futex：用户态同步原语","url":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","type":"current"},{"id":"/D.操作系统/03-线程与同步/Pthread-线程生命周期：创建、取消与清理/","title":"Pthread 线程生命周期：创建、取消与清理","url":"/D.操作系统/03-线程与同步/Pthread-线程生命周期：创建、取消与清理/","type":"neighbor"},{"id":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","title":"互斥锁：从 API 到优先级继承","url":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","type":"neighbor"},{"id":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","title":"信号量与条件变量：等待与唤醒","url":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","type":"neighbor"},{"id":"/D.操作系统/03-线程与同步/多线程并发服务器实战/","title":"多线程并发服务器实战","url":"/D.操作系统/03-线程与同步/多线程并发服务器实战/","type":"neighbor"}],"links":[{"source":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","target":"/D.操作系统/03-线程与同步/Pthread-线程生命周期：创建、取消与清理/","type":"neighbor"},{"source":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","target":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","type":"neighbor"},{"source":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","target":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","type":"neighbor"},{"source":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","target":"/D.操作系统/03-线程与同步/多线程并发服务器实战/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

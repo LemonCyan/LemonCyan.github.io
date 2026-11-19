@@ -1,0 +1,1143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>V4L2 视频采集：框架、ioctl 与控制流程 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">V4L2 视频采集：框架、ioctl 与控制流程</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/C.驱动/13-杂项/V4L2-视频采集：框架、ioctl-与控制流程/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">V4L2 视频采集：框架、ioctl 与控制流程</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">V4L2 视频采集：框架、ioctl 与控制流程</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <p>V4L2 是 Linux 内核的视频设备框架，为摄像头、视频输出、overlay 等设备提供一套统一的 <code>ioctl</code> 接口。用上它之后，同一份采集程序能驱动 UVC 摄像头、SoC 自带的 MIPI CSI 控制器、TV 采集卡，差别只体现在支持的格式和能力位上。</p>
+<h2 id="一v4l2-管什么" tabindex="-1">一、V4L2 管什么 <a class="header-anchor" href="#一v4l2-管什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>V4L2（video for Linux 2）在 <code>include/uapi/linux/videodev2.h</code> 里定义了一整套数据结构和 ioctl 命令。</p>
+<blockquote>
+<p>老文章常写 <code>include/linux/videodev.h</code>，那个头文件在 <strong>2.6.38 已随 V4L1 一起删除</strong>。现在只有 <code>videodev2.h</code>，路径在 <code>uapi/</code> 下（用户态可见的 API 都在 uapi 里）。</p>
+</blockquote>
+<p>它面向三类接口：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>接口</th>
+<th>干什么</th>
+<th>典型设备</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>video capture</td>
+<td>视频捕获</td>
+<td>摄像头、采集卡</td>
+</tr>
+<tr>
+<td>video output</td>
+<td>视频输出，把图像序列编码成模拟视频信号送出去</td>
+<td>电视输出芯片</td>
+</tr>
+<tr>
+<td>video overlay</td>
+<td>把采集的数据直接送到显示设备，不经过 CPU 搬运</td>
+<td>老式带 overlay 的显示控制器</td>
+</tr>
+</tbody>
+</table></div><p>本篇只讲 capture。设备节点是 <code>/dev/video0</code>、<code>/dev/video1</code>……，本质上就是字符设备，<code>open</code> / <code>close</code> / <code>ioctl</code> / <code>mmap</code> 四件套。</p>
+<p>采集数据有两条路：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>方式</th>
+<th>机制</th>
+<th>适用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>read</code></td>
+<td>内核把一帧拷到用户 buffer</td>
+<td>静态图片、低频采集</td>
+</tr>
+<tr>
+<td><code>mmap</code> + streaming</td>
+<td>内核维护缓冲队列，映射到用户空间</td>
+<td>连续视频</td>
+</tr>
+</tbody>
+</table></div><p><code>read</code> 每帧都要跨空间拷一次，1080p 一帧 3MB，拷一次几毫秒，帧率上不去。<code>mmap</code> 只是建立页表映射，用户态直接读内核那几块 buffer，零拷贝。<strong>连续采集一律用 mmap。</strong></p>
+<p>设备支持哪种，由 <code>VIDIOC_QUERYCAP</code> 报告的 <code>V4L2_CAP_READWRITE</code> / <code>V4L2_CAP_STREAMING</code> 决定。</p>
+<h2 id="二一次采集的完整流程" tabindex="-1">二、一次采集的完整流程 <a class="header-anchor" href="#二一次采集的完整流程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>九步，顺序固定：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>① open(&quot;/dev/video0&quot;)                      打开设备
+② VIDIOC_QUERYCAP                          查能力，确认支持 capture + streaming
+③ VIDIOC_ENUMINPUT / VIDIOC_S_INPUT        枚举并选择输入源
+④ VIDIOC_ENUM_FMT                          确认支持目标像素格式
+⑤ VIDIOC_S_FMT                             设置分辨率与像素格式
+⑥ VIDIOC_REQBUFS                           向内核申请 N 块缓冲
+⑦ VIDIOC_QUERYBUF + mmap                   逐块查信息并映射到用户空间
+⑧ VIDIOC_QBUF × N + VIDIOC_STREAMON        全部入队，启动采集
+   ┌──────────────────────────────────┐
+   │ VIDIOC_DQBUF   取出一帧（有数据时返回）│
+   │ 处理这一帧（存盘 / 转 RGB / 显示）     │
+   │ VIDIOC_QBUF    把这帧还回去           │  ← 循环
+   └──────────────────────────────────┘
+⑨ VIDIOC_STREAMOFF + munmap + close        停止并释放
+</code></pre></div></code></pre>
+<p>第 ⑧ 步之后是个<strong>永动的入队/出队循环</strong>。这一点是理解 streaming 模式的关键：内核手里始终握着「空 buffer 队列」，采集满一块就把它挪到「满 buffer 队列」；应用 <code>DQBUF</code> 从满队列摘一块，处理完 <code>QBUF</code> 还回空队列。<strong>队列里的 buffer 数量是不变的</strong>，永远是 <code>REQBUFS</code> 申请的那个数。</p>
+<p>如果应用忘了 <code>QBUF</code>，空队列耗尽，采集就停了。这是「程序跑着跑着不出图了」最常见的原因。</p>
+<h2 id="三查能力vidioc_querycap" tabindex="-1">三、查能力：VIDIOC_QUERYCAP <a class="header-anchor" href="#三查能力vidioc_querycap"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_capability</span> {</span>
+        __u8    driver[<span class="hljs-number">16</span>];      <span class="hljs-comment">/* 驱动名，如 &quot;uvcvideo&quot; */</span>
+        __u8    card[<span class="hljs-number">32</span>];        <span class="hljs-comment">/* 设备名 */</span>
+        __u8    bus_info[<span class="hljs-number">32</span>];    <span class="hljs-comment">/* 总线信息，如 &quot;usb-s3c24xx-1&quot; */</span>
+        __u32   version;         <span class="hljs-comment">/* 内核版本，KERNEL_VERSION() 编码 */</span>
+        __u32   capabilities;    <span class="hljs-comment">/* 设备能力位 */</span>
+        __u32   device_caps;     <span class="hljs-comment">/* 当前这个节点的能力位（3.3+） */</span>
+        __u32   reserved[<span class="hljs-number">4</span>];
+};
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">v4l2_querycap</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-keyword">struct</span> v4l2_capability *cap)</span>
+{
+    <span class="hljs-keyword">if</span> (ioctl(fd, VIDIOC_QUERYCAP, cap) &lt; <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;VIDIOC_QUERYCAP&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>能力位里要关心的：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>标志</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>V4L2_CAP_VIDEO_CAPTURE</code></td>
+<td>支持视频捕获</td>
+</tr>
+<tr>
+<td><code>V4L2_CAP_VIDEO_OUTPUT</code></td>
+<td>支持视频输出</td>
+</tr>
+<tr>
+<td><code>V4L2_CAP_VIDEO_OVERLAY</code></td>
+<td>支持 overlay</td>
+</tr>
+<tr>
+<td><code>V4L2_CAP_STREAMING</code></td>
+<td>支持 mmap + 流式 IO</td>
+</tr>
+<tr>
+<td><code>V4L2_CAP_READWRITE</code></td>
+<td>支持 <code>read</code> / <code>write</code></td>
+</tr>
+<tr>
+<td><code>V4L2_CAP_DEVICE_CAPS</code></td>
+<td><code>device_caps</code> 字段有效</td>
+</tr>
+</tbody>
+</table></div><p><strong>这里有个 3.3 之后必须注意的分叉。</strong> 一个物理设备往往注册出多个 <code>/dev/videoN</code> 节点（比如一个 UVC 摄像头同时有采集节点和 metadata 节点），它们的 <code>capabilities</code> 是<strong>整个物理设备</strong>的能力合集，<code>device_caps</code> 才是<strong>当前这个节点</strong>的能力。</p>
+<p>只查 <code>capabilities</code> 会误判：<code>/dev/video1</code> 是 metadata 节点，<code>capabilities</code> 里也有 <code>V4L2_CAP_VIDEO_CAPTURE</code>，但你对它做采集会失败。</p>
+<p>正确写法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>cap.capabilities &amp; V4L2_CAP_DEVICE_CAPS
+    ? cap.device_caps          <span class="hljs-comment">/* 新式：用节点能力 */</span>
+    : cap.capabilities;        <span class="hljs-comment">/* 老驱动：只能退回设备能力 */</span>
+</code></pre></div></code></pre>
+<p>判定采集能力：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> caps = (cap.capabilities &amp; V4L2_CAP_DEVICE_CAPS)
+                    ? cap.device_caps : cap.capabilities;
+
+<span class="hljs-keyword">if</span> (!(caps &amp; V4L2_CAP_VIDEO_CAPTURE)) {
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;not a capture device\n&quot;</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+<span class="hljs-keyword">if</span> (!(caps &amp; V4L2_CAP_STREAMING)) {
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;no streaming support, fall back to read()\n&quot;</span>);
+}
+</code></pre></div></code></pre>
+<h2 id="四选输入源enuminput--s_input" tabindex="-1">四、选输入源：ENUMINPUT / S_INPUT <a class="header-anchor" href="#四选输入源enuminput--s_input"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一个设备可能有多个输入。比如 SoC 上的摄像头控制器，可能同时接了 MIPI CSI 和并口 DVP 两路，得选一路。</p>
+<p>UVC 摄像头一般只有一路，这一步可以跳过。但只要设备有多路输入，就必须显式选。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_input</span> {</span>
+    __u32        index;        <span class="hljs-comment">/* 输入索引，用户空间填 */</span>
+    __u8         name[<span class="hljs-number">32</span>];     <span class="hljs-comment">/* 名字，驱动填 */</span>
+    __u32        type;         <span class="hljs-comment">/* V4L2_INPUT_TYPE_TUNER / _CAMERA */</span>
+    __u32        audioset;     <span class="hljs-comment">/* 关联的音频输入位掩码 */</span>
+    __u32        tuner;        <span class="hljs-comment">/* 关联的调谐器索引 */</span>
+    v4l2_std_id  <span class="hljs-built_in">std</span>;          <span class="hljs-comment">/* 支持的视频标准（PAL/NTSC…） */</span>
+    __u32        status;       <span class="hljs-comment">/* 输入状态位 */</span>
+    __u32        reserved[<span class="hljs-number">4</span>];
+};
+</code></pre></div></code></pre>
+<p><code>index</code> 是唯一一个由用户空间填的字段。驱动从 0 开始分配，<strong>索引必须连续</strong>，可以没有输入，但只要有输入，索引 0 一定存在。枚举到 <code>EINVAL</code> 就说明到末尾了。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">v4l2_enum_input</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-type">char</span> *name_out)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_input</span> <span class="hljs-title">in</span>;</span>
+    <span class="hljs-type">int</span> found = <span class="hljs-number">0</span>;
+
+    <span class="hljs-built_in">memset</span>(&amp;in, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(in));
+    in.index = <span class="hljs-number">0</span>;
+    <span class="hljs-keyword">while</span> (ioctl(fd, VIDIOC_ENUMINPUT, &amp;in) == <span class="hljs-number">0</span>) {
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;input %u: %s, std: 0x%08llx\n&quot;</span>,
+               in.index, in.name, (<span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> <span class="hljs-type">long</span>)in.<span class="hljs-built_in">std</span>);
+        <span class="hljs-keyword">if</span> (in.index == <span class="hljs-number">0</span>) {
+            <span class="hljs-built_in">strncpy</span>(name_out, (<span class="hljs-type">char</span> *)in.name, <span class="hljs-number">31</span>);
+            found = <span class="hljs-number">1</span>;
+        }
+        in.index++;
+    }
+    <span class="hljs-keyword">return</span> found ? <span class="hljs-number">0</span> : <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p><code>status</code> 字段值得看一眼：它是位掩码，每一位代表一种问题，比如没有电源、没有信号、没有同步锁。采集拿不到图的时候，先来这里确认输入源本身有没有信号。</p>
+<p>选定输入：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_input</span> <span class="hljs-title">in</span> =</span> { .index = <span class="hljs-number">0</span> };
+<span class="hljs-keyword">if</span> (ioctl(fd, VIDIOC_S_INPUT, &amp;in) &lt; <span class="hljs-number">0</span>)
+    perror(<span class="hljs-string">&quot;VIDIOC_S_INPUT&quot;</span>);
+</code></pre></div></code></pre>
+<p>驱动侧对应的是 <code>vidioc_enum_input</code> / <code>vidioc_s_input</code> 两个回调。<code>vidioc_s_input</code> 里驱动要真正切换硬件通路，索引非法返回 <code>-EINVAL</code>，硬件故障返回 <code>-EIO</code>。</p>
+<h2 id="五协商格式enum_fmt-与-s_fmt" tabindex="-1">五、协商格式：ENUM_FMT 与 S_FMT <a class="header-anchor" href="#五协商格式enum_fmt-与-s_fmt"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="5.1-先问支持什么" tabindex="-1">5.1 先问支持什么 <a class="header-anchor" href="#5.1-先问支持什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_fmtdesc</span> {</span>
+        __u32               index;
+        <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_buf_type</span>  <span class="hljs-title">type</span>;</span>
+        __u32               flags;
+        __u8                description[<span class="hljs-number">32</span>];   <span class="hljs-comment">/* 人读的描述 */</span>
+        __u32               pixelformat;       <span class="hljs-comment">/* 四字符码，如 &#x27;YUYV&#x27; */</span>
+        __u32               reserved[<span class="hljs-number">4</span>];
+};
+</code></pre></div></code></pre>
+<p>枚举方式和输入一样，<code>index</code> 从 0 递增直到 <code>EINVAL</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">v4l2_enum_fmt</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> want, <span class="hljs-keyword">enum</span> v4l2_buf_type type)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_fmtdesc</span> <span class="hljs-title">desc</span>;</span>
+    <span class="hljs-type">int</span> found = <span class="hljs-number">0</span>;
+
+    <span class="hljs-built_in">memset</span>(&amp;desc, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(desc));
+    desc.type = type;
+    desc.index = <span class="hljs-number">0</span>;
+
+    <span class="hljs-keyword">while</span> (ioctl(fd, VIDIOC_ENUM_FMT, &amp;desc) == <span class="hljs-number">0</span>) {
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;pixelformat = %c%c%c%c, %s\n&quot;</span>,
+               desc.pixelformat &amp; <span class="hljs-number">0xFF</span>,
+               (desc.pixelformat &gt;&gt; <span class="hljs-number">8</span>) &amp; <span class="hljs-number">0xFF</span>,
+               (desc.pixelformat &gt;&gt; <span class="hljs-number">16</span>) &amp; <span class="hljs-number">0xFF</span>,
+               (desc.pixelformat &gt;&gt; <span class="hljs-number">24</span>) &amp; <span class="hljs-number">0xFF</span>,
+               desc.description);
+        <span class="hljs-keyword">if</span> (desc.pixelformat == want)
+            found = <span class="hljs-number">1</span>;
+        desc.index++;
+    }
+    <span class="hljs-keyword">return</span> found ? <span class="hljs-number">0</span> : <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p><code>pixelformat</code> 是四字符码（FourCC），用小端序打包成 <code>__u32</code>。<code>'YUYV'</code> 展开就是 <code>0x56595559</code>，所以打印时要按字节拆。</p>
+<p>常见格式：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>FourCC</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>V4L2_PIX_FMT_YUYV</code></td>
+<td>YUV 4:2:2 打包，每 4 字节两个像素</td>
+</tr>
+<tr>
+<td><code>V4L2_PIX_FMT_UYVY</code> / <code>VYUY</code> / <code>YVYU</code></td>
+<td>同上，字节序不同</td>
+</tr>
+<tr>
+<td><code>V4L2_PIX_FMT_NV12</code> / <code>NV21</code></td>
+<td>YUV 4:2:0，Y 平面 + UV 交织平面</td>
+</tr>
+<tr>
+<td><code>V4L2_PIX_FMT_YUV420</code></td>
+<td>YUV 4:2:0 三平面</td>
+</tr>
+<tr>
+<td><code>V4L2_PIX_FMT_RGB565</code> / <code>RGB32</code></td>
+<td>直接输出 RGB</td>
+</tr>
+<tr>
+<td><code>V4L2_PIX_FMT_MJPEG</code> / <code>JPEG</code></td>
+<td>Motion-JPEG 压缩流</td>
+</tr>
+<tr>
+<td><code>V4L2_PIX_FMT_H264</code></td>
+<td>H.264 压缩流</td>
+</tr>
+</tbody>
+</table></div><p>UVC 摄像头几乎都支持 MJPEG 和 YUYV。<strong>如果带宽吃紧，选 MJPEG</strong>。它是压缩流，但要自己解码；YUYV 是裸数据，直接可用，代价是占用带宽大。在 USB 1.1（12Mbps）的板子上，320×240 YUYV@25fps 就要 3MB/s，勉强够，更高分辨率必须换 MJPEG。</p>
+<h3 id="5.2-再设格式" tabindex="-1">5.2 再设格式 <a class="header-anchor" href="#5.2-再设格式"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_format</span> {</span>
+        <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_buf_type</span> <span class="hljs-title">type</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">union</span> {</span>
+                <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_pix_format</span>          <span class="hljs-title">pix</span>;</span>    <span class="hljs-comment">/* CAPTURE 时用这个 */</span>
+                <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_window</span>              <span class="hljs-title">win</span>;</span>    <span class="hljs-comment">/* OVERLAY */</span>
+                <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_vbi_format</span>          <span class="hljs-title">vbi</span>;</span>
+                <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_sliced_vbi_format</span>   <span class="hljs-title">sliced</span>;</span>
+                __u8    raw_data[<span class="hljs-number">200</span>];
+        } fmt;
+};
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_pix_format</span> {</span>
+        __u32             width;
+        __u32             height;
+        __u32             pixelformat;
+        <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_field</span>   <span class="hljs-title">field</span>;</span>
+        __u32             bytesperline;   <span class="hljs-comment">/* 每行字节数，驱动可回填 */</span>
+        __u32             sizeimage;      <span class="hljs-comment">/* 一帧总字节数 */</span>
+        <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_colorspace</span> <span class="hljs-title">colorspace</span>;</span>
+        __u32             priv;
+};
+</code></pre></div></code></pre>
+<p><code>fmt</code> 是 union，哪个成员有效取决于 <code>type</code>。capture 用 <code>fmt.pix</code>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">v4l2_s_fmt</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> *width, <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> *height,
+               <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> pixfmt, <span class="hljs-keyword">enum</span> v4l2_buf_type type)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_format</span> <span class="hljs-title">fmt</span>;</span>
+
+    <span class="hljs-built_in">memset</span>(&amp;fmt, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(fmt));
+    fmt.type = type;
+    fmt.fmt.pix.width       = *width;
+    fmt.fmt.pix.height      = *height;
+    fmt.fmt.pix.pixelformat = pixfmt;
+    fmt.fmt.pix.field       = V4L2_FIELD_ANY;
+
+    <span class="hljs-keyword">if</span> (ioctl(fd, VIDIOC_S_FMT, &amp;fmt) &lt; <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;VIDIOC_S_FMT&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    <span class="hljs-comment">/* 关键：驱动可能改写了参数，必须回读 */</span>
+    *width  = fmt.fmt.pix.width;
+    *height = fmt.fmt.pix.height;
+
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;actual: %ux%u, bytesperline=%u, sizeimage=%u\n&quot;</span>,
+           fmt.fmt.pix.width, fmt.fmt.pix.height,
+           fmt.fmt.pix.bytesperline, fmt.fmt.pix.sizeimage);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><strong><code>S_FMT</code> 是「请求」不是「命令」。</strong> 如果设备不支持你给的分辨率，内核不会报错，而是<strong>把结构体改写成它支持的最接近值</strong>并返回 0。所以：</p>
+<ul>
+<li>必须回读 <code>width</code> / <code>height</code>，后面的代码全部以回读值为准；</li>
+<li>申请 buffer 和计算行偏移时用 <code>bytesperline</code>，不要自己拿 <code>width × bpp</code> 算，驱动可能为了对齐在行尾填充。</li>
+</ul>
+<p><code>field</code> 填 <code>V4L2_FIELD_ANY</code> 让驱动决定隔行/逐行。摄像头发来的都是逐行，回读得到 <code>V4L2_FIELD_NONE</code>。</p>
+<h2 id="六申请缓冲vidioc_reqbufs" tabindex="-1">六、申请缓冲：VIDIOC_REQBUFS <a class="header-anchor" href="#六申请缓冲vidioc_reqbufs"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_requestbuffers</span> {</span>
+        __u32                count;      <span class="hljs-comment">/* 要几块，驱动可能改小 */</span>
+        <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_buf_type</span>   <span class="hljs-title">type</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_memory</span>     <span class="hljs-title">memory</span>;</span>     <span class="hljs-comment">/* MMAP / USERPTR / DMABUF */</span>
+        __u32                reserved[<span class="hljs-number">2</span>];
+};
+</code></pre></div></code></pre>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_requestbuffers</span> <span class="hljs-title">req</span>;</span>
+
+<span class="hljs-built_in">memset</span>(&amp;req, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(req));
+req.count  = <span class="hljs-number">4</span>;
+req.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+req.memory = V4L2_MEMORY_MMAP;
+
+<span class="hljs-keyword">if</span> (ioctl(fd, VIDIOC_REQBUFS, &amp;req) &lt; <span class="hljs-number">0</span>) {
+    perror(<span class="hljs-string">&quot;VIDIOC_REQBUFS&quot;</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+
+<span class="hljs-keyword">if</span> (req.count &lt; <span class="hljs-number">2</span>) {
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;insufficient buffer memory, got %u\n&quot;</span>, req.count);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p><code>count</code> 是<strong>入参兼出参</strong>：你请求 4 块，内核如果内存不够会少给，返回实际数量。所以申请完必须检查 <code>req.count</code>，后面所有循环都以它为准。</p>
+<p><code>memory</code> 三种取值：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>V4L2_MEMORY_MMAP</code></td>
+<td>内核分配，映射给用户态。<strong>最常用</strong></td>
+</tr>
+<tr>
+<td><code>V4L2_MEMORY_USERPTR</code></td>
+<td>用户态自己 malloc，把指针给内核。省一次映射，但要求物理连续，多数设备不支持</td>
+</tr>
+<tr>
+<td><code>V4L2_MEMORY_DMABUF</code></td>
+<td>传 dma-buf fd，多设备共享同一块内存（零拷贝管线）</td>
+</tr>
+</tbody>
+</table></div><p>4 块是经验值。少于 2 块基本没法流式采集（一块在用、一块在填，没缓冲余量）；多了浪费内存，也不会更快。1080p YUYV 一块 4MB，4 块就是 16MB，嵌入式上要掂量。</p>
+<h2 id="七查询与映射querybuf-与-mmap" tabindex="-1">七、查询与映射：QUERYBUF 与 mmap <a class="header-anchor" href="#七查询与映射querybuf-与-mmap"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_buffer</span> {</span>
+        __u32                   index;      <span class="hljs-comment">/* 第几块，入参 */</span>
+        <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_buf_type</span>      <span class="hljs-title">type</span>;</span>
+        __u32                   bytesused;  <span class="hljs-comment">/* 实际有效字节数 */</span>
+        __u32                   flags;
+        <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_field</span>         <span class="hljs-title">field</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timeval</span>          <span class="hljs-title">timestamp</span>;</span>  <span class="hljs-comment">/* 采集时间戳 */</span>
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_timecode</span>    <span class="hljs-title">timecode</span>;</span>
+        __u32                   sequence;   <span class="hljs-comment">/* 帧序号，丢帧时跳变 */</span>
+        <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_memory</span>        <span class="hljs-title">memory</span>;</span>
+        <span class="hljs-class"><span class="hljs-keyword">union</span> {</span>
+                __u32           offset;     <span class="hljs-comment">/* MMAP 时：内核缓冲区偏移 */</span>
+                <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span>   userptr;    <span class="hljs-comment">/* USERPTR 时：用户指针 */</span>
+        } m;
+        __u32                   length;     <span class="hljs-comment">/* 这块的总大小 */</span>
+        __u32                   input;
+        __u32                   reserved;
+};
+</code></pre></div></code></pre>
+<p>查询第 <code>i</code> 块并映射：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_buffer</span> <span class="hljs-title">buf</span>;</span>
+<span class="hljs-type">void</span> *buffers[<span class="hljs-number">4</span>];
+<span class="hljs-type">size_t</span> buf_len[<span class="hljs-number">4</span>];
+
+<span class="hljs-keyword">for</span> (<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; req.count; i++) {
+    <span class="hljs-built_in">memset</span>(&amp;buf, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(buf));
+    buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    buf.memory = V4L2_MEMORY_MMAP;
+    buf.index  = i;
+
+    <span class="hljs-keyword">if</span> (ioctl(fd, VIDIOC_QUERYBUF, &amp;buf) &lt; <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;VIDIOC_QUERYBUF&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    buf_len[i] = buf.length;
+    buffers[i] = mmap(<span class="hljs-literal">NULL</span>, buf.length, PROT_READ | PROT_WRITE,
+                      MAP_SHARED, fd, buf.m.offset);
+    <span class="hljs-keyword">if</span> (buffers[i] == MAP_FAILED) {        <span class="hljs-comment">/* 注意：不是 NULL，是 (void*)-1 */</span>
+        perror(<span class="hljs-string">&quot;mmap&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+}
+</code></pre></div></code></pre>
+<p>两个必须说清的点：</p>
+<p><strong>一、<code>mmap</code> 的失败值是 <code>MAP_FAILED</code></strong>，即 <code>(void *)-1</code>，不是 <code>NULL</code>。写成 <code>if (!buffers[i])</code> 判不出来，后面拿 <code>(void*)-1</code> 去读就是段错误。</p>
+<p><strong>二、<code>QUERYBUF</code> 之前 <code>buf</code> 必须清零并填好 <code>type</code> / <code>memory</code> / <code>index</code>。</strong> 内核靠这三个值定位是哪块缓冲。只填 <code>index</code> 忘了 <code>memory</code>，<code>memory</code> 就是 0（<code>V4L2_MEMORY_MMAP</code> 恰好是 0），碰巧能过；但 <code>DQBUF</code> / <code>QBUF</code> 里同样别漏。</p>
+<p><code>buf.m.offset</code> 是这块缓冲在设备上的偏移，不是物理地址。<code>mmap</code> 的第四个参数 <code>offset</code> 要求页对齐，内核对齐好了才给出来。</p>
+<p>映射之后，<code>buffers[i]</code> 就是这一帧数据的用户态地址，<code>buf_len[i]</code> 是它的大小。读它就是读图像，没有任何拷贝。</p>
+<h2 id="八入队启动取帧qbuf--streamon--dqbuf" tabindex="-1">八、入队、启动、取帧：QBUF / STREAMON / DQBUF <a class="header-anchor" href="#八入队启动取帧qbuf--streamon--dqbuf"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="8.1-全部入队" tabindex="-1">8.1 全部入队 <a class="header-anchor" href="#8.1-全部入队"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">for</span> (<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; req.count; i++) {
+    <span class="hljs-built_in">memset</span>(&amp;buf, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(buf));
+    buf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    buf.memory = V4L2_MEMORY_MMAP;
+    buf.index  = i;
+
+    <span class="hljs-keyword">if</span> (ioctl(fd, VIDIOC_QBUF, &amp;buf) &lt; <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;VIDIOC_QBUF&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+}
+</code></pre></div></code></pre>
+<p>这一步把 N 块空缓冲全部交给内核。<strong><code>STREAMON</code> 之前必须全部入队</strong>，否则内核凑不出一个完整的队列。</p>
+<h3 id="8.2-启动采集" tabindex="-1">8.2 启动采集 <a class="header-anchor" href="#8.2-启动采集"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_buf_type</span> <span class="hljs-title">type</span> =</span> V4L2_BUF_TYPE_VIDEO_CAPTURE;
+
+<span class="hljs-keyword">if</span> (ioctl(fd, VIDIOC_STREAMON, &amp;type) &lt; <span class="hljs-number">0</span>) {
+    perror(<span class="hljs-string">&quot;VIDIOC_STREAMON&quot;</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p>注意参数是<strong>枚举的地址</strong>，不是枚举值本身。传值进去会返回 <code>-EINVAL</code>，这个坑很多人踩。</p>
+<h3 id="8.3-取一帧" tabindex="-1">8.3 取一帧 <a class="header-anchor" href="#8.3-取一帧"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">v4l2_wait_frame</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-type">int</span> timeout_ms)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">pollfd</span> <span class="hljs-title">pfd</span> =</span> { .fd = fd, .events = POLLIN };
+
+    <span class="hljs-type">int</span> ret = poll(&amp;pfd, <span class="hljs-number">1</span>, timeout_ms);
+    <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>) {
+        <span class="hljs-keyword">if</span> (errno == EINTR)
+            <span class="hljs-keyword">return</span> <span class="hljs-number">-2</span>;                 <span class="hljs-comment">/* 被信号打断，不是错误 */</span>
+        perror(<span class="hljs-string">&quot;poll&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    <span class="hljs-keyword">if</span> (ret == <span class="hljs-number">0</span>) {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;timeout waiting for frame\n&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    <span class="hljs-keyword">if</span> (pfd.revents &amp; (POLLERR | POLLNVAL)) {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;poll error on video fd\n&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">v4l2_dqbuf</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, <span class="hljs-keyword">struct</span> v4l2_buffer *buf)</span>
+{
+    <span class="hljs-built_in">memset</span>(buf, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(*buf));
+    buf-&gt;type   = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    buf-&gt;memory = V4L2_MEMORY_MMAP;
+
+    <span class="hljs-keyword">if</span> (ioctl(fd, VIDIOC_DQBUF, buf) &lt; <span class="hljs-number">0</span>) {
+        <span class="hljs-keyword">if</span> (errno == EAGAIN)
+            <span class="hljs-keyword">return</span> <span class="hljs-number">-2</span>;                 <span class="hljs-comment">/* 非阻塞模式，暂时没帧 */</span>
+        perror(<span class="hljs-string">&quot;VIDIOC_DQBUF&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p><code>DQBUF</code> 是阻塞的（除非 <code>open</code> 时加了 <code>O_NONBLOCK</code>）。<strong>实践中都先 <code>poll</code> 再 <code>DQBUF</code></strong>。<code>poll</code> 能设超时，<code>DQBUF</code> 不能；设备一断线，裸 <code>DQBUF</code> 会永久挂住。</p>
+<p>回来后从 <code>buf.index</code> 找到对应缓冲：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> *frame = buffers[buf.index];
+<span class="hljs-type">size_t</span> frame_len = buf.length;      <span class="hljs-comment">/* 或 buf.bytesused */</span>
+</code></pre></div></code></pre>
+<p><code>buf.bytesused</code> 是实际有效字节数，<code>buf.length</code> 是这块缓冲的总容量。对未压缩格式两者相等；<strong>对 MJPEG 这类变长压缩流，必须用 <code>bytesused</code></strong>，<code>length</code> 是容量上限。</p>
+<h3 id="8.4-处理完还回去" tabindex="-1">8.4 处理完还回去 <a class="header-anchor" href="#8.4-处理完还回去"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 处理完这一帧，必须还回去，否则空队列耗尽，采集停止 */</span>
+<span class="hljs-keyword">if</span> (ioctl(fd, VIDIOC_QBUF, &amp;buf) &lt; <span class="hljs-number">0</span>)
+    perror(<span class="hljs-string">&quot;VIDIOC_QBUF (requeue)&quot;</span>);
+</code></pre></div></code></pre>
+<p><code>buf</code> 原样传回就行，<code>index</code> / <code>type</code> / <code>memory</code> 都还在。<strong>这是最容易漏的一步，也是「采了几帧就不动了」的直接原因。</strong></p>
+<p><code>buf.sequence</code> 是帧序号，连续 +1 表示没丢帧。如果它跳变，说明应用处理太慢或者 <code>poll</code> 超时，内核那边轮转跳过了。排查卡顿先看这个字段。</p>
+<h3 id="8.5-停止与释放" tabindex="-1">8.5 停止与释放 <a class="header-anchor" href="#8.5-停止与释放"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_buf_type</span> <span class="hljs-title">type</span> =</span> V4L2_BUF_TYPE_VIDEO_CAPTURE;
+ioctl(fd, VIDIOC_STREAMOFF, &amp;type);         <span class="hljs-comment">/* 停止采集 */</span>
+
+<span class="hljs-keyword">for</span> (<span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; req.count; i++)
+    munmap(buffers[i], buf_len[i]);          <span class="hljs-comment">/* 解除映射 */</span>
+
+close(fd);
+</code></pre></div></code></pre>
+<p>顺序不能颠倒：<strong>先 <code>STREAMOFF</code> 再 <code>munmap</code></strong>。还在 streaming 时解除映射，内核可能正在往那块地址 DMA，结果是随机崩溃或者显示花屏。</p>
+<p>严格说，<code>munmap</code> 不等于 <code>REQBUFS(0)</code>，内核侧缓冲区要等 <code>close(fd)</code> 才释放。要提前还给内核，可以再调一次 <code>VIDIOC_REQBUFS</code> 且 <code>count = 0</code>。</p>
+<h2 id="九完整控制流" tabindex="-1">九、完整控制流 <a class="header-anchor" href="#九完整控制流"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把前面几节串成一个函数，这就是任何 V4L2 采集程序的骨架：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">capture_ctx</span> {</span>
+    <span class="hljs-type">int</span> fd;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> width, height;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> pixfmt;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> nbufs;
+    <span class="hljs-type">void</span> *buffers[<span class="hljs-number">8</span>];
+    <span class="hljs-type">size_t</span> buf_len[<span class="hljs-number">8</span>];
+};
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">capture_start</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> capture_ctx *ctx, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *dev)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_capability</span> <span class="hljs-title">cap</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_format</span> <span class="hljs-title">fmt</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_requestbuffers</span> <span class="hljs-title">req</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_buffer</span> <span class="hljs-title">buf</span>;</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> caps, i;
+    <span class="hljs-class"><span class="hljs-keyword">enum</span> <span class="hljs-title">v4l2_buf_type</span> <span class="hljs-title">type</span> =</span> V4L2_BUF_TYPE_VIDEO_CAPTURE;
+
+    <span class="hljs-comment">/* ① 打开 */</span>
+    ctx-&gt;fd = open(dev, O_RDWR);
+    <span class="hljs-keyword">if</span> (ctx-&gt;fd &lt; <span class="hljs-number">0</span>) {
+        perror(dev);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    <span class="hljs-comment">/* ② 查能力 */</span>
+    <span class="hljs-built_in">memset</span>(&amp;cap, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(cap));
+    <span class="hljs-keyword">if</span> (ioctl(ctx-&gt;fd, VIDIOC_QUERYCAP, &amp;cap) &lt; <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;VIDIOC_QUERYCAP&quot;</span>);
+        <span class="hljs-keyword">goto</span> fail_fd;
+    }
+    caps = (cap.capabilities &amp; V4L2_CAP_DEVICE_CAPS)
+           ? cap.device_caps : cap.capabilities;
+
+    <span class="hljs-keyword">if</span> (!(caps &amp; V4L2_CAP_VIDEO_CAPTURE) || !(caps &amp; V4L2_CAP_STREAMING)) {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;%s: not a streaming capture device\n&quot;</span>, dev);
+        <span class="hljs-keyword">goto</span> fail_fd;
+    }
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;%s: %s / %s\n&quot;</span>, dev, cap.driver, cap.card);
+
+    <span class="hljs-comment">/* ③ 选输入（设备只有一路时可跳过） */</span>
+    {
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_input</span> <span class="hljs-title">in</span> =</span> { .index = <span class="hljs-number">0</span> };
+        ioctl(ctx-&gt;fd, VIDIOC_S_INPUT, &amp;in);   <span class="hljs-comment">/* 失败不致命 */</span>
+    }
+
+    <span class="hljs-comment">/* ④⑤ 协商格式 */</span>
+    <span class="hljs-keyword">if</span> (v4l2_enum_fmt(ctx-&gt;fd, ctx-&gt;pixfmt, type) &lt; <span class="hljs-number">0</span>) {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;pixel format not supported\n&quot;</span>);
+        <span class="hljs-keyword">goto</span> fail_fd;
+    }
+    <span class="hljs-keyword">if</span> (v4l2_s_fmt(ctx-&gt;fd, &amp;ctx-&gt;width, &amp;ctx-&gt;height, ctx-&gt;pixfmt, type) &lt; <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> fail_fd;
+
+    <span class="hljs-comment">/* ⑥ 申请缓冲 */</span>
+    <span class="hljs-built_in">memset</span>(&amp;req, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(req));
+    req.count  = ctx-&gt;nbufs;
+    req.type   = type;
+    req.memory = V4L2_MEMORY_MMAP;
+    <span class="hljs-keyword">if</span> (ioctl(ctx-&gt;fd, VIDIOC_REQBUFS, &amp;req) &lt; <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;VIDIOC_REQBUFS&quot;</span>);
+        <span class="hljs-keyword">goto</span> fail_fd;
+    }
+    <span class="hljs-keyword">if</span> (req.count &lt; <span class="hljs-number">2</span>) {
+        <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;insufficient buffers: %u\n&quot;</span>, req.count);
+        <span class="hljs-keyword">goto</span> fail_fd;
+    }
+    ctx-&gt;nbufs = req.count;
+
+    <span class="hljs-comment">/* ⑦ 查询并映射 */</span>
+    <span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; ctx-&gt;nbufs; i++) {
+        <span class="hljs-built_in">memset</span>(&amp;buf, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(buf));
+        buf.type = type;
+        buf.memory = V4L2_MEMORY_MMAP;
+        buf.index = i;
+        <span class="hljs-keyword">if</span> (ioctl(ctx-&gt;fd, VIDIOC_QUERYBUF, &amp;buf) &lt; <span class="hljs-number">0</span>) {
+            perror(<span class="hljs-string">&quot;VIDIOC_QUERYBUF&quot;</span>);
+            <span class="hljs-keyword">goto</span> fail_bufs;
+        }
+        ctx-&gt;buf_len[i] = buf.length;
+        ctx-&gt;buffers[i] = mmap(<span class="hljs-literal">NULL</span>, buf.length, PROT_READ | PROT_WRITE,
+                               MAP_SHARED, ctx-&gt;fd, buf.m.offset);
+        <span class="hljs-keyword">if</span> (ctx-&gt;buffers[i] == MAP_FAILED) {
+            perror(<span class="hljs-string">&quot;mmap&quot;</span>);
+            <span class="hljs-keyword">goto</span> fail_maps;
+        }
+    }
+
+    <span class="hljs-comment">/* ⑧ 全部入队后启动 */</span>
+    <span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt; ctx-&gt;nbufs; i++) {
+        <span class="hljs-built_in">memset</span>(&amp;buf, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(buf));
+        buf.type = type;
+        buf.memory = V4L2_MEMORY_MMAP;
+        buf.index = i;
+        <span class="hljs-keyword">if</span> (ioctl(ctx-&gt;fd, VIDIOC_QBUF, &amp;buf) &lt; <span class="hljs-number">0</span>) {
+            perror(<span class="hljs-string">&quot;VIDIOC_QBUF&quot;</span>);
+            <span class="hljs-keyword">goto</span> fail_maps;
+        }
+    }
+    <span class="hljs-keyword">if</span> (ioctl(ctx-&gt;fd, VIDIOC_STREAMON, &amp;type) &lt; <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;VIDIOC_STREAMON&quot;</span>);
+        <span class="hljs-keyword">goto</span> fail_maps;
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+fail_maps:
+    <span class="hljs-keyword">while</span> (i--)
+        munmap(ctx-&gt;buffers[i], ctx-&gt;buf_len[i]);
+fail_bufs:
+fail_fd:
+    close(ctx-&gt;fd);
+    ctx-&gt;fd = <span class="hljs-number">-1</span>;
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p>采集循环：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">for</span> (;;) {
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">v4l2_buffer</span> <span class="hljs-title">buf</span>;</span>
+    <span class="hljs-type">int</span> ret;
+
+    ret = v4l2_wait_frame(ctx.fd, <span class="hljs-number">3000</span>);
+    <span class="hljs-keyword">if</span> (ret == <span class="hljs-number">-2</span>) <span class="hljs-keyword">continue</span>;              <span class="hljs-comment">/* 被信号打断 */</span>
+    <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>)   <span class="hljs-keyword">break</span>;
+
+    ret = v4l2_dqbuf(ctx.fd, &amp;buf);
+    <span class="hljs-keyword">if</span> (ret == <span class="hljs-number">-2</span>) <span class="hljs-keyword">continue</span>;              <span class="hljs-comment">/* 暂时没帧 */</span>
+    <span class="hljs-keyword">if</span> (ret &lt; <span class="hljs-number">0</span>)   <span class="hljs-keyword">break</span>;
+
+    handle_frame(ctx.buffers[buf.index], buf.bytesused);
+
+    <span class="hljs-comment">/* 这一行漏了，采集就会停在 nbufs 帧之后 */</span>
+    <span class="hljs-keyword">if</span> (ioctl(ctx.fd, VIDIOC_QBUF, &amp;buf) &lt; <span class="hljs-number">0</span>) {
+        perror(<span class="hljs-string">&quot;requeue&quot;</span>);
+        <span class="hljs-keyword">break</span>;
+    }
+}
+</code></pre></div></code></pre>
+<h2 id="十易错点" tabindex="-1">十、易错点 <a class="header-anchor" href="#十易错点"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>采了几帧就不动了</td>
+<td>忘了把 <code>DQBUF</code> 取出的缓冲 <code>QBUF</code> 回去</td>
+<td>循环里补上</td>
+</tr>
+<tr>
+<td><code>DQBUF</code> 永久阻塞</td>
+<td>没先 <code>poll</code>，或设备已断线</td>
+<td>一律 <code>poll</code> + 超时</td>
+</tr>
+<tr>
+<td><code>mmap</code> 判断失效</td>
+<td>用 <code>!ptr</code> 判 <code>MAP_FAILED</code></td>
+<td>判 <code>== MAP_FAILED</code></td>
+</tr>
+<tr>
+<td><code>STREAMON</code> 返回 <code>EINVAL</code></td>
+<td>传了枚举值而不是枚举地址</td>
+<td><code>ioctl(fd, VIDIOC_STREAMON, &amp;type)</code></td>
+</tr>
+<tr>
+<td>分辨率不是自己设的值</td>
+<td><code>S_FMT</code> 会静默改写</td>
+<td>回读 <code>width</code>/<code>height</code></td>
+</tr>
+<tr>
+<td>画面错位、花屏</td>
+<td>自己用 <code>width × bpp</code> 算行宽</td>
+<td>用回读的 <code>bytesperline</code></td>
+</tr>
+<tr>
+<td>metadata 节点也能查能力但采不了</td>
+<td>只看了 <code>capabilities</code></td>
+<td>优先用 <code>device_caps</code></td>
+</tr>
+<tr>
+<td><code>req.count</code> 比申请的小</td>
+<td>内核内存不够</td>
+<td>以返回值为准，检查是否 &lt; 2</td>
+</tr>
+<tr>
+<td>streaming 中 <code>munmap</code> 崩溃</td>
+<td>顺序错了</td>
+<td>先 <code>STREAMOFF</code></td>
+</tr>
+<tr>
+<td>MJPEG 帧读到半截</td>
+<td>用了 <code>length</code> 而不是 <code>bytesused</code></td>
+<td>压缩流用 <code>bytesused</code></td>
+</tr>
+<tr>
+<td>帧率上不去</td>
+<td>用了 <code>read</code> 模式</td>
+<td>改 mmap + streaming</td>
+</tr>
+<tr>
+<td>USB 带宽不够导致掉帧</td>
+<td>YUYV 裸数据太大</td>
+<td>改 MJPEG 或降分辨率</td>
+</tr>
+</tbody>
+</table></div><p>V4L2 的 ioctl 有几十个，本篇只覆盖采集主链路。音频、调参（<code>VIDIOC_S_CTRL</code>）、裁剪（<code>VIDIOC_S_CROP</code>）、多平面（<code>V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE</code>，MIPI CSI 常用）这些不在主链路上，需要时查 <code>Documentation/userspace-api/media/v4l/</code>。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一v4l2-管什么" data-toc-target="一v4l2-管什么">一、V4L2 管什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二一次采集的完整流程" data-toc-target="二一次采集的完整流程">二、一次采集的完整流程</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三查能力vidioc_querycap" data-toc-target="三查能力vidioc_querycap">三、查能力：VIDIOC_QUERYCAP</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四选输入源enuminput--s_input" data-toc-target="四选输入源enuminput--s_input">四、选输入源：ENUMINPUT / S_INPUT</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五协商格式enum_fmt-与-s_fmt" data-toc-target="五协商格式enum_fmt-与-s_fmt">五、协商格式：ENUM_FMT 与 S_FMT</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.1-先问支持什么" data-toc-target="5.1-先问支持什么">5.1 先问支持什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#5.2-再设格式" data-toc-target="5.2-再设格式">5.2 再设格式</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六申请缓冲vidioc_reqbufs" data-toc-target="六申请缓冲vidioc_reqbufs">六、申请缓冲：VIDIOC_REQBUFS</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七查询与映射querybuf-与-mmap" data-toc-target="七查询与映射querybuf-与-mmap">七、查询与映射：QUERYBUF 与 mmap</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八入队启动取帧qbuf--streamon--dqbuf" data-toc-target="八入队启动取帧qbuf--streamon--dqbuf">八、入队、启动、取帧：QBUF / STREAMON / DQBUF</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.1-全部入队" data-toc-target="8.1-全部入队">8.1 全部入队</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.2-启动采集" data-toc-target="8.2-启动采集">8.2 启动采集</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.3-取一帧" data-toc-target="8.3-取一帧">8.3 取一帧</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.4-处理完还回去" data-toc-target="8.4-处理完还回去">8.4 处理完还回去</a>
+                    
+                    <a class="toc-item toc-lv3" href="#8.5-停止与释放" data-toc-target="8.5-停止与释放">8.5 停止与释放</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九完整控制流" data-toc-target="九完整控制流">九、完整控制流</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十易错点" data-toc-target="十易错点">十、易错点</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/C.驱动/13-杂项/V4L2-视频采集：框架、ioctl-与控制流程/","title":"V4L2 视频采集：框架、ioctl 与控制流程","url":"/C.驱动/13-杂项/V4L2-视频采集：框架、ioctl-与控制流程/","type":"current"},{"id":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","title":"ADC 与 DS18B20 传感器驱动","url":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","type":"neighbor"},{"id":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","title":"LED 与 PWM 字符设备驱动","url":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","type":"neighbor"},{"id":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","title":"Linux下用户空间修改设备寄存器或者物理内存的实现","url":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","type":"neighbor"},{"id":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","title":"RK3399 的 Wi-Fi 与蓝牙 rfkill 实现","url":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","type":"neighbor"}],"links":[{"source":"/C.驱动/13-杂项/V4L2-视频采集：框架、ioctl-与控制流程/","target":"/C.驱动/13-杂项/ADC-与-DS18B20-传感器驱动/","type":"neighbor"},{"source":"/C.驱动/13-杂项/V4L2-视频采集：框架、ioctl-与控制流程/","target":"/C.驱动/13-杂项/LED-与-PWM-字符设备驱动/","type":"neighbor"},{"source":"/C.驱动/13-杂项/V4L2-视频采集：框架、ioctl-与控制流程/","target":"/C.驱动/13-杂项/Linux下用户空间修改设备寄存器或者物理内存的实现/","type":"neighbor"},{"source":"/C.驱动/13-杂项/V4L2-视频采集：框架、ioctl-与控制流程/","target":"/C.驱动/13-杂项/RK3399-的-Wi-Fi-与蓝牙-rfkill-实现/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

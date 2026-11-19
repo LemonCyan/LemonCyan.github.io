@@ -1,0 +1,2023 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>互斥锁：从 API 到优先级继承 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">互斥锁：从 API 到优先级继承</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">互斥锁：从 API 到优先级继承</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">互斥锁：从 API 到优先级继承</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <h2 id="一互斥锁解决什么问题" tabindex="-1">一、互斥锁解决什么问题 <a class="header-anchor" href="#一互斥锁解决什么问题"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>counter++</code> 不是一条指令。编译器把它拆成读、加、写三步，三步之间随时被切走。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 两个线程各做 100 万次自增，结果几乎不会是 2000000 */</span>
+<span class="hljs-type">static</span> <span class="hljs-type">long</span> counter = <span class="hljs-number">0</span>;
+
+<span class="hljs-type">void</span> *<span class="hljs-title function_">worker</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">long</span> i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-number">1000000</span>; i++)
+        counter++;      <span class="hljs-comment">/* load / add / store，中间可以插进任何东西 */</span>
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p>线程 A 读到 100 被抢占，线程 B 也读到 100 并写回 101，A 恢复后写回 101。两次自增，只留下一次的结果。这类问题叫数据竞争，编译器不会帮你，加 <code>-O2</code> 只会让它更爱把变量塞进寄存器。</p>
+<p>互斥锁做的事很朴素：把「读—改—写」这一组操作压成一个不可分割的临界区，同一时刻只放一个线程进去。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">pthread_mutex_t</span> lock = PTHREAD_MUTEX_INITIALIZER;
+<span class="hljs-type">static</span> <span class="hljs-type">long</span> counter = <span class="hljs-number">0</span>;
+
+<span class="hljs-type">void</span> *<span class="hljs-title function_">worker</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">long</span> i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-number">1000000</span>; i++) {
+        pthread_mutex_lock(&amp;lock);
+        counter++;
+        pthread_mutex_unlock(&amp;lock);
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<h3 id="锁到底给了你三个保证" tabindex="-1">锁到底给了你三个保证 <a class="header-anchor" href="#锁到底给了你三个保证"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>保证</th>
+<th>含义</th>
+<th>反面</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>互斥</td>
+<td>同一时刻只有一个线程处于临界区</td>
+<td>两个线程同时改同一块数据</td>
+</tr>
+<tr>
+<td>可见性</td>
+<td><code>unlock</code> 之前的写，<code>lock</code> 之后的线程能看见</td>
+<td>一个线程写完了，另一个线程读到旧值</td>
+</tr>
+<tr>
+<td>顺序</td>
+<td>临界区里的语句不会被其他持锁者穿插</td>
+<td>复合操作被拆散成半成品状态</td>
+</tr>
+</tbody>
+</table></div><p>可见性这条经常被忽略。它靠的是 <code>lock</code> 的 acquire 语义和 <code>unlock</code> 的 release 语义，不是靠 <code>volatile</code>，也不是靠 CPU 时钟对齐。你在锁外读一个被锁保护的变量，读到什么都算正常。</p>
+<h3 id="它不保证的事" tabindex="-1">它不保证的事 <a class="header-anchor" href="#它不保证的事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li>不保证公平。<code>unlock</code> 之后谁来拿锁，由调度器和 futex 队列决定，不排队先来后到。写依赖顺序的代码，是自己在赌。</li>
+<li>不防你自己写出来的死锁。锁只保证互斥，不替你想加锁顺序。</li>
+<li>不是异步信号安全的。信号处理函数里碰互斥锁，等于在雷区里跑步。</li>
+<li>不保护没走同一把锁的路径。有的线程加锁改，有的线程裸着改，等于没加锁。</li>
+</ul>
+<h2 id="二互斥锁的创建与销毁" tabindex="-1">二、互斥锁的创建与销毁 <a class="header-anchor" href="#二互斥锁的创建与销毁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="原型" tabindex="-1">原型 <a class="header-anchor" href="#原型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_init</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *<span class="hljs-keyword">restrict</span> mutex,
+                       <span class="hljs-type">const</span> <span class="hljs-type">pthread_mutexattr_t</span> *<span class="hljs-keyword">restrict</span> attr)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_destroy</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *mutex)</span>;
+</code></pre></div></code></pre>
+<p>两个函数都是 POSIX.1-1996 的标准接口（Pthreads 随 POSIX.1c-1995 并入 POSIX.1）。返回值规矩统一：成功返回 <code>0</code>，失败返回错误号，<strong>不写 <code>errno</code></strong>。所以别写 <code>if (ret == -1) perror(...)</code>，那套是 syscall 的规矩，这里不适用。</p>
+<p><code>attr</code> 传 <code>NULL</code> 就是默认属性：进程内私有，锁类型取实现默认值。</p>
+<h3 id="初始化的语义" tabindex="-1">初始化的语义 <a class="header-anchor" href="#初始化的语义"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>pthread_mutex_init</code> 把 <code>mutex</code> 指向的那块内存按 <code>attr</code> 的当前值填成一把可用的锁。它只写内存，不分配内核对象，也不注册任何全局表项（robust 锁会挂进 glibc 的健壮链表，这是例外）。</p>
+<p>几个必须记住的点：</p>
+<ul>
+<li><code>pthread_mutex_t</code> 是值类型，可以放在全局区、栈上、堆上、结构体成员里。放哪儿都行，但放栈上就要保证栈帧活着的期间才有人用它。</li>
+<li>已经被初始化过的锁，再 <code>init</code> 一次是未定义行为。POSIX 允许实现返回 <code>EBUSY</code>，glibc 实际返回 <code>0</code> 并直接覆盖。别指望它报错救你。</li>
+<li>属性是在 <code>init</code> 那一刻<strong>拷贝</strong>进锁里的。之后改属性对象、甚至销毁属性对象，都不影响已经初始化好的锁。</li>
+</ul>
+<h3 id="错误码" tabindex="-1">错误码 <a class="header-anchor" href="#错误码"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>错误码</th>
+<th>触发条件</th>
+<th>处理方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EAGAIN</code></td>
+<td>系统线程资源不足，拿不到初始化所需的内部资源</td>
+<td>降并发或延后重试</td>
+</tr>
+<tr>
+<td><code>ENOMEM</code></td>
+<td>内存不够</td>
+<td>检查是否有泄漏</td>
+</tr>
+<tr>
+<td><code>EPERM</code></td>
+<td>调用者没有权限设置请求的属性</td>
+<td>查 <code>setprotocol</code> / <code>setprioceiling</code> 的权限前提</td>
+</tr>
+<tr>
+<td><code>EBUSY</code></td>
+<td>对已初始化的锁重复初始化</td>
+<td>代码逻辑错了，回去改</td>
+</tr>
+</tbody>
+</table></div><h3 id="销毁的语义" tabindex="-1">销毁的语义 <a class="header-anchor" href="#销毁的语义"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_destroy</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *mutex)</span>;
+</code></pre></div></code></pre>
+<p><code>destroy</code> 做两件事：检查锁的状态，把锁标记成「未初始化」。LinuxThreads 时代内核里根本没有 mutex 对象，所以这个函数几乎只是状态检查；现代 glibc 里它还要摘掉 robust 链表节点、清 PI 状态，省不掉。</p>
+<p>两个 <code>EBUSY</code> 场景，一个都不能漏：</p>
+<ol>
+<li>锁正被某个线程持有。销毁一把有人拿着的锁，等待队列里的线程会挂在野指针上。</li>
+<li>锁正被某个条件变量当关联锁用，有线程卡在 <code>pthread_cond_wait</code> 上。条件变量内部持有这把锁的引用，先销毁锁就是把引用打断。</li>
+</ol>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">pthread_mutex_t</span> lock;
+
+<span class="hljs-keyword">if</span> (pthread_mutex_init(&amp;lock, <span class="hljs-literal">NULL</span>) != <span class="hljs-number">0</span>) {
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;pthread_mutex_init failed\n&quot;</span>);
+    <span class="hljs-built_in">exit</span>(EXIT_FAILURE);
+}
+
+<span class="hljs-comment">/* ... 临界区 ... */</span>
+
+<span class="hljs-keyword">if</span> (pthread_mutex_destroy(&amp;lock) != <span class="hljs-number">0</span>) {
+    <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;pthread_mutex_destroy failed\n&quot;</span>);
+}
+</code></pre></div></code></pre>
+<p>销毁之后，那块内存里的字节还在，但内容没有意义。要再用，就重新 <code>init</code>，或者干脆重新赋 <code>PTHREAD_MUTEX_INITIALIZER</code>。</p>
+<h3 id="生命周期规则" tabindex="-1">生命周期规则 <a class="header-anchor" href="#生命周期规则"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全局锁、进程活多久它活多久</td>
+<td><code>PTHREAD_MUTEX_INITIALIZER</code>，不写 <code>init</code>，不写 <code>destroy</code></td>
+</tr>
+<tr>
+<td>锁是某个对象的成员</td>
+<td>对象 <code>create</code> 里 <code>init</code>，对象 <code>destroy</code> 里 <code>destroy</code></td>
+</tr>
+<tr>
+<td>要在锁上做属性定制</td>
+<td>必须先 <code>init</code> 属性对象，再 <code>pthread_mutex_init</code></td>
+</tr>
+<tr>
+<td>锁被 <code>cond_wait</code> 用过</td>
+<td>先让所有等待者退出，再 <code>destroy</code> 锁</td>
+</tr>
+<tr>
+<td>要复用一把锁</td>
+<td><code>destroy</code> 之后重新 <code>init</code>，不要直接 <code>init</code></td>
+</tr>
+</tbody>
+</table></div><h2 id="三静态初始化与动态初始化" tabindex="-1">三、静态初始化与动态初始化 <a class="header-anchor" href="#三静态初始化与动态初始化"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="静态初始化" tabindex="-1">静态初始化 <a class="header-anchor" href="#静态初始化"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">pthread_mutex_t</span> lock = PTHREAD_MUTEX_INITIALIZER;
+</code></pre></div></code></pre>
+<p>一行搞定，等价于 <code>pthread_mutex_init(&amp;lock, NULL)</code>，但没有返回值可查，也不需要查。锁在程序加载时就处在可用状态，位于 <code>.data</code> / <code>.bss</code>，进程起来就能锁。</p>
+<p>LinuxThreads 的实现里 <code>pthread_mutex_t</code> 是个结构体，<code>PTHREAD_MUTEX_INITIALIZER</code> 就是一个结构常量，形如「锁字、持有者 tid、嵌套计数、锁类型、等待队列头」逐字段置初值。glibc 改成 union 加字节数组，宏展开成一串零，锁类型字段取 <code>PTHREAD_MUTEX_TIMED_NP</code>。x86-64 上 <code>sizeof(pthread_mutex_t)</code> 是 40 字节。</p>
+<p>静态初始化能用的前提是：编译期就得知道锁在哪儿、要什么属性。它只给默认属性，改不了类型、改不了 pshared、改不了协议。</p>
+<h3 id="动态初始化" tabindex="-1">动态初始化 <a class="header-anchor" href="#动态初始化"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>需要非默认属性时，走这条路；锁随对象创建时，也走这条路。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">typedef</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> {</span>
+    <span class="hljs-type">pthread_mutex_t</span> lock;
+    <span class="hljs-type">int</span> refcount;
+    <span class="hljs-type">char</span> *buf;
+} <span class="hljs-type">cache_t</span>;
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">cache_create</span><span class="hljs-params">(<span class="hljs-type">cache_t</span> *c)</span>
+{
+    <span class="hljs-keyword">if</span> (pthread_mutex_init(&amp;c-&gt;lock, <span class="hljs-literal">NULL</span>) != <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    c-&gt;refcount = <span class="hljs-number">0</span>;
+    c-&gt;buf = <span class="hljs-literal">NULL</span>;
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">void</span> <span class="hljs-title function_">cache_destroy</span><span class="hljs-params">(<span class="hljs-type">cache_t</span> *c)</span>
+{
+    pthread_mutex_destroy(&amp;c-&gt;lock);
+    <span class="hljs-built_in">free</span>(c-&gt;buf);
+}
+</code></pre></div></code></pre>
+<h3 id="两者对照" tabindex="-1">两者对照 <a class="header-anchor" href="#两者对照"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>项目</th>
+<th>静态 <code>PTHREAD_MUTEX_INITIALIZER</code></th>
+<th>动态 <code>pthread_mutex_init</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>属性</td>
+<td>只能是默认属性</td>
+<td>任意属性组合</td>
+</tr>
+<tr>
+<td>失败处理</td>
+<td>无返回值，构造期就定型</td>
+<td>必须检查返回码</td>
+</tr>
+<tr>
+<td>位置</td>
+<td>全局、静态、编译期已知</td>
+<td>栈、堆、结构体，运行期决定</td>
+</tr>
+<tr>
+<td>销毁</td>
+<td>不需要，调 <code>destroy</code> 也可（glibc 返回 0）</td>
+<td>必须配对 <code>destroy</code></td>
+</tr>
+<tr>
+<td>标准</td>
+<td>POSIX.1-1996</td>
+<td>POSIX.1-1996</td>
+</tr>
+<tr>
+<td>适合</td>
+<td>单例、模块级全局锁、极简场景</td>
+<td>带属性的锁、对象成员、需要重建的锁</td>
+</tr>
+</tbody>
+</table></div><h3 id="属性对象与锁是两次初始化" tabindex="-1">属性对象与锁是两次初始化 <a class="header-anchor" href="#属性对象与锁是两次初始化"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>顺序不能反：先配属性，再建锁，最后销毁属性对象。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>pthread_mutexattr_init(&amp;attr)        属性对象：填默认值
+        │
+        ├── settype(RECURSIVE)
+        ├── setpshared(PROCESS_SHARED)
+        └── setprotocol(PRIO_INHERIT)
+        │
+        ▼
+pthread_mutex_init(&amp;lock, &amp;attr)     锁：拷贝属性当前值
+        │
+        ▼
+pthread_mutexattr_destroy(&amp;attr)     属性对象用完即毁，锁不受影响
+</code></pre></div></code></pre>
+<p><code>pthread_mutex_init</code> 拷贝的是属性对象的<strong>值</strong>。所以属性对象可以是栈上的临时变量，建完锁立刻 <code>destroy</code>，锁照样带着你设的属性活着。</p>
+<h2 id="四互斥锁属性的完整清单" tabindex="-1">四、互斥锁属性的完整清单 <a class="header-anchor" href="#四互斥锁属性的完整清单"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="属性对象自己的两个函数" tabindex="-1">属性对象自己的两个函数 <a class="header-anchor" href="#属性对象自己的两个函数"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_init</span><span class="hljs-params">(<span class="hljs-type">pthread_mutexattr_t</span> *attr)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_destroy</span><span class="hljs-params">(<span class="hljs-type">pthread_mutexattr_t</span> *attr)</span>;
+</code></pre></div></code></pre>
+<p>POSIX.1-1996。<code>pthread_mutexattr_t</code> 是 opaque 类型，头文件里只给你一个字节数组，别去碰它的内部字段，也别用 <code>memcpy</code> 复制一个没初始化的过来。</p>
+<ul>
+<li><code>pthread_mutexattr_init</code> 成功返回 <code>0</code>，失败返回 <code>ENOMEM</code>。</li>
+<li><code>pthread_mutexattr_destroy</code> 成功返回 <code>0</code>，<code>attr</code> 无效返回 <code>EINVAL</code>。</li>
+<li>销毁后的属性对象要重新用，必须先 <code>init</code>。</li>
+</ul>
+<p><code>init</code> 出来的默认值是：<code>pshared = PTHREAD_PROCESS_PRIVATE</code>，<code>type = PTHREAD_MUTEX_DEFAULT</code>，<code>protocol = PTHREAD_PRIO_NONE</code>，<code>robustness = PTHREAD_MUTEX_STALLED</code>。</p>
+<h3 id="属性函数总表" tabindex="-1">属性函数总表 <a class="header-anchor" href="#属性函数总表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>属性</th>
+<th>设置函数</th>
+<th>获取函数</th>
+<th>取值</th>
+<th>标准版本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>锁类型</td>
+<td><code>pthread_mutexattr_settype</code></td>
+<td><code>pthread_mutexattr_gettype</code></td>
+<td><code>PTHREAD_MUTEX_NORMAL</code> / <code>ERRORCHECK</code> / <code>RECURSIVE</code> / <code>DEFAULT</code></td>
+<td>POSIX.1-1996</td>
+</tr>
+<tr>
+<td>作用范围</td>
+<td><code>pthread_mutexattr_setpshared</code></td>
+<td><code>pthread_mutexattr_getpshared</code></td>
+<td><code>PTHREAD_PROCESS_PRIVATE</code> / <code>PTHREAD_PROCESS_SHARED</code></td>
+<td>POSIX.1-1996</td>
+</tr>
+<tr>
+<td>优先级协议</td>
+<td><code>pthread_mutexattr_setprotocol</code></td>
+<td><code>pthread_mutexattr_getprotocol</code></td>
+<td><code>PTHREAD_PRIO_NONE</code> / <code>PRIO_INHERIT</code> / <code>PRIO_PROTECT</code></td>
+<td>POSIX.1-1996 实时扩展</td>
+</tr>
+<tr>
+<td>优先级上限（属性）</td>
+<td><code>pthread_mutexattr_setprioceiling</code></td>
+<td><code>pthread_mutexattr_getprioceiling</code></td>
+<td><code>SCHED_FIFO</code> 优先级范围内的整数</td>
+<td>POSIX.1-1996 实时扩展</td>
+</tr>
+<tr>
+<td>优先级上限（锁本体）</td>
+<td><code>pthread_mutex_setprioceiling</code></td>
+<td><code>pthread_mutex_getprioceiling</code></td>
+<td>同上</td>
+<td>POSIX.1-1996 实时扩展</td>
+</tr>
+<tr>
+<td>健壮性（旧）</td>
+<td><code>pthread_mutexattr_setrobust_np</code></td>
+<td><code>pthread_mutexattr_getrobust_np</code></td>
+<td><code>PTHREAD_MUTEX_ROBUST_NP</code> / <code>STALLED_NP</code></td>
+<td>Solaris 扩展，非 POSIX</td>
+</tr>
+<tr>
+<td>健壮性（新）</td>
+<td><code>pthread_mutexattr_setrobust</code></td>
+<td><code>pthread_mutexattr_getrobust</code></td>
+<td><code>PTHREAD_MUTEX_ROBUST</code> / <code>STALLED</code></td>
+<td>POSIX.1-2008</td>
+</tr>
+</tbody>
+</table></div><p>带 <code>_np</code> 的一组是「不可移植」标记，来自 Solaris，后来 POSIX.1-2008 把健壮锁收编成不带后缀的版本。新代码用不带 <code>_np</code> 的。</p>
+<h3 id="作用范围pshared" tabindex="-1">作用范围：<code>pshared</code> <a class="header-anchor" href="#作用范围pshared"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_setpshared</span><span class="hljs-params">(<span class="hljs-type">pthread_mutexattr_t</span> *attr, <span class="hljs-type">int</span> pshared)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_getpshared</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">pthread_mutexattr_t</span> *attr, <span class="hljs-type">int</span> *pshared)</span>;
+</code></pre></div></code></pre>
+<p><code>setpshared</code> 成功返回 <code>0</code>，<code>attr</code> 无效或 <code>pshared</code> 取值不认识返回 <code>EINVAL</code>。<code>getpshared</code> 同理，另外在 <code>pshared</code> 指针为空时返回 <code>EINVAL</code>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>POSIX 取值</th>
+<th>Solaris 对应</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PTHREAD_PROCESS_PRIVATE</code></td>
+<td><code>USYNC_THREAD</code></td>
+<td>只同步本进程内的线程，默认值</td>
+</tr>
+<tr>
+<td><code>PTHREAD_PROCESS_SHARED</code></td>
+<td><code>USYNC_PROCESS</code></td>
+<td>同步跨进程的线程，锁必须放在共享内存里</td>
+</tr>
+<tr>
+<td>无</td>
+<td><code>USYNC_PROCESS_ROBUST</code></td>
+<td>Solaris 专有，属主死了别人还能接管</td>
+</tr>
+</tbody>
+</table></div><p>跨进程用法要点：锁本体必须在 <code>mmap(MAP_SHARED)</code> 或 <code>shmget</code> 出来的共享区，而且只能有一个进程做 <code>init</code>。让两个进程各自 <code>init</code> 同一块内存，等于两套状态互相覆盖。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 父进程建锁，子进程只负责加锁解锁 */</span>
+<span class="hljs-type">pthread_mutexattr_t</span> attr;
+<span class="hljs-type">pthread_mutex_t</span> *lock;
+
+pthread_mutexattr_init(&amp;attr);
+pthread_mutexattr_setpshared(&amp;attr, PTHREAD_PROCESS_SHARED);
+
+lock = mmap(<span class="hljs-literal">NULL</span>, <span class="hljs-keyword">sizeof</span>(*lock), PROT_READ | PROT_WRITE,
+            MAP_SHARED | MAP_ANONYMOUS, <span class="hljs-number">-1</span>, <span class="hljs-number">0</span>);
+pthread_mutex_init(lock, &amp;attr);
+pthread_mutexattr_destroy(&amp;attr);
+
+<span class="hljs-comment">/* fork 之后两边都拿到同一个 lock 映射 */</span>
+pthread_mutex_lock(lock);
+<span class="hljs-comment">/* 操作共享区 */</span>
+pthread_mutex_unlock(lock);
+</code></pre></div></code></pre>
+<h3 id="一个把属性用起来的封装" tabindex="-1">一个把属性用起来的封装 <a class="header-anchor" href="#一个把属性用起来的封装"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">make_mutex</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *m, <span class="hljs-type">int</span> type, <span class="hljs-type">int</span> protocol)</span>
+{
+    <span class="hljs-type">pthread_mutexattr_t</span> a;
+
+    <span class="hljs-keyword">if</span> (pthread_mutexattr_init(&amp;a) != <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+
+    <span class="hljs-comment">/* 属性对象是栈上临时变量，设完值就能交给 pthread_mutex_init */</span>
+    <span class="hljs-keyword">if</span> (pthread_mutexattr_settype(&amp;a, type) != <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> fail;
+    <span class="hljs-keyword">if</span> (pthread_mutexattr_setprotocol(&amp;a, protocol) != <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> fail;
+    <span class="hljs-keyword">if</span> (pthread_mutex_init(m, &amp;a) != <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">goto</span> fail;
+
+    pthread_mutexattr_destroy(&amp;a);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+
+fail:
+    pthread_mutexattr_destroy(&amp;a);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p>注意 <code>goto fail</code> 走的是同一条 <code>destroy</code> 路径。属性对象初始化失败就不用销毁，初始化成功之后每条失败分支都要销毁，漏一条就是一次小泄漏，跑几千次就是一片。</p>
+<h2 id="五锁类型普通检错递归" tabindex="-1">五、锁类型：普通、检错、递归 <a class="header-anchor" href="#五锁类型普通检错递归"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>锁类型决定「同一个线程第二次加锁」和「非持有者解锁」这两件事怎么处理。四种取值，其中三种有明确语义。</p>
+<h3 id="原型-1" tabindex="-1">原型 <a class="header-anchor" href="#原型-1"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_settype</span><span class="hljs-params">(<span class="hljs-type">pthread_mutexattr_t</span> *attr, <span class="hljs-type">int</span> type)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_gettype</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">pthread_mutexattr_t</span> *attr, <span class="hljs-type">int</span> *type)</span>;
+</code></pre></div></code></pre>
+<p>POSIX.1-1996，<code>RECURSIVE</code> 与 <code>ERRORCHECK</code> 在早期的 POSIX.1c 里就存在，不是后来补的。</p>
+<ul>
+<li>成功返回 <code>0</code>。</li>
+<li><code>attr</code> 无效返回 <code>EINVAL</code>。</li>
+<li><code>type</code> 不在合法取值内返回 <code>EINVAL</code>。</li>
+</ul>
+<p><code>settype</code> 的 <code>type</code> 参数和 <code>gettype</code> 的 <code>type</code> 参数类型不同：前者是值，后者是 <code>int *</code> 出参。写反了编译器不报错，运行时崩在奇怪的地方。</p>
+<h3 id="四种取值" tabindex="-1">四种取值 <a class="header-anchor" href="#四种取值"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>PTHREAD_MUTEX_NORMAL       <span class="hljs-comment">/* 不检测，默认行为的多数实现 */</span>
+PTHREAD_MUTEX_ERRORCHECK   <span class="hljs-comment">/* 自查：重锁、错主解锁都报错 */</span>
+PTHREAD_MUTEX_RECURSIVE    <span class="hljs-comment">/* 同线程可重入，要等次数的 unlock */</span>
+PTHREAD_MUTEX_DEFAULT      <span class="hljs-comment">/* 实现映射，glibc 上等同 NORMAL */</span>
+</code></pre></div></code></pre>
+<h3 id="三种类型对照" tabindex="-1">三种类型对照 <a class="header-anchor" href="#三种类型对照"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>行为</th>
+<th><code>NORMAL</code></th>
+<th><code>ERRORCHECK</code></th>
+<th><code>RECURSIVE</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>同线程重复加锁</td>
+<td>死锁</td>
+<td>返回 <code>EDEADLK</code></td>
+<td>成功，计数 +1</td>
+</tr>
+<tr>
+<td>非持有者解锁</td>
+<td>未定义行为</td>
+<td>返回 <code>EPERM</code></td>
+<td>返回 <code>EPERM</code></td>
+</tr>
+<tr>
+<td>解锁未锁定的锁</td>
+<td>未定义行为</td>
+<td>返回 <code>EPERM</code></td>
+<td>返回 <code>EPERM</code></td>
+</tr>
+<tr>
+<td>需要几次 <code>unlock</code> 释放</td>
+<td>1</td>
+<td>1</td>
+<td>N（N 为加锁次数）</td>
+</tr>
+<tr>
+<td>内部维护持有者 tid</td>
+<td>否</td>
+<td>是</td>
+<td>是</td>
+</tr>
+<tr>
+<td>内部维护嵌套计数</td>
+<td>否</td>
+<td>否</td>
+<td>是</td>
+</tr>
+<tr>
+<td>每次加锁的开销</td>
+<td>最低</td>
+<td>中（查 tid）</td>
+<td>中（查 tid + 计数）</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>性能敏感、逻辑已自证正确</td>
+<td>开发调试期、代码评审兜底</td>
+<td>递归调用、回调重入</td>
+</tr>
+<tr>
+<td>标准版本</td>
+<td>POSIX.1-1996</td>
+<td>POSIX.1-1996</td>
+<td>POSIX.1-1996</td>
+</tr>
+</tbody>
+</table></div><p><code>NORMAL</code> 那两行「未定义行为」是字面意思：静默通过、直接崩掉、把锁状态搞坏，都算正常表现，标准不管。</p>
+<p><code>PTHREAD_MUTEX_DEFAULT</code> 的定位是「实现自己挑一个」。Solaris 把它映射成 <code>NORMAL</code>；glibc 在 x86 上也走 <code>NORMAL</code> 的快速路径。写代码时把它当 <code>NORMAL</code> 看，别依赖它变成别的。</p>
+<h3 id="检错锁到底检了什么" tabindex="-1">检错锁到底检了什么 <a class="header-anchor" href="#检错锁到底检了什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">pthread_mutex_t</span> m;
+<span class="hljs-type">pthread_mutexattr_t</span> a;
+
+pthread_mutexattr_init(&amp;a);
+pthread_mutexattr_settype(&amp;a, PTHREAD_MUTEX_ERRORCHECK);
+pthread_mutex_init(&amp;m, &amp;a);
+pthread_mutexattr_destroy(&amp;a);
+
+pthread_mutex_lock(&amp;m);
+<span class="hljs-type">int</span> r = pthread_mutex_lock(&amp;m);     <span class="hljs-comment">/* r == EDEADLK，自锁被抓到 */</span>
+r = pthread_mutex_unlock(&amp;m);       <span class="hljs-comment">/* 返回 0，正常解锁 */</span>
+r = pthread_mutex_unlock(&amp;m);       <span class="hljs-comment">/* r == EPERM，锁没被持有 */</span>
+</code></pre></div></code></pre>
+<p><code>EDEADLK</code> 意思是「你自己已经拿着了，再要就是自锁」。这是唯一能在运行时抓到自锁的机制，<code>NORMAL</code> 锁上它表现为卡死，调试时只能靠 gdb 打断点看栈。</p>
+<h3 id="递归锁的坑" tabindex="-1">递归锁的坑 <a class="header-anchor" href="#递归锁的坑"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>pthread_mutexattr_init(&amp;a);
+pthread_mutexattr_settype(&amp;a, PTHREAD_MUTEX_RECURSIVE);
+pthread_mutex_init(&amp;m, &amp;a);
+pthread_mutexattr_destroy(&amp;a);
+
+pthread_mutex_lock(&amp;m);     <span class="hljs-comment">/* 计数 1 */</span>
+pthread_mutex_lock(&amp;m);     <span class="hljs-comment">/* 计数 2 */</span>
+pthread_mutex_unlock(&amp;m);   <span class="hljs-comment">/* 计数 1，仍然持有 */</span>
+pthread_mutex_unlock(&amp;m);   <span class="hljs-comment">/* 计数 0，真正释放 */</span>
+</code></pre></div></code></pre>
+<p>加锁几次就要解锁几次，少一次锁就永远是「被持有」，其他线程全部卡死。递归锁只解决「同一线程重入」，不解决逻辑问题：能用递归锁的地方，多半是临界区划得太大，或者回调里偷偷加了锁。解锁也必须由同一线程完成，实测中某些实现不强制检查，但别赌。</p>
+<h3 id="一个判断表" tabindex="-1">一个判断表 <a class="header-anchor" href="#一个判断表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>你的处境</th>
+<th>选什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>临界区短、加锁路径唯一、性能在意</td>
+<td><code>NORMAL</code></td>
+</tr>
+<tr>
+<td>团队合作、库对外提供、不确定调用方怎么写</td>
+<td><code>ERRORCHECK</code></td>
+</tr>
+<tr>
+<td>明确有同线程重入（回调、递归下降解析器）</td>
+<td><code>RECURSIVE</code></td>
+</tr>
+<tr>
+<td>不确定、想跟平台默认走</td>
+<td><code>DEFAULT</code>，行为按 <code>NORMAL</code> 预期</td>
+</tr>
+</tbody>
+</table></div><h2 id="六加锁与解锁" tabindex="-1">六、加锁与解锁 <a class="header-anchor" href="#六加锁与解锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="原型-2" tabindex="-1">原型 <a class="header-anchor" href="#原型-2"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_lock</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *mutex)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_unlock</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *mutex)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_trylock</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *mutex)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_timedlock</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *<span class="hljs-keyword">restrict</span> mutex,
+                            <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> timespec *<span class="hljs-keyword">restrict</span> abstime)</span>;
+</code></pre></div></code></pre>
+<p>前三个是 POSIX.1-1996，<code>pthread_mutex_timedlock</code> 是 POSIX.1-2001 新增（同批进标准的是 <code>pthread_cond_timedwait</code> 的补充和 <code>clock_nanosleep</code>）。</p>
+<h3 id="pthread_mutex_lock" tabindex="-1"><code>pthread_mutex_lock</code> <a class="header-anchor" href="#pthread_mutex_lock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li>锁空闲：原子地拿到，返回 <code>0</code>。</li>
+<li>锁被占：调用线程进等待队列睡眠，直到锁可用。这一步是阻塞的，睡多久没有上限。</li>
+<li>同一线程对 <code>NORMAL</code> 锁重复加锁：死锁，无返回值可看。</li>
+<li>成功返回 <code>0</code>；<code>ERRORCHECK</code> / <code>RECURSIVE</code> 上重锁返回 <code>EDEADLK</code>；<code>mutex</code> 无效返回 <code>EINVAL</code>。</li>
+</ul>
+<h3 id="pthread_mutex_unlock" tabindex="-1"><code>pthread_mutex_unlock</code> <a class="header-anchor" href="#pthread_mutex_unlock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ul>
+<li>归还锁，唤醒等待队列里的一个线程（不是全部）。</li>
+<li><code>NORMAL</code> 锁上，任何线程都能解，包括没加锁的线程。这是被允许的，也是踩坑源头。</li>
+<li><code>ERRORCHECK</code> / <code>RECURSIVE</code> 上，只有持有者能解，否则 <code>EPERM</code>。</li>
+<li>解锁一把没锁定的锁：<code>NORMAL</code> 上未定义，<code>ERRORCHECK</code> 上是 <code>EPERM</code>。</li>
+</ul>
+<h3 id="必须用单入口单出口写法" tabindex="-1">必须用「单入口单出口」写法 <a class="header-anchor" href="#必须用单入口单出口写法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>临界区里出现 <code>return</code>、<code>break</code>、<code>goto</code>、<code>continue</code> 漏掉解锁，是最常见的死锁来源。两条做法，选一个并坚持到底。</p>
+<p>做法一，<code>goto</code> 统一出口：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">update</span><span class="hljs-params">(<span class="hljs-type">shared_t</span> *s, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *name)</span>
+{
+    <span class="hljs-type">int</span> ret = <span class="hljs-number">0</span>;
+
+    pthread_mutex_lock(&amp;s-&gt;lock);
+
+    <span class="hljs-keyword">if</span> (s-&gt;frozen) {
+        ret = -EBUSY;
+        <span class="hljs-keyword">goto</span> out;
+    }
+    <span class="hljs-built_in">strcpy</span>(s-&gt;name, name);
+    s-&gt;count++;
+
+out:
+    pthread_mutex_unlock(&amp;s-&gt;lock);
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<p>做法二，拆成「加锁壳 + 无锁芯」：无锁芯里可以自由 <code>return</code>，加锁壳只有三行，扫一眼就知道配对了。命名上加 <code>_locked</code> 后缀，让下一个改代码的人知道前提。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">int</span> <span class="hljs-title function_">update_locked</span><span class="hljs-params">(<span class="hljs-type">shared_t</span> *s, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *name)</span>
+{
+    <span class="hljs-comment">/* 调用者保证已持锁，函数内部绝不再加锁 */</span>
+    <span class="hljs-keyword">if</span> (s-&gt;frozen)
+        <span class="hljs-keyword">return</span> -EBUSY;
+    <span class="hljs-built_in">strcpy</span>(s-&gt;name, name);
+    s-&gt;count++;
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">update</span><span class="hljs-params">(<span class="hljs-type">shared_t</span> *s, <span class="hljs-type">const</span> <span class="hljs-type">char</span> *name)</span>
+{
+    pthread_mutex_lock(&amp;s-&gt;lock);
+    <span class="hljs-type">int</span> ret = update_locked(s, name);
+    pthread_mutex_unlock(&amp;s-&gt;lock);
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<h3 id="取消与信号这两件事" tabindex="-1">取消与信号这两件事 <a class="header-anchor" href="#取消与信号这两件事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>锁的加锁函数在 Linux 上<strong>不是取消点</strong>。线程卡在 <code>pthread_mutex_lock</code> 里时收到 <code>pthread_cancel</code>，延迟取消不会让它退出，它会继续等锁。等到了锁、继续跑，直到走到下一个真正的取消点。</p>
+<p>这带来一个真实风险：线程拿到锁之后、解锁之前，正好在临界区里撞上一个取消点（<code>read</code>、<code>write</code>、<code>sleep</code>、<code>pthread_cond_wait</code> 都算），被取消退出，锁就永远留在加锁状态。清理函数是唯一的解法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">cleanup_unlock</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    pthread_mutex_unlock((<span class="hljs-type">pthread_mutex_t</span> *)arg);
+}
+
+<span class="hljs-type">void</span> *<span class="hljs-title function_">worker</span><span class="hljs-params">(<span class="hljs-type">void</span> *arg)</span>
+{
+    pthread_mutex_lock(&amp;lock);
+    pthread_cleanup_push(cleanup_unlock, &amp;lock);
+
+    <span class="hljs-comment">/* 这里可以安全地出现取消点 */</span>
+    write(fd, buf, len);
+
+    pthread_cleanup_pop(<span class="hljs-number">1</span>);   <span class="hljs-comment">/* 传 1：弹出并执行，等于解锁 */</span>
+    <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+}
+</code></pre></div></code></pre>
+<p><code>pthread_cleanup_push</code> / <code>pthread_cleanup_pop</code> 必须成对出现在<strong>同一个词法作用域</strong>里，它们是宏，不是函数，中间夹 <code>return</code> 会编译不过。这一对的细节在《Pthread 线程生命周期：创建、取消与清理》里展开。</p>
+<p>另一半：互斥锁<strong>不是异步信号安全的</strong>。信号处理函数里不能 <code>pthread_mutex_lock</code>。原因是主流程正好持着这把锁被打断时，信号处理函数再去要同一把锁，就自己锁死自己，而且没有任何超时能救。</p>
+<h2 id="七非阻塞加锁trylock" tabindex="-1">七、非阻塞加锁：trylock <a class="header-anchor" href="#七非阻塞加锁trylock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="原型-3" tabindex="-1">原型 <a class="header-anchor" href="#原型-3"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_trylock</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *mutex)</span>;
+</code></pre></div></code></pre>
+<p>POSIX.1-1996。行为是 <code>lock</code> 的「不等版本」。</p>
+<ul>
+<li>锁空闲：拿到，返回 <code>0</code>。</li>
+<li>锁被占：立刻返回 <code>EBUSY</code>，不睡眠、不进队列。</li>
+<li><code>ERRORCHECK</code> 上同一线程重入：返回 <code>EBUSY</code>（注意不是 <code>EDEADLK</code>，这一点比 <code>lock</code> 更容易被写错）。</li>
+<li><code>RECURSIVE</code> 上同一线程重入：成功，计数 +1。</li>
+<li><code>mutex</code> 无效：<code>EINVAL</code>。</li>
+</ul>
+<h3 id="典型用法" tabindex="-1">典型用法 <a class="header-anchor" href="#典型用法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>场景一，<strong>探测</strong>：只在没人在用时顺手做点事，抢不到就跳过。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (pthread_mutex_trylock(&amp;cache-&gt;lock) == <span class="hljs-number">0</span>) {
+    cache-&gt;hits++;          <span class="hljs-comment">/* 抢到了，顺手更新统计 */</span>
+    pthread_mutex_unlock(&amp;cache-&gt;lock);
+}
+<span class="hljs-comment">/* 抢不到直接走人，不阻塞调用者 */</span>
+</code></pre></div></code></pre>
+<p>场景二，<strong>有兜底路径</strong>：抢不到锁就走另一条不需要锁的路。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">if</span> (pthread_mutex_trylock(&amp;pool-&gt;lock) != <span class="hljs-number">0</span>) {
+    <span class="hljs-comment">/* 池子正忙，直接开一个新的临时对象，绕开共享结构 */</span>
+    <span class="hljs-keyword">return</span> make_temporary();
+}
+item = pool_take_locked(pool);
+pthread_mutex_unlock(&amp;pool-&gt;lock);
+<span class="hljs-keyword">return</span> item;
+</code></pre></div></code></pre>
+<p>场景三，<strong>避免持锁顺序死锁</strong>：需要两把锁时，第二把用 <code>trylock</code>，失败就退回第一把，稍后重试。这是经典的退让策略。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 从 a 转到 b，两把锁必须同时持有；反序路径存在 */</span>
+<span class="hljs-keyword">for</span> (;;) {
+    pthread_mutex_lock(&amp;a.lock);
+    <span class="hljs-keyword">if</span> (pthread_mutex_trylock(&amp;b.lock) == <span class="hljs-number">0</span>) {
+        transfer_locked(&amp;a, &amp;b);
+        pthread_mutex_unlock(&amp;b.lock);
+        pthread_mutex_unlock(&amp;a.lock);
+        <span class="hljs-keyword">return</span>;
+    }
+    <span class="hljs-comment">/* 拿不到 b，先放开 a，让持 b 的线程有机会完成 */</span>
+    pthread_mutex_unlock(&amp;a.lock);
+    sched_yield();
+}
+</code></pre></div></code></pre>
+<h3 id="不要用-trylock-代替-lock" tabindex="-1">不要用 <code>trylock</code> 代替 <code>lock</code> <a class="header-anchor" href="#不要用-trylock-代替-lock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>trylock</code> 返回 <code>EBUSY</code> 时，锁的状态一点没变，你的业务也一点没往前走。写成这样就是错的：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 反面例子：忙等，CPU 空转烧满一个核 */</span>
+<span class="hljs-keyword">while</span> (pthread_mutex_trylock(&amp;lock) != <span class="hljs-number">0</span>)
+    ;   <span class="hljs-comment">/* 什么都不做 */</span>
+</code></pre></div></code></pre>
+<p>正确的做法只有两种：要么阻塞等（用 <code>lock</code>），要么放弃这次操作（上面的探测模式）。需要「等一会儿」的语义，用下一节的 <code>timedlock</code>。</p>
+<h3 id="三者对比" tabindex="-1">三者对比 <a class="header-anchor" href="#三者对比"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>项目</th>
+<th><code>pthread_mutex_lock</code></th>
+<th><code>pthread_mutex_trylock</code></th>
+<th><code>pthread_mutex_timedlock</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>锁被占时的行为</td>
+<td>无限期睡眠</td>
+<td>立刻返回 <code>EBUSY</code></td>
+<td>睡到超时或拿到锁</td>
+</tr>
+<tr>
+<td>是否有超时</td>
+<td>无</td>
+<td>等同于超时为 0</td>
+<td>有，由 <code>abstime</code> 指定</td>
+</tr>
+<tr>
+<td>能否在信号处理函数里用</td>
+<td>不能</td>
+<td>不能</td>
+<td>不能</td>
+</tr>
+<tr>
+<td>是否是取消点</td>
+<td>否</td>
+<td>否</td>
+<td>否</td>
+</tr>
+<tr>
+<td>标准版本</td>
+<td>POSIX.1-1996</td>
+<td>POSIX.1-1996</td>
+<td>POSIX.1-2001</td>
+</tr>
+<tr>
+<td>主要用途</td>
+<td>常规临界区</td>
+<td>探测、退让、可选路径</td>
+<td>有响应时间要求的等待</td>
+</tr>
+</tbody>
+</table></div><h2 id="八超时加锁timedlock" tabindex="-1">八、超时加锁：timedlock <a class="header-anchor" href="#八超时加锁timedlock"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="原型-4" tabindex="-1">原型 <a class="header-anchor" href="#原型-4"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;time.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_timedlock</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *<span class="hljs-keyword">restrict</span> mutex,
+                            <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> timespec *<span class="hljs-keyword">restrict</span> abstime)</span>;
+</code></pre></div></code></pre>
+<p>POSIX.1-2001 新增。<code>abstime</code> 是<strong>绝对时间</strong>，不是相对时长，这一点写错的人最多。</p>
+<h3 id="abstime-怎么算" tabindex="-1"><code>abstime</code> 怎么算 <a class="header-anchor" href="#abstime-怎么算"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>基准时钟是 <code>CLOCK_REALTIME</code>，也就是墙上时间。要「再等 500 毫秒」，得先取当前时间再加。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timespec</span> <span class="hljs-title">ts</span>;</span>
+
+clock_gettime(CLOCK_REALTIME, &amp;ts);
+ts.tv_nsec += <span class="hljs-number">500</span> * <span class="hljs-number">1000</span> * <span class="hljs-number">1000</span>;        <span class="hljs-comment">/* +500ms */</span>
+<span class="hljs-keyword">if</span> (ts.tv_nsec &gt;= <span class="hljs-number">1000000000L</span>) {        <span class="hljs-comment">/* 进位 */</span>
+    ts.tv_sec  += ts.tv_nsec / <span class="hljs-number">1000000000L</span>;
+    ts.tv_nsec %= <span class="hljs-number">1000000000L</span>;
+}
+
+<span class="hljs-type">int</span> r = pthread_mutex_timedlock(&amp;lock, &amp;ts);
+<span class="hljs-keyword">if</span> (r == ETIMEDOUT) {
+    <span class="hljs-comment">/* 到点还没拿到锁 */</span>
+} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (r == <span class="hljs-number">0</span>) {
+    <span class="hljs-comment">/* 拿到了，正常走临界区 */</span>
+    pthread_mutex_unlock(&amp;lock);
+}
+</code></pre></div></code></pre>
+<p>三个必须处理的细节：</p>
+<ul>
+<li><code>tv_nsec</code> 必须在 <code>[0, 999999999]</code> 区间内。直接写 <code>ts.tv_nsec += 800000000</code> 两次就溢出，<code>EINVAL</code>。</li>
+<li>有人会写 <code>ts.tv_nsec += 500000000</code> 然后手动 <code>ts.tv_sec += ts.tv_nsec / 1000000000</code>，这是对的；写成 <code>ts.tv_sec += 1</code> 硬编码进位，只在恰好溢出时对。</li>
+<li><code>CLOCK_REALTIME</code> 会被 <code>settimeofday</code>、NTP 调整改掉。系统时间往后跳一小时，你那个「等 500ms」就变成了等一小时。安全关键代码里要评估这一点。</li>
+</ul>
+<h3 id="返回值" tabindex="-1">返回值 <a class="header-anchor" href="#返回值"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>返回值</th>
+<th>含义</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>拿到锁</td>
+<td>正常进临界区</td>
+</tr>
+<tr>
+<td><code>ETIMEDOUT</code></td>
+<td>超时，锁没拿到</td>
+<td>走降级路径或报错</td>
+</tr>
+<tr>
+<td><code>EINVAL</code></td>
+<td><code>abstime</code> 的 <code>tv_nsec</code> 越界，或 <code>mutex</code> 无效</td>
+<td>修时间计算</td>
+</tr>
+<tr>
+<td><code>EDEADLK</code></td>
+<td><code>ERRORCHECK</code> 上同线程重入</td>
+<td>说明有自锁</td>
+</tr>
+<tr>
+<td><code>EOWNERDEAD</code></td>
+<td>前一属主死在这把健壮锁上</td>
+<td>见健壮锁一节</td>
+</tr>
+</tbody>
+</table></div><p><code>ETIMEDOUT</code> 时<strong>没有拿到锁</strong>，不需要解锁。这一点和「拿到了再失败」的情况不同。</p>
+<h3 id="重试循环" tabindex="-1">重试循环 <a class="header-anchor" href="#重试循环"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>需要「总共等 2 秒，但中间可以检查退出标志」时，用循环加短超时。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timespec</span> <span class="hljs-title">deadline</span>;</span>
+clock_gettime(CLOCK_REALTIME, &amp;deadline);
+deadline.tv_sec += <span class="hljs-number">2</span>;
+
+<span class="hljs-keyword">for</span> (;;) {
+    <span class="hljs-type">int</span> r = pthread_mutex_timedlock(&amp;lock, &amp;deadline);
+    <span class="hljs-keyword">if</span> (r == <span class="hljs-number">0</span>)
+        <span class="hljs-keyword">break</span>;                      <span class="hljs-comment">/* 拿到锁 */</span>
+    <span class="hljs-keyword">if</span> (r != ETIMEDOUT)
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;                  <span class="hljs-comment">/* 真错误，别再试 */</span>
+    <span class="hljs-keyword">if</span> (atomic_load(&amp;stop_requested))
+        <span class="hljs-keyword">return</span> -ECANCELED;          <span class="hljs-comment">/* 外部要求退出，主动放弃 */</span>
+}
+</code></pre></div></code></pre>
+<p>循环里每一轮都传同一个 <code>deadline</code>，绝对时间不随循环次数漂移——这正是用绝对时间的理由。如果每轮都 <code>now += 100ms</code>，总时长会随重试次数膨胀。</p>
+<h3 id="三个函数的取舍" tabindex="-1">三个函数的取舍 <a class="header-anchor" href="#三个函数的取舍"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>你的需求</th>
+<th>用哪个</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>一定要拿到锁</td>
+<td><code>pthread_mutex_lock</code></td>
+</tr>
+<tr>
+<td>拿不到也要继续干别的</td>
+<td><code>pthread_mutex_trylock</code></td>
+</tr>
+<tr>
+<td>有明确最长等待时间</td>
+<td><code>pthread_mutex_timedlock</code></td>
+</tr>
+<tr>
+<td>有响应时间上限、但不能死等</td>
+<td><code>timedlock</code> + 退出标志</td>
+</tr>
+<tr>
+<td>高优先级线程不能被低优先级拖住</td>
+<td>不是选函数的事，见优先级继承一章</td>
+</tr>
+</tbody>
+</table></div><h2 id="九死锁的产生与规避" tabindex="-1">九、死锁的产生与规避 <a class="header-anchor" href="#九死锁的产生与规避"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>死锁的四个必要条件教科书上写得很清楚：互斥、占有且等待、不可剥夺、循环等待。互斥锁天生满足前三个，你能动手的只有第四个。所以规避死锁的全部工作，就是别让加锁关系成环。</p>
+<h3 id="形态一自锁" tabindex="-1">形态一：自锁 <a class="header-anchor" href="#形态一自锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>同一个线程对 <code>NORMAL</code> 锁加两次，第二次永远等不到。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>pthread_mutex_lock(&amp;lock);
+pthread_mutex_lock(&amp;lock);   <span class="hljs-comment">/* 卡死在这里 */</span>
+</code></pre></div></code></pre>
+<p>难点在于两层函数调用把加锁藏起来了：<code>outer()</code> 加了锁，调用的 <code>inner()</code> 里又加了一次。排查手段就一个：把外层锁换成 <code>PTHREAD_MUTEX_ERRORCHECK</code>，自锁立刻变成 <code>EDEADLK</code> 返回值，几秒钟定位。</p>
+<h3 id="形态二加锁顺序反转" tabindex="-1">形态二：加锁顺序反转 <a class="header-anchor" href="#形态二加锁顺序反转"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>线程 1 拿 A 再要 B，线程 2 拿 B 再要 A。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 线程 1 */</span>
+pthread_mutex_lock(&amp;a);
+pthread_mutex_lock(&amp;b);     <span class="hljs-comment">/* 等线程 2 放 b */</span>
+pthread_mutex_unlock(&amp;b);
+pthread_mutex_unlock(&amp;a);
+
+<span class="hljs-comment">/* 线程 2 —— 同时刻 */</span>
+pthread_mutex_lock(&amp;b);
+pthread_mutex_lock(&amp;a);     <span class="hljs-comment">/* 等线程 1 放 a */</span>
+pthread_mutex_unlock(&amp;a);
+pthread_mutex_unlock(&amp;b);
+</code></pre></div></code></pre>
+<p>两条线程各持一把，各等一把，谁也不放。这是线上最常见的一种，触发概率低，压测跑不出来，用户量上来才炸。</p>
+<p><strong>解法一，全局加锁顺序</strong>。给每把锁一个编号，永远按编号从小到大加。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 约定：锁有 id，加锁一律按 id 升序 */</span>
+<span class="hljs-class"><span class="hljs-keyword">enum</span> {</span> LOCK_ACCOUNT = <span class="hljs-number">10</span>, LOCK_LEDGER = <span class="hljs-number">20</span>, LOCK_AUDIT = <span class="hljs-number">30</span> };
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">transfer</span><span class="hljs-params">(<span class="hljs-type">account_t</span> *from, <span class="hljs-type">account_t</span> *to, <span class="hljs-type">long</span> amount)</span>
+{
+    <span class="hljs-type">account_t</span> *first  = from-&gt;lock_id &lt; to-&gt;lock_id ? from : to;
+    <span class="hljs-type">account_t</span> *second = from-&gt;lock_id &lt; to-&gt;lock_id ? to : from;
+
+    pthread_mutex_lock(&amp;first-&gt;lock);
+    pthread_mutex_lock(&amp;second-&gt;lock);
+
+    from-&gt;balance -= amount;
+    to-&gt;balance   += amount;
+
+    pthread_mutex_unlock(&amp;second-&gt;lock);
+    pthread_mutex_unlock(&amp;first-&gt;lock);
+}
+</code></pre></div></code></pre>
+<p>交换顺序时用指针交换，不要用条件分支写两套加锁代码，那样迟早漏掉一处。</p>
+<p><strong>解法二，退让重试</strong>。第二把锁用 <code>trylock</code>，失败就放开第一把。上一章的 <code>transfer</code> 示例就是这个套路。代价是活锁（两边不停退让），要加随机退避。</p>
+<p><strong>解法三，改成单锁</strong>。两把锁保护的到底是不是同一份状态？合并成一把锁，问题直接消失，性能损失往往比想象的小。</p>
+<h3 id="形态三临界区里调用外部代码" tabindex="-1">形态三：临界区里调用外部代码 <a class="header-anchor" href="#形态三临界区里调用外部代码"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>pthread_mutex_lock(&amp;lock);
+log_write(msg);              <span class="hljs-comment">/* 内部又去拿 log_lock */</span>
+callback(user_data);         <span class="hljs-comment">/* 天知道它拿什么锁 */</span>
+pthread_mutex_unlock(&amp;lock);
+</code></pre></div></code></pre>
+<p>库函数、回调、<code>malloc</code> 的调试钩子、信号处理里的 <code>printf</code>，都会在你持锁时去拿别的锁。规矩是：<strong>持锁期间只碰自己明确知道不碰锁的东西</strong>。日志、回调、内存分配，全部挪到锁外——锁内先拷出快照，放锁之后再回调。</p>
+<h3 id="形态四锁没被释放逻辑泄漏" tabindex="-1">形态四：锁没被释放（逻辑泄漏） <a class="header-anchor" href="#形态四锁没被释放逻辑泄漏"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>不是真死锁，效果一样。两个来源：<code>return</code> 绕过了解锁（见前一章的单出口写法），或者线程在临界区里被取消（见 <code>pthread_cleanup_push</code>）。</p>
+<p>用工具抓。<code>valgrind --tool=helgrind</code> 能报锁序反转和丢锁，<code>gdb</code> 挂上去 <code>thread apply all bt</code> 看谁在等谁。</p>
+<h3 id="规避清单" tabindex="-1">规避清单 <a class="header-anchor" href="#规避清单"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>措施</th>
+<th>解决哪种形态</th>
+<th>成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全局锁序编号</td>
+<td>顺序反转</td>
+<td>需要全项目遵守，评审把关</td>
+</tr>
+<tr>
+<td><code>trylock</code> 退让</td>
+<td>顺序反转</td>
+<td>有活锁风险，要加退避</td>
+</tr>
+<tr>
+<td>合并锁</td>
+<td>顺序反转、自锁</td>
+<td>并发度下降</td>
+</tr>
+<tr>
+<td>缩小临界区</td>
+<td>外部代码重入</td>
+<td>无，只有好处</td>
+</tr>
+<tr>
+<td><code>ERRORCHECK</code> 开发期</td>
+<td>自锁</td>
+<td>有性能开销，只在 debug 构建开</td>
+</tr>
+<tr>
+<td><code>pthread_cleanup_push</code></td>
+<td>取消导致的泄漏</td>
+<td>几行代码</td>
+</tr>
+<tr>
+<td>单入口单出口</td>
+<td><code>return</code> 泄漏</td>
+<td>代码风格统一</td>
+</tr>
+<tr>
+<td>持锁期间禁阻塞 I/O</td>
+<td>长时持锁引发的连锁阻塞</td>
+<td>需要重构调用链</td>
+</tr>
+</tbody>
+</table></div><h2 id="十优先级继承与优先级上限" tabindex="-1">十、优先级继承与优先级上限 <a class="header-anchor" href="#十优先级继承与优先级上限"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一章讲的是实时系统里的优先级反转问题。它跟锁类型没关系，跟调度策略有关系。</p>
+<h3 id="优先级反转是什么" tabindex="-1">优先级反转是什么 <a class="header-anchor" href="#优先级反转是什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>三个线程，优先级 高 &gt; 中 &gt; 低。低优先级线程持有一把锁，高优先级线程要这把锁，被阻塞。此时中优先级线程就绪，它不碰这把锁，直接抢占低优先级线程。结果是：高优先级线程在等一个被中优先级线程挤走的低优先级线程。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>低  ──[持锁]──────────────[被抢占，迟迟不释放]
+中  ──────────[抢占，一直跑]──────────────
+高  ──────[等锁]──────────────────────────[终于拿到]
+
+高优先级线程的实际等待时间 = 中优先级线程的执行时间 + 低优先级的剩余临界区
+</code></pre></div></code></pre>
+<p>1997 年火星探路者号在火星表面反复重启，就是优先级反转撞上了看门狗。这是这个问题的经典案例。</p>
+<h3 id="解决办法让持锁者快点跑完" tabindex="-1">解决办法：让持锁者快点跑完 <a class="header-anchor" href="#解决办法让持锁者快点跑完"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>两条路线，改的是持锁线程的调度属性。</p>
+<h3 id="协议属性" tabindex="-1">协议属性 <a class="header-anchor" href="#协议属性"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;pthread.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_setprotocol</span><span class="hljs-params">(<span class="hljs-type">pthread_mutexattr_t</span> *attr, <span class="hljs-type">int</span> protocol)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_getprotocol</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">pthread_mutexattr_t</span> *attr, <span class="hljs-type">int</span> *protocol)</span>;
+</code></pre></div></code></pre>
+<p>POSIX.1-1996 实时扩展（<code>_POSIX_THREAD_PRIO_INHERIT</code>、<code>_POSIX_THREAD_PRIO_PROTECT</code>）。编译和运行时都要确认这两个宏定义了，<code>sysconf(_SC_THREAD_PRIO_INHERIT)</code> 能再确认一次。</p>
+<p>三个取值：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>协议</th>
+<th>取值</th>
+<th>行为</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无</td>
+<td><code>PTHREAD_PRIO_NONE</code></td>
+<td>默认值。持锁不改变任何线程的优先级</td>
+<td>反转完全暴露</td>
+</tr>
+<tr>
+<td>继承</td>
+<td><code>PTHREAD_PRIO_INHERIT</code></td>
+<td>持锁者被临时抬到所有等待者的最高优先级</td>
+<td>每次加锁要维护等待者优先级，内核路径长</td>
+</tr>
+<tr>
+<td>保护</td>
+<td><code>PTHREAD_PRIO_PROTECT</code></td>
+<td>一进临界区就把自己抬到锁的优先级上限</td>
+<td>上限设高了会压制别的线程</td>
+</tr>
+</tbody>
+</table></div><p><code>PTHREAD_PRIO_NONE</code>：优先级与锁无关。普通分时任务用这个，别乱开继承。</p>
+<p><code>PTHREAD_PRIO_INHERIT</code>：等锁的线程把自己的优先级「借」给持锁者。低优先级 10 的线程拿着锁，高优先级 20 的线程来等，持锁者立刻变成 10→20，中优先级 15 的线程就抢不动它了。等锁的线程一放锁，优先级立刻回落。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>thrd1（prio 10，持锁）  →  thrd2（prio 20）来等锁  →  thrd1 提升到 20
+                                                       ↓
+                                            释放锁后回落至 10
+</code></pre></div></code></pre>
+<p>传播是链式的：一把 PI 锁的持锁者本身在等另一把锁，提升会沿着等待链继续传下去。glibc 的 PI 实现走 futex 的 <code>FUTEX_LOCK_PI</code>，比普通 <code>FUTEX_WAIT</code> 重不少。属主崩溃时处理也和 PI 挂钩：带 <code>_POSIX_THREAD_PRIO_INHERIT</code> 的锁在属主死后，内核里的 PI 状态要重置，否则等待者的优先级提升会永远挂在那儿。</p>
+<p><code>PTHREAD_PRIO_PROTECT</code>：不看谁在等，进临界区就抬到锁的优先级上限。上限必须设成「所有会锁这把锁的线程中最高的那个优先级」。哪怕没有更高优先级线程来抢，持锁者也是高优先级状态。好处是实现简单、不用维护等待链；坏处是设错了就出问题——上限过低，保护失效；上限过高，一个不相干的关键线程会被长时间压住。</p>
+<p>两者不能同时用。一把锁只能设一个协议。</p>
+<h3 id="返回值-1" tabindex="-1">返回值 <a class="header-anchor" href="#返回值-1"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>setprotocol</code> 成功返回 <code>0</code>，失败返回错误号：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>错误码</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ENOSYS</code></td>
+<td>实现不支持，<code>_POSIX_THREAD_PRIO_INHERIT</code> 和 <code>_POSIX_THREAD_PRIO_PROTECT</code> 都没定义</td>
+</tr>
+<tr>
+<td><code>ENOTSUP</code></td>
+<td>实现认识这个值但当前不支持</td>
+</tr>
+<tr>
+<td><code>EINVAL</code></td>
+<td><code>attr</code> 无效，或 <code>protocol</code> 不是合法取值</td>
+</tr>
+<tr>
+<td><code>EPERM</code></td>
+<td>调用者没有设置该协议所需权限（实时调度策略相关）</td>
+</tr>
+</tbody>
+</table></div><p><code>getprotocol</code> 的返回码集合相同：<code>ENOSYS</code>、<code>EINVAL</code>、<code>EPERM</code>。</p>
+<h3 id="优先级上限属性对象上的设置" tabindex="-1">优先级上限：属性对象上的设置 <a class="header-anchor" href="#优先级上限属性对象上的设置"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_setprioceiling</span><span class="hljs-params">(<span class="hljs-type">pthread_mutexattr_t</span> *attr, <span class="hljs-type">int</span> prioceiling)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_getprioceiling</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">pthread_mutexattr_t</span> *attr, <span class="hljs-type">int</span> *prioceiling)</span>;
+</code></pre></div></code></pre>
+<p>POSIX.1-1996 实时扩展，前提是 <code>_POSIX_THREAD_PRIO_PROTECT</code> 已定义。</p>
+<ul>
+<li><code>prioceiling</code> 取值必须在 <code>sched_get_priority_min(SCHED_FIFO)</code> 到 <code>sched_get_priority_max(SCHED_FIFO)</code> 之间。</li>
+<li>设错了返回 <code>EINVAL</code>；实现不支持返回 <code>ENOSYS</code>；权限不够返回 <code>EPERM</code>。</li>
+<li><code>attr</code> 只在 <code>protocol</code> 为 <code>PTHREAD_PRIO_PROTECT</code> 时才看这个值。协议是 <code>NONE</code> 或 <code>INHERIT</code> 时，设了也不起作用。</li>
+</ul>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">pthread_mutexattr_t</span> a;
+<span class="hljs-type">pthread_mutex_t</span> lock;
+<span class="hljs-type">int</span> hi_max = sched_get_priority_max(SCHED_FIFO);
+
+pthread_mutexattr_init(&amp;a);
+pthread_mutexattr_setprotocol(&amp;a, PTHREAD_PRIO_PROTECT);
+pthread_mutexattr_setprioceiling(&amp;a, hi_max);     <span class="hljs-comment">/* 取本场景最高优先级 */</span>
+pthread_mutex_init(&amp;lock, &amp;a);
+pthread_mutexattr_destroy(&amp;a);
+</code></pre></div></code></pre>
+<p>上限的选取准则：至少等于所有会锁这把锁的线程的最高优先级。低一个档位就等于保护失效，高到顶格则把整个实时调度让给这一把锁。</p>
+<h3 id="优先级上限锁本体上的修改" tabindex="-1">优先级上限：锁本体上的修改 <a class="header-anchor" href="#优先级上限锁本体上的修改"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_setprioceiling</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *mutex, <span class="hljs-type">int</span> prioceiling, <span class="hljs-type">int</span> *old_ceiling)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_getprioceiling</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">pthread_mutex_t</span> *mutex, <span class="hljs-type">int</span> *prioceiling)</span>;
+</code></pre></div></code></pre>
+<p>这两个操作的是一把已经初始化好的锁，不是属性对象。前者会在内部先锁住 <code>mutex</code>，改完再解锁，等于顺带做了一次加锁。</p>
+<ul>
+<li>成功返回 <code>0</code>，并把旧上限写进 <code>old_ceiling</code>。</li>
+<li>失败时上限保持不变。</li>
+<li>内部加锁不解锁是不行的，所以调用 <code>setprioceiling</code> 时如果别的线程持着这把锁，你会阻塞在那里。</li>
+<li>错误码：<code>ENOSYS</code>（<code>_POSIX_THREAD_PRIO_PROTECT</code> 未定义）、<code>EINVAL</code>（<code>prioceiling</code> 越界，或 <code>mutex</code> 无效）、<code>EPERM</code>（权限不足）。</li>
+</ul>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> old;
+
+<span class="hljs-keyword">if</span> (pthread_mutex_setprioceiling(&amp;lock, new_ceiling, &amp;old) != <span class="hljs-number">0</span>) {
+    <span class="hljs-comment">/* 上限没改成功，仍是 old */</span>
+}
+<span class="hljs-comment">/* 恢复旧上限 */</span>
+pthread_mutex_setprioceiling(&amp;lock, old, <span class="hljs-literal">NULL</span>);
+</code></pre></div></code></pre>
+<p>旧上限之所以重要，是因为上限改动是全局的：你为了自己这段代码调高了上限，别人拿这把锁时也被抬到那个高度。改动要还原。</p>
+<h3 id="别把继承当默认选项" tabindex="-1">别把继承当默认选项 <a class="header-anchor" href="#别把继承当默认选项"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>优先级继承只在实时调度（<code>SCHED_FIFO</code> / <code>SCHED_RR</code>）下才有意义。分时调度（<code>SCHED_OTHER</code>）的线程没有可继承的优先级，设了 <code>PTHREAD_PRIO_INHERIT</code> 只是给每次加锁加了内核开销。</p>
+<p>判断顺序：</p>
+<ol>
+<li>你的线程用 <code>SCHED_OTHER</code>？跳过这一整章，反转不适用于你。</li>
+<li>用实时调度且有不同优先级？先试 <code>PTHREAD_PRIO_INHERIT</code>，它对代码几乎无侵入。</li>
+<li>锁的临界区极短、且能静态算出上限？<code>PTHREAD_PRIO_PROTECT</code> 的实现路径更短。</li>
+<li>两者都不用，就得靠设计规避：别让低优先级线程持有高优先级线程要的锁。</li>
+</ol>
+<h2 id="十一健壮互斥锁" tabindex="-1">十一、健壮互斥锁 <a class="header-anchor" href="#十一健壮互斥锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="它解决的是持锁者死了" tabindex="-1">它解决的是「持锁者死了」 <a class="header-anchor" href="#它解决的是持锁者死了"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>普通锁有个死结：线程在临界区里崩掉、被 <code>SIGKILL</code>、或者 <code>exit</code> 走了，锁还是「被持有」状态，等待者永远等下去。健壮锁把这件事变成可检测的错误。</p>
+<h3 id="新旧两套接口" tabindex="-1">新旧两套接口 <a class="header-anchor" href="#新旧两套接口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* POSIX.1-2008 标准接口 */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_setrobust</span><span class="hljs-params">(<span class="hljs-type">pthread_mutexattr_t</span> *attr, <span class="hljs-type">int</span> robustness)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_getrobust</span><span class="hljs-params">(<span class="hljs-type">const</span> <span class="hljs-type">pthread_mutexattr_t</span> *attr, <span class="hljs-type">int</span> *robustness)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_consistent</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *mutex)</span>;
+
+<span class="hljs-comment">/* Solaris 出身、带 _np 的旧接口 */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_setrobust_np</span><span class="hljs-params">(<span class="hljs-type">pthread_mutexattr_t</span> *attr, <span class="hljs-type">int</span> robustness)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutexattr_getrobust_np</span><span class="hljs-params">(<span class="hljs-type">pthread_mutexattr_t</span> *attr, <span class="hljs-type">int</span> *robustness)</span>;
+<span class="hljs-type">int</span> <span class="hljs-title function_">pthread_mutex_consistent_np</span><span class="hljs-params">(<span class="hljs-type">pthread_mutex_t</span> *mutex)</span>;
+</code></pre></div></code></pre>
+<p>新代码用不带 <code>_np</code> 的。glibc 两个都提供，<code>_np</code> 版本在 <code>_GNU_SOURCE</code> 或 <code>_POSIX_C_SOURCE &gt;= 200809L</code> 下可见。Solaris 文档里那句「仅在 <code>_POSIX_THREAD_PRIO_INHERIT</code> 定义时适用」是历史包袱，POSIX.1-2008 之后健壮性与 PI 已经解耦，两个属性可以独立设置。</p>
+<h3 id="两个取值" tabindex="-1">两个取值 <a class="header-anchor" href="#两个取值"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>取值</th>
+<th>属主死后的行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PTHREAD_MUTEX_STALLED</code></td>
+<td>默认值。锁永久停在加锁状态，等待者无限期挂住</td>
+</tr>
+<tr>
+<td><code>PTHREAD_MUTEX_ROBUST</code></td>
+<td>下一个 <code>lock</code> 返回 <code>EOWNERDEAD</code>，新属主接管</td>
+</tr>
+</tbody>
+</table></div><p><code>STALLED</code> 这个名字很直白：卡死。这就是不设健壮性的默认后果。</p>
+<h3 id="robust-的完整流程" tabindex="-1"><code>ROBUST</code> 的完整流程 <a class="header-anchor" href="#robust-的完整流程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">pthread_mutexattr_t</span> a;
+<span class="hljs-type">pthread_mutex_t</span> lock;
+
+pthread_mutexattr_init(&amp;a);
+pthread_mutexattr_setrobust(&amp;a, PTHREAD_MUTEX_ROBUST);
+pthread_mutex_init(&amp;lock, &amp;a);
+pthread_mutexattr_destroy(&amp;a);
+</code></pre></div></code></pre>
+<p>加锁方要检查三种结果：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> r = pthread_mutex_lock(&amp;lock);
+
+<span class="hljs-keyword">if</span> (r == EOWNERDEAD) {
+    <span class="hljs-comment">/* 上一个属主死在临界区里，共享数据是半成品 */</span>
+    repair_shared_state();
+
+    <span class="hljs-keyword">if</span> (pthread_mutex_consistent(&amp;lock) != <span class="hljs-number">0</span>) {
+        <span class="hljs-comment">/* 一致性确认失败，这把锁已经废了 */</span>
+        pthread_mutex_unlock(&amp;lock);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    <span class="hljs-comment">/* 现在可以正常使用临界区 */</span>
+} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (r == ENOTRECOVERABLE) {
+    <span class="hljs-comment">/* 之前有人接管却没确认一致，锁进入不可恢复状态 */</span>
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (r != <span class="hljs-number">0</span>) {
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+
+<span class="hljs-comment">/* 临界区 */</span>
+pthread_mutex_unlock(&amp;lock);
+</code></pre></div></code></pre>
+<p>关键在 <code>pthread_mutex_consistent</code>。它做一件事：告诉系统「这块数据我已经修好了，锁状态是干净可用的」。</p>
+<ul>
+<li>调了它再 <code>unlock</code>：锁回到普通可用状态，下一个线程正常拿到。</li>
+<li>没调它就 <code>unlock</code>：锁进入 <code>ENOTRECOVERABLE</code> 状态，之后所有 <code>pthread_mutex_lock</code> 全部返回 <code>ENOTRECOVERABLE</code>，永久废掉。</li>
+</ul>
+<p>唯一的复活手段是销毁重建：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>pthread_mutex_destroy(&amp;lock);
+pthread_mutex_init(&amp;lock, &amp;a);     <span class="hljs-comment">/* 需要重新提供属性对象 */</span>
+</code></pre></div></code></pre>
+<h3 id="eownerdead-会连续传播" tabindex="-1"><code>EOWNERDEAD</code> 会连续传播 <a class="header-anchor" href="#eownerdead-会连续传播"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>在 <code>pthread_mutex_consistent</code> 之前，锁一直标记着「属主已死」。如果接管者在 <code>consistent</code> 之前又崩了，下一个来锁的线程同样拿到 <code>EOWNERDEAD</code>。机制上看这是对的：谁都没确认数据干净，那就继续交给下一个。</p>
+<h3 id="什么时候值得用" tabindex="-1">什么时候值得用 <a class="header-anchor" href="#什么时候值得用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>用不用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>多进程共享内存中的锁</td>
+<td>用。进程崩溃是常态，卡死共享区更糟</td>
+</tr>
+<tr>
+<td>长时间运行的服务，线程会被 <code>SIGKILL</code></td>
+<td>用</td>
+</tr>
+<tr>
+<td>纯线程、进程退出就一起退</td>
+<td>不用，收益为零</td>
+</tr>
+<tr>
+<td>临界区操作的数据无法修复</td>
+<td>不用，改用「检测到不一致就整体重置」的设计</td>
+</tr>
+<tr>
+<td>追求极限加锁性能</td>
+<td>不用，robust 要在链表上挂节点，慢</td>
+</tr>
+</tbody>
+</table></div><p>健壮锁的真问题不在 API，在数据修复。锁能告诉你「上一个属主半路死了」，但修不修得好共享数据，得看你的数据结构设计。修不好的话，返回 <code>ENOTRECOVERABLE</code> 让整个模块重置，比假装没事更安全。</p>
+<h3 id="错误码-1" tabindex="-1">错误码 <a class="header-anchor" href="#错误码-1"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>pthread_mutexattr_setrobust</code>：<code>EINVAL</code>（<code>attr</code> 或 <code>robustness</code> 无效）。</p>
+<p><code>pthread_mutex_consistent</code>：<code>EINVAL</code>（<code>mutex</code> 无效）、<code>EPERM</code>（调用者不是当前属主）。</p>
+<p><code>pthread_mutex_lock</code> 在健壮锁上的额外返回：<code>EOWNERDEAD</code>、<code>ENOTRECOVERABLE</code>。</p>
+<p><code>pthread_mutexattr_setrobust_np</code> 在旧实现上还会报 <code>ENOSYS</code>（选项未定义）和 <code>ENOTSUP</code>（取值不支持）。新接口把 <code>ENOSYS</code> 这一条去掉了。</p>
+<h2 id="十二互斥锁的性能与选择" tabindex="-1">十二、互斥锁的性能与选择 <a class="header-anchor" href="#十二互斥锁的性能与选择"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="一次加锁到底花多少" tabindex="-1">一次加锁到底花多少 <a class="header-anchor" href="#一次加锁到底花多少"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>glibc 的互斥锁是 futex 的两段式设计，快慢两个路径完全不在一个量级。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>路径</th>
+<th>发生条件</th>
+<th>做了什么</th>
+<th>量级</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无竞争</td>
+<td>锁空闲</td>
+<td>一次原子 <code>cmpxchg</code> 把锁字从 0 改成 1</td>
+<td>几十纳秒</td>
+</tr>
+<tr>
+<td>有竞争但短暂</td>
+<td>几次自旋内拿到</td>
+<td>用户态自旋一段时间，适应锁会短暂尝试</td>
+<td>微秒级</td>
+</tr>
+<tr>
+<td>有竞争且要睡</td>
+<td>自旋没拿到</td>
+<td><code>futex(FUTEX_WAIT)</code> 陷入内核，挂到等待队列</td>
+<td>微秒到毫秒，含调度延迟</td>
+</tr>
+<tr>
+<td>PI 锁</td>
+<td>设了 <code>PTHREAD_PRIO_INHERIT</code></td>
+<td><code>FUTEX_LOCK_PI</code>，维护等待链</td>
+<td>比普通路径高一个量级</td>
+</tr>
+</tbody>
+</table></div><p>结论：<strong>无竞争的加锁很便宜，有竞争的加锁很贵</strong>。优化的核心不是让锁更快，是让锁不被抢。</p>
+<h3 id="决定性能的三件事" tabindex="-1">决定性能的三件事 <a class="header-anchor" href="#决定性能的三件事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>临界区长度。</strong> 临界区里放 <code>printf</code>、写文件、<code>malloc</code>、发网络包，等于把锁变成串行化整个 I/O 的工具。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 坏：持锁做 I/O */</span>
+pthread_mutex_lock(&amp;log_lock);
+<span class="hljs-built_in">fprintf</span>(log_fp, <span class="hljs-string">&quot;%s\n&quot;</span>, msg);
+pthread_mutex_unlock(&amp;log_lock);
+
+<span class="hljs-comment">/* 好：锁内只动内存，I/O 在锁外 */</span>
+pthread_mutex_lock(&amp;log_lock);
+ring_put(&amp;log_ring, msg);
+pthread_mutex_unlock(&amp;log_lock);
+</code></pre></div></code></pre>
+<p><strong>锁的粒度。</strong> 一把大锁保护整个结构，最简单也最慢；每字段一把锁，最快也最易错。先写对的，profile 之后再拆。</p>
+<p><strong>争抢频率。</strong> 线程数超过物理核数，等待时间被调度放大。8 核机器上开 64 个线程抢同一把锁，比 8 个线程慢得多。</p>
+<h3 id="选型对照" tabindex="-1">选型对照 <a class="header-anchor" href="#选型对照"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>需求</th>
+<th>选择</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>临界区会被抢占，涉及系统调用</td>
+<td><code>pthread_mutex</code></td>
+<td>睡眠不烧 CPU</td>
+</tr>
+<tr>
+<td>临界区只有几条指令的计数</td>
+<td>原子操作 <code>__atomic_fetch_add</code></td>
+<td>省掉锁的进出开销</td>
+</tr>
+<tr>
+<td>临界区短到几纳秒、核数少</td>
+<td>自旋锁（手写 <code>atomic_flag</code>）</td>
+<td>省掉内核陷入</td>
+</tr>
+<tr>
+<td>读多写少</td>
+<td><code>pthread_rwlock</code></td>
+<td>读可并行</td>
+</tr>
+<tr>
+<td>要等某个条件成立</td>
+<td><code>pthread_cond</code> + mutex</td>
+<td>锁不能表达「等待」</td>
+</tr>
+<tr>
+<td>要控制并发数量</td>
+<td><code>pthread_sem</code> 或 <code>pthread_cond</code></td>
+<td>锁只允许 1 个</td>
+</tr>
+<tr>
+<td>跨进程</td>
+<td><code>PTHREAD_PROCESS_SHARED</code> + 共享内存</td>
+<td>或者用 <code>sem</code> 具名信号量</td>
+</tr>
+</tbody>
+</table></div><p>自旋锁在单核上没意义：你自旋的时候持锁者没机会跑。用户态手写自旋锁还容易漏掉编译器屏障和内存序，写之前先确认真的需要。</p>
+<h3 id="几个降低争抢的写法" tabindex="-1">几个降低争抢的写法 <a class="header-anchor" href="#几个降低争抢的写法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>每线程或每核分片。</strong> 计数器分 N 份，各线程更新自己那份，读的时候汇总。结构体按 64 字节对齐隔开，避免伪共享把缓存行来回弹。</p>
+<p><strong>读写分离。</strong> 数据一旦发布就不改，用「拷贝—修改—换指针」代替加锁改。</p>
+<p><strong>缩小临界区到只包含同步点。</strong> 复杂计算先在锁外算完，锁内只做一次指针替换。</p>
+<h3 id="一个实测套路" tabindex="-1">一个实测套路 <a class="header-anchor" href="#一个实测套路"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>别猜，量化。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 锁竞争的上下文切换和内核时间</span>
+perf <span class="hljs-built_in">stat</span> -e context-switches,cpu-migrations,task-clock ./bench
+
+<span class="hljs-comment"># 谁在等锁</span>
+perf lock record ./bench
+perf lock report
+
+<span class="hljs-comment"># 死锁和锁序问题</span>
+valgrind --tool=helgrind ./bench
+</code></pre></div></code></pre>
+<p><code>perf lock report</code> 能直接列出争抢最严重的锁，比盯代码快。<code>helgrind</code> 慢，几十倍开销，只在功能验证阶段跑。</p>
+<h2 id="十三与其他同步机制的配合" tabindex="-1">十三、与其他同步机制的配合 <a class="header-anchor" href="#十三与其他同步机制的配合"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="与条件变量锁是配套件不是主角" tabindex="-1">与条件变量：锁是配套件，不是主角 <a class="header-anchor" href="#与条件变量锁是配套件不是主角"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>pthread_cond_wait</code> 的签名要求传一把互斥锁，这把锁和条件变量是绑定关系。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>pthread_mutex_lock(&amp;m);
+<span class="hljs-keyword">while</span> (!ready)                        <span class="hljs-comment">/* 必须 while，不能 if */</span>
+    pthread_cond_wait(&amp;c, &amp;m);
+<span class="hljs-comment">/* 这里 ready 为真，且已重新持锁 */</span>
+consume();
+pthread_mutex_unlock(&amp;m);
+</code></pre></div></code></pre>
+<p>三个约束，破一个就出问题：</p>
+<ul>
+<li><code>cond_wait</code> 前必须持锁。它返回前会重新拿到锁。</li>
+<li>判定条件用 <code>while</code> 而不是 <code>if</code>，因为唤醒会虚假发生，别的线程也会被别的条件唤醒。</li>
+<li>广播或信号之前持锁，否则有丢唤醒的窗口。</li>
+</ul>
+<p>销毁顺序：先让所有等待者退出 <code>cond_wait</code>，再 <code>pthread_cond_destroy</code>，最后 <code>pthread_mutex_destroy</code>。反序会把锁的引用断在半路。细节在《信号量与条件变量：等待与唤醒》。</p>
+<h3 id="与读写锁" tabindex="-1">与读写锁 <a class="header-anchor" href="#与读写锁"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>pthread_rwlock</code> 保护的是「读可并行」的结构。它不能升级：持读锁时不能转成写锁，<code>pthread_rwlock_rdlock</code> 之后调 <code>pthread_rwlock_wrlock</code> 会死锁。要写，先放读锁再申请写锁，然后重新校验数据没被别人改过。</p>
+<p>读写锁在写者频繁时会退化得比互斥锁还慢。判断标准是读写比：低于 10:1 的读写比，直接用互斥锁。</p>
+<h3 id="与信号量" tabindex="-1">与信号量 <a class="header-anchor" href="#与信号量"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>信号量管数量，锁管排他。要「最多 4 个线程同时进」，用初值为 4 的信号量，不是用 4 把锁。锁没法表达「N 个」。</p>
+<p>反过来说，<code>sem_init(&amp;s, 0, 1)</code> 确实等价于一把锁，但它没有属性、没有优先级协议、没有健壮性，不能跨进程传递优先级信息。只用互斥语义就用 <code>pthread_mutex</code>。</p>
+<h3 id="一把锁护住多个字段时注意复合操作" tabindex="-1">一把锁护住多个字段时，注意复合操作 <a class="header-anchor" href="#一把锁护住多个字段时注意复合操作"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 每个字段单独看都受保护，合起来不是原子操作 */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">get_pair</span><span class="hljs-params">(<span class="hljs-type">shared_t</span> *s, <span class="hljs-type">int</span> *a, <span class="hljs-type">int</span> *b)</span>
+{
+    pthread_mutex_lock(&amp;s-&gt;lock);
+    *a = s-&gt;x;
+    pthread_mutex_unlock(&amp;s-&gt;lock);    <span class="hljs-comment">/* 这里放开，x 和 y 就被别人改了 */</span>
+
+    pthread_mutex_lock(&amp;s-&gt;lock);
+    *b = s-&gt;y;
+    pthread_mutex_unlock(&amp;s-&gt;lock);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>两次加锁之间 <code>x</code> 和 <code>y</code> 都会被改，调用方拿到的两个值不属于同一时刻。要在同一次持锁里读完。</p>
+<h3 id="锁不能跨线程传递语义" tabindex="-1">锁不能跨线程传递语义 <a class="header-anchor" href="#锁不能跨线程传递语义"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>pthread_mutex_t</code> 的内存可以被人 <code>memcpy</code> 走，但语义不会跟着走。复制一把已被持有的锁，副本是一份无效状态。跨进程共享只能靠共享内存加同一块地址，不是靠把字节发过去。</p>
+<h2 id="十四易错点速查" tabindex="-1">十四、易错点速查 <a class="header-anchor" href="#十四易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<h3 id="高频错误表" tabindex="-1">高频错误表 <a class="header-anchor" href="#高频错误表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>错误写法</th>
+<th>后果</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>if (pthread_mutex_lock(&amp;m) == -1)</code></td>
+<td>判断永远不成立，错误被吞</td>
+<td>判 <code>!= 0</code>，返回值是错误号不是 <code>-1</code></td>
+</tr>
+<tr>
+<td>临界区内 <code>return</code> 不解锁</td>
+<td>其他线程永久阻塞</td>
+<td><code>goto out</code> 单出口，或拆成加锁壳</td>
+</tr>
+<tr>
+<td>已 <code>init</code> 的锁再 <code>init</code></td>
+<td>状态被覆盖，等待者挂在旧状态上</td>
+<td>先 <code>destroy</code> 再 <code>init</code></td>
+</tr>
+<tr>
+<td><code>destroy</code> 时锁被持有</td>
+<td>悬空引用</td>
+<td>保证无人持锁再销毁</td>
+</tr>
+<tr>
+<td>先 <code>destroy</code> 锁再 <code>destroy</code> 条件变量</td>
+<td>引用断在半路</td>
+<td>顺序反过来：cond 先，mutex 后</td>
+</tr>
+<tr>
+<td>对 <code>NORMAL</code> 锁自锁</td>
+<td>死锁无提示</td>
+<td>开发期换 <code>ERRORCHECK</code>，抓 <code>EDEADLK</code></td>
+</tr>
+<tr>
+<td>用 <code>trylock</code> 忙等</td>
+<td>一个核空转</td>
+<td>用 <code>lock</code> 阻塞，或放弃本次操作</td>
+</tr>
+<tr>
+<td><code>timedlock</code> 传相对时间</td>
+<td>超时点算错</td>
+<td>传 <code>CLOCK_REALTIME</code> 的绝对时间</td>
+</tr>
+<tr>
+<td><code>tv_nsec</code> 超过 10 亿</td>
+<td><code>EINVAL</code></td>
+<td>加完立刻进位归一</td>
+</tr>
+<tr>
+<td>信号处理函数里加锁</td>
+<td>自己锁死自己</td>
+<td>信号里只置 <code>sig_atomic_t</code> 标志</td>
+</tr>
+<tr>
+<td>锁外读共享变量</td>
+<td>读到旧值或半成品</td>
+<td>读也加锁，或用原子操作</td>
+</tr>
+<tr>
+<td>两把锁不约定顺序</td>
+<td>概率性死锁</td>
+<td>全局锁序编号，或 <code>trylock</code> 退让</td>
+</tr>
+<tr>
+<td>递归锁加锁次数与解锁次数不等</td>
+<td>锁永久被持有</td>
+<td>数清次数，配对到 0</td>
+</tr>
+<tr>
+<td>跨进程锁放在各自私有内存</td>
+<td>锁的不是同一份状态</td>
+<td>放共享内存，只让一个进程 <code>init</code></td>
+</tr>
+<tr>
+<td><code>pthread_mutex_init</code> 后忘了 <code>pthread_mutexattr_destroy</code></td>
+<td>属性对象泄漏</td>
+<td>属性对象用完立刻销毁</td>
+</tr>
+<tr>
+<td>属性对象销毁后还想改锁的属性</td>
+<td>无效操作</td>
+<td>属性在 <code>init</code> 时已拷贝，改锁要重建</td>
+</tr>
+</tbody>
+</table></div><h3 id="errorcheck-只在-debug-构建开" tabindex="-1"><code>ERRORCHECK</code> 只在 debug 构建开 <a class="header-anchor" href="#errorcheck-只在-debug-构建开"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">ifdef</span> DEBUG_LOCKS</span>
+<span class="hljs-meta">#  <span class="hljs-keyword">define</span> LOCK_TYPE PTHREAD_MUTEX_ERRORCHECK</span>
+<span class="hljs-meta">#<span class="hljs-keyword">else</span></span>
+<span class="hljs-meta">#  <span class="hljs-keyword">define</span> LOCK_TYPE PTHREAD_MUTEX_NORMAL</span>
+<span class="hljs-meta">#<span class="hljs-keyword">endif</span></span>
+
+<span class="hljs-type">static</span> <span class="hljs-type">pthread_mutex_t</span> g_lock;
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">g_lock_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">pthread_mutexattr_t</span> a;
+    pthread_mutexattr_init(&amp;a);
+    pthread_mutexattr_settype(&amp;a, LOCK_TYPE);
+    pthread_mutex_init(&amp;g_lock, &amp;a);
+    pthread_mutexattr_destroy(&amp;a);
+}
+</code></pre></div></code></pre>
+<p>自锁在开发机上变成 <code>EDEADLK</code> 返回值，在线上是无开销的 <code>NORMAL</code> 路径。前提是代码里真的检查了 <code>lock</code> 的返回值——很多人不查，那就白开。</p>
+<h3 id="上线前逐条过一遍" tabindex="-1">上线前逐条过一遍 <a class="header-anchor" href="#上线前逐条过一遍"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<ol>
+<li>每一处 <code>lock</code> 和 <code>unlock</code> 在同一函数内配对，或者有成对的清理函数。</li>
+<li>所有 <code>return</code> 路径都过了解锁点。</li>
+<li>临界区内没有 <code>printf</code>、<code>malloc</code>、<code>write</code>、回调、<code>sleep</code>。</li>
+<li>涉及两把锁的地方，加了全局顺序或 <code>trylock</code> 退让。</li>
+<li><code>destroy</code> 之前确认无人持锁、无人等待。</li>
+<li>跨进程的锁在共享内存里，且只有一个进程 <code>init</code>。</li>
+<li>实时线程如果共享了锁，协议设成了 <code>PTHREAD_PRIO_INHERIT</code> 或 <code>PRIO_PROTECT</code>。</li>
+<li>长期跑的服务，共享内存里的锁开了 <code>PTHREAD_MUTEX_ROBUST</code>，并且真的实现了 <code>EOWNERDEAD</code> 的修复分支。</li>
+<li><code>perf lock report</code> 跑过，知道哪把锁最热。</li>
+<li>锁的返回值检查过一遍，或者已经明确决定不检查。</li>
+</ol>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一互斥锁解决什么问题" data-toc-target="一互斥锁解决什么问题">一、互斥锁解决什么问题</a>
+                    
+                    <a class="toc-item toc-lv3" href="#锁到底给了你三个保证" data-toc-target="锁到底给了你三个保证">锁到底给了你三个保证</a>
+                    
+                    <a class="toc-item toc-lv3" href="#它不保证的事" data-toc-target="它不保证的事">它不保证的事</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二互斥锁的创建与销毁" data-toc-target="二互斥锁的创建与销毁">二、互斥锁的创建与销毁</a>
+                    
+                    <a class="toc-item toc-lv3" href="#原型" data-toc-target="原型">原型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#初始化的语义" data-toc-target="初始化的语义">初始化的语义</a>
+                    
+                    <a class="toc-item toc-lv3" href="#错误码" data-toc-target="错误码">错误码</a>
+                    
+                    <a class="toc-item toc-lv3" href="#销毁的语义" data-toc-target="销毁的语义">销毁的语义</a>
+                    
+                    <a class="toc-item toc-lv3" href="#生命周期规则" data-toc-target="生命周期规则">生命周期规则</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三静态初始化与动态初始化" data-toc-target="三静态初始化与动态初始化">三、静态初始化与动态初始化</a>
+                    
+                    <a class="toc-item toc-lv3" href="#静态初始化" data-toc-target="静态初始化">静态初始化</a>
+                    
+                    <a class="toc-item toc-lv3" href="#动态初始化" data-toc-target="动态初始化">动态初始化</a>
+                    
+                    <a class="toc-item toc-lv3" href="#两者对照" data-toc-target="两者对照">两者对照</a>
+                    
+                    <a class="toc-item toc-lv3" href="#属性对象与锁是两次初始化" data-toc-target="属性对象与锁是两次初始化">属性对象与锁是两次初始化</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四互斥锁属性的完整清单" data-toc-target="四互斥锁属性的完整清单">四、互斥锁属性的完整清单</a>
+                    
+                    <a class="toc-item toc-lv3" href="#属性对象自己的两个函数" data-toc-target="属性对象自己的两个函数">属性对象自己的两个函数</a>
+                    
+                    <a class="toc-item toc-lv3" href="#属性函数总表" data-toc-target="属性函数总表">属性函数总表</a>
+                    
+                    <a class="toc-item toc-lv3" href="#作用范围pshared" data-toc-target="作用范围pshared">作用范围：pshared</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一个把属性用起来的封装" data-toc-target="一个把属性用起来的封装">一个把属性用起来的封装</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五锁类型普通检错递归" data-toc-target="五锁类型普通检错递归">五、锁类型：普通、检错、递归</a>
+                    
+                    <a class="toc-item toc-lv3" href="#原型-1" data-toc-target="原型-1">原型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#四种取值" data-toc-target="四种取值">四种取值</a>
+                    
+                    <a class="toc-item toc-lv3" href="#三种类型对照" data-toc-target="三种类型对照">三种类型对照</a>
+                    
+                    <a class="toc-item toc-lv3" href="#检错锁到底检了什么" data-toc-target="检错锁到底检了什么">检错锁到底检了什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#递归锁的坑" data-toc-target="递归锁的坑">递归锁的坑</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一个判断表" data-toc-target="一个判断表">一个判断表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六加锁与解锁" data-toc-target="六加锁与解锁">六、加锁与解锁</a>
+                    
+                    <a class="toc-item toc-lv3" href="#原型-2" data-toc-target="原型-2">原型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#pthread_mutex_lock" data-toc-target="pthread_mutex_lock">pthread_mutex_lock</a>
+                    
+                    <a class="toc-item toc-lv3" href="#pthread_mutex_unlock" data-toc-target="pthread_mutex_unlock">pthread_mutex_unlock</a>
+                    
+                    <a class="toc-item toc-lv3" href="#必须用单入口单出口写法" data-toc-target="必须用单入口单出口写法">必须用「单入口单出口」写法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#取消与信号这两件事" data-toc-target="取消与信号这两件事">取消与信号这两件事</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七非阻塞加锁trylock" data-toc-target="七非阻塞加锁trylock">七、非阻塞加锁：trylock</a>
+                    
+                    <a class="toc-item toc-lv3" href="#原型-3" data-toc-target="原型-3">原型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#典型用法" data-toc-target="典型用法">典型用法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#不要用-trylock-代替-lock" data-toc-target="不要用-trylock-代替-lock">不要用 trylock 代替 lock</a>
+                    
+                    <a class="toc-item toc-lv3" href="#三者对比" data-toc-target="三者对比">三者对比</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八超时加锁timedlock" data-toc-target="八超时加锁timedlock">八、超时加锁：timedlock</a>
+                    
+                    <a class="toc-item toc-lv3" href="#原型-4" data-toc-target="原型-4">原型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#abstime-怎么算" data-toc-target="abstime-怎么算">abstime 怎么算</a>
+                    
+                    <a class="toc-item toc-lv3" href="#返回值" data-toc-target="返回值">返回值</a>
+                    
+                    <a class="toc-item toc-lv3" href="#重试循环" data-toc-target="重试循环">重试循环</a>
+                    
+                    <a class="toc-item toc-lv3" href="#三个函数的取舍" data-toc-target="三个函数的取舍">三个函数的取舍</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九死锁的产生与规避" data-toc-target="九死锁的产生与规避">九、死锁的产生与规避</a>
+                    
+                    <a class="toc-item toc-lv3" href="#形态一自锁" data-toc-target="形态一自锁">形态一：自锁</a>
+                    
+                    <a class="toc-item toc-lv3" href="#形态二加锁顺序反转" data-toc-target="形态二加锁顺序反转">形态二：加锁顺序反转</a>
+                    
+                    <a class="toc-item toc-lv3" href="#形态三临界区里调用外部代码" data-toc-target="形态三临界区里调用外部代码">形态三：临界区里调用外部代码</a>
+                    
+                    <a class="toc-item toc-lv3" href="#形态四锁没被释放逻辑泄漏" data-toc-target="形态四锁没被释放逻辑泄漏">形态四：锁没被释放（逻辑泄漏）</a>
+                    
+                    <a class="toc-item toc-lv3" href="#规避清单" data-toc-target="规避清单">规避清单</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十优先级继承与优先级上限" data-toc-target="十优先级继承与优先级上限">十、优先级继承与优先级上限</a>
+                    
+                    <a class="toc-item toc-lv3" href="#优先级反转是什么" data-toc-target="优先级反转是什么">优先级反转是什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#解决办法让持锁者快点跑完" data-toc-target="解决办法让持锁者快点跑完">解决办法：让持锁者快点跑完</a>
+                    
+                    <a class="toc-item toc-lv3" href="#协议属性" data-toc-target="协议属性">协议属性</a>
+                    
+                    <a class="toc-item toc-lv3" href="#返回值-1" data-toc-target="返回值-1">返回值</a>
+                    
+                    <a class="toc-item toc-lv3" href="#优先级上限属性对象上的设置" data-toc-target="优先级上限属性对象上的设置">优先级上限：属性对象上的设置</a>
+                    
+                    <a class="toc-item toc-lv3" href="#优先级上限锁本体上的修改" data-toc-target="优先级上限锁本体上的修改">优先级上限：锁本体上的修改</a>
+                    
+                    <a class="toc-item toc-lv3" href="#别把继承当默认选项" data-toc-target="别把继承当默认选项">别把继承当默认选项</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一健壮互斥锁" data-toc-target="十一健壮互斥锁">十一、健壮互斥锁</a>
+                    
+                    <a class="toc-item toc-lv3" href="#它解决的是持锁者死了" data-toc-target="它解决的是持锁者死了">它解决的是「持锁者死了」</a>
+                    
+                    <a class="toc-item toc-lv3" href="#新旧两套接口" data-toc-target="新旧两套接口">新旧两套接口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#两个取值" data-toc-target="两个取值">两个取值</a>
+                    
+                    <a class="toc-item toc-lv3" href="#robust-的完整流程" data-toc-target="robust-的完整流程">ROBUST 的完整流程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#eownerdead-会连续传播" data-toc-target="eownerdead-会连续传播">EOWNERDEAD 会连续传播</a>
+                    
+                    <a class="toc-item toc-lv3" href="#什么时候值得用" data-toc-target="什么时候值得用">什么时候值得用</a>
+                    
+                    <a class="toc-item toc-lv3" href="#错误码-1" data-toc-target="错误码-1">错误码</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二互斥锁的性能与选择" data-toc-target="十二互斥锁的性能与选择">十二、互斥锁的性能与选择</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一次加锁到底花多少" data-toc-target="一次加锁到底花多少">一次加锁到底花多少</a>
+                    
+                    <a class="toc-item toc-lv3" href="#决定性能的三件事" data-toc-target="决定性能的三件事">决定性能的三件事</a>
+                    
+                    <a class="toc-item toc-lv3" href="#选型对照" data-toc-target="选型对照">选型对照</a>
+                    
+                    <a class="toc-item toc-lv3" href="#几个降低争抢的写法" data-toc-target="几个降低争抢的写法">几个降低争抢的写法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一个实测套路" data-toc-target="一个实测套路">一个实测套路</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三与其他同步机制的配合" data-toc-target="十三与其他同步机制的配合">十三、与其他同步机制的配合</a>
+                    
+                    <a class="toc-item toc-lv3" href="#与条件变量锁是配套件不是主角" data-toc-target="与条件变量锁是配套件不是主角">与条件变量：锁是配套件，不是主角</a>
+                    
+                    <a class="toc-item toc-lv3" href="#与读写锁" data-toc-target="与读写锁">与读写锁</a>
+                    
+                    <a class="toc-item toc-lv3" href="#与信号量" data-toc-target="与信号量">与信号量</a>
+                    
+                    <a class="toc-item toc-lv3" href="#一把锁护住多个字段时注意复合操作" data-toc-target="一把锁护住多个字段时注意复合操作">一把锁护住多个字段时，注意复合操作</a>
+                    
+                    <a class="toc-item toc-lv3" href="#锁不能跨线程传递语义" data-toc-target="锁不能跨线程传递语义">锁不能跨线程传递语义</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四易错点速查" data-toc-target="十四易错点速查">十四、易错点速查</a>
+                    
+                    <a class="toc-item toc-lv3" href="#高频错误表" data-toc-target="高频错误表">高频错误表</a>
+                    
+                    <a class="toc-item toc-lv3" href="#errorcheck-只在-debug-构建开" data-toc-target="errorcheck-只在-debug-构建开">ERRORCHECK 只在 debug 构建开</a>
+                    
+                    <a class="toc-item toc-lv3" href="#上线前逐条过一遍" data-toc-target="上线前逐条过一遍">上线前逐条过一遍</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","title":"互斥锁：从 API 到优先级继承","url":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","type":"current"},{"id":"/D.操作系统/03-线程与同步/Pthread-线程生命周期：创建、取消与清理/","title":"Pthread 线程生命周期：创建、取消与清理","url":"/D.操作系统/03-线程与同步/Pthread-线程生命周期：创建、取消与清理/","type":"neighbor"},{"id":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","title":"futex：用户态同步原语","url":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","type":"neighbor"},{"id":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","title":"信号量与条件变量：等待与唤醒","url":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","type":"neighbor"},{"id":"/D.操作系统/03-线程与同步/多线程并发服务器实战/","title":"多线程并发服务器实战","url":"/D.操作系统/03-线程与同步/多线程并发服务器实战/","type":"neighbor"}],"links":[{"source":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","target":"/D.操作系统/03-线程与同步/Pthread-线程生命周期：创建、取消与清理/","type":"neighbor"},{"source":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","target":"/D.操作系统/03-线程与同步/futex：用户态同步原语/","type":"neighbor"},{"source":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","target":"/D.操作系统/03-线程与同步/信号量与条件变量：等待与唤醒/","type":"neighbor"},{"source":"/D.操作系统/03-线程与同步/互斥锁：从-API-到优先级继承/","target":"/D.操作系统/03-线程与同步/多线程并发服务器实战/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

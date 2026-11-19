@@ -1,0 +1,1846 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>事件循环与 QObject 的线程归属 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">事件循环与 QObject 的线程归属</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/E.编程语言与框架/08-Qt/05.多线程与事件循环/事件循环与-QObject-的线程归属/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">事件循环与 QObject 的线程归属</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">事件循环与 QObject 的线程归属</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>这篇只讲 Qt 事件驱动机制的三根柱子：事件循环怎么转、QObject 为什么带「线程归属」、跨线程的信号槽到底靠什么把一次调用送到另一个线程。</p>
+<p>不讲：QThread 子类化与 moveToThread 的完整工程写法（见同目录《QThread 的正确用法》）；线程池与并发任务的调度策略（见《线程管理与线程间通信》）；自定义事件类的定义与 postEvent 投递细节（见《自定义事件与跨线程投递》）；QTimer 的精度与替代方案（见《定时器》）。这里把「事件怎么走、对象归谁、调用落在哪个线程」讲透，其余留给邻篇。</p>
+<p>示例是 C++，<code>QThread::currentThreadId()</code> 打出来的值每次都不一样，结论不变。凡是打印线程 id 的代码，你照着敲一遍比读十遍管用。</p>
+</blockquote>
+<h2 id="一事件驱动模型" tabindex="-1">一、事件驱动模型 <a class="header-anchor" href="#一事件驱动模型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Qt 程序的主干不是 <code>main()</code>，是一个循环。<code>main()</code> 交代完初始化就调用 <code>exec()</code>，把控制权交出去，自己再也不回来——直到程序要退出。</p>
+<p>循环里跑的东西有两类：事件和信号。两者容易混，先把账分清。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>对比项</th>
+<th>事件（event）</th>
+<th>信号（signal）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>目标</td>
+<td>有，明确指向一个 QObject</td>
+<td>无，谁连上谁收</td>
+</tr>
+<tr>
+<td>载体</td>
+<td>QEvent 的子类对象</td>
+<td>moc 生成的信号函数</td>
+</tr>
+<tr>
+<td>传递</td>
+<td>进目标对象所属线程的事件队列</td>
+<td>直接调用槽，或入队后调用槽</td>
+</tr>
+<tr>
+<td>处理</td>
+<td><code>QObject::event()</code> 再分发到具体 handler</td>
+<td>槽函数 / lambda / 可调用对象</td>
+</tr>
+<tr>
+<td>多播</td>
+<td>一对一</td>
+<td>一对多</td>
+</tr>
+</tbody>
+</table></div><p>一句话：事件是「寄给某个对象的信」，信号是「广播」。</p>
+<p>事件的类型用 <code>QEvent::Type</code> 标识，所有事件类都从 <code>QEvent</code> 派生。目标对象确定后，处理入口固定在虚函数 <code>QObject::event()</code>。想拦本对象的事件，重写它。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">// 所有事件都是 QEvent 的子类，类型由 Type 枚举区分</span>
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">Watcher</span> : <span class="hljs-keyword">public</span> QObject
+{
+<span class="hljs-keyword">protected</span>:
+    <span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">event</span><span class="hljs-params">(QEvent *e)</span> <span class="hljs-keyword">override</span>
+    </span>{
+        <span class="hljs-keyword">switch</span> (e-&gt;<span class="hljs-built_in">type</span>())
+        {
+        <span class="hljs-keyword">case</span> QEvent::User:
+            <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;user event&quot;</span>;
+            <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;            <span class="hljs-comment">// 吃掉，不再往下传</span>
+        <span class="hljs-keyword">case</span> QEvent::Timer:
+            <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;timer event&quot;</span>;
+            <span class="hljs-keyword">break</span>;                  <span class="hljs-comment">// 继续交给基类</span>
+        <span class="hljs-keyword">default</span>:
+            <span class="hljs-keyword">break</span>;
+        }
+        <span class="hljs-keyword">return</span> QObject::<span class="hljs-built_in">event</span>(e);   <span class="hljs-comment">// 基类按类型分发给 mousePressEvent 等</span>
+    }
+};
+</code></pre></div></code></pre>
+<p><code>QObject::event()</code> 本身是个分发中枢。<code>QWidget::event()</code> 重载了它，把 <code>QEvent::MouseButtonPress</code> 转给 <code>mousePressEvent()</code>，把 <code>QEvent::KeyPress</code> 转给 <code>keyPressEvent()</code>，把 <code>QEvent::Paint</code> 转给 <code>paintEvent()</code>。你在子类里重写 <code>mousePressEvent()</code> 能收到鼠标，是因为有人替你做了那一跳。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>事件类型</th>
+<th>处理函数</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QEvent::MouseButtonPress</code></td>
+<td><code>QWidget::mousePressEvent()</code></td>
+</tr>
+<tr>
+<td><code>QEvent::KeyPress</code></td>
+<td><code>QWidget::keyPressEvent()</code></td>
+</tr>
+<tr>
+<td><code>QEvent::Paint</code></td>
+<td><code>QWidget::paintEvent()</code></td>
+</tr>
+<tr>
+<td><code>QEvent::Timer</code></td>
+<td><code>QObject::timerEvent()</code></td>
+</tr>
+<tr>
+<td><code>QEvent::DeferredDelete</code></td>
+<td>直接析构对象，不经过 <code>event()</code></td>
+</tr>
+<tr>
+<td><code>QEvent::User</code> 及以上</td>
+<td>你自己在 <code>event()</code> 里判断</td>
+</tr>
+</tbody>
+</table></div><p>再往上还有一层 <code>QApplication::notify(receiver, event)</code>。它是投递的总入口，<code>sendEvent()</code> 和 <code>postEvent()</code> 最后都要走它。想全局拦截事件（做调试、做审计、做输入过滤）就覆写 <code>notify()</code>，别去改每个 widget。</p>
+<p>三件套到此凑齐：<strong>一个事件对象、一个目标对象、一个正在运行的事件循环</strong>。缺任何一件，事件都动不了。目标对象没活着，事件没人收；事件循环没跑，事件在队列里烂掉。</p>
+<h2 id="二事件循环在做什么" tabindex="-1">二、事件循环在做什么 <a class="header-anchor" href="#二事件循环在做什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>事件循环的骨架短到可以背下来。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>while (is_active)
+{
+    while (!event_queue_is_empty)
+        dispatch_next_event();      // 把队列掏空
+
+    wait_for_more_events();         // 没事件就睡在这里
+}
+</code></pre></div></code></pre>
+<p>内层循环把队列清空，外层阻塞等待。注意 <code>wait_for_more_events()</code> 被调用时队列一定是空的，也就是说此刻能产生新事件的只能是外部资源：窗口系统、socket、定时器超时、别的线程投递。内部该发的都发完了。</p>
+<p>唤醒机制跟平台有关，思路一样：</p>
+<ul>
+<li>Unix/X11 下，窗口系统通过 socket（Unix 域或 TCP/IP）通知应用；分发器用 <code>select(2)</code> / <code>poll(2)</code> / <code>epoll</code> 监控一批描述符，超时也返回。</li>
+<li>Windows 下是消息队列加 <code>MsgWaitForMultipleObjects</code>。</li>
+<li>跨线程投递靠 <code>socketpair(2)</code> 或 <code>eventfd</code> 把目标线程的分发器叫醒。</li>
+</ul>
+<p><code>select()</code> 返回后，Qt 要做的事就是把「某个 fd 可读」翻译成一个具体的 <code>QEvent</code> 子类，塞进队列。事件循环里装的就是这些翻译好的东西。</p>
+<p>进主循环的入口是 <code>QCoreApplication::exec()</code>，它会阻塞，直到 <code>exit()</code> 或 <code>quit()</code> 被调用。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">main</span><span class="hljs-params">(<span class="hljs-type">int</span> argc, <span class="hljs-type">char</span> *argv[])</span>
+</span>{
+    <span class="hljs-function">QCoreApplication <span class="hljs-title">app</span><span class="hljs-params">(argc, argv)</span></span>;
+
+    <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;main thread:&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>();
+
+    <span class="hljs-comment">// ... 建对象、连信号槽</span>
+    <span class="hljs-keyword">return</span> app.<span class="hljs-built_in">exec</span>();   <span class="hljs-comment">// 阻塞在这里，直到 quit()/exit()</span>
+}
+</code></pre></div></code></pre>
+<p><code>quit()</code> 等价于 <code>exit(0)</code>。<code>exec()</code> 返回时，循环已经结束，后面的清理代码才会跑。</p>
+<p>事件循环不是全进程唯一。<strong>每个调用 <code>exec()</code> 的线程有自己的一份</strong>。<code>QThread::run()</code> 里写 <code>exec()</code>，开的就是该线程的局部循环。这也解释了为什么「线程」和「事件循环」是两件事：线程一定在跑，循环不一定开。</p>
+<p>不开主循环也能临时转一圈。<code>QEventLoop</code> 是同一套机制的可重入版本：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">// 局部事件循环：等一个操作完成，又不想把主循环让出去</span>
+QEventLoop loop;
+QTimer::<span class="hljs-built_in">singleShot</span>(<span class="hljs-number">1000</span>, &amp;loop, &amp;QEventLoop::quit);
+loop.<span class="hljs-built_in">exec</span>();
+<span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;1 秒后到这里&quot;</span>;
+</code></pre></div></code></pre>
+<p><code>QTimer::singleShot</code> 带 context 对象的重载在 Qt 5 之后才有，Qt 4 时代要写 <code>QObject::connect(&amp;timer, SIGNAL(timeout()), &amp;loop, SLOT(quit()))</code>。</p>
+<h2 id="三事件从哪里来" tabindex="-1">三、事件从哪里来 <a class="header-anchor" href="#三事件从哪里来"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>来源归四类，落到队列里都是同一个形态：一个 <code>QEvent</code> 对象 + 一个目标 <code>QObject</code>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>来源</th>
+<th>典型事件</th>
+<th>唤醒方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>窗口系统</td>
+<td>QKeyEvent、QMouseEvent、QWheelEvent、QExposeEvent</td>
+<td>窗口系统 socket / 系统消息</td>
+</tr>
+<tr>
+<td>操作系统定时器</td>
+<td>QTimerEvent</td>
+<td><code>select()</code> 超时</td>
+</tr>
+<tr>
+<td>socket 活动</td>
+<td>内部 QSocketNotifier，转成 readyRead/connected 等信号</td>
+<td>fd 可读可写</td>
+</tr>
+<tr>
+<td>应用内部</td>
+<td>QChildEvent、QPaintEvent、QMetaCallEvent、QDeferredDeleteEvent</td>
+<td>本线程直接入队</td>
+</tr>
+<tr>
+<td>其他线程</td>
+<td>任意 QEvent，含 QMetaCallEvent</td>
+<td>socketpair/eventfd 唤醒对方分发器</td>
+</tr>
+</tbody>
+</table></div><p><strong>窗口系统</strong>。键盘、鼠标、滚轮、窗口暴露，全部由窗口管理器送进来。这类事件有明确目标：鼠标在哪个 widget 上按下，事件就投给谁。</p>
+<p><strong>定时器</strong>。<code>startTimer()</code> 只是登记，登记完什么都不发生。超时那一刻由事件循环投递 <code>QTimerEvent</code>。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Ticker</span> : <span class="hljs-keyword">public</span> QObject
+{
+<span class="hljs-keyword">public</span>:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">start</span><span class="hljs-params">()</span> </span>{ m_id = <span class="hljs-built_in">startTimer</span>(<span class="hljs-number">500</span>); }   <span class="hljs-comment">// 需要有一个在跑的事件循环</span>
+
+<span class="hljs-keyword">protected</span>:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">timerEvent</span><span class="hljs-params">(QTimerEvent *e)</span> <span class="hljs-keyword">override</span>
+    </span>{
+        <span class="hljs-keyword">if</span> (e-&gt;<span class="hljs-built_in">timerId</span>() == m_id)
+            <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;tick&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>();
+    }
+
+<span class="hljs-keyword">private</span>:
+    <span class="hljs-type">int</span> m_id = <span class="hljs-number">0</span>;
+};
+</code></pre></div></code></pre>
+<p><strong>socket</strong>。Qt 的网络类天生异步。<code>read()</code> 只是把已经到达的数据取出来，<code>write()</code> 只是把数据排进发送计划，真正的读写发生在事件循环返回、fd 就绪的时候。<code>waitFor*</code> 那一族是同步封装，代价是把事件循环堵住，除非你明确知道自己在干什么，否则别用。</p>
+<p><strong>应用内部</strong>。<code>QWidget::update()</code> 不打画笔，它只标记脏区、发一个更新请求，<code>QPaintEvent</code> 由事件循环稍后派发。<code>deleteLater()</code> 不删对象，它发一个 <code>QDeferredDeleteEvent</code>。队列连接的信号槽，本质就是往目标线程投一个 <code>QMetaCallEvent</code>。</p>
+<p><strong>其他线程</strong>。<code>QCoreApplication::postEvent()</code> 是线程安全的，它把事件加进目标对象所属线程的队列，然后唤醒那个线程的分发器。这是 Qt 跨线程通信的唯一底层通道，信号槽只是包在它外面的一层皮。</p>
+<p>事件不会在产生的那一刻被派发。<code>sendEvent()</code> 是唯一的例外——它是同步直投，绕开队列。这个区别后面单独讲。</p>
+<p>归纳一句：事件的产生是异步的，派发是被动的，落到哪个线程由目标对象的线程归属决定。</p>
+<h2 id="四事件的产生与分发" tabindex="-1">四、事件的产生与分发 <a class="header-anchor" href="#四事件的产生与分发"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>投递只有两条路，区别在于要不要经过队列。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>对比项</th>
+<th><code>sendEvent()</code></th>
+<th><code>postEvent()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>时机</td>
+<td>立即调用 <code>notify()</code> → <code>event()</code></td>
+<td>入队，稍后由事件循环派发</td>
+</tr>
+<tr>
+<td>执行线程</td>
+<td>调用者线程，同步返回</td>
+<td>目标对象所属线程</td>
+</tr>
+<tr>
+<td>事件对象所有权</td>
+<td>调用者持有，可复用、可自己 delete</td>
+<td>Qt 接管，派发后自动 delete</td>
+</tr>
+<tr>
+<td>优先级</td>
+<td>无</td>
+<td>可传 <code>Qt::HighEventPriority</code> 等</td>
+</tr>
+<tr>
+<td>跨线程</td>
+<td>禁止，等于在错误线程里跑槽</td>
+<td>线程安全，跨线程的唯一正解</td>
+</tr>
+<tr>
+<td>返回值</td>
+<td><code>bool</code>，反映事件是否被接受</td>
+<td><code>void</code>，只表示是否入队成功</td>
+</tr>
+</tbody>
+</table></div><p>签名摆在一起看：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">QCoreApplication::sendEvent</span><span class="hljs-params">(QObject *receiver, QEvent *event)</span></span>;
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">QCoreApplication::postEvent</span><span class="hljs-params">(QObject *receiver, QEvent *event,
+                                 <span class="hljs-type">int</span> priority = Qt::NormalEventPriority)</span></span>;
+</code></pre></div></code></pre>
+<p>同一个事件分别走两条路，打印顺序立刻不同。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Receiver</span> : <span class="hljs-keyword">public</span> QObject
+{
+<span class="hljs-keyword">protected</span>:
+    <span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">event</span><span class="hljs-params">(QEvent *e)</span> <span class="hljs-keyword">override</span>
+    </span>{
+        <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;delivered in&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>()
+                 &lt;&lt; <span class="hljs-string">&quot;type&quot;</span> &lt;&lt; e-&gt;<span class="hljs-built_in">type</span>();
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">true</span>;
+    }
+};
+
+<span class="hljs-comment">// 主线程里</span>
+Receiver r;
+
+<span class="hljs-keyword">auto</span> *e1 = <span class="hljs-keyword">new</span> <span class="hljs-built_in">QEvent</span>(QEvent::User);
+QCoreApplication::<span class="hljs-built_in">sendEvent</span>(&amp;r, e1);    <span class="hljs-comment">// 同步，立刻打印；e1 归你 delete</span>
+<span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;after sendEvent&quot;</span>;
+
+<span class="hljs-keyword">auto</span> *e2 = <span class="hljs-keyword">new</span> <span class="hljs-built_in">QEvent</span>(QEvent::User);
+QCoreApplication::<span class="hljs-built_in">postEvent</span>(&amp;r, e2);    <span class="hljs-comment">// 只入队，e2 归 Qt 管</span>
+<span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;after postEvent&quot;</span>;          <span class="hljs-comment">// 这行比 e2 的派发先出来</span>
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>delivered in 0x1a40 type 52
+after sendEvent
+after postEvent
+</code></pre></div></code></pre>
+<p>最后那个事件的打印要等事件循环转一圈，所以不在这一段里。这个顺序差异是理解后面所有跨线程行为的钥匙：<code>postEvent</code> 只是把东西交出去，什么时候执行由对方线程决定。</p>
+<p>再看一次完整的调用栈，把「事件」和「槽」串起来。一个按钮被点击，槽里干了三秒活：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>main(int, char**)
+  QApplication::exec()
+    [...]
+    QWidget::event(QEvent*)                    // notify() 送进来的鼠标事件
+      Button::mousePressEvent(QMouseEvent*)    // 基类按类型分发
+        Button::clicked()                      // 你 emit 的信号
+          [...]
+          Worker::doWork()                     // 直连的槽，同步跑三秒
+</code></pre></div></code></pre>
+<p>事件循环派发鼠标事件，一路下沉到 <code>mousePressEvent()</code>，<code>emit clicked()</code> 触发直连的槽，槽在同一个调用栈里跑完。<code>doWork()</code> 不返回，事件循环就卡在这一层，一个事件都派不出去。</p>
+<p>后果是一串的：</p>
+<ul>
+<li>窗口不重绘，<code>QPaintEvent</code> 在队列里排队。</li>
+<li>点击、键盘不再有反应，输入事件进不来。</li>
+<li>定时器不走，超时事件投不出来。</li>
+<li>网络数据堆在内核缓冲区，没人读。</li>
+<li>窗口管理器判定程序无响应，标题栏变灰，弹「not responding」。</li>
+<li>更糟的情况是数据到达速度超过你处理速度，内核缓冲填满、丢包，传输速率断崖下跌。</li>
+</ul>
+<p>这不是风格问题，是机制决定的。所以规则只有一条：<strong>槽要短，活要拆，重活挪线程。</strong></p>
+<p>分发链路上的每一环都能插手：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>postEvent() → 事件队列 → 分发器 → notify() → event() → 具体 handler
+</code></pre></div></code></pre>
+<p><code>QApplication::notify()</code> 在 Qt 里还处理鼠标捕获、快捷键、Enter 键默认按钮这些全局逻辑，处理完再交给 <code>receiver-&gt;event()</code>。要全局审计事件流向，覆写 <code>notify()</code>，别去动每个 widget。</p>
+<h2 id="五qobject-的线程归属" tabindex="-1">五、QObject 的线程归属 <a class="header-anchor" href="#五qobject-的线程归属"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>每个 QObject 有一个「线程归属」（thread affinity），就是它落在哪个 QThread 上。它收到的事件在那个线程的事件循环里派发，它的队列连接槽也在那个线程执行。整套跨线程机制就立在这一个概念上。</p>
+<p>判定规则只有一条：<strong>对象归属于创建它的那个线程</strong>，准确说是构造那一刻正在运行的那个线程。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">MyThread</span> : <span class="hljs-keyword">public</span> QThread
+{
+<span class="hljs-keyword">public</span>:
+    <span class="hljs-built_in">MyThread</span>()
+    {
+        otherObj = <span class="hljs-keyword">new</span> QObject;        <span class="hljs-comment">// 谁 new 的？执行构造函数的线程</span>
+    }
+
+<span class="hljs-keyword">private</span>:
+    QObject obj;                       <span class="hljs-comment">// 成员，构造时创建</span>
+    QObject *otherObj = <span class="hljs-literal">nullptr</span>;
+    QScopedPointer&lt;QObject&gt; yetAnotherObj;
+};
+</code></pre></div></code></pre>
+<p>这个 <code>MyThread</code> 在主线程里 <code>new</code> 出来，构造函数就在主线程跑。<code>obj</code>、<code>otherObj</code> 全是主线程的。它们和 <code>MyThread</code> 管理的那个次线程毫无关系，尽管它们长在同一个类里。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>对象</th>
+<th>谁创建</th>
+<th>归属线程</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MyThread</code> 实例本身</td>
+<td>主线程 new</td>
+<td>主线程</td>
+</tr>
+<tr>
+<td><code>obj</code>（成员）</td>
+<td>构造时初始化</td>
+<td>主线程</td>
+</tr>
+<tr>
+<td><code>otherObj</code></td>
+<td>构造函数里 new</td>
+<td>主线程</td>
+</tr>
+<tr>
+<td><code>run()</code> 里的局部对象</td>
+<td>次线程</td>
+<td>次线程</td>
+</tr>
+<tr>
+<td><code>run()</code> 里 new 的对象</td>
+<td>次线程</td>
+<td>次线程</td>
+</tr>
+<tr>
+<td><code>run()</code> 里 <code>new QObject(this)</code></td>
+<td>次线程，parent 在主线程</td>
+<td>冲突，别这么写</td>
+</tr>
+</tbody>
+</table></div><p>查询用两个函数，返回都是 <code>QThread*</code>：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QObject *obj = <span class="hljs-keyword">new</span> QObject;
+<span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;obj lives in&quot;</span> &lt;&lt; obj-&gt;<span class="hljs-built_in">thread</span>()
+         &lt;&lt; <span class="hljs-string">&quot;current thread is&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThread</span>();
+
+<span class="hljs-keyword">if</span> (obj-&gt;<span class="hljs-built_in">thread</span>() == QThread::<span class="hljs-built_in">currentThread</span>())
+    <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;归我，可以直接碰&quot;</span>;
+<span class="hljs-keyword">else</span>
+    <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;不归我，只能 postEvent / 队列调用&quot;</span>;
+</code></pre></div></code></pre>
+<p>这个判断值得写进任何跨线程函数的入口，比加一堆 mutex 便宜。</p>
+<p>有个边界情况：<code>QCoreApplication</code> 构造之前创建的 QObject 没有归属，<code>thread()</code> 返回 <code>nullptr</code>。那时还没有代表主线程的 QThread 对象，也就没人给它派发事件，投进去的事件永远不会被处理。<code>QCoreApplication</code> 的构造顺带建了代表主线程的那个 QThread。</p>
+<p>改归属用 <code>moveToThread()</code>。规则不多，但每条都硬：</p>
+<ul>
+<li>只能在对象当前所属线程里调用。从别的线程调等于「拉」，Qt 不允许，你会看到警告。</li>
+<li>对象有 parent 就不能移。</li>
+<li>移了对象，它的 children 一起移。Qt 要求 child 与 parent 同线程。</li>
+<li>移的是归属，不是正在执行的调用栈。移完以后产生的事件才去新线程。</li>
+</ul>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QThread thread;
+Worker worker;                       <span class="hljs-comment">// worker 此时归主线程</span>
+<span class="hljs-built_in">qDebug</span>() &lt;&lt; (worker.<span class="hljs-built_in">thread</span>() == QThread::<span class="hljs-built_in">currentThread</span>());   <span class="hljs-comment">// true</span>
+
+worker.<span class="hljs-built_in">moveToThread</span>(&amp;thread);        <span class="hljs-comment">// 必须在主线程里调</span>
+thread.<span class="hljs-built_in">start</span>();                      <span class="hljs-comment">// run() 里要有 exec() 才有循环</span>
+
+QMetaObject::<span class="hljs-built_in">invokeMethod</span>(&amp;worker, <span class="hljs-string">&quot;doWork&quot;</span>, Qt::QueuedConnection);
+</code></pre></div></code></pre>
+<p><code>thread.start()</code> 之前 move 和之后 move 都行，但只要工作对象已经在新线程里跑起来，就不该再动它的归属。</p>
+<p>错误写法长这样，一眼能看出来是 parent 冲突：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Thread</span> : <span class="hljs-keyword">public</span> QThread
+{
+<span class="hljs-keyword">protected</span>:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> <span class="hljs-keyword">override</span>
+    </span>{
+        QObject *obj = <span class="hljs-keyword">new</span> <span class="hljs-built_in">QObject</span>(<span class="hljs-keyword">this</span>);   <span class="hljs-comment">// 错：this 归主线程，obj 生在次线程</span>
+    }
+};
+</code></pre></div></code></pre>
+<p><code>QThread</code> 对象归属主线程，<code>this</code> 当 parent 就等于要求 obj 也在主线程，可它偏偏是次线程 new 的。Qt 会警告，行为也别指望。</p>
+<p>销毁顺序同样受归属约束。对象要在代表线程的 QThread 销毁之前删掉，省事的做法是在 <code>run()</code> 里创建，函数返回时自然析构。跨线程删对象必须走 <code>deleteLater()</code>。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">// 错误：在 A 线程 delete 一个归属 B 线程的对象</span>
+<span class="hljs-keyword">delete</span> obj;
+
+<span class="hljs-comment">// 正确：投一个 QDeferredDeleteEvent，回到 B 线程再删</span>
+obj-&gt;deleteLater();
+</code></pre></div></code></pre>
+<p>理由很直接：<code>delete</code> 立刻跑析构，析构会碰那些正被 B 线程事件处理的数据。<code>deleteLater</code> 把删除动作也排进 B 的队列，和 B 的事件串行执行。</p>
+<p>补充两条边界：<code>QObject</code> 不是线程安全的（是可重入的），多线程访问同一个对象要自己加锁；<code>QWidget</code> 和所有 GUI 相关类连可重入都不是，必须待在 GUI 线程。<code>QPixmap</code> 这类不是 QObject 的 GUI 类同样如此。</p>
+<h2 id="六thread-与当前线程不是一回事" tabindex="-1">六、thread() 与当前线程不是一回事 <a class="header-anchor" href="#六thread-与当前线程不是一回事"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一节最容易绕晕。先记一句：**QThread 对象不是线程，它是操控线程的句柄。**句柄归属创建它的线程，线程本体在 <code>run()</code> 里跑。</p>
+<p>Bradley T. Hughes 的说法：QThread 应该被看作操作系统线程的接口或控制点，它不该包含需要在新线程里运行的代码；要跑的代码放进 QObject 子类，再把这个对象 move 到新线程。Qt 4.4 之后 <code>run()</code> 默认调用 <code>QThread::exec()</code>，不子类化 QThread 也能有事件循环，这个建议才真正好用。</p>
+<p>三个实验，都打印线程 id。主线程记作 M，次线程记作 S。</p>
+<p>实验一，信号在主线程发，槽写在 QThread 子类里：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Dummy</span> : <span class="hljs-keyword">public</span> QObject
+{
+    Q_OBJECT
+<span class="hljs-keyword">public</span> slots:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">emitSig</span><span class="hljs-params">()</span> </span>{ <span class="hljs-function">emit <span class="hljs-title">sig</span><span class="hljs-params">()</span></span>; }
+signals:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">sig</span><span class="hljs-params">()</span></span>;
+};
+
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">Thread</span> : <span class="hljs-keyword">public</span> QThread
+{
+    Q_OBJECT
+<span class="hljs-keyword">public</span> slots:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">slotMain</span><span class="hljs-params">()</span> </span>{ <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;slot:&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>(); }
+<span class="hljs-keyword">protected</span>:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> <span class="hljs-keyword">override</span>
+    </span>{
+        <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;run: &quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>();
+        <span class="hljs-built_in">exec</span>();
+    }
+};
+
+<span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">main</span><span class="hljs-params">(<span class="hljs-type">int</span> argc, <span class="hljs-type">char</span> *argv[])</span>
+</span>{
+    <span class="hljs-function">QCoreApplication <span class="hljs-title">app</span><span class="hljs-params">(argc, argv)</span></span>;
+    <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;main:&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>();
+
+    Thread thread;
+    Dummy dummy;
+    QObject::<span class="hljs-built_in">connect</span>(&amp;dummy, <span class="hljs-built_in">SIGNAL</span>(<span class="hljs-built_in">sig</span>()), &amp;thread, <span class="hljs-built_in">SLOT</span>(<span class="hljs-built_in">slotMain</span>()));
+
+    thread.<span class="hljs-built_in">start</span>();
+    dummy.<span class="hljs-built_in">emitSig</span>();          <span class="hljs-comment">// 信号在主线程发射</span>
+
+    <span class="hljs-type">const</span> <span class="hljs-type">int</span> ret = app.<span class="hljs-built_in">exec</span>();
+    thread.<span class="hljs-built_in">quit</span>();
+    thread.<span class="hljs-built_in">wait</span>();            <span class="hljs-comment">// 不 wait 就直接析构，Qt 会报线程仍在运行</span>
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>main: 0x1a40
+run:  0x1a48
+slot: 0x1a40
+</code></pre></div></code></pre>
+<p>槽在主线程。dummy 在主线程发信号，thread 对象归属主线程，AutoConnection 判定两端同线程，走直连，在发射线程里同步调完。次线程那个 <code>exec()</code> 跟这个槽没有半点关系。</p>
+<p>「<code>thread.start()</code> 之后 Thread 的槽就归次线程了」——这个念头是绝大多数 QThread 误用的起点。</p>
+<p>顺带解释一个老现象：<code>slotMain()</code> 在主线程跑，<code>run()</code> 在次线程跑，两者碰同一个成员时是真的并发。Qt 自带的例子凡是让槽和 <code>run()</code> 共同操作一个对象，一律用 <code>QMutex</code> 锁住。这不是 Qt 啰嗦，是归属规则推出来的必然结果。</p>
+<p>实验二，想让它进次线程，最直觉的做法是在构造函数里 <code>moveToThread(this)</code>。确实生效，但这是被明确反对的用法。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Thread</span> : <span class="hljs-keyword">public</span> QThread
+{
+    Q_OBJECT
+<span class="hljs-keyword">public</span>:
+    <span class="hljs-built_in">Thread</span>(QObject *parent = <span class="hljs-literal">nullptr</span>) : <span class="hljs-built_in">QThread</span>(parent)
+    {
+        <span class="hljs-built_in">moveToThread</span>(<span class="hljs-keyword">this</span>);    <span class="hljs-comment">// 能用，但别用</span>
+    }
+    <span class="hljs-comment">// ...</span>
+};
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>main: 0x13c0
+run:  0x1de0
+slot: 0x1de0
+</code></pre></div></code></pre>
+<p>槽进了次线程。代价是 QThread 对象自己搬进它管理的线程里，控制面和执行面糊成一团，<code>quit()</code>、<code>wait()</code>、对象销毁顺序全变得难推理。真实的工程代码里，这个写法会连着带来退出时崩溃。</p>
+<p>实验三，信号在 <code>run()</code> 里发，接收者留在主线程：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Thread</span> : <span class="hljs-keyword">public</span> QThread
+{
+    Q_OBJECT
+<span class="hljs-keyword">public</span> slots:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">slotThread</span><span class="hljs-params">()</span> </span>{ <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;slot:&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>(); }
+signals:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">sig</span><span class="hljs-params">()</span></span>;
+<span class="hljs-keyword">protected</span>:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> <span class="hljs-keyword">override</span>
+    </span>{
+        <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;run: &quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>();
+        Dummy dummy;                                  <span class="hljs-comment">// 次线程里的局部对象</span>
+        <span class="hljs-built_in">connect</span>(&amp;dummy, <span class="hljs-built_in">SIGNAL</span>(<span class="hljs-built_in">sig</span>()), <span class="hljs-keyword">this</span>, <span class="hljs-built_in">SLOT</span>(<span class="hljs-built_in">slotThread</span>()));
+        dummy.<span class="hljs-built_in">emitSig</span>();                              <span class="hljs-comment">// 信号在次线程发射</span>
+        <span class="hljs-built_in">exec</span>();
+    }
+};
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>main: 0x15c0
+run:  0x1750
+slot: 0x15c0
+</code></pre></div></code></pre>
+<p>槽还是主线程。<code>this</code>（Thread 对象）归主线程，AutoConnection 看到发射线程 S ≠ 接收者线程 M，走队列连接，事件投进主线程队列，主线程的循环里执行。</p>
+<p>四种组合摆成表：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th>信号发射线程</th>
+<th>接收者归属</th>
+<th>连接方式</th>
+<th>槽实际运行</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>实验一</td>
+<td>主线程</td>
+<td>主线程</td>
+<td>直连</td>
+<td>主线程</td>
+</tr>
+<tr>
+<td>实验二（moveToThread(this)）</td>
+<td>主线程</td>
+<td>次线程</td>
+<td>队列</td>
+<td>次线程</td>
+</tr>
+<tr>
+<td>实验三</td>
+<td>次线程</td>
+<td>主线程</td>
+<td>队列</td>
+<td>主线程</td>
+</tr>
+<tr>
+<td>工作者对象已 move 到次线程，在次线程里被调用</td>
+<td>次线程</td>
+<td>次线程</td>
+<td>直连</td>
+<td>次线程</td>
+</tr>
+</tbody>
+</table></div><p>最后一行是正路：把工作对象 move 到次线程，让调用落在次线程里，不碰 QThread 子类。</p>
+<p>一句话收尾：QThread 对象的槽默认在主线程跑，别指望它替你干重活；想让代码在次线程跑，就把对象挪过去，把调用投过去。</p>
+<h2 id="七事件队列与跨线程投递" tabindex="-1">七、事件队列与跨线程投递 <a class="header-anchor" href="#七事件队列与跨线程投递"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>每个线程一份事件队列，由 <code>QAbstractEventDispatcher</code> 管着。这三条不变量记住，后面的现象全能推出来：</p>
+<ol>
+<li>队列按线程分，不按对象分。一个线程里所有 QObject 共用一个队列。</li>
+<li>事件进哪个队列，由目标对象的 <code>thread()</code> 决定，跟谁投的没关系。</li>
+<li>队列里的东西，只有那个线程的分发器在转的时候才会被取出来。</li>
+</ol>
+<p>第 2 条是跨线程投递的全部秘密。你在 A 线程 <code>postEvent</code> 一个归属 B 线程的对象，事件就跑进 B 的队列，A 只管塞进去然后叫醒 B 的分发器。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">// 线程安全，可从任意线程调用</span>
+<span class="hljs-function"><span class="hljs-type">bool</span> <span class="hljs-title">QCoreApplication::postEvent</span><span class="hljs-params">(QObject *receiver, QEvent *event,
+                                 <span class="hljs-type">int</span> priority = Qt::NormalEventPriority)</span></span>;
+</code></pre></div></code></pre>
+<p>Qt 5 起返回 <code>bool</code>，表示是否入队成功。事件对象 <code>new</code> 出来交给 Qt，别自己 delete，也别重复投同一个。</p>
+<p>优先级影响取用顺序，不影响线程归属：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QCoreApplication::<span class="hljs-built_in">postEvent</span>(obj, <span class="hljs-keyword">new</span> <span class="hljs-built_in">QEvent</span>(QEvent::User), Qt::HighEventPriority);
+</code></pre></div></code></pre>
+<p><code>postEvent</code> 没有队列长度上限。生产者比消费者快，队列会一直长，内存跟着涨。这是「内存缓慢上涨」类故障的常见源头，排查思路是数队列长度而不是加 sleep。</p>
+<p>手动冲刷本线程队列：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QCoreApplication::<span class="hljs-built_in">sendPostedEvents</span>();     <span class="hljs-comment">// 处理本线程所有已入队事件</span>
+QCoreApplication::<span class="hljs-built_in">processEvents</span>();        <span class="hljs-comment">// 更狠：连窗口系统事件一起处理</span>
+</code></pre></div></code></pre>
+<p>这两个都是「我暂时让出控制权」的意思，后面讲重入时会看到它们的代价。</p>
+<p>跨线程投递除了原始事件，还有一层更好用的封装：<code>QMetaObject::invokeMethod</code>。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Worker</span> : <span class="hljs-keyword">public</span> QObject
+{
+    Q_OBJECT
+<span class="hljs-keyword">public</span> slots:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">compute</span><span class="hljs-params">(<span class="hljs-type">int</span> n, <span class="hljs-type">const</span> QString &amp;tag)</span>
+    </span>{
+        <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;compute in&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>() &lt;&lt; n &lt;&lt; tag;
+    }
+};
+
+<span class="hljs-comment">// 主线程里</span>
+QThread thread;
+Worker worker;
+worker.<span class="hljs-built_in">moveToThread</span>(&amp;thread);
+thread.<span class="hljs-built_in">start</span>();
+
+QMetaObject::<span class="hljs-built_in">invokeMethod</span>(&amp;worker, <span class="hljs-string">&quot;compute&quot;</span>, Qt::QueuedConnection,
+                          <span class="hljs-built_in">Q_ARG</span>(<span class="hljs-type">int</span>, <span class="hljs-number">42</span>), <span class="hljs-built_in">Q_ARG</span>(QString, <span class="hljs-built_in">QStringLiteral</span>(<span class="hljs-string">&quot;job&quot;</span>)));
+</code></pre></div></code></pre>
+<p><code>invokeMethod</code> 的队列模式内部就是造一个 <code>QMetaCallEvent</code>，<code>postEvent</code> 到 <code>worker.thread()</code>。参数要能在事件对象里存下来，所以必须可拷贝。</p>
+<p>自定义类型要过两道关：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">struct</span> <span class="hljs-title class_">Job</span>
+{
+    <span class="hljs-type">int</span> id = <span class="hljs-number">0</span>;
+    QString name;
+};
+
+<span class="hljs-built_in">Q_DECLARE_METATYPE</span>(Job)          <span class="hljs-comment">// 让 QVariant 认识它</span>
+
+<span class="hljs-comment">// 在第一次 connect / invokeMethod 之前调用</span>
+<span class="hljs-built_in">qRegisterMetaType</span>&lt;Job&gt;(<span class="hljs-string">&quot;Job&quot;</span>);
+</code></pre></div></code></pre>
+<p>缺了 <code>qRegisterMetaType</code>，运行时会甩一句「Cannot queue arguments of type 'Job'」，槽根本不执行。这是队列连接最经典的哑火原因。</p>
+<p>投递方式横向对照：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>方式</th>
+<th>同步性</th>
+<th>要求</th>
+<th>实际执行线程</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>postEvent()</code></td>
+<td>异步</td>
+<td>事件对象交 Qt 管</td>
+<td>目标对象归属线程</td>
+</tr>
+<tr>
+<td><code>sendEvent()</code></td>
+<td>同步</td>
+<td>目标对象在调用线程</td>
+<td>调用者线程</td>
+</tr>
+<tr>
+<td><code>invokeMethod(..., Direct)</code></td>
+<td>同步</td>
+<td>方法是槽或 <code>Q_INVOKABLE</code></td>
+<td>调用者线程</td>
+</tr>
+<tr>
+<td><code>invokeMethod(..., Queued)</code></td>
+<td>异步</td>
+<td>同上 + 参数可拷贝</td>
+<td>目标对象归属线程</td>
+</tr>
+<tr>
+<td><code>invokeMethod(..., BlockingQueued)</code></td>
+<td>同步阻塞</td>
+<td>同上</td>
+<td>目标对象归属线程</td>
+</tr>
+</tbody>
+</table></div><h2 id="八信号槽的跨线程连接" tabindex="-1">八、信号槽的跨线程连接 <a class="header-anchor" href="#八信号槽的跨线程连接"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>QObject::connect</code> 的第五个参数决定连接类型，默认是 <code>Qt::AutoConnection</code>。队列连接背后是一条完整的投递链：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>emit sig(args)                       // 发射线程
+  → moc 生成的信号函数
+    → QMetaObject::activate()
+      → 遍历连接表
+        → 队列连接：new QMetaCallEvent（参数已深拷贝）
+          → QCoreApplication::postEvent(receiver, event)
+            → 进 receiver-&gt;thread() 的队列
+              → 该线程事件循环取出
+                → QObject::event() → qt_static_metacall()
+                  → 槽被调用，此时已在接收者线程
+</code></pre></div></code></pre>
+<p>看懂这条链，四个结论直接落袋：</p>
+<ul>
+<li>队列连接的槽和发射点彻底解耦，发射线程发完就返回。</li>
+<li>槽里拿到的是参数副本，原始对象怎么改都不影响已投递的调用。</li>
+<li>传指针等于传共享内存，指针指向的数据照样有竞争。</li>
+<li>返回值拿不到。队列连接是单向的，槽的返回值被丢掉。</li>
+</ul>
+<p>只有信号、槽、<code>Q_INVOKABLE</code> 标记的方法能被这样调用。原因在 moc：只有它们被记进了元对象表，<code>activate()</code> 才有东西可查。</p>
+<p>一个能直接跑的最小例子，验证「槽在次线程执行」：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Producer</span> : <span class="hljs-keyword">public</span> QObject
+{
+    Q_OBJECT
+<span class="hljs-keyword">public</span> slots:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">produce</span><span class="hljs-params">()</span> </span>{ <span class="hljs-function">emit <span class="hljs-title">ready</span><span class="hljs-params">(<span class="hljs-number">7</span>)</span></span>; }
+signals:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">ready</span><span class="hljs-params">(<span class="hljs-type">int</span> value)</span></span>;
+};
+
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">Consumer</span> : <span class="hljs-keyword">public</span> QObject
+{
+    Q_OBJECT
+<span class="hljs-keyword">public</span> slots:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onReady</span><span class="hljs-params">(<span class="hljs-type">int</span> value)</span>
+    </span>{
+        <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;consumer got&quot;</span> &lt;&lt; value &lt;&lt; <span class="hljs-string">&quot;in&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>();
+    }
+};
+
+<span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">main</span><span class="hljs-params">(<span class="hljs-type">int</span> argc, <span class="hljs-type">char</span> *argv[])</span>
+</span>{
+    <span class="hljs-function">QCoreApplication <span class="hljs-title">app</span><span class="hljs-params">(argc, argv)</span></span>;
+    <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;main:&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>();
+
+    QThread thread;
+    Consumer consumer;
+    consumer.<span class="hljs-built_in">moveToThread</span>(&amp;thread);
+    thread.<span class="hljs-built_in">start</span>();                       <span class="hljs-comment">// run() 里默认调 exec()，循环有了</span>
+
+    Producer producer;
+    QObject::<span class="hljs-built_in">connect</span>(&amp;producer, &amp;Producer::ready,
+                     &amp;consumer, &amp;Consumer::onReady);   <span class="hljs-comment">// 默认 AutoConnection</span>
+
+    producer.<span class="hljs-built_in">produce</span>();                   <span class="hljs-comment">// 主线程发射</span>
+    <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;produce returned&quot;</span>;
+
+    QTimer::<span class="hljs-built_in">singleShot</span>(<span class="hljs-number">500</span>, &amp;app, &amp;QCoreApplication::quit);
+    <span class="hljs-type">const</span> <span class="hljs-type">int</span> ret = app.<span class="hljs-built_in">exec</span>();
+    thread.<span class="hljs-built_in">quit</span>();
+    thread.<span class="hljs-built_in">wait</span>();                        <span class="hljs-comment">// 先收线程，再析构 consumer</span>
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>main: 0x1a40
+produce returned
+consumer got 7 in 0x1a48
+</code></pre></div></code></pre>
+<p>注意第二行和第三行的顺序：<code>produce()</code> 先返回，槽后执行。这就是队列连接。把输出顺序反过来，说明连接被判定成了直连，回头查 <code>moveToThread</code> 有没有生效。</p>
+<p>反方向同理：次线程里 emit，接收者留在主线程，槽就回主线程执行。谁归属哪个线程，调用就落在哪个线程，方向不影响规则。</p>
+<h2 id="九queuedconnection-与-directconnection" tabindex="-1">九、QueuedConnection 与 DirectConnection <a class="header-anchor" href="#九queuedconnection-与-directconnection"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>五种连接类型，一张表理清：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>连接类型</th>
+<th>枚举值</th>
+<th>槽的执行线程</th>
+<th>同步性</th>
+<th>要事件循环</th>
+<th>参数传递</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>直连</td>
+<td><code>Qt::DirectConnection</code></td>
+<td>发射信号的线程</td>
+<td>同步，立即执行</td>
+<td>不要</td>
+<td>引用</td>
+</tr>
+<tr>
+<td>队列</td>
+<td><code>Qt::QueuedConnection</code></td>
+<td>接收者归属线程</td>
+<td>异步</td>
+<td>要</td>
+<td>拷贝</td>
+</tr>
+<tr>
+<td>阻塞队列</td>
+<td><code>Qt::BlockingQueuedConnection</code></td>
+<td>接收者归属线程</td>
+<td>同步，发射线程被挂起</td>
+<td>要</td>
+<td>拷贝</td>
+</tr>
+<tr>
+<td>自动</td>
+<td><code>Qt::AutoConnection</code></td>
+<td>判定后同直连或队列</td>
+<td>视判定</td>
+<td>视判定</td>
+<td>视判定</td>
+</tr>
+<tr>
+<td>唯一</td>
+<td><code>Qt::UniqueConnection</code></td>
+<td>与上面按位或使用</td>
+<td>—</td>
+<td>—</td>
+<td>防重复连接</td>
+</tr>
+</tbody>
+</table></div><p><strong>直连</strong>。槽就是一次普通函数调用，栈帧长在发射点里面。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QObject::<span class="hljs-built_in">connect</span>(&amp;a, &amp;A::sig, &amp;b, &amp;B::slot, Qt::DirectConnection);
+</code></pre></div></code></pre>
+<p>同线程里用直连没问题，效率也高。跨线程用直连就是在发射线程里跑接收者的代码，接收者的数据此刻正被它自己的线程改——数据竞争，随机崩溃，最难查的那类 bug。</p>
+<p><strong>队列</strong>。投一个事件，发射点立刻返回。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QObject::<span class="hljs-built_in">connect</span>(&amp;producer, &amp;Producer::ready,
+                 &amp;consumer, &amp;Consumer::onReady, Qt::QueuedConnection);
+</code></pre></div></code></pre>
+<p>队列连接保序：同一个发送者到同一个接收者的多次发射，按发射顺序执行。跨线程传状态时这条性质很有用，不用额外维护序号。</p>
+<p><strong>阻塞队列</strong>。发射线程挂起，直到接收者线程把槽执行完。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QObject::<span class="hljs-built_in">connect</span>(&amp;producer, &amp;Producer::ready,
+                 &amp;consumer, &amp;Consumer::onReady, Qt::BlockingQueuedConnection);
+</code></pre></div></code></pre>
+<p>用在「投出去必须等结果」的场合，比如让次线程读一次硬件寄存器、初始化一份配置。两条红线：</p>
+<ul>
+<li>同线程里用阻塞队列连接一定死锁，自己等自己。Qt 会打 warning，但进程照样卡死。</li>
+<li>接收者线程如果没有事件循环，发射线程永久阻塞，整个程序挂住。</li>
+</ul>
+<p>一个对照实验，三种连接各来一发：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Sender</span> : <span class="hljs-keyword">public</span> QObject
+{
+    Q_OBJECT
+signals:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">sig</span><span class="hljs-params">()</span></span>;
+};
+
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">Receiver</span> : <span class="hljs-keyword">public</span> QObject
+{
+    Q_OBJECT
+<span class="hljs-keyword">public</span> slots:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">viaDirect</span><span class="hljs-params">()</span> </span>{ <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;direct:&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>(); }
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">viaQueued</span><span class="hljs-params">()</span> </span>{ <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;queued:&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>(); }
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">viaBlocking</span><span class="hljs-params">()</span> </span>{ <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;blocking:&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>(); }
+};
+
+<span class="hljs-function"><span class="hljs-type">int</span> <span class="hljs-title">main</span><span class="hljs-params">(<span class="hljs-type">int</span> argc, <span class="hljs-type">char</span> *argv[])</span>
+</span>{
+    <span class="hljs-function">QCoreApplication <span class="hljs-title">app</span><span class="hljs-params">(argc, argv)</span></span>;
+    <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;main:&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>();
+
+    QThread thread;
+    Receiver r;
+    r.<span class="hljs-built_in">moveToThread</span>(&amp;thread);
+    thread.<span class="hljs-built_in">start</span>();
+
+    Sender s;
+    QObject::<span class="hljs-built_in">connect</span>(&amp;s, &amp;Sender::sig, &amp;r, &amp;Receiver::viaDirect,
+                     Qt::DirectConnection);
+    QObject::<span class="hljs-built_in">connect</span>(&amp;s, &amp;Sender::sig, &amp;r, &amp;Receiver::viaQueued,
+                     Qt::QueuedConnection);
+    QObject::<span class="hljs-built_in">connect</span>(&amp;s, &amp;Sender::sig, &amp;r, &amp;Receiver::viaBlocking,
+                     Qt::BlockingQueuedConnection);
+
+    emit s.<span class="hljs-built_in">sig</span>();        <span class="hljs-comment">// 一次发射，三个槽</span>
+
+    <span class="hljs-type">const</span> <span class="hljs-type">int</span> ret = app.<span class="hljs-built_in">exec</span>();
+    thread.<span class="hljs-built_in">quit</span>();
+    thread.<span class="hljs-built_in">wait</span>();       <span class="hljs-comment">// 先停线程，再析构归它管的 r</span>
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>main: 0x1a40
+direct: 0x1a40        // 直连，就在发射线程
+blocking: 0x1a48      // 阻塞队列，次线程执行完才返回
+queued: 0x1a48        // 队列，异步，最后才轮到
+</code></pre></div></code></pre>
+<p><code>direct</code> 第一行，因为它同步执行；<code>blocking</code> 第二行，因为发射线程要等它做完；<code>queued</code> 最后，因为它是排进队列的，而且这里已经进了主循环。三个槽的执行顺序就是三种连接语义的活体展示。</p>
+<h2 id="十autoconnection-怎么判断" tabindex="-1">十、AutoConnection 怎么判断 <a class="header-anchor" href="#十autoconnection-怎么判断"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>默认参数是 <code>Qt::AutoConnection</code>，<code>connect</code> 时判定一次，判定逻辑只有三行：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>if (receiver-&gt;thread() == QThread::currentThread())   // 发射那一刻的线程
+    → DirectConnection
+else
+    → QueuedConnection
+</code></pre></div></code></pre>
+<p>比的是「接收者的归属线程」和「发射信号的线程」。<strong>发送者对象归哪个线程，完全不参与判定。</strong></p>
+<p>这一点 Qt 4.7.1 的文档写错了，原文说「如果发射者和接收者在同一线程，其行为与 DirectConnection 相同」，把「发送者对象」和「发射线程」混成一个东西。发送者对象归 A 线程，代码却在 B 线程里 emit 它的信号——这种写法少见，但正是最容易踩的坑。</p>
+<p>四种组合：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>发射线程</th>
+<th>接收者归属线程</th>
+<th>AutoConnection 判定</th>
+<th>槽在哪跑</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>M</td>
+<td>M</td>
+<td>直连</td>
+<td>M</td>
+</tr>
+<tr>
+<td>S</td>
+<td>M</td>
+<td>队列</td>
+<td>M</td>
+</tr>
+<tr>
+<td>M</td>
+<td>S</td>
+<td>队列</td>
+<td>S</td>
+</tr>
+<tr>
+<td>S</td>
+<td>S</td>
+<td>直连</td>
+<td>S</td>
+</tr>
+</tbody>
+</table></div><p>第一种和第四种是直连，槽就在调用栈里同步执行。跨了线程的那两种走队列。</p>
+<p><strong>例子一</strong>，两个对象都在主线程，信号却在次线程发：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Thread</span> : <span class="hljs-keyword">public</span> QThread
+{
+    Q_OBJECT
+signals:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">aSignal</span><span class="hljs-params">()</span></span>;
+<span class="hljs-keyword">protected</span>:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> <span class="hljs-keyword">override</span> </span>{ <span class="hljs-function">emit <span class="hljs-title">aSignal</span><span class="hljs-params">()</span></span>; }
+};
+
+Thread thread;      <span class="hljs-comment">// 归主线程</span>
+Object obj;         <span class="hljs-comment">// 归主线程</span>
+QObject::<span class="hljs-built_in">connect</span>(&amp;thread, <span class="hljs-built_in">SIGNAL</span>(<span class="hljs-built_in">aSignal</span>()), &amp;obj, <span class="hljs-built_in">SLOT</span>(<span class="hljs-built_in">aSlot</span>()));
+thread.<span class="hljs-built_in">start</span>();
+</code></pre></div></code></pre>
+<p><code>thread</code> 和 <code>obj</code> 同在主线程，很多人据此认定是直连。可信号是在 <code>run()</code> 里发的，发射线程是 S，接收者归属 M，判定结果是队列。发送者对象的归属在这里毫无权重。</p>
+<p><strong>例子二</strong>，反过来，也是真实项目里更常见的坑：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Thread</span> : <span class="hljs-keyword">public</span> QThread
+{
+    Q_OBJECT
+<span class="hljs-keyword">public</span> slots:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">aSlot</span><span class="hljs-params">()</span>
+    </span>{
+        <span class="hljs-comment">// 访问 m_buffer —— 而 run() 正在次线程里读写它</span>
+        m_buffer.<span class="hljs-built_in">append</span>(<span class="hljs-string">&quot;x&quot;</span>);
+    }
+<span class="hljs-keyword">protected</span>:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> <span class="hljs-keyword">override</span>
+    </span>{
+        <span class="hljs-keyword">while</span> (m_running)
+        {
+            m_buffer.<span class="hljs-built_in">clear</span>();
+            QThread::<span class="hljs-built_in">msleep</span>(<span class="hljs-number">10</span>);
+        }
+    }
+<span class="hljs-keyword">private</span>:
+    QStringList m_buffer;
+    <span class="hljs-type">bool</span> m_running = <span class="hljs-literal">true</span>;
+};
+
+Thread thread;
+Object obj;
+QObject::<span class="hljs-built_in">connect</span>(&amp;obj, <span class="hljs-built_in">SIGNAL</span>(<span class="hljs-built_in">aSignal</span>()), &amp;thread, <span class="hljs-built_in">SLOT</span>(<span class="hljs-built_in">aSlot</span>()));
+thread.<span class="hljs-built_in">start</span>();
+obj.<span class="hljs-built_in">emitSignal</span>();       <span class="hljs-comment">// 主线程发射</span>
+</code></pre></div></code></pre>
+<p><code>obj</code> 在主线程 emit，<code>thread</code> 归属主线程，判定为直连，<code>aSlot()</code> 在主线程执行。看着「槽在主线程」挺安全，实际上 <code>m_buffer</code> 正在被次线程的 <code>run()</code> 反复清空——没有锁，读写撕裂，崩在随机位置。</p>
+<p>这就是「灾难配方」那个说法的出处。修法有三种，只有第一种算正解：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>做法</th>
+<th>效果</th>
+<th>代价</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>工作对象拆出来 moveToThread</td>
+<td>槽在次线程，与 <code>run()</code> 无关，数据只有一个人碰</td>
+<td>要重构控制面与执行面</td>
+</tr>
+<tr>
+<td>显式改成 <code>QueuedConnection</code></td>
+<td>槽回主线程执行</td>
+<td>共享数据仍在两线程，还是得加锁</td>
+</tr>
+<tr>
+<td>直连 + <code>QMutex</code> 保护</td>
+<td>能跑</td>
+<td>锁粒度难调，容易连带阻塞</td>
+</tr>
+<tr>
+<td><code>moveToThread(this)</code></td>
+<td>槽进次线程</td>
+<td>QThread 对象与它管理的线程纠缠，退出时容易崩</td>
+</tr>
+</tbody>
+</table></div><p>表里第四行是网上流传最广的那个「解决方案」，也是被 Qt 作者明确反对的做法。它能工作，因为它确实改掉了接收者的线程归属，但它同时在骂 QThread 的设计意图：QThread 对象是控制句柄，不是干活的实体。</p>
+<p>判定链记住了，排查就简单。槽没在预期的线程执行，先打印三个值：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;emit from&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>()
+         &lt;&lt; <span class="hljs-string">&quot;receiver lives in&quot;</span> &lt;&lt; receiver.<span class="hljs-built_in">thread</span>()
+         &lt;&lt; <span class="hljs-string">&quot;current is&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThread</span>();
+</code></pre></div></code></pre>
+<p><code>receiver.thread()</code> 和第二个值比一下，答案就出来了。别猜，打印。</p>
+<h2 id="十一没有事件循环会怎样" tabindex="-1">十一、没有事件循环会怎样 <a class="header-anchor" href="#十一没有事件循环会怎样"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先说清一个前提：线程和事件循环是两件事。<code>QThread::run()</code> 从 Qt 4.4 起默认调用 <code>QThread::exec()</code>，所以不覆写 <code>run()</code> 的 QThread 天然带循环。你一旦覆写 <code>run()</code>，循环有没有就全看你写不写 <code>exec()</code>。</p>
+<p><code>run()</code> 的地位值得单独记住一句话：**run() 之于线程，相当于 main() 之于程序。**它是线程的入口，起点在 <code>run()</code> 的那条调用栈上的一切代码都在新线程里执行，函数返回，线程结束。</p>
+<p>于是 QThread 的用法就分成两支，差别只在有没有 <code>exec()</code>：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>用法</th>
+<th>写法</th>
+<th>线程里有循环吗</th>
+<th>适合什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>无循环</td>
+<td>子类化 QThread，<code>run()</code> 里放一个 <code>while</code>/<code>for</code>，用标志位退出</td>
+<td>没有</td>
+<td>一次性的批处理、纯计算、轮询式采集</td>
+</tr>
+<tr>
+<td>有循环</td>
+<td><code>run()</code> 里调 <code>QThread::exec()</code></td>
+<td>有</td>
+<td>要被队列调用、要用定时器、socket、<code>deleteLater</code></td>
+</tr>
+</tbody>
+</table></div><p>第二支里有个历史包袱：Qt 4.3 及之前 <code>run()</code> 是纯虚函数，必须子类化才能用；Qt 4.4 起 <code>run()</code> 默认就是 <code>exec()</code>，于是不子类化 QThread 也能有循环，只要把一个 QObject 子类 <code>moveToThread</code> 过去。这也是后来推荐的写法。</p>
+<p>不写 <code>exec()</code> 的线程照样能跑代码，只是<strong>投给它的事件没人收</strong>。它跑完 <code>run()</code> 就结束，队列里剩下的东西一起消失。</p>
+<p>后果可以逐条列出来：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>依赖的东西</th>
+<th>接收者线程没有循环时的表现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>队列连接</td>
+<td>事件留在队列，槽不执行</td>
+</tr>
+<tr>
+<td><code>postEvent()</code></td>
+<td>事件永不派发，内存持续上涨</td>
+</tr>
+<tr>
+<td><code>invokeMethod(..., Queued)</code></td>
+<td>同上，调用静默丢失</td>
+</tr>
+<tr>
+<td><code>BlockingQueuedConnection</code></td>
+<td>发射线程永久阻塞，程序卡死</td>
+</tr>
+<tr>
+<td><code>deleteLater()</code></td>
+<td>对象永不删除，内存泄漏</td>
+</tr>
+<tr>
+<td><code>QTimer</code></td>
+<td>到点不响，<code>QTimerEvent</code> 投不出去</td>
+</tr>
+<tr>
+<td>socket 异步通知</td>
+<td>收不到 <code>readyRead</code>、<code>connected</code></td>
+</tr>
+<tr>
+<td><code>QPaintEvent</code></td>
+<td>不重绘</td>
+</tr>
+<tr>
+<td><code>moveToThread</code> 过去的对象</td>
+<td>与外界失联，只能靠直连硬闯</td>
+</tr>
+</tbody>
+</table></div><p>注意表头是「接收者线程」，这是最容易搞错的地方。**决定事情成不成的是接收者所在线程有没有循环，不是发射方。**发射方没循环、接收方有，队列连接照常工作——事件进的是接收方的队列。这也是为什么在 <code>run()</code> 里 emit 信号能安全地把结果送回主线程。</p>
+<p>反过来，接收方没循环，就彻底哑火。最典型的现场：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Worker</span> : <span class="hljs-keyword">public</span> QObject
+{
+    Q_OBJECT
+<span class="hljs-keyword">public</span> slots:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">onStart</span><span class="hljs-params">()</span>
+    </span>{
+        <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;slot runs in&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>();
+    }
+};
+
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">BadThread</span> : <span class="hljs-keyword">public</span> QThread
+{
+<span class="hljs-keyword">protected</span>:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> <span class="hljs-keyword">override</span>
+    </span>{
+        <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;run in&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>();
+        QThread::<span class="hljs-built_in">sleep</span>(<span class="hljs-number">5</span>);        <span class="hljs-comment">// 干完就走，没有 exec()</span>
+    }
+};
+
+<span class="hljs-comment">// 主线程</span>
+BadThread thread;
+Worker worker;
+worker.<span class="hljs-built_in">moveToThread</span>(&amp;thread);     <span class="hljs-comment">// worker 归次线程</span>
+thread.<span class="hljs-built_in">start</span>();
+
+QMetaObject::<span class="hljs-built_in">invokeMethod</span>(&amp;worker, <span class="hljs-string">&quot;onStart&quot;</span>, Qt::QueuedConnection);
+</code></pre></div></code></pre>
+<p><code>connect</code> 成功，<code>invokeMethod</code> 返回 <code>true</code>，槽一次都不执行。因为那个事件被塞进了次线程的队列，而次线程从头到尾没有分发器在转。</p>
+<p>改一个字就能救活：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">BadThread</span> : <span class="hljs-keyword">public</span> QThread
+{
+<span class="hljs-keyword">protected</span>:
+    <span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">run</span><span class="hljs-params">()</span> <span class="hljs-keyword">override</span>
+    </span>{
+        <span class="hljs-built_in">exec</span>();                   <span class="hljs-comment">// 有循环了，队列开始被消费</span>
+    }
+};
+</code></pre></div></code></pre>
+<p>再补四种连带故障，都是同一个根因的不同面孔。</p>
+<p><strong>一是泄漏</strong>。<code>deleteLater()</code> 靠 <code>QDeferredDeleteEvent</code> 生效，没有循环就永远不删。程序退出时资源没释放，用 ASan 或 Valgrind 跑一遍能看见。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">// 次线程里执行，而次线程没有事件循环</span>
+obj-&gt;deleteLater();      <span class="hljs-comment">// 对象活到进程结束</span>
+</code></pre></div></code></pre>
+<p><strong>二是死锁</strong>。阻塞队列连接的发射线程要等接收者处理完事件，接收者压根不处理。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QObject::<span class="hljs-built_in">connect</span>(&amp;worker, &amp;Worker::done, <span class="hljs-keyword">this</span>, &amp;Controller::onDone,
+                 Qt::BlockingQueuedConnection);
+</code></pre></div></code></pre>
+<p><code>worker</code> 线程没循环，主线程就卡在 emit 那一行，界面冻住，<code>Ctrl+C</code> 都未必管用。</p>
+<p><strong>三是定时器不响</strong>。<code>QTimer::start()</code> 只是登记，超时靠事件循环投 <code>QTimerEvent</code>。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QTimer timer;
+timer.<span class="hljs-built_in">start</span>(<span class="hljs-number">1000</span>);       <span class="hljs-comment">// 所在线程没有循环，一秒后什么都不会发生</span>
+</code></pre></div></code></pre>
+<p><strong>四是退出顺序出错</strong>。对象要在代表线程的 QThread 销毁之前删掉，靠的是循环把 <code>deleteLater</code> 消化掉。循环不在，顺序就得手动保证。</p>
+<p>到底该不该有循环，按需要列个清单：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>需求</th>
+<th>要不要 <code>exec()</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只做一次计算，发信号把结果送出去</td>
+<td>不要，覆写 <code>run()</code> 直接算完返回</td>
+</tr>
+<tr>
+<td>要被队列调用（信号投过来、<code>invokeMethod</code> 投过来）</td>
+<td>要</td>
+</tr>
+<tr>
+<td>要用 <code>QTimer</code>、socket 异步通知</td>
+<td>要</td>
+</tr>
+<tr>
+<td>要靠 <code>deleteLater()</code> 释放对象</td>
+<td>要</td>
+</tr>
+<tr>
+<td>要接收 <code>BlockingQueuedConnection</code> 的调用</td>
+<td>要</td>
+</tr>
+</tbody>
+</table></div><p>判断某个线程当前有没有循环在转，打印一句就够：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;loop level&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThread</span>()-&gt;<span class="hljs-built_in">loopLevel</span>();
+</code></pre></div></code></pre>
+<p>返回 0 就是没有循环。Qt 5 提供这个函数，Qt 4 时代只能靠 <code>QAbstractEventDispatcher::instance()</code> 是否为空来猜。</p>
+<h2 id="十二模态对话框与嵌套事件循环" tabindex="-1">十二、模态对话框与嵌套事件循环 <a class="header-anchor" href="#十二模态对话框与嵌套事件循环"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>QDialog::exec()</code> 不是把程序停住，它是<strong>又开了一层事件循环</strong>。<code>QMenu::exec()</code>、<code>QEventLoop::exec()</code> 同理。所以模态对话框弹着的时候，主循环其实还在转，只是转在里层。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QApplication::exec()              // 外层循环
+  [...]
+  QDialog::exec()                 // 内层循环开始
+    → 对话框自己的事件在这层派发
+    → 主窗口的事件也在这层派发，只是被模态挡住
+  ← 对话框关闭，内层循环退出
+[...]                             // 回到外层
+</code></pre></div></code></pre>
+<p>这也解释了为什么模态对话框期间定时器还在走、网络还在收。循环没停，只是换了一层。</p>
+<p>嵌套的代价全在「你以为不会发生的事发生了」。四条最容易撞。</p>
+<p><strong>一、<code>deleteLater()</code> 在嵌套循环里被执行</strong>。你以为删除要等外层循环，结果内层循环先把它消化了。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QObject *object = <span class="hljs-keyword">new</span> QObject;
+object-&gt;deleteLater();       <span class="hljs-comment">// 排进队列</span>
+
+QDialog dialog;
+dialog.<span class="hljs-built_in">exec</span>();               <span class="hljs-comment">// 内层循环把删除事件处理掉了</span>
+
+<span class="hljs-comment">// 现在 object 是野指针，dialog 关得越久，这段代码越确定会炸</span>
+object-&gt;<span class="hljs-built_in">setObjectName</span>(<span class="hljs-string">&quot;x&quot;</span>);
+</code></pre></div></code></pre>
+<p><code>QEventLoop</code> 版本一模一样：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QObject *object = <span class="hljs-keyword">new</span> QObject;
+object-&gt;deleteLater();
+
+QEventLoop loop;
+QTimer::<span class="hljs-built_in">singleShot</span>(<span class="hljs-number">0</span>, &amp;loop, &amp;QEventLoop::quit);
+loop.<span class="hljs-built_in">exec</span>();                 <span class="hljs-comment">// 局部循环一趟，object 已经没了</span>
+</code></pre></div></code></pre>
+<p>注意 <code>processEvents()</code> 从 Qt 4.3 之后默认不派发延迟删除事件，但局部 <code>exec()</code> 会。这两者的差别骗过不少人。</p>
+<p><strong>二、<code>processEvents()</code> 递归重入</strong>。为了不卡界面，在耗时循环里手动让出控制权，结果用户再点一次按钮，同一个槽叠了第二层。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Worker::doWork</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; <span class="hljs-number">100</span>; ++i)
+    {
+        <span class="hljs-built_in">heavyStep</span>(i);
+        QCoreApplication::<span class="hljs-built_in">processEvents</span>();   <span class="hljs-comment">// 让出控制权，事件在这里被派发</span>
+    }
+}
+</code></pre></div></code></pre>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QApplication::exec()
+  QWidget::event(QEvent*)
+    Button::mousePressEvent(QMouseEvent*)
+      Button::clicked()
+        Worker::doWork()                     // 第一层
+          QCoreApplication::processEvents()
+            QWidget::event(QEvent*)          // 又派发进来一个点击
+              Button::mousePressEvent(QMouseEvent*)
+                Button::clicked()
+                  Worker::doWork()           // 第二层，重入
+</code></pre></div></code></pre>
+<p>栈越叠越深，<code>i</code> 各自独立地跑，状态互相踩。两种情况能治：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">// 治法一：派发时不带用户输入，点击留在队列里等这一轮跑完</span>
+QCoreApplication::<span class="hljs-built_in">processEvents</span>(QEventLoop::ExcludeUserInputEvents);
+
+<span class="hljs-comment">// 治法二：重入保护</span>
+<span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Worker::doWork</span><span class="hljs-params">()</span>
+</span>{
+    <span class="hljs-keyword">if</span> (m_busy)
+        <span class="hljs-keyword">return</span>;
+    <span class="hljs-function">QScopedValueRollback&lt;<span class="hljs-type">bool</span>&gt; <span class="hljs-title">guard</span><span class="hljs-params">(m_busy, <span class="hljs-literal">true</span>)</span></span>;
+    <span class="hljs-comment">// ...</span>
+}
+</code></pre></div></code></pre>
+<p>治法一治的是标，治法二治的是本。两者一起用最稳。</p>
+<p><strong>三、<code>QDialog::exec()</code> 返回后指针失效</strong>。对话框是栈上对象时，<code>exec()</code> 里被 <code>deleteLater()</code> 的兄弟对象已经没了；对话框是 <code>new</code> 出来的且设了 <code>WA_DeleteOnClose</code>，<code>exec()</code> 返回后 <code>this</code> 也没了。</p>
+<p><strong>四、内层循环退出条件写漏</strong>。<code>QEventLoop</code> 没有 <code>quit()</code> 就永远转，界面看着活着，逻辑已经卡死。给每个局部循环配一个超时兜底：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QEventLoop loop;
+QTimer::<span class="hljs-built_in">singleShot</span>(<span class="hljs-number">5000</span>, &amp;loop, &amp;QEventLoop::quit);   <span class="hljs-comment">// 兜底</span>
+QObject::<span class="hljs-built_in">connect</span>(reply, &amp;QNetworkReply::finished, &amp;loop, &amp;QEventLoop::quit);
+loop.<span class="hljs-built_in">exec</span>();
+
+<span class="hljs-keyword">if</span> (reply-&gt;<span class="hljs-built_in">isFinished</span>())
+    <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;拿到结果&quot;</span>;
+<span class="hljs-keyword">else</span>
+    <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;超时，放弃&quot;</span>;
+</code></pre></div></code></pre>
+<p>「同步外观、异步内核」的标准写法就是这一段。<code>QNetworkReply</code> 没有阻塞式 API，因为它必须靠事件循环；想同步等，就自己开一层循环等它完成。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QNetworkAccessManager nam;
+QNetworkReply *reply = nam.<span class="hljs-built_in">get</span>(<span class="hljs-built_in">QNetworkRequest</span>(<span class="hljs-built_in">QUrl</span>(<span class="hljs-string">&quot;https://example.com&quot;</span>)));
+
+QEventLoop loop;
+QObject::<span class="hljs-built_in">connect</span>(reply, &amp;QNetworkReply::finished, &amp;loop, &amp;QEventLoop::quit);
+loop.<span class="hljs-built_in">exec</span>();
+
+<span class="hljs-type">const</span> QByteArray data = reply-&gt;<span class="hljs-built_in">readAll</span>();
+reply-&gt;deleteLater();          <span class="hljs-comment">// 别 delete，让 Qt 在安全的时机删</span>
+</code></pre></div></code></pre>
+<p>Qt 4.5 之后 <code>QDialog</code> 多了 <code>open()</code>，弹窗但不进局部循环，<code>window-modal</code> 语义，结果通过信号回传：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QDialog dialog;
+dialog.<span class="hljs-built_in">open</span>();                 <span class="hljs-comment">// 立刻返回，主循环继续转</span>
+QObject::<span class="hljs-built_in">connect</span>(&amp;dialog, &amp;QDialog::finished,
+                 <span class="hljs-keyword">this</span>, &amp;Controller::onDialogClosed);
+</code></pre></div></code></pre>
+<p>三种「暂时跑一下循环」的方式摆在一起：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>方式</th>
+<th>是否新开一层循环</th>
+<th>主要风险</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>processEvents()</code></td>
+<td>不新开，只冲刷当前队列</td>
+<td>重入、调用栈增长</td>
+</tr>
+<tr>
+<td><code>QEventLoop::exec()</code></td>
+<td>新开一层</td>
+<td>延迟删除提前执行、退出条件写漏</td>
+</tr>
+<tr>
+<td><code>QDialog::exec()</code></td>
+<td>新开一层，带模态</td>
+<td>同上，外加对象生命周期误判</td>
+</tr>
+</tbody>
+</table></div><p>嵌套循环本身不是错。错的是在嵌套期间假设外层的对象还活着、状态没变。写局部循环的时候，把它当成一次「别人随时会动我的数据」的窗口，心态就对了。</p>
+<h2 id="十三常见故障与现象" tabindex="-1">十三、常见故障与现象 <a class="header-anchor" href="#十三常见故障与现象"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>九个现场，按「现象 → 根因 → 定位 → 修法」整理。前三条占了实际项目里的大头。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>根因</th>
+<th>修法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>信号发了，槽一次不执行</td>
+<td>接收者线程没循环 / 参数类型没注册 / 对象已死</td>
+<td>补 <code>exec()</code>、<code>qRegisterMetaType()</code>、改用 <code>deleteLater()</code></td>
+</tr>
+<tr>
+<td>槽执行了，线程不对，界面卡住</td>
+<td>接收者归属错了（多半是 QThread 子类对象）</td>
+<td>工作对象 <code>moveToThread</code></td>
+</tr>
+<tr>
+<td>界面间歇性卡死</td>
+<td>槽里干了重活，阻塞了事件循环</td>
+<td>拆块或挪到次线程</td>
+</tr>
+<tr>
+<td>退出时崩在析构</td>
+<td>对象比线程活得久，或线程没停就析构</td>
+<td><code>quit()</code> + <code>wait()</code> 后再销毁</td>
+</tr>
+<tr>
+<td>内存缓慢上涨</td>
+<td><code>postEvent</code> 洪水 / <code>deleteLater</code> 没人执行</td>
+<td>限流、确保循环在跑</td>
+</tr>
+<tr>
+<td>偶尔崩在随机位置</td>
+<td>跨线程直连碰共享数据，或跨线程 delete</td>
+<td>走队列连接，删对象用 <code>deleteLater()</code></td>
+</tr>
+<tr>
+<td>阻塞队列连接卡死</td>
+<td>同线程使用，或接收者没循环</td>
+<td>只跨线程用，且对方有循环</td>
+</tr>
+<tr>
+<td>局部循环之后指针失效</td>
+<td><code>deleteLater()</code> 被嵌套循环提前执行</td>
+<td>别在内层循环期间假设对象还活着</td>
+</tr>
+<tr>
+<td><code>QTimer</code> 到点不响</td>
+<td>所在线程没循环，或 timer 建在别的线程</td>
+<td>在有循环的线程里建</td>
+</tr>
+</tbody>
+</table></div><p><strong>槽不执行</strong>。三种情形，按概率排：接收者线程没有事件循环；参数类型没注册；对象在投递和派发之间被删了。检查只需要一次打印：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">const</span> <span class="hljs-type">bool</span> ok = QObject::<span class="hljs-built_in">connect</span>(&amp;producer, &amp;Producer::ready,
+                                 &amp;consumer, &amp;Consumer::onReady);
+<span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;connected&quot;</span> &lt;&lt; ok
+         &lt;&lt; <span class="hljs-string">&quot;receiver lives in&quot;</span> &lt;&lt; consumer.<span class="hljs-built_in">thread</span>()
+         &lt;&lt; <span class="hljs-string">&quot;loop level&quot;</span> &lt;&lt; consumer.<span class="hljs-built_in">thread</span>()-&gt;<span class="hljs-built_in">loopLevel</span>();
+</code></pre></div></code></pre>
+<p><code>ok</code> 为 false 就是签名不匹配；<code>receiver lives in</code> 指向一个 <code>loopLevel()</code> 为 0 的线程就是没循环；日志里出现 <code>Cannot queue arguments of type 'Job'</code> 就是没注册元类型。</p>
+<p><strong>槽在错误线程</strong>。多线程代码里八成是这么来的：把槽写在 QThread 子类里，然后指望 <code>start()</code> 之后它就在次线程跑。前面三个实验已经证明不是这样。修法不是加锁，是把工作对象挪出去。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>QThread thread;
+Worker worker;                  <span class="hljs-comment">// 独立 QObject，不继承 QThread</span>
+worker.<span class="hljs-built_in">moveToThread</span>(&amp;thread);
+QObject::<span class="hljs-built_in">connect</span>(&amp;controller, &amp;Controller::start, &amp;worker, &amp;Worker::doWork);
+thread.<span class="hljs-built_in">start</span>();
+</code></pre></div></code></pre>
+<p><strong>界面卡死</strong>。<code>QThread::sleep()</code>、<code>waitFor*()</code>、大文件解析、同步数据库查询，任何超过几十毫秒的同步动作都在吃事件循环。判断标准很土：这行代码跑完之前，窗口能不能重绘。</p>
+<p><strong>退出崩溃</strong>。析构顺序是重灾区。线程还在跑的时候销毁它对应的对象，或者 QThread 对象本身在错误的线程里析构，都会炸。</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">class</span> <span class="hljs-title class_">Controller</span> : <span class="hljs-keyword">public</span> QObject
+{
+<span class="hljs-keyword">public</span>:
+    ~<span class="hljs-built_in">Controller</span>() <span class="hljs-keyword">override</span>
+    {
+        m_thread.<span class="hljs-built_in">quit</span>();          <span class="hljs-comment">// 让 exec() 返回</span>
+        m_thread.<span class="hljs-built_in">wait</span>(<span class="hljs-number">3000</span>);      <span class="hljs-comment">// 等 run() 真正结束</span>
+    }
+
+<span class="hljs-keyword">private</span>:
+    QThread m_thread;
+};
+</code></pre></div></code></pre>
+<p><code>quit()</code> 只是给循环发退出请求，<code>wait()</code> 才是等线程收尾。少了 <code>wait()</code>，析构和 <code>run()</code> 并行赛跑。</p>
+<p><strong>内存上涨</strong>。两种来源：事件投递速度超过消费速度，队列无限膨胀；<code>deleteLater()</code> 排进了一个不转的队列。前者监控队列长度，后者检查循环。</p>
+<p><strong>随机崩溃</strong>。跨线程直连、跨线程 <code>delete</code>、对象归属在运行中被改——这类问题不靠猜，靠打印。三个值一摆，路径就出来了：</p>
+<pre><code class="language-cpp"><div class="code-block" data-lang="cpp"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">cpp</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-function"><span class="hljs-type">void</span> <span class="hljs-title">Receiver::onData</span><span class="hljs-params">(<span class="hljs-type">const</span> QByteArray &amp;data)</span>
+</span>{
+    <span class="hljs-built_in">qDebug</span>() &lt;&lt; <span class="hljs-string">&quot;slot in&quot;</span> &lt;&lt; QThread::<span class="hljs-built_in">currentThreadId</span>()
+             &lt;&lt; <span class="hljs-string">&quot;owned by&quot;</span> &lt;&lt; <span class="hljs-built_in">thread</span>()
+             &lt;&lt; <span class="hljs-string">&quot;data size&quot;</span> &lt;&lt; data.<span class="hljs-built_in">size</span>();
+}
+</code></pre></div></code></pre>
+<p><strong>阻塞队列卡死</strong>。两条红线在前面写过：同线程使用必死；接收者没循环也必死。第二种更难发现，因为 <code>connect</code> 不报错，程序就那么静静地挂住。</p>
+<p><strong>野指针</strong>。<code>deleteLater()</code> 之后又开了一层 <code>QDialog::exec()</code> 或 <code>QEventLoop::exec()</code>，对象在内层被删，返回后接着用。</p>
+<h2 id="十四易错点速查" tabindex="-1">十四、易错点速查 <a class="header-anchor" href="#十四易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>十四条，扫一眼对号入座。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>易错点</th>
+<th>症状</th>
+<th>正确做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>以为 QThread 子类的槽在次线程跑</td>
+<td>槽卡住主线程</td>
+<td>工作对象 <code>moveToThread</code>，别继承 QThread</td>
+</tr>
+<tr>
+<td>构造函数里 <code>moveToThread(this)</code></td>
+<td>退出崩溃、无法推理</td>
+<td>整个写法放弃</td>
+</tr>
+<tr>
+<td><code>run()</code> 里 <code>new QObject(this)</code></td>
+<td>启动警告、归属冲突</td>
+<td>不设 parent，或改在 <code>run()</code> 里 <code>new</code></td>
+</tr>
+<tr>
+<td>手写 <code>Qt::DirectConnection</code> 图省事</td>
+<td>跨线程数据竞争，随机崩</td>
+<td>不写第五参数，用默认判定</td>
+</tr>
+<tr>
+<td>覆写 <code>run()</code> 忘了 <code>exec()</code></td>
+<td>队列连接全部静默丢失</td>
+<td>需要收事件就 <code>exec()</code></td>
+</tr>
+<tr>
+<td>自定义类型没 <code>qRegisterMetaType</code></td>
+<td>运行时警告，槽不执行</td>
+<td>首次 connect 前注册一次</td>
+</tr>
+<tr>
+<td>在发射方线程等结果</td>
+<td>界面锁死</td>
+<td>信号回传，或 <code>BlockingQueuedConnection</code></td>
+</tr>
+<tr>
+<td>跨线程 <code>delete</code> 对象</td>
+<td>崩在析构</td>
+<td><code>deleteLater()</code></td>
+</tr>
+<tr>
+<td>在 QThread 构造函数里建大对象</td>
+<td>对象留在主线程</td>
+<td>挪进 <code>run()</code> 或 <code>moveToThread</code></td>
+</tr>
+<tr>
+<td><code>connect</code> 后不管对象生死</td>
+<td>对象死了信号还来</td>
+<td>用带 context 的 <code>connect</code> 重载</td>
+</tr>
+<tr>
+<td><code>processEvents()</code> 满地撒</td>
+<td>重入、栈越叠越深</td>
+<td><code>ExcludeUserInputEvents</code> 加重入保护</td>
+</tr>
+<tr>
+<td>局部 <code>QEventLoop</code> 没退出条件</td>
+<td>逻辑卡死，界面还活着</td>
+<td>配一个超时 <code>singleShot</code> 兜底</td>
+</tr>
+<tr>
+<td>假设 QObject 线程安全</td>
+<td>数据撕裂、偶发崩</td>
+<td>加锁，或按归属隔离访问</td>
+</tr>
+<tr>
+<td>以为 <code>postEvent</code> 是同步的</td>
+<td>顺序错乱、对象提前释放</td>
+<td>记住它只入队，执行在对方线程</td>
+</tr>
+</tbody>
+</table></div><p>这张表里最值得盯的是第一行和第五行。前者是 QThread 误用的总根源，后者是新手最容易踩的静默失败——程序不报错、不崩溃，只是槽永远不执行，然后你怀疑人生。</p>
+<p>把五条钉在工位上：每个线程一个队列；对象归创建它的线程；跨线程走队列连接；判定看接收者不看发送者；接收者没有循环就没有投递。剩下所有现象，都是这五条的推论。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一事件驱动模型" data-toc-target="一事件驱动模型">一、事件驱动模型</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二事件循环在做什么" data-toc-target="二事件循环在做什么">二、事件循环在做什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三事件从哪里来" data-toc-target="三事件从哪里来">三、事件从哪里来</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四事件的产生与分发" data-toc-target="四事件的产生与分发">四、事件的产生与分发</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五qobject-的线程归属" data-toc-target="五qobject-的线程归属">五、QObject 的线程归属</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六thread-与当前线程不是一回事" data-toc-target="六thread-与当前线程不是一回事">六、thread() 与当前线程不是一回事</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七事件队列与跨线程投递" data-toc-target="七事件队列与跨线程投递">七、事件队列与跨线程投递</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八信号槽的跨线程连接" data-toc-target="八信号槽的跨线程连接">八、信号槽的跨线程连接</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九queuedconnection-与-directconnection" data-toc-target="九queuedconnection-与-directconnection">九、QueuedConnection 与 DirectConnection</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十autoconnection-怎么判断" data-toc-target="十autoconnection-怎么判断">十、AutoConnection 怎么判断</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一没有事件循环会怎样" data-toc-target="十一没有事件循环会怎样">十一、没有事件循环会怎样</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二模态对话框与嵌套事件循环" data-toc-target="十二模态对话框与嵌套事件循环">十二、模态对话框与嵌套事件循环</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十三常见故障与现象" data-toc-target="十三常见故障与现象">十三、常见故障与现象</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十四易错点速查" data-toc-target="十四易错点速查">十四、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/事件循环与-QObject-的线程归属/","title":"事件循环与 QObject 的线程归属","url":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/事件循环与-QObject-的线程归属/","type":"current"},{"id":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/QThread-的正确用法：run-与-moveToThread/","title":"QThread 的正确用法：run 与 moveToThread","url":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/QThread-的正确用法：run-与-moveToThread/","type":"neighbor"},{"id":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/线程管理与线程间通信/","title":"线程管理与线程间通信","url":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/线程管理与线程间通信/","type":"neighbor"},{"id":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/自定义事件与定时器/","title":"自定义事件与定时器","url":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/自定义事件与定时器/","type":"neighbor"}],"links":[{"source":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/事件循环与-QObject-的线程归属/","target":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/QThread-的正确用法：run-与-moveToThread/","type":"neighbor"},{"source":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/事件循环与-QObject-的线程归属/","target":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/线程管理与线程间通信/","type":"neighbor"},{"source":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/事件循环与-QObject-的线程归属/","target":"/E.编程语言与框架/08-Qt/05.多线程与事件循环/自定义事件与定时器/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

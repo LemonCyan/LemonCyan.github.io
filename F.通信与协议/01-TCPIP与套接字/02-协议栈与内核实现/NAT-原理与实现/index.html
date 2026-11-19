@@ -1,0 +1,1477 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NAT 原理与实现 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">NAT 原理与实现</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">NAT 原理与实现</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">NAT 原理与实现</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>本篇只讲一件事：NAT 怎么让一堆内网机器共用一个公网地址。</p>
+<p><strong>讲什么</strong>：NAT 到底改了报文的哪个字节；私有地址为什么存在；SNAT 与 DNAT 的方向差别；NAPT 怎么靠端口把一台公网 IP 撑成几千条连接；转换表长什么样；出方向与入方向各自怎么转；NAT 和路由谁先谁后；<code>iptables</code> 里怎么配；<code>MASQUERADE</code> 与 <code>SNAT --to-source</code> 该选哪个；NAT 破坏了什么，打洞为什么难；最后一页易错点。</p>
+<p><strong>不讲什么</strong>：Netfilter 钩子框架本身的实现（<code>NF_HOOK</code>、优先级注册、<code>nf_hook_ops</code>）归「Netfilter」那篇；conntrack 的内核数据结构（<code>nf_conn</code>、哈希桶、扩展区）只在这里提到字段名，不拆源码；IPv6 的 NAT66 不展开；GRE/VXLAN 这类隧道封装里的 NAT 行为不碰。</p>
+<p><strong>跨篇指路</strong>：一个包从网卡进来到 socket 的路径看「数据收发的内核路径」；包在协议栈里被哪些钩子拦下看「Netfilter」；NAT 改完地址后重新查表的那一步看「路由表详解与配置」；按源地址打标记再选出口的玩法看「策略路由与 ping 的执行过程」；网桥上的 ebtables 与 NAT 的边界看「二层桥转发的实现」。</p>
+</blockquote>
+<h2 id="一nat-解决什么问题" tabindex="-1">一、NAT 解决什么问题 <a class="header-anchor" href="#一nat-解决什么问题"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先把场景摆出来。你家路由器后面挂了五台设备，手机、笔记本、电视盒子，地址是 <code>192.168.1.101</code> 到 <code>192.168.1.105</code>。运营商只给了你一个公网地址，<code>221.137.148.209</code>。</p>
+<p>这五台机器要访问 <code>www.example.com</code>。它们发出的 IP 包，源地址写的是 <code>192.168.1.101</code> 这种。这个地址在公网上没有任何意义——全球有无数个局域网在用同一个 <code>192.168.1.101</code>。包发出去，服务器的回包写目的地址 <code>192.168.1.101</code>，骨干网上的路由器一看，这地址我不认识，丢掉。连接建不起来。</p>
+<p>NAT 干的就是这一件事：<strong>在网关把源地址换掉</strong>。换成 <code>221.137.148.209</code> 再发出去。回包自然回到网关，网关再把目的地址换回 <code>192.168.1.101</code>，交给内网那台机器。</p>
+<p>到这儿听着简单。真正的问题是：换地址不是改一个字段那么轻松。</p>
+<h3 id="改的是两个头不是一个" tabindex="-1">改的是两个头，不是一个 <a class="header-anchor" href="#改的是两个头不是一个"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一个 TCP 报文长这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>+------------------+------------------+------------------+
+|      IP 头       |     TCP 头       |      载荷        |
+|  源 IP / 目的 IP |  源端口/目的端口 |                  |
++------------------+------------------+------------------+
+</code></pre></div></code></pre>
+<p>NAT 要改的位置有两处：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>改哪里</th>
+<th>具体字段</th>
+<th>什么时候改</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IP 头</td>
+<td>源 IP 或目的 IP</td>
+<td>SNAT 改源，DNAT 改目的</td>
+</tr>
+<tr>
+<td>传输层头</td>
+<td>源端口或目的端口</td>
+<td>多台内网机抢同一个公网 IP 时必须改</td>
+</tr>
+<tr>
+<td>校验和</td>
+<td>IP 头校验和、TCP/UDP 校验和</td>
+<td>上面两处一改，必须重算</td>
+</tr>
+</tbody>
+</table></div><p>IP 头的校验和只覆盖 IP 头自己，改完地址顺手重算一遍就行，十六位反码求和，几行代码的事。</p>
+<p>麻烦在传输层。TCP 和 UDP 的校验和不是只算自己的头，它算的是一个「伪首部」加整个报文：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>伪首部（12 字节，不随报文发送，只参与校验和计算）
++--------+--------+--------+
+| 源 IP（4 字节）          |
++--------+--------+--------+
+| 目的 IP（4 字节）        |
++--------+--------+--------+
+| 全 0   | 协议号 | TCP长度 |
++--------+--------+--------+
+</code></pre></div></code></pre>
+<p>看见没有，<strong>伪首部里装着源 IP 和目的 IP</strong>。也就是说，只要 NAT 动了 IP 地址，TCP/UDP 的校验和就必然失效，必须重算。同理，只要 NAT 动了端口号，TCP/UDP 头本身变了，也要重算。</p>
+<p>这一条推出来一个结论，是全篇的根：</p>
+<p><strong>NAT 设备必须看得懂传输层。它不能只当一个三层转发器。</strong></p>
+<p>三层转发器只看 IP 头，改完地址重算 IP 校验和就完事，根本不用管后面装的是什么。NAT 不行，它要伸进传输层头里去改端口、去重算校验和。所以 NAT 天然依赖「这个包是 TCP 还是 UDP，头有多长，端口在哪」。</p>
+<h3 id="加密协议为什么过-nat-会出问题" tabindex="-1">加密协议为什么过 NAT 会出问题 <a class="header-anchor" href="#加密协议为什么过-nat-会出问题"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>顺着上面那条推下去，答案自己就浮出来了。</p>
+<p>IPsec 的 ESP 模式，整个传输层头和载荷一起加密。NAT 设备拿到这个包，加密后的字节流在它眼里就是一坨随机数，它找不到 TCP/UDP 头在哪，更找不到端口在哪。端口改不了，校验和也没法重算。</p>
+<p>更硬的一条：ESP 的完整性校验值（ICV）覆盖范围包含 IP 头里的地址字段。NAT 一改地址，接收端算出来的 ICV 和报文里带的对不上，包直接被丢。</p>
+<p>AH 模式更彻底，它连 IP 头都纳入认证范围，过 NAT 必死。</p>
+<p>所以现实里 IPsec 要过 NAT，靠的是 NAT-T（UDP 封装，把 ESP 塞进 UDP 500/4500 端口里），让 NAT 设备能看见一个 UDP 头。这是绕，不是解。</p>
+<p>一句话收束本章：<strong>NAT 的本质是改 IP 头 + 改传输层头 + 重算校验和。改得动的前提是看得见。</strong></p>
+<h2 id="二地址短缺与私有地址" tabindex="-1">二、地址短缺与私有地址 <a class="header-anchor" href="#二地址短缺与私有地址"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>NAT 是被逼出来的。逼它的东西叫 IPv4 地址不够用。</p>
+<p>IPv4 用 4 个字节表示一个地址，1 字节 8 位，所以是 4 × 8 = 32 位。32 位二进制能表示的组合数是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>2^32 = 4294967296
+</code></pre></div></code></pre>
+<p>四十二亿九千四百九十六万七千二百九十六个。这就是 IPv4 的地址总数上限。</p>
+<p>一个地址写成 <code>221.137.148.209</code>，只是为了人看着方便，它实际的二进制是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>221 . 137 . 148 . 209
+11011101.10001001.10010100.11010001
+</code></pre></div></code></pre>
+<p>把点去掉连起来，就是 <code>11011101100010011001010011010001</code>，一个 32 位的整数。点号纯粹是排版，没有技术含义。</p>
+<p>IPv6 是 128 位：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>2^128 = 340282366920938463463374607431768211456
+</code></pre></div></code></pre>
+<p>这个数字大得没边，够用到天荒地老。但 IPv6 的铺开是另一条线的事。在 IPv4 还得继续跑几十年这个前提不变的情况下，剩下的办法只有一个：</p>
+<p><strong>让多台机器共用少量公网地址。</strong></p>
+<p>于是地址被劈成两半：能上公网的路由器认识的，叫公有地址；出了局域网就没人认的，叫私有地址。</p>
+<h3 id="五类地址的划分" tabindex="-1">五类地址的划分 <a class="header-anchor" href="#五类地址的划分"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>IP 地址按第一个字节的高位分成五类：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类别</th>
+<th>地址范围</th>
+<th>默认掩码</th>
+<th>可用地址数</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A 类</td>
+<td>0.0.0.0 – 127.255.255.255</td>
+<td>255.0.0.0</td>
+<td>16777216</td>
+<td>超大型网络</td>
+</tr>
+<tr>
+<td>B 类</td>
+<td>128.0.0.0 – 191.255.255.255</td>
+<td>255.255.0.0</td>
+<td>65536</td>
+<td>中型网络</td>
+</tr>
+<tr>
+<td>C 类</td>
+<td>192.0.0.0 – 223.255.255.255</td>
+<td>255.255.255.0</td>
+<td>256</td>
+<td>小型网络</td>
+</tr>
+<tr>
+<td>D 类</td>
+<td>224.0.0.0 – 239.255.255.255</td>
+<td>无</td>
+<td>无</td>
+<td>组播</td>
+</tr>
+<tr>
+<td>E 类</td>
+<td>240.0.0.0 – 255.255.255.255</td>
+<td>无</td>
+<td>无</td>
+<td>科研保留</td>
+</tr>
+</tbody>
+</table></div><p>A、B、C 三类是能分配给主机用的。D 类专供组播，E 类留作研究，这两类不能当单播地址配到网卡上。</p>
+<p><code>127.0.0.1</code> 单独拎出来说：这是环回地址，永远指向本机，走的是 loopback 接口，包不出网卡。抓包调试本地服务时看到的就是它。</p>
+<h3 id="私有地址的三段" tabindex="-1">私有地址的三段 <a class="header-anchor" href="#私有地址的三段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>私有地址是从 A、B、C 三类里各划走一块，专门留给内网：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类别</th>
+<th>私有地址范围</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A 类</td>
+<td>10.0.0.0 – 10.255.255.255</td>
+<td>只有网络号 10 这一段，一个 /8，容量最大</td>
+</tr>
+<tr>
+<td>B 类</td>
+<td>172.16.0.0 – 172.31.255.255</td>
+<td>占用 172.16 到 172.31 共 16 个 B 类网络号</td>
+</tr>
+<tr>
+<td>C 类</td>
+<td>192.168.0.0 – 192.168.255.255</td>
+<td>占用 192.168.0 到 192.168.255 共 256 个 C 类网络号</td>
+</tr>
+</tbody>
+</table></div><p>这三段地址在全球范围内被无数个局域网反复复用，互不冲突，因为它们从来不出局域网。私有地址不用向任何人申请，随便用。</p>
+<p>对应的，公有地址就是这三段之外的部分：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>1.0.0.0      ~ 9.255.255.255
+11.0.0.0     ~ 126.255.255.255
+128.0.0.0    ~ 172.15.255.255
+172.32.0.0   ~ 191.255.255.255
+192.0.0.0    ~ 192.167.255.255
+192.169.0.0  ~ 223.255.255.255
+</code></pre></div></code></pre>
+<p>可以看出来，这张表就是在 A、B、C 三类的完整范围里，把三段私有地址挖掉之后剩下的部分。公有地址在全球唯一，用了别人的就冲突，所以必须申请。</p>
+<h3 id="为什么内网要用私有地址" tabindex="-1">为什么内网要用私有地址 <a class="header-anchor" href="#为什么内网要用私有地址"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>假设一个网络里有 400 台主机。分一个 C 类网段，256 个地址不够；分一个 B 类网段，65536 个地址，400 台机器用掉 0.6%，剩下的全浪费。这个取舍在地址紧张的年代是不能接受的。</p>
+<p>用私有地址就没这个问题。选哪一段只看内网主机有多少：几十台用 <code>192.168.1.0/24</code>，几百台用 <code>172.16.0.0/16</code>，上千台用 <code>10.0.0.0/8</code>。整个网络对外只共享一个（或少数几个）公网地址。</p>
+<p>再往深一层看，私有地址带来三样东西：</p>
+<ol>
+<li>省地址。几十台甚至几千台机器共用一个公网 IP，把 IPv4 的寿命硬生生拉长了几十年。</li>
+<li>内部结构不外露。外部只能看到网关那一个地址，内网有多少台机器、怎么编址，外面看不到。</li>
+<li>换运营商不用改内网。公网地址变了，内网地址一个都不用动。</li>
+</ol>
+<p>代价也埋在这里，第十章慢慢算。</p>
+<h2 id="三snat-与-dnat" tabindex="-1">三、SNAT 与 DNAT <a class="header-anchor" href="#三snat-与-dnat"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>按改哪个地址分，NAT 只有两种。所有花哨的名字都是在讲这两种的组合。</p>
+<p><strong>SNAT（Source NAT）改源地址。</strong> 内网机器往外发，网关把源地址换成自己的公网地址。这样回包的目的地址就是网关，网关能收到，也能记住该还给谁。</p>
+<p><strong>DNAT（Destination NAT）改目的地址。</strong> 外网请求进来，网关把目的地址换成内网某台服务器的地址。这样包就转进了内网。</p>
+<p>两个方向，一句话记住：</p>
+<p><strong>SNAT 管出去，DNAT 管进来。</strong></p>
+<h3 id="方向对照" tabindex="-1">方向对照 <a class="header-anchor" href="#方向对照"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>SNAT</th>
+<th>DNAT</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>改哪个字段</td>
+<td>源 IP（+ 源端口）</td>
+<td>目的 IP（+ 目的端口）</td>
+</tr>
+<tr>
+<td>方向</td>
+<td>内网 → 外网</td>
+<td>外网 → 内网</td>
+</tr>
+<tr>
+<td>触发时机</td>
+<td>包发出之前</td>
+<td>包进入内网之前</td>
+</tr>
+<tr>
+<td>在 iptables 的位置</td>
+<td><code>POSTROUTING</code></td>
+<td><code>PREROUTING</code></td>
+</tr>
+<tr>
+<td>转换发生点</td>
+<td>路由决策之后</td>
+<td>路由决策之前</td>
+</tr>
+<tr>
+<td>典型用途</td>
+<td>共享上网、数据伪装</td>
+<td>端口映射、负载均衡、透明代理</td>
+</tr>
+<tr>
+<td>回程怎么转</td>
+<td>查表把目的地址改回内网</td>
+<td>查表把源地址改成网关</td>
+</tr>
+</tbody>
+</table></div><h3 id="转换表的方向是反的" tabindex="-1">转换表的方向是反的 <a class="header-anchor" href="#转换表的方向是反的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这是最容易绕晕的一处，单独拎出来讲。</p>
+<p>SNAT 在出方向记下的是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>内网 192.168.1.101:51234  →  公网 221.137.148.209:40001
+</code></pre></div></code></pre>
+<p>回程包进来，目的地址是 <code>221.137.148.209:40001</code>。网关拿这个当键去查表，查出对应的内网地址，把<strong>目的地址</strong>改回去。注意：去的时候改源，回来的时候改目的，改的字段换了。</p>
+<p>DNAT 反过来。入方向记下的是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>公网 221.137.148.209:8080  →  内网 192.168.1.50:80
+</code></pre></div></code></pre>
+<p>回程包从内网服务器发出，源地址是 <code>192.168.1.50:80</code>。网关拿这个当键去查表，把<strong>源地址</strong>改回 <code>221.137.148.209:8080</code> 再发出去。去的时候改目的，回来的时候改源。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th></th>
+<th>去方向改</th>
+<th>回方向改</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SNAT</td>
+<td>源地址</td>
+<td>目的地址</td>
+</tr>
+<tr>
+<td>DNAT</td>
+<td>目的地址</td>
+<td>源地址</td>
+</tr>
+</tbody>
+</table></div><p>记住这张表就够了：<strong>NAT 是一次有状态的、可逆的改写。去方向改哪个字段，回方向就改另一个字段。</strong></p>
+<h3 id="三种-nat-类型" tabindex="-1">三种 NAT 类型 <a class="header-anchor" href="#三种-nat-类型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>按「公网地址怎么分配」再分一层，是三种：</p>
+<p><strong>静态 NAT（Static NAT）</strong>：内网一台主机的私有地址，永久绑定到外网一个合法地址。一对一，固定不变。配置最简单，一台内网主机独占一个公网 IP。</p>
+<p><strong>动态地址 NAT（Pooled NAT）</strong>：外网侧准备一池合法地址，内网主机要出去时，从池里临时借一个，用完还回去。这就是「地址池」。适用于拨号场景，也适用于远程接入——用户连上来时分配一个，断开时释放，留给下一个人用。</p>
+<p><strong>NAPT（Network Address Port Translation）</strong>：把内网地址映射到外网同一个 IP 的不同端口上。多对一。这是家用网关和小型办公网络里跑的那种。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>映射关系</th>
+<th>靠什么区分</th>
+<th>需要几个公网 IP</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>静态 NAT</td>
+<td>一对一，固定</td>
+<td>IP 地址本身</td>
+<td>每台内网机一个</td>
+</tr>
+<tr>
+<td>动态地址 NAT</td>
+<td>一对一时租用</td>
+<td>IP 地址本身</td>
+<td>少于内网机数量</td>
+</tr>
+<tr>
+<td>NAPT</td>
+<td>多对一</td>
+<td>IP 地址 + 端口号</td>
+<td>一个</td>
+</tr>
+</tbody>
+</table></div><p>静态 NAT 和动态地址 NAT 只动 IP 地址，不动端口。NAPT 必须动端口——因为多台内网机挤在同一个公网 IP 后面，光靠 IP 已经分不出谁是谁了。</p>
+<p>静态 NAT 贵，一台内网机吃掉一个公网 IP，地址紧张的年代没人这么用。动态地址 NAT 稍微省一点，但同一时刻能上网的机器数受地址池大小限制。NAPT 一个地址撑起整个局域网，这才是它变成默认选择的原因。</p>
+<h3 id="两个被反复提起的应用" tabindex="-1">两个被反复提起的应用 <a class="header-anchor" href="#两个被反复提起的应用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><strong>数据伪装</strong>：把内网包里的地址改成统一的对外地址，内网主机不直接暴露在公网上。共享上网就是它的副产品——一台机器拨号上网，全家设备借这个连接出去。</p>
+<p><strong>端口转发</strong>：内网主机对外提供服务时，它拿的是私有地址，外网访问不到。必须在网关上做映射，把落到某个公网端口的数据包转给内网那台机器。这是 DNAT 最典型的用法。</p>
+<p>还有三个用法：负载平衡（用 DNAT 把连接重定向到随机选定的服务器）、失效终结（路由器发现关键服务器当机，用 DNAT 把连接转到备份机）、透明代理（把去往互联网的 HTTP 连接重定向到本地代理，缓存数据、过滤请求）。前两个是 DNAT 在四层做分发，第三个是 DNAT 改目的地址把流量拐去代理。原理上都归到前面那张表，只是换了个用法。</p>
+<h2 id="四napt端口复用" tabindex="-1">四、NAPT：端口复用 <a class="header-anchor" href="#四napt端口复用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先看不改端口行不行。</p>
+<p>内网只有一台客户机 <code>192.168.1.101</code> 访问 Web Server。网关做 SNAT，把源地址换成 <code>221.137.148.209</code>，回包回来再改回去。一对一，全程只需要动 IP 地址，端口原样保留，工作正常。</p>
+<p>现在内网有两台，Client A 和 Client B，同时访问同一台 Web Server。两个包都做了 SNAT，源地址都变成 <code>221.137.148.209</code>。服务器回两个包，目的地址都是 <code>221.137.148.209</code>。网关收到，傻了——这两个包该给 A 还是给 B？</p>
+<p>IP 地址这一层的信息已经用完了，区分不出来。</p>
+<p>办法是把端口也纳入转换。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Client A  192.168.1.101:51234  →  221.137.148.209:40001
+Client B  192.168.1.102:51234  →  221.137.148.209:40002
+</code></pre></div></code></pre>
+<p>网关在转换表里加一列端口。回包的目的端口是 <code>40001</code>，查表知道是 A；是 <code>40002</code>，知道是 B。区分开了。</p>
+<p>还有一种情况：两台客户机的源端口恰好一样（上面这个例子就是，都是 <code>51234</code>）。那么 SNAT 的时候，源 IP 要改，源端口也要改，两个字段一起动。改完再重算 TCP 校验和。这就是 NAPT 名字里「Port」的含义——它不只换地址，还换端口。</p>
+<h3 id="端口复用的账" tabindex="-1">端口复用的账 <a class="header-anchor" href="#端口复用的账"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一个公网 IP 能撑多少条连接？理论上，源端口是 16 位，范围 1 到 65535。TCP 和 UDP 的端口空间独立，所以一个 IP 上有 65535 × 2 个可用的映射位。</p>
+<p>实际远达不到这个数。原因有几条：</p>
+<ul>
+<li>一部分端口被系统保留或已被占用（比如网关自己要往外发连接）。</li>
+<li>端口分配要避开还在 TIME_WAIT 状态的旧连接，不能立刻复用。</li>
+<li>每个映射都要占一条 conntrack 表项，表项有上限，内存也有上限。</li>
+<li>同一目标 IP + 目标端口的组合下，端口冲突的概率随连接数上升。</li>
+</ul>
+<p>所以真实设备上，一个公网 IP 撑几千条并发连接是常态，撑几万条要看内存和表容量配置。这个数字因设备而异，跟内核版本、<code>nf_conntrack_max</code> 的设置、内存大小都有关，没有一个通用的常数。</p>
+<h3 id="napt-的位置" tabindex="-1">NAPT 的位置 <a class="header-anchor" href="#napt-的位置"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>NAPT 是使用最普遍的一种转换方式，家用网关（HomeGW）主要就用它。它又分成前面说的 SNAT 和 DNAT 两个方向。</p>
+<p>NAPT 与动态地址 NAT 的差别在这里：动态地址 NAT 给每个内网 IP 分配一个临时的外部 IP，一对一；NAPT 把内部连接映射到外部网络中的<strong>一个单独的 IP 地址</strong>上，同时在该地址上加一个由 NAT 设备选定的端口号。</p>
+<p>在 Internet 上看，所有不同的信息流都像是从同一个 IP 发出来的。这个特性在小型办公室里非常实用：从 ISP 申请一个 IP，多条连接全走 NAPT 出去。</p>
+<p>还有一个细节：许多 SOHO 远程访问设备支持基于 PPP 的动态 IP 地址。这种情况下 ISP 甚至不需要支持 NAPT，多个内网 IP 也能共用一个外部 IP 上 Internet。代价是信道会有一定拥塞，但省下的上网费用和好管理这两点，让 NAPT 依然划算。</p>
+<h2 id="五nat-的转换表" tabindex="-1">五、NAT 的转换表 <a class="header-anchor" href="#五nat-的转换表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>NAT 不是无状态改写。改了源地址就得记住原来是什么，否则回包来了不知道还给谁。这份记忆就是转换表。</p>
+<p>在 Linux 里，这份记忆由 conntrack 子系统维护。它不是 NAT 专用的——防火墙的状态检测也读同一份表。</p>
+<p>一条表项长这样，这是 <code>/proc/net/nf_conntrack</code> 的真实格式：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>tcp 6 431990 ESTABLISHED src=192.168.1.101 dst=202.20.65.4 sport=51234 dport=80
+    src=202.20.65.4 dst=221.137.148.209 sport=80 dport=40001 [ASSURED] mark=0 use=1
+</code></pre></div></code></pre>
+<p>一行里塞了两组四元组：前一组是原始方向（内网机器发起时的样子），后一组是应答方向（经过转换之后，外部看到的样子）。中间那个 <code>6</code> 是协议号（TCP 是 6，UDP 是 17）。<code>ESTABLISHED</code> 是状态，<code>431990</code> 是这条表项还剩多少秒过期。</p>
+<h3 id="表项字段" tabindex="-1">表项字段 <a class="header-anchor" href="#表项字段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>含义</th>
+<th>在本例中的值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>协议</td>
+<td>传输层协议号</td>
+<td>tcp（6）</td>
+</tr>
+<tr>
+<td>状态</td>
+<td>连接所处的阶段</td>
+<td>ESTABLISHED</td>
+</tr>
+<tr>
+<td>超时</td>
+<td>距离过期还剩多少秒</td>
+<td>431990</td>
+</tr>
+<tr>
+<td>原始 src / dst</td>
+<td>内网主机看到的源、目的</td>
+<td>192.168.1.101 / 202.20.65.4</td>
+</tr>
+<tr>
+<td>原始 sport / dport</td>
+<td>内网主机看到的源、目的端口</td>
+<td>51234 / 80</td>
+</tr>
+<tr>
+<td>应答 src / dst</td>
+<td>外部世界看到的源、目的</td>
+<td>202.20.65.4 / 221.137.148.209</td>
+</tr>
+<tr>
+<td>应答 sport / dport</td>
+<td>外部世界看到的源、目的端口</td>
+<td>80 / 40001</td>
+</tr>
+<tr>
+<td>ASSURED</td>
+<td>已确认双向都通过</td>
+<td>有</td>
+</tr>
+<tr>
+<td>mark</td>
+<td>防火墙标记，给策略路由用</td>
+<td>0</td>
+</tr>
+</tbody>
+</table></div><p>查表用的键是<strong>五元组</strong>：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>源 IP、源端口、目的 IP、目的端口、协议号
+</code></pre></div></code></pre>
+<p>为什么是这五个？因为这五个字段唯一确定一条连接。两个包如果五元组完全相同，它们就属于同一条连接，走同一条表项，用同一套转换规则。反过来，任何一个不同，就是另一条连接，要另开一条表项。</p>
+<p>这也解释了四层负载均衡为什么能做到「同一台客户端、同一个 VIP，不同请求分发到不同后端」——靠的是五元组里的端口或协议差异，加上哈希。</p>
+<h3 id="状态与过期" tabindex="-1">状态与过期 <a class="header-anchor" href="#状态与过期"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>conntrack 给连接分了几个状态：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>状态</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>NEW</td>
+<td>只看到去方向的第一个包，还没看到回包</td>
+</tr>
+<tr>
+<td>ESTABLISHED</td>
+<td>两个方向都见过包，连接确认建立</td>
+</tr>
+<tr>
+<td>RELATED</td>
+<td>和已有连接有关联的新连接，比如 FTP 的数据连接、ICMP 差错报文</td>
+</tr>
+<tr>
+<td>INVALID</td>
+<td>不属于任何已知连接，或者报文本身不合法</td>
+</tr>
+<tr>
+<td>UNTRACKED</td>
+<td>明确配置为不跟踪的流量</td>
+</tr>
+</tbody>
+</table></div><p>表项不是永久存在的。每种协议有自己的超时：</p>
+<ul>
+<li>TCP 已建立连接，Linux 的默认值是 432000 秒，也就是 5 天。</li>
+<li>TCP 的 TIME_WAIT、SYN_SENT 这些中间状态，超时短得多。</li>
+<li>UDP 更短，因为没有连接的概念，只能靠「多久没包了就认为结束了」。</li>
+<li>ICMP 的差错报文挂在一个很短的超时上。</li>
+</ul>
+<p>这些值都能通过 <code>sysctl</code> 调，路径在 <code>net.netfilter.nf_conntrack_*_timeout_*</code> 下面。调长能减少表项反复建立的开销，调短能更快回收表空间。哪个合适，看你网关上的连接模式——短连接多的场景，把 TCP 已建立的超时调成 5 天是纯浪费。</p>
+<p>表容量同样可调，<code>net.netfilter.nf_conntrack_max</code>。这个数取多大，取决于内存和并发连接规模，没有一个放之四海皆准的值。表满了会出现什么，看第十二章。</p>
+<h3 id="表为什么必须双向" tabindex="-1">表为什么必须双向 <a class="header-anchor" href="#表为什么必须双向"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>表项里存了两组四元组，不是一组。内网机器发出去的时候，网关按「原始 src + 原始 dst」匹配；回包进来的时候，按「应答 src + 应答 dst」匹配。两个方向的匹配键不同，所以两边都要存。</p>
+<p>这也是 NAT 只能做在连接的第一个包上的原因。第一个包来了，查表查不到，新建一条表项，算出一个映射，把地址改掉。后面同一条连接的包，直接查表命中，照表项里的映射改，不用再跑一遍 NAT 规则。</p>
+<h2 id="六出方向与入方向的转换" tabindex="-1">六、出方向与入方向的转换 <a class="header-anchor" href="#六出方向与入方向的转换"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把前面那个例子完整走一遍。</p>
+<p>拓扑是这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>   私有网络                         NAT 网关                    公共网络
++--------------+                +----------------+           +--------------+
+| 192.168.1.2  |---- 私有口 ----| 192.168.1.1    |           |              |
+|  内网主机     |                |                |           | 202.20.65.4  |
++--------------+                |  202.20.65.5   |---- 公网口 |  Web Server  |
+                                +----------------+           +--------------+
+</code></pre></div></code></pre>
+<p>网关有 2 个网络端口。公网口的地址是统一分配的 <code>202.20.65.5</code>，私网口的地址是保留地址 <code>192.168.1.1</code>。</p>
+<h3 id="出方向改源" tabindex="-1">出方向：改源 <a class="header-anchor" href="#出方向改源"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>内网主机 <code>192.168.1.2</code> 要向公网主机 <code>202.20.65.4</code> 发一个 IP 包。它构造出来的包是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Dst = 202.20.65.4
+Src = 192.168.1.2
+</code></pre></div></code></pre>
+<p>这个包先到网关（因为网关是它的默认路由）。网关做三件事：</p>
+<ol>
+<li>查 conntrack，查不到，新建一条表项。</li>
+<li>把 IP 包的源 IP 换成网关自己的公网 IP。</li>
+<li>重算 IP 头校验和（如果动了端口，还要重算 TCP/UDP 校验和）。</li>
+</ol>
+<p>转发出去的包变成：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Dst = 202.20.65.4
+Src = 202.20.65.5
+</code></pre></div></code></pre>
+<p>这个包里已经不含任何私有网 IP 的信息。</p>
+<h3 id="回方向改目的" tabindex="-1">回方向：改目的 <a class="header-anchor" href="#回方向改目的"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>Web Server 收到请求，构造响应包。它只知道请求来自 <code>202.20.65.5</code>，所以回包是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Dst = 202.20.65.5
+Src = 202.20.65.4
+</code></pre></div></code></pre>
+<p>因为目的地址是网关的公网 IP，这个包会送到网关。网关拿到它，查 conntrack，命中刚才那条表项，知道这条连接对应内网哪台机器，于是把目的 IP 改回去：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Dst = 192.168.1.2
+Src = 202.20.65.4
+</code></pre></div></code></pre>
+<p>然后把包转发到私有网。内网主机收到，看到的是「服务器直接回给我了」，它不知道中间被人改过两次。</p>
+<h3 id="全程变化" tabindex="-1">全程变化 <a class="header-anchor" href="#全程变化"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>阶段</th>
+<th>源 IP</th>
+<th>目的 IP</th>
+<th>谁看到的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>内网主机发出</td>
+<td>192.168.1.2</td>
+<td>202.20.65.4</td>
+<td>内网主机</td>
+</tr>
+<tr>
+<td>网关收到</td>
+<td>192.168.1.2</td>
+<td>202.20.65.4</td>
+<td>网关</td>
+</tr>
+<tr>
+<td>网关转发出去</td>
+<td>202.20.65.5</td>
+<td>202.20.65.4</td>
+<td>公网、Web Server</td>
+</tr>
+<tr>
+<td>服务器响应</td>
+<td>202.20.65.4</td>
+<td>202.20.65.5</td>
+<td>公网、Web Server</td>
+</tr>
+<tr>
+<td>网关收到回包</td>
+<td>202.20.65.4</td>
+<td>202.20.65.5</td>
+<td>网关</td>
+</tr>
+<tr>
+<td>网关转回内网</td>
+<td>202.20.65.4</td>
+<td>192.168.1.2</td>
+<td>内网主机</td>
+</tr>
+</tbody>
+</table></div><p>对通信双方来说，这个转换过程是完全透明的。内网主机始终认为自己在和 <code>202.20.65.4</code> 直接通信，服务器始终认为自己在和 <code>202.20.65.5</code> 通信。</p>
+<h3 id="不做-nat-会怎样" tabindex="-1">不做 NAT 会怎样 <a class="header-anchor" href="#不做-nat-会怎样"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>记住这一点：如果内网主机发出的请求包未经过 NAT，那么 Web Server 收到请求后，回复的响应包中目的地址就是私网 IP 地址，在 Internet 上无法正确送达，导致连接失败。</p>
+<p>原因很直白。私网地址在全球被无数个局域网重复使用，骨干网的路由表里根本没有 <code>192.168.1.0/24</code> 这条路由——它不敢有，因为指向哪个方向都是错的。包到了运营商的设备上，查表查不到，回一个「网络不可达」，然后丢掉。</p>
+<h3 id="入方向请求从外面进来" tabindex="-1">入方向：请求从外面进来 <a class="header-anchor" href="#入方向请求从外面进来"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>入方向和出方向是镜像的，但发起方换了。</p>
+<p>外网某台机器要访问内网的一台 Web 服务器 <code>192.168.1.50:80</code>。它没法直接写这个目的地址，于是写的是网关的公网地址加一个约定好的端口：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Dst = 221.137.148.209:8080
+Src = 203.0.113.7:41200
+</code></pre></div></code></pre>
+<p>网关在 PREROUTING 上撞到这条规则，把目的地址换掉：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Dst = 192.168.1.50:80
+Src = 203.0.113.7:41200
+</code></pre></div></code></pre>
+<p>然后按 <code>192.168.1.50</code> 查路由，转发进内网。服务器看到的是「有人从 <code>203.0.113.7</code> 直接访问我」，它不知道外面还有个网关。</p>
+<p>回包从服务器发出，源是 <code>192.168.1.50:80</code>，目的是 <code>203.0.113.7:41200</code>。网关查表，把源地址改回 <code>221.137.148.209:8080</code>，发到公网。外网客户端收到，认为自己在和 <code>221.137.148.209:8080</code> 通信。</p>
+<h2 id="七nat-与路由的关系" tabindex="-1">七、NAT 与路由的关系 <a class="header-anchor" href="#七nat-与路由的关系"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>NAT 和路由不是两件平行的事，它们有严格的先后顺序，顺序错了就转不通。</p>
+<p>一个包穿过 Linux 协议栈的 NAT 路径是这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>收包
+  ↓
+PREROUTING 钩子   ← conntrack 在这里建表项；DNAT 在这里改目的地址
+  ↓
+路由决策（查路由表）  ← 按「改完之后」的目的地址查
+  ↓
+  ├─ 目的地址是本机 → 交给本地进程（INPUT）
+  └─ 目的地址不是本机 → 转发（FORWARD）
+        ↓
+    POSTROUTING 钩子  ← SNAT / MASQUERADE 在这里改源地址
+        ↓
+      发包
+</code></pre></div></code></pre>
+<p>四条钩子的分工：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>钩子</th>
+<th>在路由之前还是之后</th>
+<th>NAT 在这里干什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PREROUTING</td>
+<td>之前</td>
+<td>DNAT 改目的地址</td>
+</tr>
+<tr>
+<td>INPUT</td>
+<td>之后</td>
+<td>不做 NAT</td>
+</tr>
+<tr>
+<td>FORWARD</td>
+<td>之后</td>
+<td>不做 NAT（过滤在这里）</td>
+</tr>
+<tr>
+<td>POSTROUTING</td>
+<td>之后</td>
+<td>SNAT / MASQUERADE 改源地址</td>
+</tr>
+<tr>
+<td>OUTPUT</td>
+<td>本机发出，路由之后、POSTROUTING 之前</td>
+<td>对本机发起的连接做 DNAT</td>
+</tr>
+</tbody>
+</table></div><h3 id="顺序为什么是这样" tabindex="-1">顺序为什么是这样 <a class="header-anchor" href="#顺序为什么是这样"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>两个方向的原因完全不同。</p>
+<p><strong>DNAT 必须放在路由之前。</strong> 因为它改的是目的地址，而路由决策的依据就是目的地址。如果先查了路由，查出「这个包该从 eth0 转出去」，再去改目的地址，那这个路由结果是按旧地址算的，包就发错地方了。反过来先 DNAT，再查路由，按 <code>192.168.1.50</code> 查出来「从私网口出，下一跳直连」，转发才对。</p>
+<p><strong>SNAT 必须放在路由之后。</strong> 因为它改的是源地址。源地址不参与目的地的选路（除非你用策略路由按源地址匹配，见下一节），所以在哪改都不影响「包往哪发」。但改成什么地址，要看包从哪个口出去——<code>MASQUERADE</code> 就是靠这个：它必须知道出口网卡，才能取到出口网卡的地址。出口是路由算出来的，所以 SNAT 只能等路由算完。</p>
+<p>一句话记：<strong>DNAT 在路由前，因为它改的字段正是路由要用的字段；SNAT 在路由后，因为它要用的信息正是路由算出来的结果。</strong></p>
+<h3 id="改完地址要重新查路由" tabindex="-1">改完地址要重新查路由 <a class="header-anchor" href="#改完地址要重新查路由"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>DNAT 改了目的地址，之前查过的路由结果就作废了。Linux 靠顺序规避：PREROUTING 改完之后，路由查找才真正发生。有一类场景会碰到二次查路由——本机发出的包被 <code>OUTPUT</code> 链上的 DNAT 改了地址（透明代理常这么干），改完得重新查出口，新地址走另一块网卡时路由结果会跟着变。</p>
+<h3 id="策略路由下的坑" tabindex="-1">策略路由下的坑 <a class="header-anchor" href="#策略路由下的坑"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>常规场景里，源地址变了不影响转发。但只要上了策略路由，这条就不成立了。</p>
+<p>策略路由的规则可以按源地址匹配：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ip rule add from 192.168.1.0/24 lookup 100
+</code></pre></div></code></pre>
+<p>意思是「这 24 位的机器，查 100 号路由表」。问题在于，这个匹配发生在<strong>包进入协议栈之后、SNAT 之前</strong>——源地址还是 <code>192.168.1.x</code>，规则能命中。</p>
+<p>如果这个包被转发出去，经过 POSTROUTING 做了 SNAT，源地址变成了 <code>221.137.148.209</code>。这时候再想按源地址匹配，就匹配不上了。</p>
+<p>反过来，如果一条策略路由规则按「公网源地址」匹配，而实际到的包还是内网源地址（还没 SNAT），也匹配不上。</p>
+<p>规则和 NAT 的先后顺序，必须心里有数：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>匹配依据</th>
+<th>在 SNAT 之前还是之后生效</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>源地址（内网段）</td>
+<td>之前，能看到真实源地址</td>
+</tr>
+<tr>
+<td>源地址（公网段）</td>
+<td>之后，只能看到转换后的地址</td>
+</tr>
+<tr>
+<td>目的地址（改过的）</td>
+<td>DNAT 之后，能看到内网真实目的</td>
+</tr>
+<tr>
+<td>fwmark</td>
+<td>看你在哪条链上打的标记，<code>PREROUTING</code> 打的早于 DNAT 之外的一切</td>
+</tr>
+</tbody>
+</table></div><p>多出口的网关最容易翻车：两条宽带，按源地址把不同楼层的机器分流到不同出口。这个场景不能让 NAT 抢在选路之前改源地址，否则分流规则全部失效。正确的做法是把两条出口做成两张路由表，规则里按内网的源地址匹配，NAT 的 <code>-o</code> 参数跟着出口网卡走。</p>
+<h2 id="八iptables-里的-nat" tabindex="-1">八、iptables 里的 NAT <a class="header-anchor" href="#八iptables-里的-nat"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>iptables</code> 把 NAT 规则单独放一张表，叫 <code>nat</code> 表。它有三条链：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>链</th>
+<th>对应钩子</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PREROUTING</code></td>
+<td>路由之前</td>
+<td>DNAT、端口映射、透明代理重定向</td>
+</tr>
+<tr>
+<td><code>POSTROUTING</code></td>
+<td>路由之后</td>
+<td>SNAT、MASQUERADE</td>
+</tr>
+<tr>
+<td><code>OUTPUT</code></td>
+<td>本机发出</td>
+<td>对本机发起的连接做 DNAT</td>
+</tr>
+</tbody>
+</table></div><p>三条链的规则是「谁先匹配谁生效」。同一张链里的规则按顺序从上往下走，命中一条 <code>-j SNAT</code> 或 <code>-j DNAT</code> 就终止，不再往下看。</p>
+<h3 id="先开转发" tabindex="-1">先开转发 <a class="header-anchor" href="#先开转发"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>动手之前，这一条不做，后面配什么都是白配：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>sysctl -w net.ipv4.ip_forward=1
+
+<span class="hljs-built_in">echo</span> <span class="hljs-string">&#x27;net.ipv4.ip_forward = 1&#x27;</span> &gt;&gt; /etc/sysctl.d/99-forward.conf
+sysctl -p /etc/sysctl.d/99-forward.conf
+</code></pre></div></code></pre>
+<p>第一条临时开了，第二段写进文件让它开机还在。<code>ip_forward</code> 关着的时候，内核在路由阶段就把「不是本机的包」判掉，压根走不到 FORWARD 和 POSTROUTING。表现是：规则都配了，<code>iptables -t nat -L</code> 看着好好的，包就是不通，计数器一直是 0。这个坑踩一次就记住了。</p>
+<h3 id="配-snat" tabindex="-1">配 SNAT <a class="header-anchor" href="#配-snat"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>内网 <code>192.168.1.0/24</code> 从 <code>eth0</code> 出去，源地址统一换成那个固定的公网 IP：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>iptables -t nat -A POSTROUTING -s 192.168.1.0/24 -o eth0 -j SNAT --to-source 221.137.148.209
+</code></pre></div></code></pre>
+<p>拆开看：<code>-s</code> 限定内网源段，<code>-o</code> 限定出口网卡，<code>-j SNAT --to-source</code> 指定换成哪个地址。</p>
+<h3 id="配-masquerade" tabindex="-1">配 MASQUERADE <a class="header-anchor" href="#配-masquerade"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>出口是 PPPoE 拨号，每次重拨地址都会变，干脆不写地址，交给它自己取：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>iptables -t nat -A POSTROUTING -s 192.168.1.0/24 -o ppp0 -j MASQUERADE
+</code></pre></div></code></pre>
+<p>不用写地址，它从出口网卡上现取。</p>
+<h3 id="配端口映射" tabindex="-1">配端口映射 <a class="header-anchor" href="#配端口映射"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>把公网的 8080 转到内网 Web 服务器的 80：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 8080 -j DNAT --to-destination 192.168.1.50:80
+</code></pre></div></code></pre>
+<p><code>-i eth0</code> 限定从哪块网卡进来，<code>-p tcp --dport 8080</code> 限定协议和端口，<code>--to-destination</code> 指定转到哪去。</p>
+<h3 id="端口范围一次转一段" tabindex="-1">端口范围一次转一段 <a class="header-anchor" href="#端口范围一次转一段"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>20000 到 20100 这一百个端口整段转给同一台内网机器，端口保持不变：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 20000:20100 -j DNAT --to-destination 192.168.1.50
+</code></pre></div></code></pre>
+<p><code>--to-destination</code> 后面不写端口，就是端口原样保留。要挪端口，写成 <code>--to-destination 192.168.1.50:20000-20100</code> 显式指定一段。</p>
+<h3 id="地址池" tabindex="-1">地址池 <a class="header-anchor" href="#地址池"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>SNAT --to-source</code> 后面可以给一段地址，内核从一个池子里挑：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>iptables -t nat -A POSTROUTING -s 192.168.1.0/24 -o eth0 -j SNAT --to-source 221.137.148.209-221.137.148.215
+</code></pre></div></code></pre>
+<p>这就是「在外部网络中定义一系列合法地址，用动态分配映射到内部网络」那一套。连接少的时候大家共享，连接多的时候摊到不同的公网 IP 上，单个 IP 的端口上限就被绕开了。</p>
+<h3 id="dnat-做四层分发" tabindex="-1">DNAT 做四层分发 <a class="header-anchor" href="#dnat-做四层分发"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>同一个公网端口，按概率分给两台后端：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 80 -m statistic --mode random --probability 0.5 -j DNAT --to-destination 192.168.1.50:80
+iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 80 -j DNAT --to-destination 192.168.1.51:80
+</code></pre></div></code></pre>
+<p>第一条以 50% 概率命中，剩下的落到第二条。这就是「负载平衡」的手工实现。</p>
+<h3 id="本机发出的连接也做-dnat" tabindex="-1">本机发出的连接也做 DNAT <a class="header-anchor" href="#本机发出的连接也做-dnat"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>本机访问 80 端口的流量，拐到本地代理上：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>iptables -t nat -A OUTPUT -p tcp --dport 80 -j DNAT --to-destination 127.0.0.1:3128
+</code></pre></div></code></pre>
+<p>注意落在 <code>OUTPUT</code> 链上。本机进程发出的包不走 PREROUTING，只在 OUTPUT 和 POSTROUTING 出现。透明代理要拦本机流量，就得配在这里。</p>
+<h3 id="看结果" tabindex="-1">看结果 <a class="header-anchor" href="#看结果"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>三个命令，各看一层：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>iptables -t nat -L -n -v
+conntrack -L
+conntrack -L -p tcp --dport 80
+</code></pre></div></code></pre>
+<p>第一条看规则命中了多少包，第二条看 NAT 之后的实际连接，第三条把范围收窄到某个具体端口。</p>
+<p><code>-v</code> 那一列 <code>pkts</code> 和 <code>bytes</code> 是关键。配了规则却不通，先看这里的计数器动不动。不动说明包没走到这条链，问题在路由或转发开关；动了但连接不通，问题在规则写错或者回程被拦。</p>
+<h3 id="只在第一个包上生效" tabindex="-1">只在第一个包上生效 <a class="header-anchor" href="#只在第一个包上生效"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>nat</code> 表的规则不是每个包都跑。连接的第一个包跑一次，之后同一条连接的所有包直接查 conntrack，按表项里的映射改。</p>
+<p>这个特性带来两个后果。</p>
+<p>一，<code>nat</code> 表的计数器不涨，不代表规则没生效。一条长连接跑了一小时，只有开头那一个包计过数。</p>
+<p>二，改规则不影响已经建立的连接。你把 <code>--to-source</code> 从 A 改成 B，已经在表里的连接还是按 A 转，直到超时或者手动清表。要立刻生效：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>conntrack -F
+</code></pre></div></code></pre>
+<p>这个命令会清空整张表，所有连接全部断开重连。生产环境上敲之前想清楚。</p>
+<p><code>nft</code> 时代，NAT 的动作改成 <code>snat to</code> 和 <code>dnat to</code>，挂在 <code>nat</code> 类型的链上，位置的语义不变：<code>prerouting</code> 做 dnat，<code>postrouting</code> 做 snat/masquerade。会了 iptables 那一套，换过去只是语法差异。</p>
+<h2 id="九masquerade-与-snat-的差别" tabindex="-1">九、MASQUERADE 与 SNAT 的差别 <a class="header-anchor" href="#九masquerade-与-snat-的差别"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>两个动作改的都是源地址，结果一样。差别只在一处：<strong>源地址从哪来。</strong></p>
+<p><code>SNAT --to-source</code> 的地址是你在规则里写死的常量。内核建表项时直接读这个值。</p>
+<p><code>MASQUERADE</code> 不带地址。内核建表项时，去查这个包从哪块网卡出去，再取那块网卡当前配的地址，拿它当源地址。</p>
+<p>一个写死，一个现取。</p>
+<h3 id="为什么会有两个" tabindex="-1">为什么会有两个 <a class="header-anchor" href="#为什么会有两个"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>因为家宽的地址是变的。</p>
+<p>PPPoE 拨号，每次重拨运营商给的地址都会变。你在规则里写死 <code>--to-source 221.137.148.209</code>，一重拨，地址变成 <code>221.137.148.211</code>，规则还指着旧地址——包发出去源地址是个不属于你的地址，回包全丢。而且这个错很难查：规则看着在，计数器在涨，就是不通。</p>
+<p><code>MASQUERADE</code> 就没这个问题。重拨之后地址变了，下一条新连接的包进来，它照样去网卡上取当前地址，自动跟上。</p>
+<p>机房里的固定 IP 反过来。地址永远不变，写死最省事，也省掉每次建连接时那次取址动作。所以：</p>
+<p><strong>家宽、PPPoE、动态地址，用 <code>MASQUERADE</code>；机房固定 IP，用 <code>SNAT --to-source</code>。</strong></p>
+<h3 id="差别清单" tabindex="-1">差别清单 <a class="header-anchor" href="#差别清单"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th><code>SNAT --to-source</code></th>
+<th><code>MASQUERADE</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>地址来源</td>
+<td>规则里写死的常量</td>
+<td>出口网卡当前地址</td>
+</tr>
+<tr>
+<td>地址变了</td>
+<td>要改规则，否则全断</td>
+<td>自动跟上，无需干预</td>
+</tr>
+<tr>
+<td><code>-o</code> 出口参数</td>
+<td>建议写，能收窄匹配范围</td>
+<td>必须写，不然不知道去哪取地址</td>
+</tr>
+<tr>
+<td>地址池</td>
+<td>支持一段，<code>--to-source A-B</code></td>
+<td>只取一个地址，不支持池</td>
+</tr>
+<tr>
+<td>每条新连接的开销</td>
+<td>略低，直接读常量</td>
+<td>略高，要先取一次出口地址</td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>机房、云主机、固定 IP 出口</td>
+<td>家宽、PPPoE、4G/5G 路由</td>
+</tr>
+</tbody>
+</table></div><h3 id="性能差在哪儿" tabindex="-1">性能差在哪儿 <a class="header-anchor" href="#性能差在哪儿"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>MASQUERADE</code> 的代价在「每条新连接」上，不在「每个包」上。连接建好之后，后面的包都查 conntrack，不再取地址。所以短连接密集的场景里差距被放大，长连接为主时差距可以忽略。出口是固定 IP 却用了 <code>MASQUERADE</code>，等于每条新连接白花一次取址——这就是「性能略好」的实际含义。</p>
+<h2 id="十nat-破坏了什么" tabindex="-1">十、NAT 破坏了什么 <a class="header-anchor" href="#十nat-破坏了什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>互联网的设计原则叫端到端：网络中间只管转发，两端的任何主机都能直接连任何主机。NAT 把这个原则破了。</p>
+<p>破的方式很具体，一共几条。</p>
+<h3 id="外部连不进内网" tabindex="-1">外部连不进内网 <a class="header-anchor" href="#外部连不进内网"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>内网主机的地址在公网上不可达，外部主动发起的连接根本到不了它。要给外部提供服务，只能在网关上开一个洞——端口映射。这个洞必须提前配好，而且一个服务一个洞。</p>
+<h3 id="p2p-难了" tabindex="-1">P2P 难了 <a class="header-anchor" href="#p2p-难了"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>两台都在 NAT 后面的机器想直连，谁都连不上谁。这是第十一章的话题。</p>
+<h3 id="载荷里带-ip-的协议失效" tabindex="-1">载荷里带 IP 的协议失效 <a class="header-anchor" href="#载荷里带-ip-的协议失效"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>有些协议不老实。它们在应用层载荷里写着 IP 地址和端口，让对端「连这个地址」。</p>
+<p>FTP 的 PORT 模式就是这样：客户端告诉服务器「你来连我 <code>192.168.1.101:50000</code>」。NAT 只改了 IP 头，载荷里那串字符原样过去。服务器照着这个私网地址去连，连不上。</p>
+<p>需要 ALG（Application Level Gateway）来救。ALG 是一个协议感知的旁路模块，它盯着指定端口上的载荷，发现里面有私网地址就改成公网地址，回方向再改回去。Linux 的 <code>nf_nat_ftp</code>、<code>nf_conntrack_ftp</code> 就是干这个的，加载模块之后 FTP 才能过 NAT。</p>
+<p>同一个坑埋着 SIP、H.323、RTSP、以及一堆老的游戏协议。ALG 是补丁，不是方案——它要解析载荷，加密了就废，协议改版就废，端口不标准就废。现在正经的做法是把这些协议换成不把地址写进载荷的版本，或者直接走 TLS 让 ALG 彻底放弃治疗。</p>
+<h3 id="icmp-没有端口" tabindex="-1">ICMP 没有端口 <a class="header-anchor" href="#icmp-没有端口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>ICMP 没有端口号，NAPT 那套「靠端口区分」的办法失效了。Linux 的处理是拿 ICMP 头里的 query id 当端口用。<code>ping</code> 出去的 Echo Request 带一个 id，conntrack 把它当作「端口」记进表项，回包按这个 id 找回来。所以多台内网机器同时 <code>ping</code> 同一个目标，NAT 必须改这个 id，不然分不清。</p>
+<p>ICMP 差错报文（Destination Unreachable、Time Exceeded）更绕：它们本身不发起连接，是「关于某条连接的报错」。里面嵌着触发它的那个原始 IP 头。conntrack 得把内嵌的那个头挖出来，反查表项，才知道这个差错属于哪条连接，然后连内嵌头一起改。Linux 有个 <code>nf_conntrack_icmp</code> 专门处理这件事。</p>
+<h3 id="分片也受影响" tabindex="-1">分片也受影响 <a class="header-anchor" href="#分片也受影响"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>NAT 要改端口，就得看到传输层头。但 IP 分片之后，只有第一片带传输层头，后面几片全是纯数据。后几片过 NAT 时设备找不到端口，只能按 IP 头做映射；同一个内网 IP 上多条连接分到不同端口时，后几片就没法判断自己属于哪条，还原回去的源端口是错的，接收端组装失败。所以很多 NAT 设备干脆对分片做特殊处理，或者直接丢——「大包过 NAT 容易出问题」，根子就在 PMTU 没协商好，中间一分片，NAT 就开始出错。</p>
+<h3 id="汇总" tabindex="-1">汇总 <a class="header-anchor" href="#汇总"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>被破坏的东西</th>
+<th>具体表现</th>
+<th>补救</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>端到端可达</td>
+<td>外部无法主动连内网</td>
+<td>端口映射（DNAT）</td>
+</tr>
+<tr>
+<td>双向发起</td>
+<td>P2P 直连建不起来</td>
+<td>打洞、STUN、TURN</td>
+</tr>
+<tr>
+<td>载荷里的地址</td>
+<td>FTP PORT、SIP、H.323 失效</td>
+<td>ALG，或者换协议</td>
+</tr>
+<tr>
+<td>无端口的协议</td>
+<td>ICMP 没有端口可复用</td>
+<td>用 query id 当端口</td>
+</tr>
+<tr>
+<td>分片报文</td>
+<td>非首片读不到端口</td>
+<td>避免分片，靠 PMTU</td>
+</tr>
+<tr>
+<td>加密载荷</td>
+<td>ESP/AH 校验覆盖地址</td>
+<td>NAT-T 把 ESP 塞进 UDP</td>
+</tr>
+<tr>
+<td>可追溯性</td>
+<td>服务器只看到网关地址</td>
+<td>网关侧记 NAT 日志</td>
+</tr>
+</tbody>
+</table></div><h2 id="十一nat-穿透与打洞" tabindex="-1">十一、NAT 穿透与打洞 <a class="header-anchor" href="#十一nat-穿透与打洞"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>两边都在 NAT 后面的时候，谁也不能先连谁。这是死结吗？</p>
+<p>不是。靠的是 NAT 的一个性质：<strong>表项是「谁先出去，就为谁开一条回来的路」。</strong></p>
+<p>A 要连 B。A 先朝 B 的公网映射地址发一个包。这个包会被 A 的 NAT 拦下来（因为对端地址没在表里），但它同时在 A 的 NAT 上建了一条表项，记下「A 的内网地址 ↔ A 的公网端口，对端是 B 的公网地址」。从这一刻起，从 B 的方向发回 A 的包就能穿过 A 的 NAT 了。</p>
+<p>B 那边做同样的动作。两边各朝对方发几个包，两边的表项都建好，路就通了。这就是打洞。</p>
+<p>前提只有一个：<strong>双方得先知道对方的公网映射地址</strong>。这个信息靠第三方服务器给，那个服务器叫 STUN。</p>
+<h3 id="四种-nat-行为" tabindex="-1">四种 NAT 行为 <a class="header-anchor" href="#四种-nat-行为"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>打洞能不能成，取决于 NAT 有多「严」。按严格程度分四类：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>类型</th>
+<th>行为</th>
+<th>打洞难度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全锥形（Full Cone）</td>
+<td>内网某地址端口映射到一个公网端口后，任何外部地址都能通过这个端口进来</td>
+<td>最容易</td>
+</tr>
+<tr>
+<td>地址受限锥形（Restricted Cone）</td>
+<td>只有内网先主动发过包的那个外部 <strong>IP</strong> 才能进来</td>
+<td>容易</td>
+</tr>
+<tr>
+<td>端口受限锥形（Port Restricted Cone）</td>
+<td>只有内网先主动发过包的那个外部 <strong>IP + 端口</strong> 才能进来</td>
+<td>中等</td>
+</tr>
+<tr>
+<td>对称 NAT（Symmetric）</td>
+<td>每条新连接换一个新的公网端口，同一个内网端口对不同目标是不同映射</td>
+<td>很难</td>
+</tr>
+</tbody>
+</table></div><p>对称 NAT 是打洞的死敌。A 通过 STUN 服务器知道了自己的映射端口是 40001，这个 40001 只对 STUN 服务器成立。A 换成朝 B 发包，NAT 给它换了个 40002。B 拿到 40001 去打，打不进去。两边互相拿到的都是过期信息。</p>
+<p>家用宽带大多是锥形（前三种之一），对称 NAT 主要出现在企业网络、部分移动网络和云环境里。</p>
+<h3 id="stunturnice-三个角色" tabindex="-1">STUN、TURN、ICE 三个角色 <a class="header-anchor" href="#stunturnice-三个角色"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>名字</th>
+<th>干的事</th>
+<th>什么时候用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>STUN</td>
+<td>告诉客户端「你在公网上看起来是 <code>1.2.3.4:40001</code>」</td>
+<td>拿到自己的公网映射地址</td>
+</tr>
+<tr>
+<td>TURN</td>
+<td>一个中继服务器，双方都把包发给它，由它转发</td>
+<td>打洞失败时兜底</td>
+</tr>
+<tr>
+<td>ICE</td>
+<td>把 STUN 和 TURN 的候选地址全试一遍，挑能通的那条</td>
+<td>实际部署时的统一框架</td>
+</tr>
+</tbody>
+</table></div><p>ICE 的工作方式很朴素：把所有能想到的地址对都列出来（本机地址、STUN 拿到的公网映射、TURN 中继地址），两两组合逐个试连通性，谁先通就用谁。先试直连，不通再降级到中继。WebRTC 里的音视频通话就是这个流程。</p>
+<p>代价也得说清楚：走 TURN 中继，带宽全压在服务器上，延迟还多一跳。所以能打洞成功就是省钱。TCP 打洞比 UDP 难得多，因为 TCP 的状态机不接受「凭空来一个包就算连上」，而且 NAT 对 TCP 表项的超时管得更严。实际工程里基本是 UDP 打洞，TCP 走中继。</p>
+<h2 id="十二易错点速查" tabindex="-1">十二、易错点速查 <a class="header-anchor" href="#十二易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>最后把踩过的坑堆在这儿，配规则之前扫一眼。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>根因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>规则全配了，包就是不通，计数器为 0</td>
+<td><code>net.ipv4.ip_forward</code> 是 0</td>
+<td><code>sysctl -w net.ipv4.ip_forward=1</code></td>
+</tr>
+<tr>
+<td>DNAT 配了，外网能连进来，内网自己用公网地址访问不了</td>
+<td>回程经过网关但没做 SNAT，服务器直接回给内网客户端，源地址对不上</td>
+<td>加一条 hairpin NAT（对 <code>-s 内网 -d 内网</code> 的流量也做 SNAT）</td>
+</tr>
+<tr>
+<td>端口映射生效了，但只有第一个包过规则</td>
+<td><code>nat</code> 表只处理连接首包，后续走 conntrack</td>
+<td>属正常行为，别指望计数器跟着涨</td>
+</tr>
+<tr>
+<td>改了 <code>--to-source</code>，老连接还是旧地址</td>
+<td>已在 conntrack 表里的表项不重算</td>
+<td><code>conntrack -F</code> 清表（会断所有连接）</td>
+</tr>
+<tr>
+<td>重拨之后全网断</td>
+<td>用了 <code>SNAT --to-source</code> 写死了旧地址</td>
+<td>换 <code>MASQUERADE</code>，或者脚本里跟着改规则</td>
+</tr>
+<tr>
+<td>多出口网关，分流规则失效</td>
+<td>按源地址匹配的规则和 SNAT 抢顺序</td>
+<td>规则看内网源地址，NAT 的 <code>-o</code> 跟出口走</td>
+</tr>
+<tr>
+<td>FTP 能登录不能列目录</td>
+<td>PORT 模式把私网地址写进载荷</td>
+<td>加载 <code>nf_conntrack_ftp</code> / <code>nf_nat_ftp</code></td>
+</tr>
+<tr>
+<td>大包传输失败，小包正常</td>
+<td>分片之后非首片没有端口信息</td>
+<td>修 MTU / PMTU，别让中间设备分片</td>
+</tr>
+<tr>
+<td>内网两台机器同时 ping 同一目标，一台不通</td>
+<td>没开 ICMP 的 id 转换</td>
+<td>加载 <code>nf_conntrack_icmp</code></td>
+</tr>
+<tr>
+<td>conntrack 表满，新连接全丢</td>
+<td><code>nf_conntrack_max</code> 太小，或者短连接堆积</td>
+<td>调大上限，缩短 <code>nf_conntrack_tcp_timeout_*</code></td>
+</tr>
+<tr>
+<td>抓包看内网 IP 出现在公网上</td>
+<td>抓包点选错了，或者真没做 NAT</td>
+<td>在网关两侧分别抓，对比源地址</td>
+</tr>
+<tr>
+<td>服务器日志里全是同一个 IP</td>
+<td>这是 NAT 的正常结果</td>
+<td>让网关把源端口和真实源地址一起记日志</td>
+</tr>
+</tbody>
+</table></div><p><strong>一，不通的时候先判断「包到没到 NAT」。</strong> 在网关内网口和外网口各抓一次。两个口都有包，是转换或回程的问题；只有内网口有，是规则没匹配上；两个口都没有，问题在更前面（路由、转发开关、ARP）。</p>
+<p><strong>二，永远记住 NAT 是有状态的。</strong> 去方向怎么改，回方向就照着表反着改。表项在，连接就在；表项没了，连接就断。所有「莫名其妙断流」的问题，先怀疑表项超时或者被冲掉。</p>
+<p>NAT 这一层没有魔法。它做的就是改两个头的字段，重算校验和，再记住自己改了什么。把这四句话记住，剩下的都是细节。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一nat-解决什么问题" data-toc-target="一nat-解决什么问题">一、NAT 解决什么问题</a>
+                    
+                    <a class="toc-item toc-lv3" href="#改的是两个头不是一个" data-toc-target="改的是两个头不是一个">改的是两个头，不是一个</a>
+                    
+                    <a class="toc-item toc-lv3" href="#加密协议为什么过-nat-会出问题" data-toc-target="加密协议为什么过-nat-会出问题">加密协议为什么过 NAT 会出问题</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二地址短缺与私有地址" data-toc-target="二地址短缺与私有地址">二、地址短缺与私有地址</a>
+                    
+                    <a class="toc-item toc-lv3" href="#五类地址的划分" data-toc-target="五类地址的划分">五类地址的划分</a>
+                    
+                    <a class="toc-item toc-lv3" href="#私有地址的三段" data-toc-target="私有地址的三段">私有地址的三段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#为什么内网要用私有地址" data-toc-target="为什么内网要用私有地址">为什么内网要用私有地址</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三snat-与-dnat" data-toc-target="三snat-与-dnat">三、SNAT 与 DNAT</a>
+                    
+                    <a class="toc-item toc-lv3" href="#方向对照" data-toc-target="方向对照">方向对照</a>
+                    
+                    <a class="toc-item toc-lv3" href="#转换表的方向是反的" data-toc-target="转换表的方向是反的">转换表的方向是反的</a>
+                    
+                    <a class="toc-item toc-lv3" href="#三种-nat-类型" data-toc-target="三种-nat-类型">三种 NAT 类型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#两个被反复提起的应用" data-toc-target="两个被反复提起的应用">两个被反复提起的应用</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四napt端口复用" data-toc-target="四napt端口复用">四、NAPT：端口复用</a>
+                    
+                    <a class="toc-item toc-lv3" href="#端口复用的账" data-toc-target="端口复用的账">端口复用的账</a>
+                    
+                    <a class="toc-item toc-lv3" href="#napt-的位置" data-toc-target="napt-的位置">NAPT 的位置</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五nat-的转换表" data-toc-target="五nat-的转换表">五、NAT 的转换表</a>
+                    
+                    <a class="toc-item toc-lv3" href="#表项字段" data-toc-target="表项字段">表项字段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#状态与过期" data-toc-target="状态与过期">状态与过期</a>
+                    
+                    <a class="toc-item toc-lv3" href="#表为什么必须双向" data-toc-target="表为什么必须双向">表为什么必须双向</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六出方向与入方向的转换" data-toc-target="六出方向与入方向的转换">六、出方向与入方向的转换</a>
+                    
+                    <a class="toc-item toc-lv3" href="#出方向改源" data-toc-target="出方向改源">出方向：改源</a>
+                    
+                    <a class="toc-item toc-lv3" href="#回方向改目的" data-toc-target="回方向改目的">回方向：改目的</a>
+                    
+                    <a class="toc-item toc-lv3" href="#全程变化" data-toc-target="全程变化">全程变化</a>
+                    
+                    <a class="toc-item toc-lv3" href="#不做-nat-会怎样" data-toc-target="不做-nat-会怎样">不做 NAT 会怎样</a>
+                    
+                    <a class="toc-item toc-lv3" href="#入方向请求从外面进来" data-toc-target="入方向请求从外面进来">入方向：请求从外面进来</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七nat-与路由的关系" data-toc-target="七nat-与路由的关系">七、NAT 与路由的关系</a>
+                    
+                    <a class="toc-item toc-lv3" href="#顺序为什么是这样" data-toc-target="顺序为什么是这样">顺序为什么是这样</a>
+                    
+                    <a class="toc-item toc-lv3" href="#改完地址要重新查路由" data-toc-target="改完地址要重新查路由">改完地址要重新查路由</a>
+                    
+                    <a class="toc-item toc-lv3" href="#策略路由下的坑" data-toc-target="策略路由下的坑">策略路由下的坑</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八iptables-里的-nat" data-toc-target="八iptables-里的-nat">八、iptables 里的 NAT</a>
+                    
+                    <a class="toc-item toc-lv3" href="#先开转发" data-toc-target="先开转发">先开转发</a>
+                    
+                    <a class="toc-item toc-lv3" href="#配-snat" data-toc-target="配-snat">配 SNAT</a>
+                    
+                    <a class="toc-item toc-lv3" href="#配-masquerade" data-toc-target="配-masquerade">配 MASQUERADE</a>
+                    
+                    <a class="toc-item toc-lv3" href="#配端口映射" data-toc-target="配端口映射">配端口映射</a>
+                    
+                    <a class="toc-item toc-lv3" href="#端口范围一次转一段" data-toc-target="端口范围一次转一段">端口范围一次转一段</a>
+                    
+                    <a class="toc-item toc-lv3" href="#地址池" data-toc-target="地址池">地址池</a>
+                    
+                    <a class="toc-item toc-lv3" href="#dnat-做四层分发" data-toc-target="dnat-做四层分发">DNAT 做四层分发</a>
+                    
+                    <a class="toc-item toc-lv3" href="#本机发出的连接也做-dnat" data-toc-target="本机发出的连接也做-dnat">本机发出的连接也做 DNAT</a>
+                    
+                    <a class="toc-item toc-lv3" href="#看结果" data-toc-target="看结果">看结果</a>
+                    
+                    <a class="toc-item toc-lv3" href="#只在第一个包上生效" data-toc-target="只在第一个包上生效">只在第一个包上生效</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九masquerade-与-snat-的差别" data-toc-target="九masquerade-与-snat-的差别">九、MASQUERADE 与 SNAT 的差别</a>
+                    
+                    <a class="toc-item toc-lv3" href="#为什么会有两个" data-toc-target="为什么会有两个">为什么会有两个</a>
+                    
+                    <a class="toc-item toc-lv3" href="#差别清单" data-toc-target="差别清单">差别清单</a>
+                    
+                    <a class="toc-item toc-lv3" href="#性能差在哪儿" data-toc-target="性能差在哪儿">性能差在哪儿</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十nat-破坏了什么" data-toc-target="十nat-破坏了什么">十、NAT 破坏了什么</a>
+                    
+                    <a class="toc-item toc-lv3" href="#外部连不进内网" data-toc-target="外部连不进内网">外部连不进内网</a>
+                    
+                    <a class="toc-item toc-lv3" href="#p2p-难了" data-toc-target="p2p-难了">P2P 难了</a>
+                    
+                    <a class="toc-item toc-lv3" href="#载荷里带-ip-的协议失效" data-toc-target="载荷里带-ip-的协议失效">载荷里带 IP 的协议失效</a>
+                    
+                    <a class="toc-item toc-lv3" href="#icmp-没有端口" data-toc-target="icmp-没有端口">ICMP 没有端口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#分片也受影响" data-toc-target="分片也受影响">分片也受影响</a>
+                    
+                    <a class="toc-item toc-lv3" href="#汇总" data-toc-target="汇总">汇总</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一nat-穿透与打洞" data-toc-target="十一nat-穿透与打洞">十一、NAT 穿透与打洞</a>
+                    
+                    <a class="toc-item toc-lv3" href="#四种-nat-行为" data-toc-target="四种-nat-行为">四种 NAT 行为</a>
+                    
+                    <a class="toc-item toc-lv3" href="#stunturnice-三个角色" data-toc-target="stunturnice-三个角色">STUN、TURN、ICE 三个角色</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二易错点速查" data-toc-target="十二易错点速查">十二、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","title":"NAT 原理与实现","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","type":"current"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","title":"Linux 网络协议栈的架构与分层","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","title":"Netfilter 与 hook 点","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","title":"Netlink：内核态与用户态通信","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-原理与配置/","title":"VLAN 原理与配置","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-原理与配置/","type":"neighbor"}],"links":[{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-原理与配置/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

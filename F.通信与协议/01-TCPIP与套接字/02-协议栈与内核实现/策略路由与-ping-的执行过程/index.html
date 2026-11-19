@@ -1,0 +1,1712 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>策略路由与 ping 的执行过程 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">策略路由与 ping 的执行过程</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/策略路由与-ping-的执行过程/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">策略路由与 ping 的执行过程</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">策略路由与 ping 的执行过程</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>这一篇讲两件事：路由的进阶面——按规则选表；以及一个具体的包——<code>ping</code>——从发出到回来的完整旅程。</p>
+<p><strong>讲什么</strong>：普通路由的局限；策略路由的两个要素（规则与表）；<code>ip rule</code> 的优先级与选择器；自定义路由表的落地方式；多出口分流、源地址路由、VPN 分流的实战配法；<code>ping</code> 从应用层到 ICMP、到路由查询、到 ARP、到逐跳转发、再回到 Echo Reply 的全链路；以及从 <code>ping</code> 的输出反推故障点的方法。</p>
+<p><strong>不讲什么</strong>：单张路由表的字段含义与最长前缀匹配的基础，在「路由表详解与配置」；NAT 的转换表与 conntrack 在「NAT 原理与实现」；Netfilter 的五个 hook 点与优先级在「Netfilter 与 hook 点」；FIB 的 LC-trie 结构与路由缓存的源码，这里一句都不展开。</p>
+<p><strong>跨篇指路</strong>：一个包从网卡进来到 socket 的完整路径看「数据收发的内核路径」；二层怎么按 MAC 转发看「二层桥转发的实现」；<code>netif_receive_skb()</code> 与 <code>dev_queue_xmit()</code> 在哪儿被调用看「数据收发的内核路径」；内核态下发路由与规则的 Netlink 消息（<code>RTM_NEWROUTE</code>、<code>RTM_NEWRULE</code>）看「Netlink：内核态与用户态通信」；ARP 报文格式看「网络协议基础：TCP、UDP、ARP 与 PPP」；VLAN 子接口上的路由看「VLAN 原理与配置」；ICMP 报文的抓包分析看「Wireshark 实战与报文头分析」。</p>
+</blockquote>
+<h2 id="一普通路由的局限" tabindex="-1">一、普通路由的局限 <a class="header-anchor" href="#一普通路由的局限"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先回顾普通路由长什么样。内核里平常只有一张表在干活，叫 <code>main</code>。查表只有一把钥匙：目的地址。拿到一个目的 IP，跟表里每条路由的掩码做按位与，能盖住这个 IP 的算匹配，匹配的里面挑前缀最长的那条，用它的下一跳和出接口把包送出去。没有一条匹配就落默认路由，默认路由也没有，包丢掉。</p>
+<p>这套逻辑在「一台路由器只管把包往正确的方向扔」的场景里没问题。它的设计前提很硬：<strong>选路的唯一依据是包要去哪儿</strong>。</p>
+<p>现实里的需求经常不认这个前提。下面四种情况，<code>main</code> 表一条都表达不了。</p>
+<p>第一种，一台机器两个运营商出口。电信的线走电信的网关，联通的线走联通的网关，可是这两条线的下一跳都是同一个目的地址段。你想按「谁的流量」来分，而不是按「去哪儿」来分。</p>
+<p>第二种，内网走专线，公网走宽带。你需要在同一台机器上放两条默认路由，一条指专线网关，一条指宽带网关。问题是默认路由就一条 <code>0.0.0.0/0</code>，普通路由表里再塞一条，两条互相比 metric，谁小谁赢，跟你「内网走专线」的意图没有半点关系。</p>
+<p>第三种，拒绝某段地址。普通路由表的动作只有一种：转发。想丢包只能用不可达的下一跳去凑，凑出来的效果是一个 ICMP 不可达，跟「明确拒绝」不是一回事。</p>
+<p>第四种，VPN 分流。只有特定进程、特定端口的流量走隧道，其余走物理网卡。目的地址相同，端口不同，普通路由表连端口这个概念都没有。</p>
+<p>问题的根子只有一句话：<strong>普通路由表只有一个索引维度</strong>。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ ip route
+default via 192.168.1.1 dev eth0 proto static metric 100
+192.168.1.0/24 dev eth0 proto kernel scope <span class="hljs-built_in">link</span> src 192.168.1.10
+</code></pre></div></code></pre>
+<p>看这张表。<code>default</code> 只有一条。想加第二条，内核允许，但它跟第一条是「同一件事的两个备选」，比的是 metric，不是你的业务意图。你要表达「192.168.1.0/24 的流量走专线，其余走宽带」，这张表做不到。</p>
+<p>改成两条默认路由的写法是这样，效果是错的：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 看起来分了流，实际两条默认路由还是在比 metric</span>
+ip route add default via 10.0.0.1 dev eth1 metric 200
+</code></pre></div></code></pre>
+<p>内核会把 <code>10.0.0.1</code> 那条当备用，主的那条一断才切过去。这叫作浮动静态路由，不是分流。</p>
+<p>策略路由要解决的就是这件事。它把「查一张表」换成「先按规则逐条匹配，命中哪条就查哪张表」。表可以有多张，规则可以按源地址、目的地址、防火墙标记、入接口来写。这句话是整篇的骨架，后面所有命令都是在给它加细节。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>维度</th>
+<th>普通路由</th>
+<th>策略路由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>决策入口</td>
+<td>目的地址进，最长前缀匹配</td>
+<td>先匹配规则链，再在命中的表里做最长前缀匹配</td>
+</tr>
+<tr>
+<td>用几张表</td>
+<td>实际只用到 <code>main</code> 一张</td>
+<td>最多 255 张，可多张并用</td>
+</tr>
+<tr>
+<td>按源地址分流</td>
+<td>做不到</td>
+<td>能，<code>from</code> 选择器</td>
+</tr>
+<tr>
+<td>按防火墙标记分流</td>
+<td>做不到</td>
+<td>能，<code>fwmark</code> 选择器</td>
+</tr>
+<tr>
+<td>按入接口分流</td>
+<td>做不到</td>
+<td>能，<code>iif</code> / <code>dev</code> 选择器</td>
+</tr>
+<tr>
+<td>表里查不到时</td>
+<td>落默认路由，落空才不可达</td>
+<td>命中规则即终结，表里没有就失败</td>
+</tr>
+<tr>
+<td>配置命令</td>
+<td><code>ip route</code></td>
+<td><code>ip rule</code> 加 <code>ip route ... table N</code></td>
+</tr>
+<tr>
+<td>典型场景</td>
+<td>单出口转发</td>
+<td>多出口、源地址路由、VPN 分流、流量工程</td>
+</tr>
+</tbody>
+</table></div><h2 id="二策略路由的两个要素规则与表" tabindex="-1">二、策略路由的两个要素：规则与表 <a class="header-anchor" href="#二策略路由的两个要素规则与表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>策略路由就两个零件。一个是<strong>表</strong>，装路由条目；一个是规则，决定什么样的包去看哪张表。搞清这两个零件各自是什么、怎么对上，策略路由就没有暗角了。</p>
+<p>先说表。</p>
+<p>Linux 最多支持 255 张路由表，每张表有一个 table id 和一个 table name。id 是数字，给内核看；name 是字符串，给人看。系统内置了四张：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>table id</th>
+<th>table name</th>
+<th>用途</th>
+<th>能不能改</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>无</td>
+<td>系统保留</td>
+<td>不能</td>
+</tr>
+<tr>
+<td>255</td>
+<td><code>local</code></td>
+<td>本地接口地址、广播地址、NAT 地址</td>
+<td>系统自动维护，管理员不直接改</td>
+</tr>
+<tr>
+<td>254</td>
+<td><code>main</code></td>
+<td>没指定表的路由全落这里</td>
+<td>能</td>
+</tr>
+<tr>
+<td>253</td>
+<td><code>default</code></td>
+<td>默认路由</td>
+<td>能</td>
+</tr>
+</tbody>
+</table></div><p><code>local</code> 表这张要单独说一句。本机所有接口上的 IP、该网段的广播地址、NAT 用到的地址，都挂在这张表里。它的作用是让内核对「发给自己的包」一眼认出来，直接上交本机协议栈，而不是往外转发。这张表由内核维护，你别去动它。规则的 <code>pref 0</code> 就是指向它，而且是第一顺位——原因就在这儿：任何包在讨论「往哪儿转」之前，先得确认「是不是给我的」。</p>
+<p><code>main</code> 表是平时打交道最多的那张。这里有个容易忽略的细节：旧工具 <code>route</code> 加的路由进 <code>main</code> 表；<code>ip route</code> 加路由时不指明表，也进 <code>main</code> 表；<code>ip route list</code>、<code>route -n</code>、<code>netstat -rn</code> 这三条命令看到的，全都是 <code>main</code> 表里的记录。所以你在这些命令的输出里永远看不到策略路由的其他表，得显式指定表号才能看见。</p>
+<p><code>default</code> 表按设计是放默认路由的，实际很少往里单独放东西。<code>main</code> 表里那条 <code>default</code> 记录已经够用了。</p>
+<p>表的数量上限是 255，不是因为 id 只能 0 到 255 用完，而是这个值本身就是分配器的上限。你完全可以只用两张、三张。<strong>表不需要提前「创建」</strong>——<code>ip route add ... table 100</code> 一敲，内核就给你建好了这张表。往 <code>/etc/iproute2/rt_tables</code> 里写一行映射，纯粹是为了后续命令里能写名字而不是数字。</p>
+<p>再说规则。</p>
+<p>一条规则（rule）就三个信息：</p>
+<ol>
+<li><strong>优先级</strong>，字段叫 <code>pref</code>，数字越小越先匹配。</li>
+<li><strong>条件</strong>，也就是选择器，满足什么条件的包归这条规则管。</li>
+<li><strong>路由表</strong>，条件满足之后去查哪张表。</li>
+</ol>
+<p>内核启动时会为规则库配三条默认规则：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>0:      from all lookup local
+32766:  from all lookup main
+32767:  from all lookup default
+</code></pre></div></code></pre>
+<p>三条的语义逐条看：</p>
+<p><code>rule 0</code>，匹配任何条件，查 <code>local</code> 表。这条非常特殊，既不能删也不能覆盖。它是内核对「这个包是不是发给我的」的第一道判断，位置必须最前。</p>
+<p><code>rule 32766</code>，匹配任何条件，查 <code>main</code> 表。这是真正干活的那条，你可以删，也可以用别的规则把它盖住。</p>
+<p><code>rule 32767</code>，匹配任何条件，查 <code>default</code> 表。前面所有规则都没匹配上的包，最后落到这里。这条也能删。</p>
+<p>把机制画成一条链，就是下面这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>数据包进入路由决策
+  │
+  ├─ pref 0      from all          → lookup local     命中即返回
+  ├─ pref 100    from 10.0.0.0/8   → lookup 100       命中即返回
+  ├─ pref 32766  from all          → lookup main      命中即返回
+  └─ pref 32767  from all          → lookup default   命中即返回
+</code></pre></div></code></pre>
+<p>规则是<strong>按 pref 升序逐条试</strong>的，不是一次全算完再挑。试到第一条选择器匹配的，就执行它的动作，动作做完决策结束。这里没有「回头再试下一条」这回事。</p>
+<p>规则和表的关系有三点要说清：</p>
+<ul>
+<li>多条规则可以指向同一张表。表是共享的，规则是各自的入口。</li>
+<li>一张表可以没有任何规则指向它。这时候它是个死表，路由条目还在，但永远查不到。</li>
+<li>管理员把指向某张表的所有规则都删了，这张表不会被立刻删除，它会一直存在，直到表里的路由记录被清空。</li>
+</ul>
+<p>最后这点常被误解。有人删完规则发现 <code>ip route show table 100</code> 还能看到条目，以为没删干净。其实规则和表是两套独立的东西，删规则不影响表。</p>
+<p><code>ip rule</code> 是操作规则的命令，用法是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Usage: ip rule [ list | add | del ] SELECTOR ACTION
+SELECTOR := [ from PREFIX ] [ to PREFIX ] [ tos TOS ]
+            [ dev STRING ] [ pref NUMBER ] [ fwmark MARK ]
+ACTION   := [ table TABLE_ID ] [ nat ADDRESS ]
+            [ prohibit | reject | unreachable ]
+            [ flowid CLASSID ]
+TABLE_ID := [ local | main | default | new | NUMBER ]
+</code></pre></div></code></pre>
+<p><code>TABLE_ID</code> 里的 <code>new</code> 是个特殊值，意思是「给我新建一张表」，日常几乎用不上，知道有这个东西就行。剩下 <code>local</code>、<code>main</code>、<code>default</code> 三个名字对应 255、254、253，其余写数字。</p>
+<p><code>ip rule</code> 配出来的规则只在内存里，机器一重启就没了。要持久化，得写进配置文件，或者塞进 systemd/network 的启动脚本里。老派做法是放 <code>/etc/sysconfig/network-scripts/rule-ethX</code>，这点第五章细说。</p>
+<h2 id="三ip-rule-的优先级" tabindex="-1">三、ip rule 的优先级 <a class="header-anchor" href="#三ip-rule-的优先级"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>pref</code> 是规则里最重要的一个字段。它是个 32 位整数，<strong>数字小的先匹配</strong>。整套规则的语义就是「按 pref 从小到大排成一列，从上往下试」。</p>
+<p>系统初始的那三条规则，pref 分别是 0、32766、32767。这个数字选得很有讲究：0 占住最前面，给 <code>local</code> 表；32766 和 32767 压在最后，给 <code>main</code> 和 <code>default</code> 收尾。中间 1 到 32765 这一大段空着，是留给你插自定义规则的。</p>
+<p>为什么收尾的规则要用这么大的数字？因为它们的选择器都是 <code>from all</code>——匹配一切。谁要是在它们后面插规则，那条规则永远轮不到。所以自定义规则的 pref 必须小于 32766，默认规则必须是整条链上 pref 最大的两条。</p>
+<p>习惯上自定义规则从 100 起，按用途分区间：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>pref 区间</th>
+<th>谁在用</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>内核</td>
+<td><code>local</code> 表，不可删不可覆盖</td>
+</tr>
+<tr>
+<td>1 ~ 99</td>
+<td>紧急拦截</td>
+<td>明确要黑洞掉的流量，放最前面才拦得住</td>
+</tr>
+<tr>
+<td>100 ~ 999</td>
+<td>业务分流</td>
+<td>多出口、源地址路由这类按需分流</td>
+</tr>
+<tr>
+<td>1000 ~ 32765</td>
+<td>兜底策略</td>
+<td>优先级最低的业务规则</td>
+</tr>
+<tr>
+<td>32766</td>
+<td>内核</td>
+<td><code>main</code> 表，可删可覆盖</td>
+</tr>
+<tr>
+<td>32767</td>
+<td>内核</td>
+<td><code>default</code> 表，可删</td>
+</tr>
+</tbody>
+</table></div><p><code>ip rule</code> 的输出天生就是按 pref 升序排的，所以看到的第一行就是最先被匹配的那条：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ ip rule list
+0:      from all lookup <span class="hljs-built_in">local</span>
+32765:  from 192.168.1.0/24 lookup 100
+32766:  from all lookup main
+32767:  from all lookup default
+</code></pre></div></code></pre>
+<p><code>ip rule</code>、<code>ip rule list</code>、<code>ip rule sh</code>、<code>ip rule show</code> 是同一条命令的不同写法，输出一样。</p>
+<p>现在把匹配过程完整走一遍。假设规则链就是上面这四条，有一个源地址 <code>10.1.1.5</code>、目的地址 <code>8.8.8.8</code> 的包要从本机发出去：</p>
+<p>第一步，试 <code>pref 0</code>。选择器是 <code>from all</code>，任何包都匹配。执行动作：查 <code>local</code> 表。<code>8.8.8.8</code> 不是本机地址，也不是本网段广播地址，<code>local</code> 表里没有它。这次查表失败。</p>
+<p>第二步，试 <code>pref 32765</code>。选择器是 <code>from 192.168.1.0/24</code>，包的源地址是 <code>10.1.1.5</code>，不匹配。跳过。</p>
+<p>第三步，试 <code>pref 32766</code>。选择器 <code>from all</code>，匹配。查 <code>main</code> 表，命中 <code>default via 192.168.1.1</code>，拿到出接口 <code>eth0</code> 和下一跳 <code>192.168.1.1</code>。决策结束。</p>
+<p>第四步，<code>pref 32767</code> 根本没机会被用到。</p>
+<p>注意第一步。<code>local</code> 表没查到，链还得往下走——这是 <code>local</code> 表的特殊性，也是整条链能工作的前提，否则任何非本机流量都会在第一关就死掉。</p>
+<p>真正坑人的地方在另一个方向：<strong>一旦某条规则的选择器命中，这个包就归它管了。它让你查哪张表，你就只能在那张表里找；那张表里没有匹配的路由，包就处理不下去，不会因为你没配好就自动跳回后面的规则去捡一条现成的。</strong></p>
+<p>这个坑的具体表现很容易认：规则加了，<code>ip rule list</code> 看得见，<code>ip route get</code> 一试却报「Network is unreachable」，或者流量从意料之外的出口跑掉。回头查配置文件，规则没问题，路由条目也没问题，问题在「这张表里缺一条默认路由」。</p>
+<p>所以有一条纪律必须刻进去：<strong>每一张策略路由表里都要配默认路由</strong>。哪怕这张表只打算放两条明细路由，也得补一条 <code>default</code>。原文那句话说得直白——「各路由表中应当指明默认路由，尽量不回查路由表」。</p>
+<p>再说两条实现层面的细节，配错了很难查：</p>
+<ul>
+<li>两条规则 pref 相同时，<strong>先加的排前面</strong>，后加的插在它们后面。要调顺序，只能先 <code>del</code> 再 <code>add</code>，<code>pref</code> 本身不能就地改。</li>
+<li>删规则时把条件写全最稳。<code>ip rule del pref 100</code> 只按优先级删，遇到同 pref 的多条容易删错；<code>ip rule del from 192.168.1.0/24 table 100 pref 100</code> 把选器和表都对上，误删的概率极低。不带任何条件直接 <code>ip rule del</code>，删的是整条链的第一条，也就是说会把 <code>pref 0</code> 那条干掉——内核不会让你删成，但这个动作本身说明命令要多写两个参数。</li>
+</ul>
+<h2 id="四规则的选择器" tabindex="-1">四、规则的选择器 <a class="header-anchor" href="#四规则的选择器"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>选择器决定「什么样的包归我管」。字段不多，但每个都有自己的脾气。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>选择器</th>
+<th>写法</th>
+<th>含义</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pref</code></td>
+<td><code>pref 100</code></td>
+<td>优先级</td>
+<td>数字小先匹配，必填</td>
+</tr>
+<tr>
+<td><code>from</code></td>
+<td><code>from 10.0.0.0/8</code></td>
+<td>源地址匹配</td>
+<td><code>from 0/0</code> 等于 <code>from all</code></td>
+</tr>
+<tr>
+<td><code>to</code></td>
+<td><code>to 192.168.1.0/24</code></td>
+<td>目的地址匹配</td>
+<td>与 <code>from</code> 可同时写，是与的关系</td>
+</tr>
+<tr>
+<td><code>tos</code></td>
+<td><code>tos 0x10</code></td>
+<td>IP 头里的 TOS / DSCP 字段</td>
+<td>老场景多，新场景少</td>
+</tr>
+<tr>
+<td><code>dev</code> / <code>iif</code></td>
+<td><code>dev eth1</code></td>
+<td>入接口</td>
+<td>只对收到的包有意义</td>
+</tr>
+<tr>
+<td><code>fwmark</code></td>
+<td><code>fwmark 0x1</code></td>
+<td>防火墙标记</td>
+<td>配 iptables 的 <code>MARK</code> 用</td>
+</tr>
+<tr>
+<td><code>sport</code> / <code>dport</code></td>
+<td><code>dport 80</code></td>
+<td>源/目的端口</td>
+<td>依赖 iproute2 版本</td>
+</tr>
+<tr>
+<td><code>uidrange</code></td>
+<td><code>uidrange 1000-1000</code></td>
+<td>发起进程的 UID</td>
+<td>只对本机产生的流量有意义</td>
+</tr>
+</tbody>
+</table></div><p><code>from</code> 是最常用的一个。按源地址分流是策略路由的经典场景：一台机器有两块网卡，两个网段，从哪个网段来的流量就从哪块网卡回。默认路由只有一条，靠 <code>from</code> 才能把回程拆开。</p>
+<p><code>to</code> 用得少一些，因为按目的地址分流本来就能用普通路由做。它有用的时候是配合 <code>from</code> 一起写：<code>from 10.0.0.0/8 to 172.16.0.0/12</code>，两个条件同时成立才命中。</p>
+<p><code>iif</code> 和 <code>dev</code> 在 <code>ip rule</code> 里是同一个东西，指入接口。它管的是「包从哪个网卡进来」，所以只对转发流量和有多个入口的本机流量有意义。一块网卡接内网、一块接外网的双宿主机上，<code>iif</code> 是描述「内网来的包」最直接的写法。</p>
+<p><code>fwmark</code> 是配合 iptables 用的。路由决策本身不认端口、不认连接状态，这些信息只有 netfilter 知道。于是让 iptables 在包上盖个戳，路由规则再去读这个戳。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 给 192.168.1.0/24 发往 80/8080/20/21 的包盖 mark 1</span>
+iptables -t mangle -A PREROUTING -p tcp -m multiport --dports 80,8080,20,21 \
+  -s 192.168.1.0/24 -j MARK --set-mark 1
+
+<span class="hljs-comment"># 盖了 mark 1 的包，查 test2 表</span>
+ip rule add fwmark 1 pref 1002 table test2
+</code></pre></div></code></pre>
+<p>顺序不能反。<code>PREROUTING</code> 在路由决策之前，标记盖上了，规则才读得到。本机自己产生的流量走 <code>OUTPUT</code> 链，标记要在那儿打。</p>
+<p><code>pref</code> 是这个表里唯一一个不属于「条件」的字段。它不参与匹配，只定顺序。</p>
+<p><code>pref</code> 之外的所有选择器，写多个就是逻辑与。想表达「或」，只能拆成两条规则。</p>
+<p>把选择器拼成一条完整规则的写法是这样：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 所有包，查 1 号表，优先级 32800（注意这个值大于 32767，排在默认规则之后）</span>
+ip rule add from 0/0 table 1 pref 32800
+
+<span class="hljs-comment"># 源地址 192.168.3.112、TOS 为 0x10 的包，优先级 1500，动作是丢弃</span>
+ip rule add from 192.168.3.112/32 tos 0x10 table 2 pref 1500 prohibit
+</code></pre></div></code></pre>
+<p>第二条规则要拆开看。<code>table 2</code> 和 <code>prohibit</code> 写在一起，实际生效的是 <code>prohibit</code>——<code>prohibit</code> 是个终结动作，含义是「拒绝并回 ICMP prohibited」，包不会进 2 号表。这种写法在原文档里出现过，语法能过，但语义容易看错。想丢包就直接写 <code>prohibit</code>，别带 <code>table</code>。</p>
+<p>三个终结动作的区别值得记一下：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>动作</th>
+<th>效果</th>
+<th>对端看到什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>prohibit</code></td>
+<td>丢弃，回 ICMP administratively prohibited</td>
+<td><code>Destination Prohibited</code></td>
+</tr>
+<tr>
+<td><code>reject</code></td>
+<td>丢弃，回 ICMP unreachable</td>
+<td><code>Destination Unreachable</code></td>
+</tr>
+<tr>
+<td><code>unreachable</code></td>
+<td>丢弃，回 ICMP host unreachable</td>
+<td><code>No route to host</code></td>
+</tr>
+</tbody>
+</table></div><p>这三种动作一命中就结束决策，后面的规则一条都不看。写规则时把它们放在最前面是有意的，但也正因为它们是终结的，<code>pref</code> 写小了会把本该正常转发的流量一起拦掉。</p>
+<p>把一组规则摆到一起，形状就出来了：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># pref 999 拦，1000~1002 分流，1003 兜底</span>
+ip rule add from 192.168.1.112/32 tos 0x10 table test2 pref 999 prohibit
+ip rule add to 192.168.1.2 pref 1000 table test1
+ip rule add from 192.168.1.0/24 pref 1001 table test1
+ip rule add fwmark 1 pref 1002 table test2
+ip rule add from 0/0 table test1 pref 1003
+</code></pre></div></code></pre>
+<p>这五条把前面的东西全用上了：<code>tos</code> 加 <code>prohibit</code> 做定点拦截；<code>to</code>、<code>from</code> 各一条做地址分流；<code>fwmark</code> 一条接 iptables 的标记；<code>from 0/0</code> 等价于 <code>from all</code>，是这组自己的兜底。<code>test1</code> 被三条规则指向，<code>test2</code> 被两条指向——<strong>同一张表可以有多个入口，入口之间靠 <code>pref</code> 分工</strong>。</p>
+<p>回归正题。选择器和优先级是两套正交的东西：<code>pref</code> 决定「先问谁」，选择器决定「谁归谁」。写规则的时候先在纸上按 <code>pref</code> 排好队，再一条条填选择器，比坐在这儿反复试要快得多。</p>
+<h2 id="五自定义路由表" tabindex="-1">五、自定义路由表 <a class="header-anchor" href="#五自定义路由表"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>策略路由的落地从建表开始。</p>
+<p>建表分两步，第一步是给人看的名字：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># /etc/iproute2/rt_tables</span>
+<span class="hljs-comment">#</span>
+<span class="hljs-comment"># reserved values</span>
+<span class="hljs-comment">#</span>
+255     <span class="hljs-built_in">local</span>
+254     main
+253     default
+0       unspec
+<span class="hljs-comment">#</span>
+<span class="hljs-comment"># local</span>
+<span class="hljs-comment">#</span>
+<span class="hljs-comment"># 100    telecom</span>
+<span class="hljs-comment"># 101    unicom</span>
+<span class="hljs-comment"># 102    intranet</span>
+</code></pre></div></code></pre>
+<p>格式就两个字段，tab 或空格分开：<code>表号</code> 和 <code>表名</code>。表号建议从 100 往上挑，100 以下虽然也能用，但跟系统保留区的距离太近，排查时容易看混。表名起得有信息量，<code>telecom</code>、<code>unicom</code>、<code>intranet</code> 这类，比 <code>t1</code>、<code>t2</code> 强得多。</p>
+<p>这一步纯属方便。不写映射也能用，命令里写数字就完了：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ip route add default via 192.168.1.1 table 100
+</code></pre></div></code></pre>
+<p>写了映射之后，命令里就能写名字：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ip route add default via 192.168.1.1 table telecom
+</code></pre></div></code></pre>
+<p>两种写法等价，内核里都是 <code>table id = 100</code>。<code>ip route</code> 的命令行解析器查那张映射表把名字翻译成数字。</p>
+<p>第二步才是往表里塞路由。往哪张表塞，由 <code>table</code> 关键字决定；不写 <code>table</code>，默认就是 <code>main</code>。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ip route add default via 192.168.1.1 table 100
+ip route add 192.168.0.0/24 via 192.168.1.2 table 100
+ip route add 192.168.1.0/24 dev eth0 table 100
+
+<span class="hljs-comment"># 名字起的，一样写</span>
+ip route add default via 192.168.1.1 table int1
+ip route add 192.168.1.0/24 via 192.168.1.1 table int2
+ip route add 172.16.0.0/16 via 172.16.0.1 table int3
+</code></pre></div></code></pre>
+<p>最后三条用的是 <code>int1</code>、<code>int2</code>、<code>int3</code> 三个名字，前提是 <code>rt_tables</code> 里已经写好了映射。策略路由建表这事没有别的动作——编辑 <code>rt_tables</code>，规定表序号和表名，完事。</p>
+<p>查表的时候反过来指定：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ip route list table 100
+ip route list table telecom
+ip route show table 100
+</code></pre></div></code></pre>
+<p>三条命令输出一样。想看所有表的情况，得一张张列——<code>ip route</code> 不带参数只显示 <code>main</code>。</p>
+<p><code>ip route</code> 还有一个边角参数 <code>realm</code>，给 tc 分类用：<code>ip route add 192.168.1.0/24 dev eth0 via 192.168.1.66 realm 4</code>，路由命中后把这个 realm 值带给流量控制。它跟策略路由没有直接关系，是原文顺手提到的配 tc 的用法，知道它存在就行。</p>
+<p>配好规则和表，最后一步是持久化。<code>ip rule</code> 和 <code>ip route</code> 都在内存里，重启、重启网络服务都会清空。</p>
+<p>老派 RHEL 系的做法是写两个文件，一个网卡一对：<code>/etc/sysconfig/network-scripts/route-eth0</code> 管路由，<code>/etc/sysconfig/network-scripts/rule-eth0</code> 管规则。</p>
+<p>这两个文件的名字里带网卡名，看着像是「只对这个网卡生效」，实际上不是。这里有两个坑，原文专门提过：</p>
+<ul>
+<li><code>route-eth0</code> 里的条目如果不指定表，会进 <code>main</code> 表。而 <code>main</code> 表是全局的，<code>eth1</code> 上的流量一样看得见这些路由。文件名不构成隔离。</li>
+<li><code>rule-eth0</code> 里的规则是全局的。<code>ip rule list</code> 一敲，<code>rule-eth0</code>、<code>rule-eth1</code>、<code>rule-eth2</code> 里的规则混在一起按 <code>pref</code> 排。文件名同样不构成隔离。</li>
+</ul>
+<p>两个文件都不隔离，那就得靠 <code>pref</code> 和 <code>table</code> 自己管好，别指望文件名帮你划界。</p>
+<p>现代发行版换了另一套：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>环境</th>
+<th>路由</th>
+<th>规则</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>老 RHEL / CentOS 6</td>
+<td><code>route-ethX</code></td>
+<td><code>rule-ethX</code></td>
+</tr>
+<tr>
+<td>NetworkManager keyfile</td>
+<td><code>[ipv4]</code> 段 <code>route1_table=</code></td>
+<td><code>[ipv4]</code> 段 <code>routing-rule1=</code></td>
+</tr>
+<tr>
+<td>systemd-networkd</td>
+<td><code>[Route]</code> 段 <code>Table=</code></td>
+<td><code>[RoutingPolicyRule]</code> 段</td>
+</tr>
+<tr>
+<td>手写脚本</td>
+<td>任意</td>
+<td>任意</td>
+</tr>
+</tbody>
+</table></div><p>内容都一样，无非是谁帮你把命令敲一遍。</p>
+<p>最后补一个语义细节：一张表里如果没有规则指向，它就查不到，但不会消失。要使它消失，得把表里的路由记录全部删掉。删规则不等于删表，删表里的路由也不等于删规则，这两件事在配置清理时经常混。</p>
+<h2 id="六策略路由的典型用法" tabindex="-1">六、策略路由的典型用法 <a class="header-anchor" href="#六策略路由的典型用法"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>规则和表都齐了，接下来看它们解决什么问题。下面六种场景覆盖了实际工作里九成的策略路由配置。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>用法</th>
+<th>主要选择器</th>
+<th>要解决的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>多出口分流</td>
+<td><code>from</code> / <code>fwmark</code></td>
+<td>双线接入，不同流量走不同运营商</td>
+</tr>
+<tr>
+<td>源地址路由</td>
+<td><code>from</code></td>
+<td>多网段主机，回程走对网卡</td>
+</tr>
+<tr>
+<td>VPN 分流</td>
+<td><code>to</code> / <code>fwmark</code></td>
+<td>部分流量进隧道，其余走物理口</td>
+</tr>
+<tr>
+<td>端口分流</td>
+<td><code>fwmark</code> + iptables</td>
+<td>按应用或端口决定出口</td>
+</tr>
+<tr>
+<td>黑洞拦截</td>
+<td><code>prohibit</code> / <code>reject</code></td>
+<td>明确拒绝某段流量</td>
+</tr>
+<tr>
+<td>策略路由配 NAT</td>
+<td><code>from</code> + 表</td>
+<td>不同出口需要各自的 SNAT</td>
+</tr>
+</tbody>
+</table></div><h3 id="多出口分流" tabindex="-1">多出口分流 <a class="header-anchor" href="#多出口分流"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>一台机器接两条线，<code>eth0</code> 走电信，<code>eth1</code> 走联通。目标分两类：内网 <code>10.0.0.0/8</code> 走专线，其余走电信；联通的用户从联通的口回。普通路由做不到，策略路由的写法是每张表配一条默认路由，再用 <code>from</code> 区分来源。</p>
+<p>关键动作是<strong>每张表都得有 <code>default</code></strong>。少了这一条，命中规则的包在表里查不到去路，流量直接停在那儿。</p>
+<h3 id="源地址路由" tabindex="-1">源地址路由 <a class="header-anchor" href="#源地址路由"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>多网段主机上最常见的问题：机器有两个 IP，<code>192.168.1.10</code> 和 <code>10.1.1.10</code>，从 <code>192.168.1.10</code> 进来的连接，回复却从 <code>10.1.1.10</code> 发出去，对端的防火墙直接把这个回包扔了。</p>
+<p>原因就是回程走了 <code>main</code> 表的默认路由，源地址被内层重新选了一遍。解法是给每个网段配一条规则，强制回程从进来的那张网卡出去：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ip rule add from 192.168.1.0/24 table 100 pref 100
+ip route add 192.168.1.0/24 dev eth0 table 100
+ip route add default via 192.168.1.1 table 100
+</code></pre></div></code></pre>
+<p>这段配置的形状值得记住：<strong>规则一条，表里的路由两条</strong>——一条直连明细，一条默认兜底。</p>
+<h3 id="vpn-分流" tabindex="-1">VPN 分流 <a class="header-anchor" href="#vpn-分流"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>全局代理和分流代理的区别就在这儿。全局代理改 <code>main</code> 表的默认路由，一刀切；分流只把特定流量塞进隧道，其余照旧。</p>
+<p>两种切法。按目的地址切，用 <code>to</code>，把国外网段列进表里。按进程切，用 <code>uidrange</code> 或 <code>fwmark</code>，让特定程序走隧道，同机其他程序不受影响。前者配置量大但行为稳定，后者干净利落但依赖打标记的位置。</p>
+<h3 id="端口分流" tabindex="-1">端口分流 <a class="header-anchor" href="#端口分流"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>路由决策看不见端口。要让 80 端口的流量走一条线、其余走另一条线，只能先在 netfilter 里盖戳，再让规则读戳：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>iptables -t mangle -A PREROUTING -p tcp --dport 80 -j MARK --set-mark 1
+ip rule add fwmark 1 pref 200 table 200
+ip route add default via 202.1.1.1 table 200
+</code></pre></div></code></pre>
+<p>这套写法的前提是 <code>ip_tables</code> 和 <code>MARK</code> 模块在位，以及打标记的位置在路由决策之前。</p>
+<h3 id="黑洞拦截" tabindex="-1">黑洞拦截 <a class="header-anchor" href="#黑洞拦截"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>想明确拒掉一段地址，用终结动作写一条小 <code>pref</code> 的规则：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ip rule add to 203.0.113.0/24 pref 10 prohibit
+</code></pre></div></code></pre>
+<p><code>pref 10</code> 保证它在所有业务规则之前。这里必须用 <code>prohibit</code> 或 <code>reject</code>，不能写 <code>table</code>——写 <code>table</code> 是去查表，不是拒绝。</p>
+<h3 id="策略路由配-nat" tabindex="-1">策略路由配 NAT <a class="header-anchor" href="#策略路由配-nat"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这条最容易漏。出口网卡不同，SNAT 的源地址也得跟着不同。NAT 规则要按出接口区分，否则内网流量从联通口出去，源地址还写着电信口的 IP，对端回不来。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>iptables -t nat -A POSTROUTING -o eth0 -j SNAT --to-source 202.1.1.2
+iptables -t nat -A POSTROUTING -o eth1 -j SNAT --to-source 61.1.1.2
+</code></pre></div></code></pre>
+<p>NAT 的完整机制在「NAT」那篇，这里只强调一句：策略路由只决定「从哪个口出去」，出去之后源地址怎么改，是 NAT 的事。</p>
+<h2 id="七多出口分流实战" tabindex="-1">七、多出口分流实战 <a class="header-anchor" href="#七多出口分流实战"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把上面的零件拼成一套能跑的配置。</p>
+<p>拓扑是这样的：一台 Linux 主机三个口。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>                     Internet
+                    ╱        ╲
+              电信 202.1.1.1   联通 61.1.1.1
+                    │              │
+                eth0│202.1.1.2     │eth1 61.1.1.2
+                 ┌──┴──────────────┴──┐
+                 │   Linux 主机        │
+                 └──────────┬──────────┘
+                        eth2│10.0.0.1/24
+                            │
+                      内网 10.0.0.0/24
+</code></pre></div></code></pre>
+<p>需求四条：</p>
+<ol>
+<li>内网访问电信的地址段，走 <code>eth0</code>。</li>
+<li>内网其余流量走 <code>eth1</code>。</li>
+<li>主机自身的默认出口是 <code>eth0</code>。</li>
+<li>内网之间直连，不绕路。</li>
+</ol>
+<p>第一步，建两张表：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">cat</span> &gt;&gt; /etc/iproute2/rt_tables &lt;&lt;<span class="hljs-string">&#x27;EOF&#x27;</span>
+100     telecom
+101     unicom
+EOF
+</code></pre></div></code></pre>
+<p>第二步，往两张表里填路由。这一步决定了「每张表知道哪些地方」：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># telecom 表：默认走电信，电信网段直连</span>
+ip route add 202.1.1.0/24 dev eth0 table telecom
+ip route add default via 202.1.1.1 dev eth0 table telecom
+
+<span class="hljs-comment"># unicom 表：默认走联通，联通网段直连</span>
+ip route add 61.1.1.0/24 dev eth1 table unicom
+ip route add default via 61.1.1.1 dev eth1 table unicom
+</code></pre></div></code></pre>
+<p>第三步，写规则。顺序按需求倒着排，具体的先上，笼统的后上：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 内网访问电信网段 → 电信表</span>
+ip rule add from 10.0.0.0/24 to 202.1.1.0/24 table telecom pref 100
+
+<span class="hljs-comment"># 内网其余流量 → 联通表</span>
+ip rule add from 10.0.0.0/24 table unicom pref 200
+</code></pre></div></code></pre>
+<p>第四步，<code>main</code> 表保持原样。它现在负责两件事：本机自身流量的默认出口，以及内网直连。本机默认走 <code>eth0</code>，所以 <code>main</code> 表里的 <code>default</code> 指向 <code>202.1.1.1</code>：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ip route add default via 202.1.1.1 dev eth0
+</code></pre></div></code></pre>
+<p>第五步，验证。三条命令，逐层看：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment"># 规则链的顺序对不对</span>
+ip rule list
+
+<span class="hljs-comment"># 两张表里的路由对不对</span>
+ip route show table telecom
+ip route show table unicom
+
+<span class="hljs-comment"># 拿一个具体的包去试内核会怎么走</span>
+ip route get 8.8.8.8 from 10.0.0.5
+ip route get 202.1.1.10 from 10.0.0.5
+ip route get 8.8.8.8
+</code></pre></div></code></pre>
+<p><code>ip route get</code> 是排查策略路由最有用的命令。它把选路结果直接打出来：出接口、下一跳、源地址全都有，还可以用 <code>from</code> / <code>iif</code> 指定条件，走的就是真实查表逻辑。规则有没有生效，一条命令就能确认，不用真发包。</p>
+<p>输出大致是：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ ip route get 8.8.8.8 from 10.0.0.5
+8.8.8.8 from 10.0.0.5 via 61.1.1.1 dev eth1 table unicom uid 0
+    cache
+</code></pre></div></code></pre>
+<p><code>table unicom</code> 这几个字就是证据：命中了 101 表，走的是联通的口。</p>
+<p>第六步，注意 <code>rp_filter</code>。多出口机器上反向路径过滤会咬人：一个包从 <code>eth1</code> 进来，源地址是 <code>10.0.0.5</code>，内核按源地址去查「回程应该走哪个口」，如果算出的是 <code>eth0</code>，在严格模式下这个包就被判为伪造源地址丢掉。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>sysctl -w net.ipv4.conf.all.rp_filter=2
+sysctl -w net.ipv4.conf.eth1.rp_filter=2
+</code></pre></div></code></pre>
+<p><code>2</code> 是宽松模式，只要源地址在任意一张表里能查到路由就放行。多出口场景基本都得这么设。</p>
+<p>第七步，持久化。这套命令重启就没，得落到文件里：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>/etc/sysconfig/network-scripts/route-telecom
+/etc/sysconfig/network-scripts/rule-10.0.0.0
+</code></pre></div></code></pre>
+<p>文件名随发行版变，内容不变：路由条目进表，规则条目按 <code>pref</code> 排好。前面提过的坑再过一遍——<code>route-ethX</code> 里不写 <code>table</code> 就进 <code>main</code>，而 <code>main</code> 是全局的，别指望文件名帮你隔离。</p>
+<p>整套配置跑通后，回头看一遍它的骨架，就是三行：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>规则：谁（from）→ 去哪张表
+表： 去哪张表 → 里面有什么路由
+兜底：每张表都要有 default，main 表要有 default
+</code></pre></div></code></pre>
+<p>任何一环缺了，症状都不一样。规则缺了，流量全走 <code>main</code>；表里缺默认路由，流量没出口；<code>main</code> 缺默认路由，本机自己的流量出不去。这就是为什么排查要从这三行往下走。</p>
+<h2 id="八ping-命令做了什么" tabindex="-1">八、ping 命令做了什么 <a class="header-anchor" href="#八ping-命令做了什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>前半篇讲的是「怎么选路」。后半篇换一个角度：拿一个具体的工具，把整条链路走一遍。选 <code>ping</code> 是因为它简单——只发一个包，只要一个回包，中间每一步都摆在明面上。</p>
+<p>先把一件事分清：<code>ping</code> 不是内核功能，是个用户态程序。它在用户态构造报文，把报文交给内核，内核负责选路和发送。<code>ping</code> 自己能做的只有三件事：造包、收包、算时间。</p>
+<p>一次完整的 <code>ping</code> 分六步：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>步骤</th>
+<th>谁在做</th>
+<th>做了什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>ping</code></td>
+<td>解析目标，域名走 DNS，IP 直接用</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>ping</code></td>
+<td>建 socket，构造 ICMP Echo Request</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>ping</code></td>
+<td>通过 socket 把报文交给内核</td>
+</tr>
+<tr>
+<td>4</td>
+<td>内核</td>
+<td>查路由决定出接口和下一跳，解析下一跳 MAC，发出去</td>
+</tr>
+<tr>
+<td>5</td>
+<td>内核</td>
+<td>收到 Echo Reply，按 socket 匹配，交给 <code>ping</code> 进程</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>ping</code></td>
+<td>用发送时刻和接收时刻算 RTT，打印一行结果</td>
+</tr>
+</tbody>
+</table></div><p>第 2 步里那个 socket 值得说一句。ICMP 报文塞在 IP 包里，普通 TCP/UDP socket 发不了。<code>ping</code> 用的是 raw socket，或者 Linux 上的 ICMP datagram socket（<code>SOCK_DGRAM</code> + <code>IPPROTO_ICMP</code>）。后者不需要 root，能不能用由 <code>net.ipv4.ping_group_range</code> 这个 sysctl 控制。所以有些容器里 <code>ping</code> 报权限错误，不一定是没给 root，多半是这个 sysctl 把 GID 范围卡死了。</p>
+<p>再看 <code>ping</code> 造出来的 ICMP Echo Request 里装了什么：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>值</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Type</td>
+<td>8</td>
+<td>表示 Echo Request</td>
+</tr>
+<tr>
+<td>Code</td>
+<td>0</td>
+<td>回显类报文固定 0</td>
+</tr>
+<tr>
+<td>Checksum</td>
+<td>计算值</td>
+<td>覆盖 ICMP 头加载荷</td>
+</tr>
+<tr>
+<td>Identifier</td>
+<td>进程号</td>
+<td>用来把回包匹配回对应的 <code>ping</code> 进程</td>
+</tr>
+<tr>
+<td>Sequence</td>
+<td>1、2、3…</td>
+<td>序号，丢包靠它看出来</td>
+</tr>
+<tr>
+<td>Data</td>
+<td>时间戳加填充</td>
+<td>收到回包时减一下就是 RTT</td>
+</tr>
+</tbody>
+</table></div><p>默认载荷 56 字节，加上 8 字节 ICMP 头是 64 字节，再加 20 字节 IP 头是 84 字节。这就是输出里 <code>56(84) bytes of data</code> 那两个数字的来历——56 是载荷，84 是 ICMP 报文加 IP 头。</p>
+<p>Identifier 那个字段解释了一个常见现象：同一台机器同时开两个 <code>ping</code>，各自收各自的回包，不会串。内核按 identifier 分发。</p>
+<p>内核对 <code>ping</code> 报文的处理跟处理别的包没有区别。它不看这是不是 ICMP，它只看目的地址：查路由、选接口、找下一跳、解析 MAC、交给网卡。<strong><code>ping</code> 之所以能当排错工具，正是因为它的路径跟业务流量完全一样。</strong> 它通不了的地方，TCP 也通不了。</p>
+<p><code>ping</code> 的输出长这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>$ ping -c 3 8.8.8.8
+PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+64 bytes from 8.8.8.8: icmp_seq=1 ttl=115 time=12.4 ms
+64 bytes from 8.8.8.8: icmp_seq=2 ttl=115 time=12.6 ms
+64 bytes from 8.8.8.8: icmp_seq=3 ttl=115 time=12.3 ms
+
+--- 8.8.8.8 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2003ms
+rtt min/avg/max/mdev = 12.281/12.431/12.612/0.135 ms
+</code></pre></div></code></pre>
+<p>每一行都有信息。<code>icmp_seq</code> 是发出去的序号，缺号就是丢包；<code>ttl</code> 是回包剩下的 TTL，能倒推对端初始 TTL 和跳数；<code>time</code> 是一个来回的 RTT；最后一行 <code>mdev</code> 是抖动，网络稳不稳看这个值。</p>
+<p>常用参数不多，但每个都对应一个排查方向：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>参数</th>
+<th>作用</th>
+<th>排查什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-c N</code></td>
+<td>发 N 个就停</td>
+<td>脚本里必带，否则一直发</td>
+</tr>
+<tr>
+<td><code>-i N</code></td>
+<td>间隔 N 秒</td>
+<td>压测或慢速探测</td>
+</tr>
+<tr>
+<td><code>-s N</code></td>
+<td>载荷 N 字节</td>
+<td>测 MTU，配 <code>-M do</code> 用</td>
+</tr>
+<tr>
+<td><code>-t N</code></td>
+<td>起始 TTL</td>
+<td>数跳数，从 1 往上加</td>
+</tr>
+<tr>
+<td><code>-W N</code></td>
+<td>等单个回包的超时</td>
+<td>区分「慢」和「不通」</td>
+</tr>
+<tr>
+<td><code>-w N</code></td>
+<td>总超时</td>
+<td>整体卡死上限</td>
+</tr>
+<tr>
+<td><code>-I eth0</code></td>
+<td>指定出接口或源地址</td>
+<td>验证策略路由走对了没有</td>
+</tr>
+<tr>
+<td><code>-n</code></td>
+<td>不做反向解析</td>
+<td>排除 DNS 干扰</td>
+</tr>
+<tr>
+<td><code>-M do</code></td>
+<td>禁止分片</td>
+<td>配 <code>-s</code> 找路径 MTU</td>
+</tr>
+<tr>
+<td><code>-f</code></td>
+<td>泛洪</td>
+<td>压力测试，要 root</td>
+</tr>
+</tbody>
+</table></div><p><code>-I</code> 这个参数跟本篇前半段直接挂钩。多出口机器上，<code>ping -I eth1 8.8.8.8</code> 强制从 <code>eth1</code> 出去，走的是另一条规则链。想验证「电信口通、联通口不通」这种判断，<code>-I</code> 是唯一的手段。</p>
+<p>还有一个常用手法：<code>-t 1</code>、<code>-t 2</code>、<code>-t 3</code> 一个个往上加，看 TTL 到几的时候开始有回包。停在哪一跳，问题就在那一跳之后。这招在跨运营商排障时比 traceroute 还直接。</p>
+<h2 id="九icmp-报文与-ping-的收发" tabindex="-1">九、ICMP 报文与 ping 的收发 <a class="header-anchor" href="#九icmp-报文与-ping-的收发"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>ping</code> 的载体是 ICMP。ICMP 是网络层协议，跟 IP 同层，不是传输层。它自己的报文装在 IP 包里，IP 头里的 protocol 字段填 1，接收方据此知道载荷是 ICMP。</p>
+<p>ICMP 头 8 字节，结构简单：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|     Type      |     Code      |          Checksum             |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|           Identifier          |        Sequence Number        |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                             Data ...                          |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+</code></pre></div></code></pre>
+<p>前 4 字节是所有 ICMP 类型共用的，后 4 字节的含义随 Type 变。Echo 类报文里这 4 字节就是 Identifier 和 Sequence Number。</p>
+<p>Type 和 Code 两个字段一起决定报文含义：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>Type</th>
+<th>Code</th>
+<th>含义</th>
+<th>谁发的</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>0</td>
+<td>Echo Reply，回显应答</td>
+<td>收到请求的一方</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0/1/3</td>
+<td>目的网络/主机/端口不可达</td>
+<td>路由器或主机</td>
+</tr>
+<tr>
+<td>5</td>
+<td>0/1</td>
+<td>重定向</td>
+<td>路由器</td>
+</tr>
+<tr>
+<td>8</td>
+<td>0</td>
+<td>Echo Request，回显请求</td>
+<td><code>ping</code></td>
+</tr>
+<tr>
+<td>11</td>
+<td>0/1</td>
+<td>超时（TTL 耗尽 / 分片重组超时）</td>
+<td>路由器</td>
+</tr>
+<tr>
+<td>13</td>
+<td>0</td>
+<td>时间戳请求</td>
+<td>老工具</td>
+</tr>
+</tbody>
+</table></div><p><code>ping</code> 只碰 0 和 8 两种。Type 3 和 Type 11 是它收货的副产品——<code>ping</code> 会把收到的 ICMP 差错报文翻译成 <code>Destination Host Unreachable</code>、<code>Time to live exceeded</code> 这类提示打出来。</p>
+<p>一次请求加一次应答，就是 <code>ping</code> 的全部交互：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>主机 A                                     主机 B
+   │                                          │
+   │  ICMP Echo Request  Type=8 Code=0        │
+   │  id=1234 seq=1                           │
+   ├─────────────────────────────────────────►│
+   │                                          │
+   │  ICMP Echo Reply    Type=0 Code=0        │
+   │  id=1234 seq=1                           │
+   │◄─────────────────────────────────────────┤
+</code></pre></div></code></pre>
+<p>这里藏着一个很多人搞错的点：<strong>Echo Reply 是内核发的，不是 <code>ping</code> 进程发的。</strong></p>
+<p>主机 B 上的内核收到 Echo Request，在 ICMP 层直接构造一个 Echo Reply 回出去，整个过程不经过任何用户态程序。主机 B 上就算根本没有装 <code>ping</code>，也照样能被 ping 通。反过来推，「能 ping 通」只能证明两件事：网络通、对端内核在工作。它证明不了任何服务在监听。</p>
+<p>Echo Request 的处理路径大致是：网卡收包 → 二层解封装 → IP 层看 protocol 是 1 → 交给 ICMP 处理 → 看 Type 是 8 → 构造 Reply（Type 改 0，源目地址对调，Identifier 和 Sequence 原样抄回，重算校验和）→ 查路由发出 → 回给发起方。</p>
+<p>注意最后一步「查路由发出」。回包也要选路。对端如果配了策略路由，回程同样受规则链约束。这就是为什么有些单向不通的故障，问题在对端的路由配置上，而不在你的发端。</p>
+<p>再说二层。IP 层要把包交出去，得知道下一跳的 MAC，这个映射靠 ARP。</p>
+<p>ARP 报文里的 OP 字段标识操作类型：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>OP</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>ARP 请求</td>
+</tr>
+<tr>
+<td>2</td>
+<td>ARP 应答</td>
+</tr>
+<tr>
+<td>3</td>
+<td>RARP 请求</td>
+</tr>
+<tr>
+<td>4</td>
+<td>RARP 应答</td>
+</tr>
+</tbody>
+</table></div><p>日常只见到 1 和 2。RARP 是早期无盘工作站用来自报身份的，现在基本绝迹，看到 3、4 说明网里有很老的东西在跑。</p>
+<p>ARP 有三条特点必须记住：</p>
+<ol>
+<li>请求是广播，应答是单播。请求方不知道对方的 MAC，只能朝 <code>FF:FF:FF:FF:FF:FF</code> 喊；应答方知道请求方的 MAC，直接单播回去。</li>
+<li><strong>只有当发送方认为目标和自己在同一个逻辑网络（同一网段）时，ARP 请求才会发出。</strong> 跨网段时，ARP 问的是网关，不是最终目的地。这一条是理解「逐跳转发」的钥匙。</li>
+<li>IP 与 MAC 的映射属于同一台设备上的同一个接口。同一个 IP 在不同时刻对应不同 MAC，说明换了接口或者换了设备。</li>
+</ol>
+<p>回到封装。一个 <code>ping</code> 包从上到下的封一层套一层：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>层</th>
+<th>数据单元</th>
+<th>这一层加了什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>应用层</td>
+<td>数据</td>
+<td><code>ping</code> 造的时间戳和填充字节</td>
+</tr>
+<tr>
+<td>传输层</td>
+<td>数据段</td>
+<td>ICMP 没有端口，这一层被跳过</td>
+</tr>
+<tr>
+<td>网络层</td>
+<td>数据包</td>
+<td>IP 头：源 IP、目的 IP、TTL、protocol=1</td>
+</tr>
+<tr>
+<td>数据链路层</td>
+<td>数据帧</td>
+<td>以太网头：源 MAC、目的 MAC、类型 0x0800，尾部 FCS</td>
+</tr>
+<tr>
+<td>物理层</td>
+<td>比特</td>
+<td>电信号或光信号</td>
+</tr>
+</tbody>
+</table></div><p>这个过程叫封装——发送方自上而下，每层加自己的头。接收方反过来，自下而上逐层剥头，叫解封装。两个人做同一件事的两个方向。</p>
+<p>值得单独标出来的是：<strong>ICMP 没有端口</strong>。所以 <code>ping</code> 不需要三次握手，不需要监听端口，也没有连接状态。发一个包，等一个回包，通就是通。这就是它比 TCP 探测快的原因，也是它比 TCP 探测不可靠的原因——它测的是三层可达性，不是四层服务可用性。</p>
+<h2 id="十一个-ping-包的完整旅程" tabindex="-1">十、一个 ping 包的完整旅程 <a class="header-anchor" href="#十一个-ping-包的完整旅程"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>现在把前面所有零件串起来，跟着一个包走完全程。</p>
+<p>拓扑先摆好。主机 A 和主机 B 在同一网段，主机 C 在另一头，中间两台路由器：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>  主机A                主机B
+ 1.1.1.1/24          1.1.1.3/24
+     │                   │
+     └────── 交换机 ──────┘
+              │
+          R1 port1
+          1.1.1.2/24
+              │
+          R1 port2
+          2.1.1.1/24
+              │
+          R2 port1
+          2.1.1.2/24
+              │
+          R2 port2
+          3.1.1.1/24
+              │
+          主机C
+          3.1.1.2/24
+</code></pre></div></code></pre>
+<h3 id="场景一同网段a-ping-b" tabindex="-1">场景一：同网段，A ping B <a class="header-anchor" href="#场景一同网段a-ping-b"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>A 执行 <code>ping 1.1.1.3</code>。<code>ping</code> 造好 ICMP Echo Request，交给内核。内核查路由，发现 <code>1.1.1.3</code> 和 <code>1.1.1.1</code> 在同一个 <code>1.1.1.0/24</code> 里，走直连路由，出接口是 <code>eth0</code>，下一跳就是目的地本身——不需要网关。</p>
+<p>接下来要填以太网头的目的 MAC。A 查自己的 ARP 缓存，没有 <code>1.1.1.3</code> 的记录，于是发一个 ARP 广播。</p>
+<p>交换机的动作要单独说。它收到这个广播帧，先做 MAC 学习：把「A 的 MAC 对应 A 连的那个端口」记进 MAC 地址表。然后查表找 <code>1.1.1.3</code> 的 MAC 在哪个口，找不到就朝所有端口泛洪。其他主机收到这个 ARP 请求，一看问的不是自己的 IP，直接丢弃。只有 B 会响应，一边回「我的 MAC 是这个」，一边顺手把 A 的 IP 与 MAC 映射学进自己的表。</p>
+<p>B 的应答是单播，直接回给 A。A 收到后也学到 B 的 MAC，把它写进 ARP 缓存。</p>
+<p>到这一步，A 手里有了 B 的 MAC，于是封装数据帧发出：以太网头的目的 MAC 是 B 的 MAC，源 MAC 是自己的，类型 <code>0x0800</code>；IP 头里源 <code>1.1.1.1</code>，目的 <code>1.1.1.3</code>；载荷是 ICMP Echo Request。</p>
+<p>B 收到帧，先看目的 MAC 是不是自己：是，接收；不是，丢弃。这是二层的第一道筛选。收下之后解封装，剥掉以太网头，看到类型是 <code>0x0800</code>，把 IP 包交给 IP 层。IP 层看目的 IP 是自己，再剥掉 IP 头，看到 protocol 是 1，把载荷交给 ICMP。ICMP 看 Type 是 8，构造 Echo Reply，按同样的格式回给 A。</p>
+<p>一次同网段 ping 到此走完。</p>
+<p>整个过程用时不到 1 毫秒。你在屏幕上看到的那点延迟，大部分是 <code>ping</code> 自己的定时器和终端输出，不是网络。</p>
+<p>这套流程完整对应原文的七条总结，逐条对：</p>
+<ol>
+<li>A 上执行 <code>ping 1.1.1.3</code>，<code>ping</code> 通知系统建一个固定格式的 ICMP 请求数据包，由 ICMP 协议把数据包和地址 <code>1.1.1.3</code> 一起转交 IP 层。</li>
+<li>IP 层以 <code>1.1.1.3</code> 为目的地址、本机 IP <code>1.1.1.1</code> 为源地址，加上控制信息构建 IP 数据包，并想办法拿到 <code>1.1.1.3</code> 的 MAC 地址——数据链路层组帧必须有它。</li>
+<li>IP 层用自己的 IP 和子网掩码一算，发现目标跟自己同网段，就在本网段内找这台机器的 MAC。</li>
+<li>两机以前通信过，ARP 缓存里就有映射；没有就发 ARP 广播去要，拿到后一起交给数据链路层。</li>
+<li>数据链路层组帧，目的地址填 IP 层给的 MAC，源地址填本机 MAC，加上控制信息，按以太网的介质访问规则发出去。</li>
+<li>B 收到帧，先比目的地址和本机 MAC：符合则收，不符则丢。收下后从帧里提取 IP 包，交给本机 IP 层。</li>
+<li>IP 层检查后把有用信息交给 ICMP，ICMP 处理后立刻构造应答包发给 A，过程和 A 发请求过去一模一样。</li>
+</ol>
+<h3 id="场景二跨网段a-ping-c" tabindex="-1">场景二：跨网段，A ping C <a class="header-anchor" href="#场景二跨网段a-ping-c"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>A 执行 <code>ping 3.1.1.2</code>。内核查路由（这一步在真实环境里要过一整条规则链，先按 pref 逐条匹配，命中 <code>main</code> 表后在里面做最长前缀匹配），算出 <code>3.1.1.0/24</code> 不在本网段，命中的是默认路由，下一跳是网关 <code>1.1.1.2</code>。</p>
+<p>A 并不知道 C 的 MAC，也不需要知道。<strong>它只需要网关的 MAC。</strong></p>
+<p>A 查 ARP 缓存里有没有 <code>1.1.1.2</code>。没有，就朝网关的 IP 发 ARP 广播。R1 的 port1 收到，回自己的 MAC 给 A。A 把目的 MAC 填成 R1 port1 的 MAC，源 MAC 填自己的，把 ICMP Echo Request 封进去发出去。</p>
+<p>交换机转发这一帧，送到 R1 port1。</p>
+<p>R1 收到帧，看目的 MAC 是自己，收下。解封装到 IP 层，看目的 IP <code>3.1.1.2</code> 不是自己，这才需要转发。它拿 <code>3.1.1.2</code> 去查自己的路由表（同样，先过规则链再查表），命中 <code>3.1.1.0/24</code> 那条，得到出接口 port2 和下一跳 <code>2.1.1.2</code>。</p>
+<p>接下来是关键动作：R1 把原来的以太网头整个扔掉，用 <code>2.1.1.2</code> 对应的 MAC 做目的 MAC、自己 port2 的 MAC 做源 MAC，重新封一个帧，把原来的 IP 包原封不动塞进去，从 port2 发出去。</p>
+<p>这个过程叫<strong>帧的重写</strong>（REWRITE）。原文的描述很准确：路由器在某个入接口收到帧后，先检测目的地是不是自己；是就交给上层，不是就缓存数据包内容，然后按目标地址查路由表找到表项，拿到 NEXT HOP 及出接口的 MAC，用这两个地址作为新的目的及源 MAC 封装缓存的数据包，再转发。</p>
+<p>R1 的 ARP 缓存里如果没有 <code>2.1.1.2</code> 的记录，也得先 ARP 广播一下——跟前面 A 找网关 MAC 的动作一样。R2 的 port1 回自己的 MAC，双方互相学到。</p>
+<p>R2 收到帧，动作跟 R1 完全相同：看 MAC 是自己，收下；看 IP 不是自己，查路由；命中 <code>3.1.1.0/24</code>，出接口通主机 C；把目的 MAC 换成 C 的 MAC，源 MAC 换成自己出口的 MAC，重新组帧发出去。</p>
+<p>C 收到帧，看目的 MAC 是自己，收下。解封装到 ICMP，看 Type 是 8，构造 Echo Reply。反向的路由此开始，把前面每一跳的 MAC 重写再做一遍，方向反过来。</p>
+<p>区别在于：<strong>回程不用再做 ARP 解析了</strong>。R2 port2 已经学到 C 的 MAC，R2 port1 和 R1 port2 互相学过，R1 port1 和 A 也互相学过。MAC 地址表早就建好了，回程是纯粹的查表和重写。</p>
+<p>原文对这一段有五条总结，值得逐条对上看：</p>
+<ol>
+<li>两台主机不在同一子网，A 要向「缺省网关」发 ARP 包，而缺省网关的 IP 在系统里已经配好。它对应 R1 port1 的地址 <code>1.1.1.2</code>。A 对网关地址广播 ARP 请求，R1 port1 把 MAC 回给 A，A 的数据包目的 MAC 就换成了 R1 port1 的 MAC。</li>
+<li>MAC 替换后经物理层传到交换机物理层，再到交换机数据链路层，再经数据链路层到物理层出去。</li>
+<li>bit 流到路由器物理层，再上到数据链路层做二层解封装。目的 IP 与路由器三层路由表比对，匹配正确就交给上层处理，不匹配就缓存数据包，按目标地址查路由找到 NEXT HOP 和出接口 MAC，用这两个地址重新封装后转发——这就是帧重写。</li>
+<li>重复 MAC 替换，在每台路由器里都找到与目的 IP 匹配的表项。路由器里如果已经有主机 C 对应的 MAC 表项，数据直接传到 C 的网络层；没有就先 ARP 广播问一次。</li>
+<li>主机 C 收到 A 的数据包后，从 C 到 A 再做一次反向的 MAC 替换。反向过程中每一步都省掉了 ARP 请求，因为 MAC 表已经建起来了。</li>
+</ol>
+<h3 id="每一跳的地址变化" tabindex="-1">每一跳的地址变化 <a class="header-anchor" href="#每一跳的地址变化"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>把三次封装摊开看，最清楚：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位置</th>
+<th>源 MAC</th>
+<th>目的 MAC</th>
+<th>源 IP</th>
+<th>目的 IP</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A → R1</td>
+<td>A 的 MAC</td>
+<td>R1 port1 的 MAC</td>
+<td>1.1.1.1</td>
+<td>3.1.1.2</td>
+</tr>
+<tr>
+<td>R1 → R2</td>
+<td>R1 port2 的 MAC</td>
+<td>R2 port1 的 MAC</td>
+<td>1.1.1.1</td>
+<td>3.1.1.2</td>
+</tr>
+<tr>
+<td>R2 → C</td>
+<td>R2 port2 的 MAC</td>
+<td>C 的 MAC</td>
+<td>1.1.1.1</td>
+<td>3.1.1.2</td>
+</tr>
+<tr>
+<td>C → R2</td>
+<td>C 的 MAC</td>
+<td>R2 port2 的 MAC</td>
+<td>3.1.1.2</td>
+<td>1.1.1.1</td>
+</tr>
+<tr>
+<td>R2 → R1</td>
+<td>R2 port1 的 MAC</td>
+<td>R1 port2 的 MAC</td>
+<td>3.1.1.2</td>
+<td>1.1.1.1</td>
+</tr>
+<tr>
+<td>R1 → A</td>
+<td>R1 port1 的 MAC</td>
+<td>A 的 MAC</td>
+<td>3.1.1.2</td>
+<td>1.1.1.1</td>
+</tr>
+</tbody>
+</table></div><p>这张表就是整篇的核心事实：</p>
+<p><strong>在数据包端到端的传输过程中，逻辑地址（IP）始终不变，而 MAC 地址随具体链路的不同而不同。</strong></p>
+<p>IP 是端到端的，从头到尾都是那一对；MAC 是逐跳的，每换一段链路重写一遍。想明白这一句，路由、ARP、帧重写三件事就串成一条线了。想不明白，就会在「为什么抓包看到目的 MAC 一直在变，目的 IP 一直不变」这个问题上卡很久。</p>
+<h3 id="沿链路定位故障" tabindex="-1">沿链路定位故障 <a class="header-anchor" href="#沿链路定位故障"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>这条链路的意义在排错。任何一环断了，现象都不一样：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>断在哪</th>
+<th>现象</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A 的网线 / 网卡 / 驱动</td>
+<td><code>ping</code> 网关都不通，接口无收发包计数</td>
+</tr>
+<tr>
+<td>A 到网关的 ARP 不通</td>
+<td><code>Destination Host Unreachable</code>，<code>ip neigh</code> 里是 FAILED</td>
+</tr>
+<tr>
+<td>A 的路由配置错</td>
+<td><code>Network is unreachable</code>，<code>ip route get</code> 直接报错</td>
+</tr>
+<tr>
+<td>A 的策略路由表缺默认路由</td>
+<td>规则命中但无路由，流量从错误出口跑或直接断</td>
+</tr>
+<tr>
+<td>R1 到 R2 这段</td>
+<td>网关能 ping 通，再往外的地址不通</td>
+</tr>
+<tr>
+<td>R2 到 C 这段</td>
+<td>只有 C 不通，同网段其他主机正常</td>
+</tr>
+<tr>
+<td>C 的回程路由错</td>
+<td>A 发出请求，C 收到，但 A 收不到应答；C 侧抓包看得见 Echo Request</td>
+</tr>
+<tr>
+<td>中间防火墙拦 ICMP</td>
+<td>全段不通但业务端口正常</td>
+</tr>
+<tr>
+<td>路径 MTU 不够</td>
+<td>小包通，<code>-s 1472 -M do</code> 不通</td>
+</tr>
+</tbody>
+</table></div><p>这张表配前面那套拓扑，就是一条从内往外的排查路径：先本机、再网关、再逐跳、最后对端回程。</p>
+<h2 id="十一从-ping-结果判断故障" tabindex="-1">十一、从 ping 结果判断故障 <a class="header-anchor" href="#十一从-ping-结果判断故障"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>ping</code> 的输出和报错都是线索，关键是别只看「通不通」，要看<strong>怎么不通</strong>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>输出/现象</th>
+<th>含义</th>
+<th>下一步查什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ping: unknown host</code></td>
+<td>域名没解析出来</td>
+<td><code>/etc/resolv.conf</code>，<code>getent hosts 目标</code></td>
+</tr>
+<tr>
+<td><code>Network is unreachable</code></td>
+<td>本机没有到该网段的路由</td>
+<td><code>ip route get 目标</code>，<code>ip rule list</code></td>
+</tr>
+<tr>
+<td><code>Destination Net Unreachable</code></td>
+<td>中间设备说这个网段不可达</td>
+<td>逐跳 <code>-t</code> 加 TTL，看哪一跳开始报</td>
+</tr>
+<tr>
+<td><code>Destination Host Unreachable</code></td>
+<td>同网段 ARP 拿不到对方 MAC</td>
+<td><code>ip neigh</code>，<code>arp -n</code>，VLAN 与二层</td>
+</tr>
+<tr>
+<td><code>Destination Port Unreachable</code></td>
+<td>收到 ICMP Type 3 Code 3</td>
+<td>不是 <code>ping</code> 的问题，是回程被 NAT 或规则改了</td>
+</tr>
+<tr>
+<td><code>Time to live exceeded</code></td>
+<td>路径上有环或者跳数不够</td>
+<td><code>-t</code> 递增测跳数，<code>traceroute</code> 对照</td>
+</tr>
+<tr>
+<td><code>socket: Operation not permitted</code></td>
+<td>没权限建 ICMP socket</td>
+<td><code>net.ipv4.ping_group_range</code>，容器 capability</td>
+</tr>
+<tr>
+<td>首包丢、后续通</td>
+<td>ARP 解析耗掉了第一个包</td>
+<td><code>ip neigh</code>，属正常，不算故障</td>
+</tr>
+<tr>
+<td><code>DUP!</code></td>
+<td>收到重复应答</td>
+<td>二层有环，STP 状态，双网卡同网段</td>
+</tr>
+<tr>
+<td><code>time</code> 忽高忽低、<code>mdev</code> 大</td>
+<td>链路抖动或拥塞</td>
+<td><code>-i 0.2</code> 加密采样，看接口错误计数</td>
+</tr>
+<tr>
+<td><code>ttl</code> 恒定且异常小</td>
+<td>应答疑似被中间设备代答</td>
+<td>换目标验证，查是否有 ICMP 代理</td>
+</tr>
+<tr>
+<td>100% 丢包，网关也不通</td>
+<td>一层或二层问题</td>
+<td>接口状态、网线、光模块、驱动计数</td>
+</tr>
+<tr>
+<td><code>127.0.0.1</code> 都不通</td>
+<td>本机协议栈或 <code>lo</code> 有问题</td>
+<td><code>ip link show lo</code>，路由表里 <code>local</code> 表</td>
+</tr>
+<tr>
+<td>默认出口通，<code>-I eth1</code> 不通</td>
+<td>那条规则对应的表里缺路由</td>
+<td><code>ip route show table &lt;表号&gt;</code></td>
+</tr>
+</tbody>
+</table></div><p>几个容易看错的地方单独拎出来。</p>
+<p><code>Destination Host Unreachable</code> 和 <code>Network is unreachable</code> 差一个词，原因差很远。前者是「知道往哪儿走，但走不到那台主机」，后者是「连往哪儿走都不知道」。前者去查 ARP 和二层，后者去查路由和规则。</p>
+<p><code>ping</code> 通不代表服务通。前面讲过，Echo Reply 是内核发的，跟应用没关系，要测服务得用 <code>nc -zv</code> 或 <code>curl</code>。<code>ping</code> 不通也不代表网络不通——ICMP 是很多防火墙第一个拦的协议，企业出口拦掉它是常规操作，这时候 <code>ping</code> 全丢包但 HTTP 正常，别一头扎进路由里查。</p>
+<p>反过来，<strong><code>ping</code> 在最该通的地方不通，就是硬故障</strong>。本机 <code>lo</code>、本机网卡地址、直连网关，这三个目标里任何一个不通，都不用往下查，问题就在本机或第一跳。</p>
+<p>用 <code>-I</code> 分开验证两个出口，是策略路由排障的标准动作：</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ping -c 3 -I eth0 8.8.8.8
+ping -c 3 -I eth1 8.8.8.8
+</code></pre></div></code></pre>
+<p>两条都通，说明两条链路的物理层和路由都没问题，剩下的是规则分工对不对。一条通一条不通，问题在不通那条链路的表或者规则上。</p>
+<h2 id="十二易错点速查" tabindex="-1">十二、易错点速查 <a class="header-anchor" href="#十二易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把全篇踩过的坑收在一张表里。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>#</th>
+<th>坑</th>
+<th>现象</th>
+<th>正解</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>策略路由表里没配 <code>default</code></td>
+<td>规则命中，流量没出口或从错口跑</td>
+<td>每张表都补一条 <code>default</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>自定义规则 <code>pref</code> 写到 32766 之后</td>
+<td>规则永远不生效</td>
+<td><code>pref</code> 必须小于 32766</td>
+</tr>
+<tr>
+<td>3</td>
+<td>以为删规则就是删表</td>
+<td>表里的路由还在</td>
+<td>规则和表独立，清表要删路由</td>
+</tr>
+<tr>
+<td>4</td>
+<td>以为 <code>route-ethX</code> 只对本网卡生效</td>
+<td>另一块网卡的流量被这条路由影响</td>
+<td>不写 <code>table</code> 就进 <code>main</code>，全局可见</td>
+</tr>
+<tr>
+<td>5</td>
+<td>以为 <code>rule-ethX</code> 只对本网卡生效</td>
+<td>规则链里混进别的网卡的规则</td>
+<td><code>rule-*</code> 是全局的，靠 <code>pref</code> 排队</td>
+</tr>
+<tr>
+<td>6</td>
+<td>规则配完不持久化</td>
+<td>重启后配置全没</td>
+<td>写配置文件或 systemd 单元</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>fwmark</code> 规则没生效</td>
+<td>规则写了但流量不按标记走</td>
+<td>打标记要在路由决策之前，本机流量用 <code>OUTPUT</code> 链</td>
+</tr>
+<tr>
+<td>8</td>
+<td>去改 <code>local</code> 表</td>
+<td>本机通信异常</td>
+<td>255 表由内核维护，不手动改</td>
+</tr>
+<tr>
+<td>9</td>
+<td>同 <code>pref</code> 的两条规则顺序不对</td>
+<td>命中结果跟预期相反</td>
+<td>先加的在前，改顺序要 <code>del</code> 后 <code>add</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>prohibit</code> 与 <code>table</code> 一起写</td>
+<td>以为进了表，实际被拒</td>
+<td>终结动作不带 <code>table</code></td>
+</tr>
+<tr>
+<td>11</td>
+<td>多出口没调 <code>rp_filter</code></td>
+<td>流量随机丢，日志里有 martian</td>
+<td><code>net.ipv4.conf.*.rp_filter=2</code></td>
+</tr>
+<tr>
+<td>12</td>
+<td>出口换了但 NAT 没换</td>
+<td>内网通，外网回不来</td>
+<td>按出接口分别配 SNAT</td>
+</tr>
+<tr>
+<td>13</td>
+<td>拿 <code>ping</code> 通当服务正常</td>
+<td>服务早挂了还以为没事</td>
+<td>Echo Reply 是内核回的，服务用 <code>nc</code>/<code>curl</code> 测</td>
+</tr>
+<tr>
+<td>14</td>
+<td>拿 <code>ping</code> 不通当网络故障</td>
+<td>查半天路由，其实是 ICMP 被拦</td>
+<td>先确认路径上允许 ICMP</td>
+</tr>
+<tr>
+<td>15</td>
+<td>跨网段 ARP 想问对端 MAC</td>
+<td>永远问不到</td>
+<td>跨网段只 ARP 网关，对端 MAC 由最后一跳的网关解析</td>
+</tr>
+<tr>
+<td>16</td>
+<td>半开连接状态下的策略路由变更</td>
+<td>老连接走老出口，新连接走新出口</td>
+<td>查 conntrack，必要时清会话</td>
+</tr>
+<tr>
+<td>17</td>
+<td><code>ip rule del</code> 不带条件</td>
+<td>删掉链首那条</td>
+<td>条件写全：<code>from</code>、<code>table</code>、<code>pref</code> 都带上</td>
+</tr>
+<tr>
+<td>18</td>
+<td>用 BSD/macOS 的参数敲 Linux</td>
+<td>参数报错</td>
+<td><code>-t</code> 在 BSD 上是 TOS 不是 TTL，跨平台脚本要分开写</td>
+</tr>
+</tbody>
+</table></div><p>最后留一句话备忘。策略路由的复杂度不在命令，在「谁先谁后」；<code>ping</code> 的复杂度不在参数，在「这一跳是谁」。把规则链当队列看，把每一跳当独立的一段链路看，两个问题都不难。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一普通路由的局限" data-toc-target="一普通路由的局限">一、普通路由的局限</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二策略路由的两个要素规则与表" data-toc-target="二策略路由的两个要素规则与表">二、策略路由的两个要素：规则与表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三ip-rule-的优先级" data-toc-target="三ip-rule-的优先级">三、ip rule 的优先级</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四规则的选择器" data-toc-target="四规则的选择器">四、规则的选择器</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五自定义路由表" data-toc-target="五自定义路由表">五、自定义路由表</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六策略路由的典型用法" data-toc-target="六策略路由的典型用法">六、策略路由的典型用法</a>
+                    
+                    <a class="toc-item toc-lv3" href="#多出口分流" data-toc-target="多出口分流">多出口分流</a>
+                    
+                    <a class="toc-item toc-lv3" href="#源地址路由" data-toc-target="源地址路由">源地址路由</a>
+                    
+                    <a class="toc-item toc-lv3" href="#vpn-分流" data-toc-target="vpn-分流">VPN 分流</a>
+                    
+                    <a class="toc-item toc-lv3" href="#端口分流" data-toc-target="端口分流">端口分流</a>
+                    
+                    <a class="toc-item toc-lv3" href="#黑洞拦截" data-toc-target="黑洞拦截">黑洞拦截</a>
+                    
+                    <a class="toc-item toc-lv3" href="#策略路由配-nat" data-toc-target="策略路由配-nat">策略路由配 NAT</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七多出口分流实战" data-toc-target="七多出口分流实战">七、多出口分流实战</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八ping-命令做了什么" data-toc-target="八ping-命令做了什么">八、ping 命令做了什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九icmp-报文与-ping-的收发" data-toc-target="九icmp-报文与-ping-的收发">九、ICMP 报文与 ping 的收发</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一个-ping-包的完整旅程" data-toc-target="十一个-ping-包的完整旅程">十、一个 ping 包的完整旅程</a>
+                    
+                    <a class="toc-item toc-lv3" href="#场景一同网段a-ping-b" data-toc-target="场景一同网段a-ping-b">场景一：同网段，A ping B</a>
+                    
+                    <a class="toc-item toc-lv3" href="#场景二跨网段a-ping-c" data-toc-target="场景二跨网段a-ping-c">场景二：跨网段，A ping C</a>
+                    
+                    <a class="toc-item toc-lv3" href="#每一跳的地址变化" data-toc-target="每一跳的地址变化">每一跳的地址变化</a>
+                    
+                    <a class="toc-item toc-lv3" href="#沿链路定位故障" data-toc-target="沿链路定位故障">沿链路定位故障</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一从-ping-结果判断故障" data-toc-target="十一从-ping-结果判断故障">十一、从 ping 结果判断故障</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二易错点速查" data-toc-target="十二易错点速查">十二、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/策略路由与-ping-的执行过程/","title":"策略路由与 ping 的执行过程","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/策略路由与-ping-的执行过程/","type":"current"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","title":"Linux 网络协议栈的架构与分层","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","title":"NAT 原理与实现","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","title":"Netfilter 与 hook 点","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","title":"Netlink：内核态与用户态通信","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","type":"neighbor"}],"links":[{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/策略路由与-ping-的执行过程/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/策略路由与-ping-的执行过程/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/策略路由与-ping-的执行过程/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/策略路由与-ping-的执行过程/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

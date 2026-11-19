@@ -1,0 +1,1759 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Netlink：内核态与用户态通信 · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">Netlink：内核态与用户态通信</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">Netlink：内核态与用户态通信</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">Netlink：内核态与用户态通信</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>这一篇只讲一件事：Netlink 这条「内核与用户态之间传消息」的套接字协议。讲它的地址结构、消息格式、TLV 属性、用户态收发、内核态注册、多播通知，以及 <code>ip</code>、<code>ss</code>、<code>iw</code> 这些工具为什么把身家压在它身上。</p>
+<p>不讲：协议栈分层本身、路由表查找算法、Netfilter 钩子、VLAN 与网桥的转发细节。这些各有一篇，按需跳转。</p>
+<p>跨篇指路：分层骨架看《协议栈架构与分层》；包从网卡到协议栈的路径看《Linux 数据收发路径》；路由表与策略路由分别看《路由表》《策略路由》；<code>iptables</code> / <code>nft</code> 的落地看《Netfilter》；抓包手法看《Wireshark 实战》。</p>
+<p>全文的内核基线是 3.10.36，用户态接口对齐 glibc 的 <code>linux/netlink.h</code>。这套接口从 2.6 到现在没变过形状，变的只是 <code>netlink_kernel_create()</code> 的参数个数。</p>
+</blockquote>
+<h2 id="一内核与用户态怎么通信" tabindex="-1">一、内核与用户态怎么通信 <a class="header-anchor" href="#一内核与用户态怎么通信"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核态和用户态是两套地址空间，一个指针从这边递到那边没法直接解引用。想交换数据，得有通道。Linux 给了三条老路和一条新路。</p>
+<p>老路一，系统调用。<code>read</code>、<code>write</code>、<code>ioctl</code> 都是。参数塞进寄存器，内核先 <code>copy_from_user</code> 拷一份再干活。这条路的天生限制是单向提问：一次调用表达一次请求，内核没法反过来主动找你。</p>
+<p>老路二，procfs。<code>mount -t proc</code> 之后 <code>/proc</code> 下挂一堆文件。读 <code>/proc/net/tcp</code> 拿回一段文本，自己 <code>sscanf</code> 解析。能看，能改一点，但是文本格式，字段一多就难对齐。</p>
+<p>老路三，sysfs。<code>/sys/class/net/eth0/mtu</code> 一个文件一个值，<code>cat</code> 一下拿到 <code>1500</code>，<code>echo</code> 一下改掉。粒度极细，批次能力为零。要配 40 个 VLAN，你得 <code>echo</code> 40 次。</p>
+<p>新路，Netlink。一条 <code>AF_NETLINK</code> 域的套接字。用户态 <code>socket()</code> 建出来，内核态 <code>netlink_kernel_create()</code> 注册进去，两边各自用 socket API 收发。</p>
+<p>前三者都是「文件」形态，Netlink 是「套接字」形态。这个差别决定了后面所有用法：</p>
+<ul>
+<li>有 fd，就能挂到 <code>select</code> / <code>poll</code> / <code>epoll</code> 上，和别的 fd 一起等事件</li>
+<li>有双向队列，内核能主动往里塞消息，不用你先问一句</li>
+<li>有 <code>sendmsg</code> / <code>recvmsg</code>，能带控制信息，也能一次带多个消息块</li>
+<li>有地址结构，一条链路上可以有多个接收者，靠多播组分发</li>
+</ul>
+<p>所以看 Netlink 的心态应该和看 TCP 套接字一样：建 socket、bind、send、recv、close。只是把 <code>AF_INET</code> 换成 <code>AF_NETLINK</code>，把 IP 地址换成 <code>nl_pid</code>，把「端口」换成「协议号 + 多播组」。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 用户态：建一条 netlink 套接字 */</span>
+<span class="hljs-type">int</span> fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+
+<span class="hljs-comment">/* 内核态：注册同一协议号的接收端 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">netlink_kernel_cfg</span> <span class="hljs-title">cfg</span> =</span> {
+    .input = my_recv_cb,
+};
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sock</span> *<span class="hljs-title">nlsk</span> =</span> netlink_kernel_create(&amp;init_net, NETLINK_ROUTE, &amp;cfg);
+</code></pre></div></code></pre>
+<p>一头一尾两行代码，中间夹着的就是整篇文章要展开的东西：地址怎么填、消息怎么排、属性怎么对齐、回调里能干什么、模块什么时候必须加载。</p>
+<p>有一个顺序问题先记住：<strong>内核模块必须先加载，用户态 <code>socket()</code> 才建得出来</strong>。协议号是内核模块注册的，注册之前 <code>AF_NETLINK</code> 上就没有这个协议，<code>socket()</code> 直接失败。这条坑后面还会再提一次。</p>
+<h2 id="二netlink-的定位" tabindex="-1">二、Netlink 的定位 <a class="header-anchor" href="#二netlink-的定位"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Netlink 是 Linux 内核的一套基于 socket 的通信机制。这句话说得比任何定义都准：「只需要知道怎么创建套接字，发送数据，接收数据就行了」。</p>
+<p>这句话是理解它的钥匙。Netlink 没有自己的系统调用，没有自己的设备节点，也没有自己的 <code>ioctl</code> 命令空间。它就是一族套接字操作：</p>
+<ul>
+<li>创建：<code>socket(AF_NETLINK, SOCK_RAW, 协议号)</code></li>
+<li>绑定：<code>bind(fd, (struct sockaddr *)&amp;nl_addr, sizeof(nl_addr))</code></li>
+<li>发送：<code>sendto</code> / <code>sendmsg</code></li>
+<li>接收：<code>recvfrom</code> / <code>recvmsg</code></li>
+<li>关闭：<code>close</code></li>
+</ul>
+<p>全是 <code>sys/socket.h</code> 里的东西。<code>strace</code> 一个 <code>ip link</code>，第一行就是 <code>socket(AF_NETLINK, SOCK_RAW|SOCK_CLOEXEC, NETLINK_ROUTE)</code>。</p>
+<p>这就是它比 <code>ioctl</code> 好用的根本原因。<code>ioctl</code> 是「一个命令号 + 一个结构体指针」，命令和结构体都写死在系统调用参数里，语义由内核代码固定。Netlink 是「一条套接字 + 一段自描述消息」，消息多长、带哪些字段、字段怎么嵌套，全由消息自身描述。内核加了新属性，老程序不认识就跳过，不用重新编译。</p>
+<p><code>socket()</code> 的第三个参数是 netlink 协议号，内核里就是一组 <code>#define</code>，取值 0 到 31。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>协议号</th>
+<th>宏</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td><code>NETLINK_ROUTE</code></td>
+<td>路由、链路、地址、邻居、qdisc</td>
+</tr>
+<tr>
+<td>1</td>
+<td><code>NETLINK_UNUSED</code></td>
+<td>未使用</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>NETLINK_USERSOCK</code></td>
+<td>预留给用户态自定义协议</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>NETLINK_FIREWALL</code></td>
+<td>旧 ip_queue，已废弃</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>NETLINK_SOCK_DIAG</code></td>
+<td>socket 监控，<code>ss</code> 用它</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>NETLINK_NFLOG</code></td>
+<td>netfilter / iptables ULOG</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>NETLINK_XFRM</code></td>
+<td>IPsec</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>NETLINK_SELINUX</code></td>
+<td>SELinux 事件通知</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>NETLINK_ISCSI</code></td>
+<td>Open-iSCSI</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>NETLINK_AUDIT</code></td>
+<td>审计，<code>auditd</code> 用它</td>
+</tr>
+<tr>
+<td>10</td>
+<td><code>NETLINK_FIB_LOOKUP</code></td>
+<td>FIB 查找</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>NETLINK_CONNECTOR</code></td>
+<td>连接器，进程事件等</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>NETLINK_NETFILTER</code></td>
+<td>netfilter 子系统</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>NETLINK_IP6_FW</code></td>
+<td>IPv6 防火墙</td>
+</tr>
+<tr>
+<td>14</td>
+<td><code>NETLINK_DNRTMSG</code></td>
+<td>DECnet 路由消息</td>
+</tr>
+<tr>
+<td>15</td>
+<td><code>NETLINK_KOBJECT_UEVENT</code></td>
+<td>内核 uevent，<code>udev</code> 用它</td>
+</tr>
+<tr>
+<td>16</td>
+<td><code>NETLINK_GENERIC</code></td>
+<td>通用 netlink（genl），新子系统都走这里</td>
+</tr>
+<tr>
+<td>17</td>
+<td>—</td>
+<td>预留给 <code>NETLINK_DM</code>（设备映射事件）</td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>NETLINK_SCSITRANSPORT</code></td>
+<td>SCSI 传输层</td>
+</tr>
+<tr>
+<td>19</td>
+<td><code>NETLINK_ECRYPTFS</code></td>
+<td>eCryptfs</td>
+</tr>
+<tr>
+<td>20</td>
+<td><code>NETLINK_RDMA</code></td>
+<td>RDMA</td>
+</tr>
+<tr>
+<td>21</td>
+<td><code>NETLINK_CRYPTO</code></td>
+<td>加密层</td>
+</tr>
+<tr>
+<td>—</td>
+<td><code>NETLINK_INET_DIAG</code></td>
+<td>等于 <code>NETLINK_SOCK_DIAG</code>，老名字的别名</td>
+</tr>
+</tbody>
+</table></div><p>内核里还有一行 <code>#define MAX_LINKS 32</code>。这张表能占的位就 32 个。<code>unit &lt; 0 || unit &gt;= MAX_LINKS</code> 时创建函数直接返回 NULL，这是硬边界，不是建议。</p>
+<p>每个协议号背后是一条独立的「总线」，互相不串。<code>NETLINK_ROUTE</code> 上的消息不会跑到 <code>NETLINK_NETFILTER</code> 上去。同时注意别把两个 0 搞混：协议号 0 是 <code>NETLINK_ROUTE</code>，而 <code>sockaddr_nl.nl_pid</code> 里的 0 表示内核。前者填在 <code>socket()</code> 第三个参数，后者填在地址结构里，位置不同，含义不同。</p>
+<p>这套东西的实际消费者很集中。<code>ip</code>、<code>ss</code>、<code>iw</code>、<code>nft</code>、<code>udev</code>、<code>auditd</code>、WireGuard 的 <code>wg</code>，底层全是 netlink。<code>ip link add</code> 落到内核就是一条 <code>RTM_NEWLINK</code> 消息，<code>ss -tlnp</code> 就是往 <code>NETLINK_SOCK_DIAG</code> 发一条 <code>SOCK_DIAG_BY_FAMILY</code> 查询。想读懂这些工具的行为，绕不开消息格式。</p>
+<h2 id="三与-ioctlprocfssysfs-的对比" tabindex="-1">三、与 ioctl、procfs、sysfs 的对比 <a class="header-anchor" href="#三与-ioctlprocfssysfs-的对比"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>四条路一起摆出来看，差异就清楚了。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>方式</th>
+<th>接口形态</th>
+<th>数据形态</th>
+<th>方向</th>
+<th>事件通知</th>
+<th>扩展成本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>系统调用 / <code>ioctl</code></td>
+<td><code>ioctl(fd, cmd, &amp;arg)</code></td>
+<td>固定结构体</td>
+<td>用户到内核为主</td>
+<td>无</td>
+<td>高，加命令要改内核</td>
+</tr>
+<tr>
+<td><code>procfs</code></td>
+<td><code>open</code> / <code>read</code> / <code>write</code></td>
+<td>文本</td>
+<td>双向，以读为主</td>
+<td>无，靠轮询</td>
+<td>低，但要自己解析文本</td>
+</tr>
+<tr>
+<td><code>sysfs</code></td>
+<td>一个文件一个值</td>
+<td>字符串标量</td>
+<td>双向</td>
+<td>无，靠 <code>poll</code> 文件</td>
+<td>中，值一多就失控</td>
+</tr>
+<tr>
+<td>Netlink</td>
+<td>socket API</td>
+<td>二进制 TLV</td>
+<td>双向，内核可主动发起</td>
+<td>有，多播组分发</td>
+<td>低，加属性即可</td>
+</tr>
+</tbody>
+</table></div><h3 id="ioctl一命令一结构体" tabindex="-1">ioctl：一命令一结构体 <a class="header-anchor" href="#ioctl一命令一结构体"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>ioctl</code> 的模型是 <code>ioctl(fd, cmd, arg)</code>。<code>cmd</code> 是一个 32 位整数，里面塞了方向、长度、类型、序号；<code>arg</code> 指着一个固定布局的结构体。用户态和内核态各自 <code>#include</code> 同一个头文件，靠这个头文件对齐布局。</p>
+<p>问题不在性能，在扩展。想加一个字段，只能复用结构体末尾的保留位，或者新定义一个命令号。命令号空间有限，同一个功能在两代内核上字段含义还不一样，用户态就得写一堆版本判断。字段一多，结构体越来越胖，每次调用都把整块结构体拷一遍，改一个字段要传全量。</p>
+<p><code>ioctl</code> 也做不了通知。内核想告诉你「eth0 的 link 状态变了」，只能等你下次来问。</p>
+<h3 id="procfs读文本性能差" tabindex="-1">procfs：读文本，性能差 <a class="header-anchor" href="#procfs读文本性能差"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>/proc/net/*</code> 系列是一大坨格式化文本。读一条连接要 <code>open</code>、<code>read</code> 到缓冲区、再 <code>sscanf</code> 逐行解析。字段之间有空格，字段顺序变了你的解析器就崩。</p>
+<p>数据量大时更难受。十万条连接，<code>/proc/net/tcp</code> 就是几兆文本，全量读、全量解析。<code>ss</code> 之所以比 <code>netstat</code> 快，正是因为它不走 procfs，走 <code>NETLINK_SOCK_DIAG</code> 直接拿二进制结构。</p>
+<h3 id="sysfs一个文件一个值" tabindex="-1">sysfs：一个文件一个值 <a class="header-anchor" href="#sysfs一个文件一个值"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>/sys</code> 下的文件粒度极细。改 MTU 是写 <code>/sys/class/net/eth0/mtu</code>，改 MAC 是写 <code>address</code>，加 VLAN 得去 <code>/proc/net/vlan/config</code> 或者干脆用 <code>ip</code>。</p>
+<p>单值读写很直观，批量操作就别扭了。要给 40 个接口配同一个参数，就是 40 次 <code>open</code> + <code>write</code> + <code>close</code>。要原子地改一组关联参数，sysfs 给不了事务语义，中间态会被别人看到。</p>
+<h3 id="netlink结构化数据加多播" tabindex="-1">Netlink：结构化数据加多播 <a class="header-anchor" href="#netlink结构化数据加多播"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>Netlink 把上面三个短板一起补了：</p>
+<ul>
+<li>一次能传结构化数据，整张路由表、整批邻居条目，一条消息或者一个消息序列搞定</li>
+<li>消息自带类型和长度，接收方按属性遍历，不认识的属性跳过，向前兼容</li>
+<li>内核能主动发起，链路状态一变就 <code>netlink_broadcast()</code> 推给所有订阅者，用户态不用轮询</li>
+<li>支持多播组，一条事件投给多个进程，<code>udev</code>、<code>NetworkManager</code>、<code>systemd-networkd</code> 同时盯着 <code>RTMGRP_LINK</code> 互不干扰</li>
+</ul>
+<p>代价也有：二进制格式，自己拼消息、自己算对齐、自己处理字节序。调试比 <code>cat</code> 一个文件麻烦，得靠 <code>nlmon</code> 抓包或者 <code>strace</code>。这些后面都讲。</p>
+<h2 id="四netlink-的地址结构" tabindex="-1">四、Netlink 的地址结构 <a class="header-anchor" href="#四netlink-的地址结构"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>struct sockaddr_nl</code> 定义在 <code>&lt;linux/netlink.h&gt;</code> 里，一共 12 字节。字段只有四个，但是每个都有坑。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sockaddr_nl</span> {</span>
+    <span class="hljs-type">__kernel_sa_family_t</span> nl_family;   <span class="hljs-comment">/* AF_NETLINK */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">short</span>       nl_pad;      <span class="hljs-comment">/* 零填充 */</span>
+    __u32                nl_pid;      <span class="hljs-comment">/* 端口 ID */</span>
+    __u32                nl_groups;   <span class="hljs-comment">/* 多播组位图 */</span>
+};
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>宽度</th>
+<th>含义</th>
+<th>怎么填</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nl_family</code></td>
+<td>2B</td>
+<td>地址族</td>
+<td>恒为 <code>AF_NETLINK</code></td>
+</tr>
+<tr>
+<td><code>nl_pad</code></td>
+<td>2B</td>
+<td>对齐填充</td>
+<td>填 0，填别的没有意义</td>
+</tr>
+<tr>
+<td><code>nl_pid</code></td>
+<td>4B</td>
+<td>端口 ID，一条 netlink 总线内的地址</td>
+<td>用户态填 0 让内核分配，或自己指定；内核侧恒为 0</td>
+</tr>
+<tr>
+<td><code>nl_groups</code></td>
+<td>4B</td>
+<td>32 位多播组位图</td>
+<td>订阅哪几组就把哪几位置 1，不订阅填 0</td>
+</tr>
+</tbody>
+</table></div><p><code>nl_pid</code> 的语义要分清三件事：</p>
+<ol>
+<li>内核自己的 portid 固定是 0。用户态发给内核，<code>dest.nl_pid = 0</code>。</li>
+<li>用户态 <code>bind</code> 时 <code>nl_pid</code> 填 0，内核自动分配一个，取值就是进程 pid。同一个进程里开两条同协议号的 netlink 套接字，第二条 <code>bind</code> 会撞 <code>EADDRINUSE</code>，得自己指定不同的值。</li>
+<li>自己指定也行，比如填 <code>50</code>。后面那两个 demo 双方都写死 50，好处是内核不用查表，<code>netlink_unicast(netlinkfd, skb, 50, ...)</code> 直接投递；坏处是这个值成了约定，用户态必须先 <code>bind</code> 到 50，内核才找得到它。</li>
+</ol>
+<p><code>nl_groups</code> 是位图，不是组号。bit 0 对应第 1 组，bit 1 对应第 2 组，组号比位号大 1。想同时订阅第 1 组和第 4 组，就填 <code>(1 &lt;&lt; 0) | (1 &lt;&lt; 3)</code>，也就是 <code>0x9</code>。位宽 32 位，因为上限就是 32 组。rtnetlink 的组宏直接按位定义，<code>RTMGRP_LINK</code> 是 <code>0x1</code>，<code>RTMGRP_IPV4_IFADDR</code> 是 <code>0x10</code>，用的时候直接或起来。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 订阅链路变化和 IPv4 地址变化两组事件 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sockaddr_nl</span> <span class="hljs-title">local</span>;</span>
+<span class="hljs-built_in">memset</span>(&amp;local, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(local));
+local.nl_family = AF_NETLINK;
+local.nl_pid    = <span class="hljs-number">0</span>;                                  <span class="hljs-comment">/* 让内核分配 */</span>
+local.nl_groups = RTMGRP_LINK | RTMGRP_IPV4_IFADDR;
+
+<span class="hljs-keyword">if</span> (bind(fd, (<span class="hljs-keyword">struct</span> sockaddr *)&amp;local, <span class="hljs-keyword">sizeof</span>(local)) != <span class="hljs-number">0</span>) {
+    perror(<span class="hljs-string">&quot;bind&quot;</span>);
+    close(fd);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p>绑定之后可以用 <code>getsockname()</code> 把内核分配到的 <code>nl_pid</code> 取回来，发给别人用。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">socklen_t</span> len = <span class="hljs-keyword">sizeof</span>(local);
+getsockname(fd, (<span class="hljs-keyword">struct</span> sockaddr *)&amp;local, &amp;len);
+<span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;my portid = %u\n&quot;</span>, local.nl_pid);
+</code></pre></div></code></pre>
+<p>两个用户进程之间也能直接用 netlink 通信，不经过内核。这时 <code>nl_pid</code> 的唯一性要自己管，常用 pid；对方用 <code>sendto</code> 指定你的 <code>nl_pid</code> 投递。<code>NETLINK_USERSOCK</code> 这个协议号就是留给这种用法。</p>
+<h2 id="五消息格式与属性-tlv" tabindex="-1">五、消息格式与属性 TLV <a class="header-anchor" href="#五消息格式与属性-tlv"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Netlink 的消息是「头 + 体」。头是固定的 <code>struct nlmsghdr</code>，体是一串属性。多条消息可以首尾相接塞进同一次 <code>sendmsg</code>，接收方按 <code>nlmsg_len</code> 一步步往前挪。</p>
+<h3 id="消息头" tabindex="-1">消息头 <a class="header-anchor" href="#消息头"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlmsghdr</span> {</span>
+    __u32 nlmsg_len;    <span class="hljs-comment">/* 总长度，含头，按 4 字节对齐 */</span>
+    __u16 nlmsg_type;   <span class="hljs-comment">/* 消息类型 */</span>
+    __u16 nlmsg_flags;  <span class="hljs-comment">/* 标志位 */</span>
+    __u32 nlmsg_seq;    <span class="hljs-comment">/* 序号，请求与应答配对用 */</span>
+    __u32 nlmsg_pid;    <span class="hljs-comment">/* 发送方 portid */</span>
+};
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>宽度</th>
+<th>作用</th>
+<th>注意</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nlmsg_len</code></td>
+<td>4B</td>
+<td>整条消息的字节数，含 16 字节头</td>
+<td>填错就收不了，必须按 <code>NLMSG_SPACE()</code> 算</td>
+</tr>
+<tr>
+<td><code>nlmsg_type</code></td>
+<td>2B</td>
+<td>消息类型</td>
+<td>小于 <code>0x10</code> 是控制消息，其余由子系统定义</td>
+</tr>
+<tr>
+<td><code>nlmsg_flags</code></td>
+<td>2B</td>
+<td>请求、多段、应答标志</td>
+<td><code>NLM_F_REQUEST</code> 必带</td>
+</tr>
+<tr>
+<td><code>nlmsg_seq</code></td>
+<td>4B</td>
+<td>序号</td>
+<td>多线程共用一个 fd 时必须自增配对</td>
+</tr>
+<tr>
+<td><code>nlmsg_pid</code></td>
+<td>4B</td>
+<td>发送方 portid</td>
+<td>内核会用它回发应答</td>
+</tr>
+</tbody>
+</table></div><p><code>nlmsg_type</code> 的低段是内核自己占的：<code>NLMSG_NOOP</code>（1）、<code>NLMSG_ERROR</code>（2）、<code>NLMSG_DONE</code>（3）、<code>NLMSG_OVERRUN</code>（4），<code>NLMSG_MIN_TYPE</code> 是 <code>0x10</code>。<code>0x10</code> 往上是各子系统的私有类型，<code>RTM_NEWLINK</code> 是 16，<code>RTM_DELLINK</code> 是 17，<code>RTM_GETLINK</code> 是 18，<code>RTM_NEWADDR</code> 是 20，<code>RTM_DELADDR</code> 是 21，<code>RTM_GETROUTE</code> 是 26。</p>
+<p><code>nlmsg_flags</code> 里常用的几个：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>标志</th>
+<th>值</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NLM_F_REQUEST</code></td>
+<td><code>0x01</code></td>
+<td>这是一条请求</td>
+</tr>
+<tr>
+<td><code>NLM_F_MULTI</code></td>
+<td><code>0x02</code></td>
+<td>后面还有，<code>NLMSG_DONE</code> 收尾</td>
+</tr>
+<tr>
+<td><code>NLM_F_ACK</code></td>
+<td><code>0x04</code></td>
+<td>要求内核回 <code>NLMSG_ERROR</code> 类型的应答</td>
+</tr>
+<tr>
+<td><code>NLM_F_ECHO</code></td>
+<td><code>0x08</code></td>
+<td>把自己发的消息回声一份</td>
+</tr>
+<tr>
+<td><code>NLM_F_ROOT</code></td>
+<td><code>0x100</code></td>
+<td>请求整表（dump）</td>
+</tr>
+<tr>
+<td><code>NLM_F_MATCH</code></td>
+<td><code>0x200</code></td>
+<td>匹配全部</td>
+</tr>
+<tr>
+<td><code>NLM_F_DUMP</code></td>
+<td><code>0x300</code></td>
+<td>上面两个的组合，最常用</td>
+</tr>
+<tr>
+<td><code>NLM_F_REPLACE</code></td>
+<td><code>0x100</code></td>
+<td>覆盖已存在项</td>
+</tr>
+<tr>
+<td><code>NLM_F_EXCL</code></td>
+<td><code>0x200</code></td>
+<td>已存在就报错</td>
+</tr>
+<tr>
+<td><code>NLM_F_CREATE</code></td>
+<td><code>0x400</code></td>
+<td>不存在就创建</td>
+</tr>
+<tr>
+<td><code>NLM_F_APPEND</code></td>
+<td><code>0x800</code></td>
+<td>追加到末尾</td>
+</tr>
+</tbody>
+</table></div><p>同一个值在不同 <code>nlmsg_type</code> 下含义不同（<code>0x100</code> 既是 <code>NLM_F_ROOT</code> 也是 <code>NLM_F_REPLACE</code>），读代码时得结合类型看。</p>
+<h3 id="对齐与长度宏" tabindex="-1">对齐与长度宏 <a class="header-anchor" href="#对齐与长度宏"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>整条消息和每个属性都按 4 字节对齐。这样 32 位整数和指针天然落在对齐地址上，<code>memcpy</code> 不用拆字节。宏定义如下：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">define</span> NLMSG_ALIGNTO 4U</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLMSG_ALIGN(len)   (((len) + NLMSG_ALIGNTO - 1) &amp; ~(NLMSG_ALIGNTO - 1))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLMSG_HDRLEN       ((int) NLMSG_ALIGN(sizeof(struct nlmsghdr)))   <span class="hljs-comment">/* 16 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLMSG_LENGTH(len)  ((len) + NLMSG_HDRLEN)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLMSG_SPACE(len)   NLMSG_ALIGN(NLMSG_LENGTH(len))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLMSG_DATA(nlh)    ((void *)(((char *)(nlh)) + NLMSG_LENGTH(0)))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLMSG_OK(nlh, len) ((len) &gt;= (int)sizeof(struct nlmsghdr) &amp;&amp; \
+                            (nlh)-&gt;nlmsg_len &gt;= sizeof(struct nlmsghdr) &amp;&amp; \
+                            (nlh)-&gt;nlmsg_len &lt;= (len))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLMSG_NEXT(nlh, len) ((len) -= NLMSG_ALIGN((nlh)-&gt;nlmsg_len), \
+                              (struct nlmsghdr *)(((char *)(nlh)) + \
+                              NLMSG_ALIGN((nlh)-&gt;nlmsg_len)))</span>
+</code></pre></div></code></pre>
+<p>几个名字长得很像，作用差很多：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>宏</th>
+<th>算法</th>
+<th>用在哪</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>NLMSG_ALIGN(n)</code></td>
+<td>向上取到 4 的倍数</td>
+<td>算下一条消息的起点</td>
+</tr>
+<tr>
+<td><code>NLMSG_LENGTH(n)</code></td>
+<td><code>n + 16</code></td>
+<td>算载荷加头的长度</td>
+</tr>
+<tr>
+<td><code>NLMSG_SPACE(n)</code></td>
+<td><code>align4(n + 16)</code></td>
+<td>算缓冲区大小，也是 <code>nlmsg_len</code> 该填的值</td>
+</tr>
+<tr>
+<td><code>NLMSG_HDRLEN</code></td>
+<td>16</td>
+<td>头长度，固定值</td>
+</tr>
+<tr>
+<td><code>NLMSG_DATA(nlh)</code></td>
+<td><code>(char *)nlh + 16</code></td>
+<td>拿消息体指针</td>
+</tr>
+</tbody>
+</table></div><p><code>NLMSG_SPACE()</code> 去申请内存、<code>nlmsg_len</code> 也填 <code>NLMSG_SPACE()</code> 的值，<code>memset</code> 一次清零，尾巴上的对齐填充就自动是 0。后面的用户态 demo 就是 <code>nlh-&gt;nlmsg_len = NLMSG_SPACE(MAX_PLOAD);</code> 这么写的。</p>
+<h3 id="属性-tlv" tabindex="-1">属性 TLV <a class="header-anchor" href="#属性-tlv"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>消息体不是裸数据，是一串属性。每个属性三段：2 字节长度、2 字节类型、变长数据。这是标准 TLV。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlattr</span> {</span>
+    __u16 nla_len;    <span class="hljs-comment">/* 含头长度：2 + 数据长度 */</span>
+    __u16 nla_type;   <span class="hljs-comment">/* 类型，高两位是标志 */</span>
+};
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLA_F_NESTED        (1 &lt;&lt; 15)   <span class="hljs-comment">/* 里面还是属性串 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLA_F_NET_BYTEORDER (1 &lt;&lt; 14)   <span class="hljs-comment">/* 数据是网络字节序 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLA_TYPE_MASK       ~(NLA_F_NESTED | NLA_F_NET_BYTEORDER)</span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLA_ALIGNTO 4</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLA_ALIGN(len) (((len) + NLA_ALIGNTO - 1) &amp; ~(NLA_ALIGNTO - 1))</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NLA_HDRLEN     ((int) NLA_ALIGN(sizeof(struct nlattr)))   <span class="hljs-comment">/* 4 */</span></span>
+</code></pre></div></code></pre>
+<p>内存布局长这样，<code>+--+</code> 是 4 字节边界：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>+------------------+  &lt;- nlmsghdr 起点
+| nlmsg_len   4B   |
+| nlmsg_type  2B   |
+| nlmsg_flags 2B   |
+| nlmsg_seq   4B   |
+| nlmsg_pid   4B   |
++------------------+  &lt;- NLMSG_DATA()，偏移 16B
+| nla_len  2B      |
+| nla_type 2B      |  &lt;- 第一个属性
+| data ...         |
+| pad to 4B        |
++------------------+
+| nla_len  2B      |
+| nla_type 2B      |  &lt;- 第二个属性
+| data ...         |
+| pad to 4B        |
++------------------+  &lt;- 消息结束，总长按 4 对齐
+</code></pre></div></code></pre>
+<p>对齐规则要记两条：<code>nla_len</code> 记真实长度，<strong>不含尾部填充</strong>；指针前进按 <code>NLA_ALIGN(nla_len)</code>，带填充。所以数据长度不是 4 的倍数时，尾部会补若干 0 字节，遍历时必须跳过。</p>
+<p>嵌套属性让消息能表达树形结构，这是它比固定结构体灵活的地方。父属性的类型带上 <code>NLA_F_NESTED</code>，它的数据部分就是另一串属性。用内核提供的 helper 拼最省事：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlmsghdr</span> *<span class="hljs-title">nlh</span> =</span> nlmsg_new(<span class="hljs-number">1024</span>, GFP_KERNEL);
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlattr</span> *<span class="hljs-title">nest</span>;</span>
+
+nla_put_u32(nlh, IFLA_MTU, <span class="hljs-number">1500</span>);
+nest = nla_nest_start(nlh, IFLA_LINKINFO);
+<span class="hljs-keyword">if</span> (nest == <span class="hljs-literal">NULL</span>) {
+    nlmsg_free(nlh);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+nla_put_string(nlh, IFLA_INFO_KIND, <span class="hljs-string">&quot;vlan&quot;</span>);   <span class="hljs-comment">/* 这一层里再放属性 */</span>
+nla_nest_end(nlh, nest);                        <span class="hljs-comment">/* 回填 nest-&gt;nla_len */</span>
+</code></pre></div></code></pre>
+<p><code>nla_nest_start()</code> 只写一个占位的属性头，<code>nla_nest_end()</code> 把「从 nest 开头到当前末尾」的长度回填进 <code>nla_len</code>。这样嵌套层数不限，只要总长度不超过缓冲区。</p>
+<p>用户态遍历也一样，一层层剥：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> len = nlh-&gt;nlmsg_len - NLMSG_HDRLEN;
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlattr</span> *<span class="hljs-title">na</span>;</span>
+
+<span class="hljs-keyword">for</span> (na = (<span class="hljs-keyword">struct</span> nlattr *)NLMSG_DATA(nlh);
+     NLA_OK(na, len);
+     na = NLA_NEXT(na, len)) {
+    <span class="hljs-keyword">switch</span> (na-&gt;nla_type &amp; NLA_TYPE_MASK) {
+    <span class="hljs-keyword">case</span> IFLA_IFNAME:
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;ifname = %s\n&quot;</span>, (<span class="hljs-type">char</span> *)NLA_DATA(na));
+        <span class="hljs-keyword">break</span>;
+    <span class="hljs-keyword">default</span>:
+        <span class="hljs-keyword">break</span>;      <span class="hljs-comment">/* 不认识的属性直接跳过，向前兼容 */</span>
+    }
+}
+</code></pre></div></code></pre>
+<p><code>default: break;</code> 这一行是 Netlink 向前兼容的全部秘密。内核版本升级加了新属性，老程序不认识，跳过不报错。<code>ioctl</code> 做不到这一点：多出来的字段没有位置放，结构体布局是硬约定。</p>
+<h2 id="六用户态编程socket-与-bind" tabindex="-1">六、用户态编程：socket 与 bind <a class="header-anchor" href="#六用户态编程socket-与-bind"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>用户态五步走：建 socket、bind 本地地址、填目标地址、发、收。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/socket.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/netlink.h&gt;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NETLINK_USER 22</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> USER_MSG     (NETLINK_USER + 1)   <span class="hljs-comment">/* 23，自定义协议号 */</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> USER_PORT    50                   <span class="hljs-comment">/* 自定义 portid */</span></span>
+
+<span class="hljs-type">int</span> fd = socket(AF_NETLINK, SOCK_RAW, USER_MSG);
+</code></pre></div></code></pre>
+<p>三个参数挨个说：</p>
+<ul>
+<li>域：<code>AF_NETLINK</code>。写 <code>PF_NETLINK</code> 也能跑，两者值相同，但语义上域和协议族不是一回事</li>
+<li>类型：<code>SOCK_RAW</code>。netlink 只有 raw 语义，写 <code>SOCK_DGRAM</code> 也能建出来，内核里走同一个实现</li>
+<li>协议号：<code>0</code> 到 <code>31</code>，必须是内核已经注册过的</li>
+</ul>
+<p><code>socket()</code> 失败的两个常见原因：</p>
+<ul>
+<li>返回 <code>EPROTONOSUPPORT</code> 或 <code>EAFNOSUPPORT</code>：内核模块没加载，协议号 23 没人注册</li>
+<li>返回 <code>EMFILE</code>：fd 耗尽</li>
+</ul>
+<p>然后是 bind。标准写法：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sockaddr_nl</span> <span class="hljs-title">local</span>;</span>
+
+<span class="hljs-built_in">memset</span>(&amp;local, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(local));
+local.nl_family = AF_NETLINK;
+local.nl_pid    = <span class="hljs-number">50</span>;       <span class="hljs-comment">/* 自己指定，内核按这个值回发 */</span>
+local.nl_groups = <span class="hljs-number">0</span>;        <span class="hljs-comment">/* 单播，不订阅多播 */</span>
+
+<span class="hljs-keyword">if</span> (bind(fd, (<span class="hljs-keyword">struct</span> sockaddr *)&amp;local, <span class="hljs-keyword">sizeof</span>(local)) != <span class="hljs-number">0</span>) {
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;bind() error\n&quot;</span>);
+    close(fd);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+}
+</code></pre></div></code></pre>
+<p><code>nl_pid</code> 和 <code>nl_groups</code> 的填法决定这条套接字能干什么：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>场景</th>
+<th><code>nl_pid</code></th>
+<th><code>nl_groups</code></th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>只发不收</td>
+<td>0</td>
+<td>0</td>
+<td>可以省掉 bind，<code>sendto</code> 会隐式绑定</td>
+</tr>
+<tr>
+<td>单播收</td>
+<td>0</td>
+<td>0</td>
+<td>内核分配 pid 当地址</td>
+</tr>
+<tr>
+<td>单播收，要固定地址</td>
+<td>非 0 且不冲突</td>
+<td>0</td>
+<td>用你给的值，内核按它投递</td>
+</tr>
+<tr>
+<td>只收事件</td>
+<td>0</td>
+<td>非 0 位图</td>
+<td>加入对应多播组</td>
+</tr>
+<tr>
+<td>既收应答又收事件</td>
+<td>0</td>
+<td>非 0 位图</td>
+<td>两类消息都在同一个队列里</td>
+</tr>
+</tbody>
+</table></div><p>demo 里 <code>#define NETLINK_USER 22</code> 只是占个名字，真正注册的是 <code>USER_MSG</code>（22 + 1 = 23）。22 和 23 都在合法范围里，所以这套写法能跑通。自己写的时候别学这个绕法，协议号直接起个名字就行。</p>
+<p>bind 之前还要想清楚一件事：同一个协议号下，同一进程只允许一条套接字绑同一个 <code>nl_pid</code>。想开两条，第二条就别填 0，自己给个别的值，或者干脆用 <code>clone</code> 出来的 pid。</p>
+<h2 id="七发送与接收消息" tabindex="-1">七、发送与接收消息 <a class="header-anchor" href="#七发送与接收消息"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>发有两条路：<code>sendto</code> 和 <code>sendmsg</code>。收也有两条：<code>recvfrom</code> 和 <code>recvmsg</code>。</p>
+<h3 id="sendto" tabindex="-1">sendto <a class="header-anchor" href="#sendto"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>从建 socket 到发出去，完整流程一行行看：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlmsghdr</span> *<span class="hljs-title">nlh</span>;</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sockaddr_nl</span> <span class="hljs-title">dest_addr</span>;</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> _<span class="hljs-title">my_msg</span> <span class="hljs-title">info</span>;</span>
+<span class="hljs-type">char</span> *data = <span class="hljs-string">&quot;hello kernel&quot;</span>;
+<span class="hljs-type">int</span> ret;
+
+<span class="hljs-built_in">memset</span>(&amp;dest_addr, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(dest_addr));
+dest_addr.nl_family = AF_NETLINK;
+dest_addr.nl_pid    = <span class="hljs-number">0</span>;      <span class="hljs-comment">/* 0 = 内核 */</span>
+dest_addr.nl_groups = <span class="hljs-number">0</span>;
+
+nlh = (<span class="hljs-keyword">struct</span> nlmsghdr *)<span class="hljs-built_in">malloc</span>(NLMSG_SPACE(MAX_PLOAD));
+<span class="hljs-built_in">memset</span>(nlh, <span class="hljs-number">0</span>, NLMSG_SPACE(MAX_PLOAD));
+nlh-&gt;nlmsg_len   = NLMSG_SPACE(MAX_PLOAD);
+nlh-&gt;nlmsg_flags = <span class="hljs-number">0</span>;
+nlh-&gt;nlmsg_type  = <span class="hljs-number">0</span>;
+nlh-&gt;nlmsg_seq   = <span class="hljs-number">0</span>;
+nlh-&gt;nlmsg_pid   = local.nl_pid;
+<span class="hljs-built_in">memcpy</span>(NLMSG_DATA(nlh), data, <span class="hljs-built_in">strlen</span>(data));
+
+ret = sendto(fd, nlh, nlh-&gt;nlmsg_len, <span class="hljs-number">0</span>,
+             (<span class="hljs-keyword">struct</span> sockaddr *)&amp;dest_addr, <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> sockaddr_nl));
+</code></pre></div></code></pre>
+<p><code>dest_addr.nl_pid = 0</code> 就是「发给内核」。这一行是用户态到内核态的唯一开关，填别的值就是发给另一个用户进程。</p>
+<p><code>sendmsg</code> 用 <code>struct msghdr</code> 加 <code>struct iovec</code> 拼，好处是能一次带多个缓冲，拼消息不用先拷进一块连续内存。<code>libmnl</code>、<code>libnl</code> 内部大量用 <code>sendmsg</code>。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">iovec</span> <span class="hljs-title">iov</span> =</span> { .iov_base = nlh, .iov_len = nlh-&gt;nlmsg_len };
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">msghdr</span> <span class="hljs-title">msg</span> =</span> {
+    .msg_name    = &amp;dest_addr,
+    .msg_namelen = <span class="hljs-keyword">sizeof</span>(dest_addr),
+    .msg_iov     = &amp;iov,
+    .msg_iovlen  = <span class="hljs-number">1</span>,
+};
+sendmsg(fd, &amp;msg, <span class="hljs-number">0</span>);
+</code></pre></div></code></pre>
+<h3 id="接收循环" tabindex="-1">接收循环 <a class="header-anchor" href="#接收循环"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p><code>recv</code> 返回字节数，但缓冲区里会躺着好几条消息，必须循环拆开。这是 netlink 编程里最容易写错的地方。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">char</span> buf[<span class="hljs-number">8192</span>];
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlmsghdr</span> *<span class="hljs-title">nlh</span>;</span>
+<span class="hljs-type">int</span> len;
+
+len = recv(fd, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);
+<span class="hljs-keyword">for</span> (nlh = (<span class="hljs-keyword">struct</span> nlmsghdr *)buf; NLMSG_OK(nlh, len); nlh = NLMSG_NEXT(nlh, len)) {
+    <span class="hljs-keyword">if</span> (nlh-&gt;nlmsg_type == NLMSG_DONE)
+        <span class="hljs-keyword">break</span>;                              <span class="hljs-comment">/* dump 结束 */</span>
+    <span class="hljs-keyword">if</span> (nlh-&gt;nlmsg_type == NLMSG_ERROR) {
+        <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlmsgerr</span> *<span class="hljs-title">err</span> =</span> (<span class="hljs-keyword">struct</span> nlmsgerr *)NLMSG_DATA(nlh);
+        <span class="hljs-keyword">if</span> (err-&gt;error != <span class="hljs-number">0</span>)
+            <span class="hljs-built_in">fprintf</span>(<span class="hljs-built_in">stderr</span>, <span class="hljs-string">&quot;nl error: %s\n&quot;</span>, strerror(-err-&gt;error));
+        <span class="hljs-keyword">continue</span>;                           <span class="hljs-comment">/* error == 0 表示 ACK */</span>
+    }
+    handle_one(nlh);
+}
+</code></pre></div></code></pre>
+<p><code>NLMSG_ERROR</code> 这个名字有欺骗性。它承载的不只是错误：<code>error == 0</code> 时它就是一条 ACK，说明你上一条请求内核收到了。</p>
+<h3 id="完整用户态-demo" tabindex="-1">完整用户态 demo <a class="header-anchor" href="#完整用户态-demo"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>用户态的 <code>u_netlink.c</code> 全文，去掉被打散的碎片和行号，补上头文件：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/*******************************
+ file: u_netlink.c
+ description: 用户态发一条给内核，再等内核回一条
+*******************************/</span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdlib.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;errno.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/socket.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/netlink.h&gt;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NETLINK_USER 22</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> USER_MSG     (NETLINK_USER + 1)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> MSG_LEN      100</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> MAX_PLOAD    100</span>
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> _<span class="hljs-title">my_msg</span> {</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlmsghdr</span> <span class="hljs-title">hdr</span>;</span>
+    <span class="hljs-type">int8_t</span> data[MSG_LEN];
+};
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">int</span> argc, <span class="hljs-type">char</span> **argv)</span>
+{
+    <span class="hljs-type">char</span> *data = <span class="hljs-string">&quot;hello kernel&quot;</span>;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sockaddr_nl</span> <span class="hljs-title">local</span>, <span class="hljs-title">dest_addr</span>;</span>
+    <span class="hljs-type">int</span> skfd;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlmsghdr</span> *<span class="hljs-title">nlh</span> =</span> <span class="hljs-literal">NULL</span>;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> _<span class="hljs-title">my_msg</span> <span class="hljs-title">info</span>;</span>
+    <span class="hljs-type">int</span> ret;
+
+    skfd = socket(AF_NETLINK, SOCK_RAW, USER_MSG);
+    <span class="hljs-keyword">if</span> (skfd == <span class="hljs-number">-1</span>) {
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;create socket error...%s\n&quot;</span>, strerror(errno));
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    <span class="hljs-built_in">memset</span>(&amp;local, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(local));
+    local.nl_family = AF_NETLINK;
+    local.nl_pid    = <span class="hljs-number">50</span>;
+    local.nl_groups = <span class="hljs-number">0</span>;
+    <span class="hljs-keyword">if</span> (bind(skfd, (<span class="hljs-keyword">struct</span> sockaddr *)&amp;local, <span class="hljs-keyword">sizeof</span>(local)) != <span class="hljs-number">0</span>) {
+        <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;bind() error\n&quot;</span>);
+        close(skfd);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    <span class="hljs-built_in">memset</span>(&amp;dest_addr, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(dest_addr));
+    dest_addr.nl_family = AF_NETLINK;
+    dest_addr.nl_pid    = <span class="hljs-number">0</span>;            <span class="hljs-comment">/* to kernel */</span>
+    dest_addr.nl_groups = <span class="hljs-number">0</span>;
+
+    nlh = (<span class="hljs-keyword">struct</span> nlmsghdr *)<span class="hljs-built_in">malloc</span>(NLMSG_SPACE(MAX_PLOAD));
+    <span class="hljs-built_in">memset</span>(nlh, <span class="hljs-number">0</span>, NLMSG_SPACE(MAX_PLOAD));
+    nlh-&gt;nlmsg_len   = NLMSG_SPACE(MAX_PLOAD);
+    nlh-&gt;nlmsg_flags = <span class="hljs-number">0</span>;
+    nlh-&gt;nlmsg_type  = <span class="hljs-number">0</span>;
+    nlh-&gt;nlmsg_seq   = <span class="hljs-number">0</span>;
+    nlh-&gt;nlmsg_pid   = local.nl_pid;    <span class="hljs-comment">/* self port */</span>
+    <span class="hljs-built_in">memcpy</span>(NLMSG_DATA(nlh), data, <span class="hljs-built_in">strlen</span>(data));
+
+    ret = sendto(skfd, nlh, nlh-&gt;nlmsg_len, <span class="hljs-number">0</span>,
+                 (<span class="hljs-keyword">struct</span> sockaddr *)&amp;dest_addr, <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> sockaddr_nl));
+    <span class="hljs-keyword">if</span> (!ret) {
+        perror(<span class="hljs-string">&quot;sendto error1\n&quot;</span>);
+        close(skfd);
+        <span class="hljs-built_in">exit</span>(<span class="hljs-number">-1</span>);
+    }
+
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;wait kernel msg!\n&quot;</span>);
+    <span class="hljs-built_in">memset</span>(&amp;info, <span class="hljs-number">0</span>, <span class="hljs-keyword">sizeof</span>(info));
+    ret = recvfrom(skfd, &amp;info, <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> _my_msg), <span class="hljs-number">0</span>,
+                   (<span class="hljs-keyword">struct</span> sockaddr *)&amp;dest_addr, <span class="hljs-keyword">sizeof</span>(dest_addr));
+    <span class="hljs-keyword">if</span> (!ret) {
+        perror(<span class="hljs-string">&quot;recv form kernel error\n&quot;</span>);
+        close(skfd);
+        <span class="hljs-built_in">exit</span>(<span class="hljs-number">-1</span>);
+    }
+
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;msg receive from kernel:%s\n&quot;</span>, info.data);
+
+    <span class="hljs-built_in">free</span>(nlh);
+    close(skfd);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>原 demo 里的 <code>if (!ret)</code> 判断不严谨。<code>sendto</code> 返回 <code>-1</code> 才是失败，返回 0 在 netlink 上几乎不会出现；<code>recvfrom</code> 返回 <code>-1</code> 才是错误，返回 0 表示对端关闭。要改成 <code>if (ret &lt; 0)</code> 才抓得住真正的错误。这里保留原样，是为了让你看清原始 demo 的毛病出在哪，也提醒一句：照抄网上的 netlink 代码，先看它判错误的姿势对不对。</p>
+<p>这套代码能跑通，前提是下面这句，它比代码本身更重要：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>一定要先加载内核模块，要不然用户层创建套接字会失败！
+因为内核模块会注册 netlink 所使用的协议类型，本例子中协议类型为 USER_MSG，即 23。
+</code></pre></div></code></pre>
+<p>这条依赖在 <code>ip</code>、<code>ss</code> 上体现不出来，因为 <code>NETLINK_ROUTE</code>、<code>NETLINK_SOCK_DIAG</code> 是内核内建注册的，开机就有。自己占协议号 23 的时候，模块没 <code>insmod</code>，用户态连 <code>socket()</code> 都建不出来，报错还只是 <code>Protocol not supported</code>，很容易误判成内核不支持 netlink。</p>
+<h2 id="八内核态编程netlink_kernel_create" tabindex="-1">八、内核态编程：netlink_kernel_create <a class="header-anchor" href="#八内核态编程netlink_kernel_create"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>内核侧干三件事：注册协议号、处理收到的消息、释放。注册就一个函数。</p>
+<h3 id="函数原型" tabindex="-1">函数原型 <a class="header-anchor" href="#函数原型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/******************************
+ net  : linux 网络命名空间结构体指针
+ unit : netlink 协议类型
+ cfg  : netlink 内核配置参数结构体指针
+ 返回 : sock 结构指针
+******************************/</span>
+<span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-keyword">struct</span> sock *
+<span class="hljs-title function_">netlink_kernel_create</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> net *net, <span class="hljs-type">int</span> unit, <span class="hljs-keyword">struct</span> netlink_kernel_cfg *cfg)</span>;
+</code></pre></div></code></pre>
+<p>3.10 只有三个参数。2.6.36 那会儿是六个：<code>(net, unit, groups, input, cb_mutex, module)</code>。改动不是简化接口，是把散着的参数收进结构体。那句「参数变短了，实际是因为放到该结构体中来了」说的就是这件事。老代码直接编不过，必须重写成 <code>cfg</code> 形式。</p>
+<p>三个参数逐个拆：</p>
+<p>第一个 <code>net</code>，网络命名空间。不深究就传 <code>&amp;init_net</code>，它在 <code>net_namespace.c</code> 里定义，代表初始命名空间。传对了，这条 netlink 套接字就挂在这个 netns 里，别的 netns 看不见它。</p>
+<p>第二个 <code>unit</code>，协议号，取值必须在 <code>[0, MAX_LINKS)</code>。越界直接返回 NULL：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-keyword">inline</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sock</span> *
+__<span class="hljs-title">netlink_kernel_create</span>(<span class="hljs-keyword">struct</span> <span class="hljs-title">net</span> *<span class="hljs-title">net</span>, <span class="hljs-title">int</span> <span class="hljs-title">unit</span>, <span class="hljs-keyword">struct</span> <span class="hljs-title">module</span> *<span class="hljs-title">module</span>,
+                        <span class="hljs-keyword">struct</span> <span class="hljs-title">netlink_kernel_cfg</span> *<span class="hljs-title">cfg</span>)
+{</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">socket</span> *<span class="hljs-title">sock</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sock</span> *<span class="hljs-title">sk</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">netlink_sock</span> *<span class="hljs-title">nlk</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">listeners</span> *<span class="hljs-title">listeners</span> =</span> <span class="hljs-literal">NULL</span>;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">mutex</span> *<span class="hljs-title">cb_mutex</span> =</span> cfg ? cfg-&gt;cb_mutex : <span class="hljs-literal">NULL</span>;
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> groups;
+
+    BUG_ON(!nl_table);
+    <span class="hljs-keyword">if</span> (unit &lt; <span class="hljs-number">0</span> || unit &gt;= MAX_LINKS)
+        <span class="hljs-keyword">return</span> <span class="hljs-literal">NULL</span>;
+    ...
+}
+</code></pre></div></code></pre>
+<p><code>MAX_LINKS</code> 是 32。<code>unit</code> 给 32 就拿回 NULL，调用方必须判空。</p>
+<p>第三个 <code>cfg</code>，配置结构体。</p>
+<h3 id="netlink_kernel_cfg" tabindex="-1">netlink_kernel_cfg <a class="header-anchor" href="#netlink_kernel_cfg"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">netlink_kernel_cfg</span> {</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> groups;                 <span class="hljs-comment">/* 组数，多播用；单播填 0 */</span>
+    <span class="hljs-type">unsigned</span> <span class="hljs-type">int</span> flags;
+    <span class="hljs-type">void</span> (*input)(<span class="hljs-keyword">struct</span> sk_buff *skb);  <span class="hljs-comment">/* 收到消息时的回调 */</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">mutex</span> *<span class="hljs-title">cb_mutex</span>;</span>              <span class="hljs-comment">/* 回调互斥锁，NULL 用默认锁 */</span>
+    <span class="hljs-type">void</span> (*bind)(<span class="hljs-type">int</span> group);             <span class="hljs-comment">/* 有 socket 加入组时调用 */</span>
+};
+</code></pre></div></code></pre>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>字段</th>
+<th>作用</th>
+<th>填错的后果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>groups</code></td>
+<td>多播组数量，决定 <code>nl_groups</code> 有多少位可用</td>
+<td>填 0 就多播不了，<code>netlink_broadcast</code> 无人可投</td>
+</tr>
+<tr>
+<td><code>flags</code></td>
+<td>配置标志</td>
+<td>填 0</td>
+</tr>
+<tr>
+<td><code>input</code></td>
+<td>收消息回调，参数是 <code>sk_buff</code></td>
+<td>不填就没人收，消息在队列里堆到溢出</td>
+</tr>
+<tr>
+<td><code>cb_mutex</code></td>
+<td>保护回调的互斥锁</td>
+<td>填 NULL 用内核默认锁</td>
+</tr>
+<tr>
+<td><code>bind</code></td>
+<td>socket 加入多播组时的通知钩子</td>
+<td>填 NULL 不通知</td>
+</tr>
+</tbody>
+</table></div><p><code>input</code> 是最关键的成员。签名固定，参数是内核攒好的 <code>sk_buff</code>，消息头就在 <code>skb-&gt;data</code> 上。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">recv_cb</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff *skb)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlmsghdr</span> *<span class="hljs-title">nlh</span> =</span> <span class="hljs-literal">NULL</span>;
+    <span class="hljs-type">void</span> *data = <span class="hljs-literal">NULL</span>;
+
+    printk(<span class="hljs-string">&quot;skb-&gt;len:%u\n&quot;</span>, skb-&gt;len);
+
+    <span class="hljs-keyword">if</span> (skb-&gt;len &gt;= nlmsg_total_size(<span class="hljs-number">0</span>)) {
+        nlh  = nlmsg_hdr(skb);
+        data = NLMSG_DATA(nlh);
+        <span class="hljs-keyword">if</span> (data) {
+            printk(<span class="hljs-string">&quot;kernel receive data: %s\n&quot;</span>, (<span class="hljs-type">int8_t</span> *)data);
+            send_msg(data, nlmsg_len(nlh));
+        }
+    }
+}
+</code></pre></div></code></pre>
+<p><code>nlmsg_total_size(0)</code> 是最小消息长度，16 字节。小于它说明 skb 里连完整的消息头都没有，直接丢。<code>nlmsg_hdr(skb)</code> 展开就是 <code>(struct nlmsghdr *)skb-&gt;data</code>。</p>
+<h3 id="内核侧发送单播与多播" tabindex="-1">内核侧发送：单播与多播 <a class="header-anchor" href="#内核侧发送单播与多播"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/******************************
+ ssk      : sock 结构体指针
+ skb      : skb 存放消息，data 字段指向 netlink 消息结构，
+            控制块保存地址信息，宏 NETLINK_CB(skb) 用来设置
+ portid   : 端口 id
+ nonblock : 1 表示无接收缓存可利用时立即返回，
+            0 表示无接收缓存可利用时睡眠
+ 返回     : 发送数据的长度
+******************************/</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">netlink_unicast</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sock *ssk, <span class="hljs-keyword">struct</span> sk_buff *skb,
+                    __u32 portid, <span class="hljs-type">int</span> nonblock)</span>;
+
+<span class="hljs-comment">/******************************
+ ssk        : sock 结构体指针
+ skb        : 同上
+ portid     : 端口 id
+ group      : netlink 组，位掩码
+ allocation : 内存分配类型，GFP_ATOMIC 用于原子上下文（不可睡眠），
+              GFP_KERNEL 用于非原子上下文
+ 返回       : 发送数据的长度
+******************************/</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">netlink_broadcast</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sock *ssk, <span class="hljs-keyword">struct</span> sk_buff *skb,
+                      __u32 portid, __u32 group, <span class="hljs-type">gfp_t</span> allocation)</span>;
+</code></pre></div></code></pre>
+<p>两个函数都吃 skb，返回时已经把 skb 消费掉（成功投递和无法投递都一样），调用方不要再自己 <code>kfree_skb</code>，否则就是双重释放。</p>
+<p><code>nonblock</code> 这个参数容易踩错：传 <code>MSG_DONTWAIT</code>（值为 1）是非阻塞，接收队列满时立刻返回；传 0 就在队列满时睡眠。在中断上下文或者持自旋锁的地方，只能传 <code>MSG_DONTWAIT</code>。同理 <code>allocation</code> 在中断上下文只能给 <code>GFP_ATOMIC</code>。</p>
+<h3 id="拼一条内核消息" tabindex="-1">拼一条内核消息 <a class="header-anchor" href="#拼一条内核消息"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">send_msg</span><span class="hljs-params">(<span class="hljs-type">int8_t</span> *pbuf, <span class="hljs-type">uint16_t</span> len)</span>
+{
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sk_buff</span> *<span class="hljs-title">nl_skb</span>;</span>
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlmsghdr</span> *<span class="hljs-title">nlh</span>;</span>
+    <span class="hljs-type">int</span> ret;
+
+    nl_skb = nlmsg_new(len, GFP_ATOMIC);
+    <span class="hljs-keyword">if</span> (!nl_skb) {
+        printk(<span class="hljs-string">&quot;netlink_alloc_skb error\n&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    nlh = nlmsg_put(nl_skb, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>, USER_MSG, len, <span class="hljs-number">0</span>);
+    <span class="hljs-keyword">if</span> (nlh == <span class="hljs-literal">NULL</span>) {
+        printk(<span class="hljs-string">&quot;nlmsg_put() error\n&quot;</span>);
+        nlmsg_free(nl_skb);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+
+    <span class="hljs-built_in">memcpy</span>(nlmsg_data(nlh), pbuf, len);
+
+    ret = netlink_unicast(netlinkfd, nl_skb, USER_PORT, MSG_DONTWAIT);
+    <span class="hljs-keyword">return</span> ret;
+}
+</code></pre></div></code></pre>
+<p><code>nlmsg_new(size, gfp)</code> 分配 skb 并预留头部空间。<code>nlmsg_put(skb, pid, seq, type, payload_len, flags)</code> 写入消息头并返回指针，失败返回 NULL，这时必须 <code>nlmsg_free()</code> 收尾，否则泄漏。<code>nlmsg_data(nlh)</code> 拿到数据区，拷完原始数据后长度已经在 <code>nlmsg_put()</code> 里填好，不用再手动改 <code>nlmsg_len</code>。</p>
+<h3 id="完整内核态-demo" tabindex="-1">完整内核态 demo <a class="header-anchor" href="#完整内核态-demo"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/*******************************
+ file: k_netlink.c
+ description: 内核态注册协议号 23，收到消息后回发
+ kernel: linux-3.10.36
+*******************************/</span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/module.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/kernel.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/init.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/skbuff.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;linux/netlink.h&gt;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> NETLINK_USER 22</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> USER_MSG     (NETLINK_USER + 1)</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> USER_PORT    50</span>
+
+MODULE_LICENSE(<span class="hljs-string">&quot;GPL&quot;</span>);
+MODULE_AUTHOR(<span class="hljs-string">&quot;arvik&quot;</span>);
+MODULE_DESCRIPTION(<span class="hljs-string">&quot;netlink_demo&quot;</span>);
+
+<span class="hljs-type">static</span> <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sock</span> *<span class="hljs-title">netlinkfd</span> =</span> <span class="hljs-literal">NULL</span>;
+
+<span class="hljs-type">int</span>  <span class="hljs-title function_">send_msg</span><span class="hljs-params">(<span class="hljs-type">int8_t</span> *pbuf, <span class="hljs-type">uint16_t</span> len)</span> { <span class="hljs-comment">/* 见上一节 */</span> }
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> <span class="hljs-title function_">recv_cb</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> sk_buff *skb)</span>    { <span class="hljs-comment">/* 见上一节 */</span> }
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">netlink_kernel_cfg</span> <span class="hljs-title">cfg</span> =</span> {
+    .input = recv_cb,
+};
+
+<span class="hljs-type">static</span> <span class="hljs-type">int</span> __init <span class="hljs-title function_">test_netlink_init</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    printk(<span class="hljs-string">&quot;init netlink_demo!\n&quot;</span>);
+    netlinkfd = netlink_kernel_create(&amp;init_net, USER_MSG, &amp;cfg);
+    <span class="hljs-keyword">if</span> (!netlinkfd) {
+        printk(KERN_ERR <span class="hljs-string">&quot;can not create a netlink socket!\n&quot;</span>);
+        <span class="hljs-keyword">return</span> <span class="hljs-number">-1</span>;
+    }
+    printk(<span class="hljs-string">&quot;netlink demo init ok!\n&quot;</span>);
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+
+<span class="hljs-type">static</span> <span class="hljs-type">void</span> __exit <span class="hljs-title function_">test_netlink_exit</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    sock_release(netlinkfd-&gt;sk_socket);
+    printk(KERN_DEBUG <span class="hljs-string">&quot;netlink exit\n!&quot;</span>);
+}
+
+module_init(test_netlink_init);
+module_exit(test_netlink_exit);
+</code></pre></div></code></pre>
+<p><code>send_msg</code> 和 <code>recv_cb</code> 的内容前面已经拆开讲过，这里留注释，是为了让你看清模块骨架：<code>module_init</code> 里注册，<code>module_exit</code> 里释放，中间 <code>cfg</code> 是全局量，靠 <code>.input</code> 把回调挂上去。</p>
+<p>释放那一行值得多看一秒。<code>netlink_kernel_create()</code> 返回 <code>struct sock *</code>，而 <code>sock_release()</code> 要 <code>struct socket *</code>，所以得从 <code>sk_socket</code> 字段翻过去。写反了就是把 <code>sock</code> 当 <code>socket</code> 用，卸载模块时直接崩。</p>
+<p>还有一个隐患：模块卸载时如果用户态还开着这条套接字，<code>sock_release</code> 之后那条 fd 就悬空了。严谨的写法是加引用计数，等用户态 <code>close</code> 完了再让模块退出。</p>
+<h2 id="九多播组与事件通知" tabindex="-1">九、多播组与事件通知 <a class="header-anchor" href="#九多播组与事件通知"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>单播是「你问我答」，多播是「有事我通知你」。Netlink 的多播靠 <code>nl_groups</code> 位图加内核的 <code>netlink_broadcast()</code> 撑着。</p>
+<p>三件事必须对上，缺一件就收不到：</p>
+<ol>
+<li>内核侧 <code>cfg.groups</code> 要给够，第 n 组得在这个范围里</li>
+<li>用户态 <code>nl_groups</code> 对应位置 1，或者用 <code>setsockopt</code> 加组</li>
+<li>内核侧调 <code>netlink_broadcast(sk, skb, 0, group_mask, gfp)</code></li>
+</ol>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 内核侧：链路状态变了，通知所有订阅 RTMGRP_LINK 的进程 */</span>
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sk_buff</span> *<span class="hljs-title">skb</span> =</span> nlmsg_new(len, GFP_ATOMIC);
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlmsghdr</span> *<span class="hljs-title">nlh</span>;</span>
+
+nlh = nlmsg_put(skb, <span class="hljs-number">0</span>, <span class="hljs-number">0</span>, RTM_NEWLINK, len, <span class="hljs-number">0</span>);
+<span class="hljs-comment">/* ... 填属性 ... */</span>
+
+netlink_broadcast(rtnl, skb, <span class="hljs-number">0</span>, RTMGRP_LINK, GFP_ATOMIC);
+</code></pre></div></code></pre>
+<p><code>portid</code> 传 0 表示不限定接收者，<code>group</code> 是位掩码，位为 1 的组各收一份副本。整个流程是这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>内核事件源              netlink 核心                  订阅者
+驱动 / 协议栈  --skb--&gt;  netlink_broadcast()  ------&gt;  udev
+                         按 groups 位图复制   ------&gt;  NetworkManager
+                         每个订阅者一份 skb   ------&gt;  你的监控程序
+</code></pre></div></code></pre>
+<p>用户态加入多播组两种方式：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 方式一：bind 时带上位图，一次到位 */</span>
+local.nl_groups = RTMGRP_LINK;
+bind(fd, (<span class="hljs-keyword">struct</span> sockaddr *)&amp;local, <span class="hljs-keyword">sizeof</span>(local));
+
+<span class="hljs-comment">/* 方式二：bind 之后动态加组，可以反复调 */</span>
+<span class="hljs-type">int</span> grp = RTMGRP_LINK;
+setsockopt(fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP, &amp;grp, <span class="hljs-keyword">sizeof</span>(grp));
+setsockopt(fd, SOL_NETLINK, NETLINK_DROP_MEMBERSHIP, &amp;grp, <span class="hljs-keyword">sizeof</span>(grp));
+</code></pre></div></code></pre>
+<p>方式二适合「先跑起来，再按配置决定订阅什么」的场景，<code>udev</code> 走的就是动态加组。这里有个坑：<code>bind</code> 填的是位掩码，<code>setsockopt</code> 填的是组号，同一件事两套坐标系。<code>NETLINK_ADD_MEMBERSHIP</code> 的组号从 1 数起，第 1 组对应 <code>nl_groups</code> 的 bit 0。两个 <code>1</code> 含义不同，混用就是订阅到隔壁组，而且不会有任何报错。</p>
+<p>rtnetlink 常用的组位图：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>位掩码</th>
+<th>宏</th>
+<th>事件</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0x1</code></td>
+<td><code>RTMGRP_LINK</code></td>
+<td>链路 up/down、接口增删</td>
+</tr>
+<tr>
+<td><code>0x2</code></td>
+<td><code>RTMGRP_NOTIFY</code></td>
+<td>未分类通知</td>
+</tr>
+<tr>
+<td><code>0x4</code></td>
+<td><code>RTMGRP_NEIGH</code></td>
+<td>邻居表变化，ARP 就在这</td>
+</tr>
+<tr>
+<td><code>0x10</code></td>
+<td><code>RTMGRP_IPV4_IFADDR</code></td>
+<td>IPv4 地址增删</td>
+</tr>
+<tr>
+<td><code>0x20</code></td>
+<td><code>RTMGRP_IPV4_MROUTE</code></td>
+<td>IPv4 组播路由</td>
+</tr>
+<tr>
+<td><code>0x40</code></td>
+<td><code>RTMGRP_IPV4_ROUTE</code></td>
+<td>IPv4 路由变化</td>
+</tr>
+<tr>
+<td><code>0x100</code></td>
+<td><code>RTMGRP_IPV6_IFADDR</code></td>
+<td>IPv6 地址增删</td>
+</tr>
+<tr>
+<td><code>0x400</code></td>
+<td><code>RTMGRP_IPV6_ROUTE</code></td>
+<td>IPv6 路由变化</td>
+</tr>
+<tr>
+<td><code>0x800</code></td>
+<td><code>RTMGRP_TC</code></td>
+<td>流量控制</td>
+</tr>
+<tr>
+<td><code>0x1000</code></td>
+<td><code>RTMGRP_IPV4_RULE</code></td>
+<td>策略路由规则</td>
+</tr>
+</tbody>
+</table></div><p>用户态的监听循环和单播一模一样，只是不用发请求：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">for</span> (;;) {
+    <span class="hljs-type">int</span> len = recv(fd, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">nlmsghdr</span> *<span class="hljs-title">nlh</span>;</span>
+
+    <span class="hljs-keyword">for</span> (nlh = (<span class="hljs-keyword">struct</span> nlmsghdr *)buf; NLMSG_OK(nlh, len); nlh = NLMSG_NEXT(nlh, len)) {
+        <span class="hljs-keyword">if</span> (nlh-&gt;nlmsg_type == NLMSG_DONE)
+            <span class="hljs-keyword">break</span>;
+        handle_event(nlh);
+    }
+}
+</code></pre></div></code></pre>
+<p>多播消息里的 <code>nlmsg_seq</code> 没有配对意义，会是 0，别拿它跟自己的请求序号对。要区分事件类型，只看 <code>nlmsg_type</code>。</p>
+<p><code>NETLINK_KOBJECT_UEVENT</code> 是个例外。它只有一个组（组 1），消息体不是 <code>nlattr</code> 属性串，而是一串 <code>KEY=VALUE\0</code> 拼接的字符串，开头是 <code>add@/devices/...</code> 这种动作加路径。拿 TLV 去解它只会解出一堆垃圾。见到协议号 15，换成字符串解析。</p>
+<h2 id="十常见子系统用到的-netlink" tabindex="-1">十、常见子系统用到的 Netlink <a class="header-anchor" href="#十常见子系统用到的-netlink"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>协议号表在第二章列过，这里补上「谁在用」和「跑什么消息」，方便按工具反查。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>子系统</th>
+<th>协议号</th>
+<th>用户态工具</th>
+<th>典型消息</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>路由与链路</td>
+<td><code>NETLINK_ROUTE</code> (0)</td>
+<td><code>ip</code>、<code>NetworkManager</code></td>
+<td><code>RTM_NEWLINK</code>、<code>RTM_NEWADDR</code>、<code>RTM_NEWROUTE</code></td>
+</tr>
+<tr>
+<td>socket 监控</td>
+<td><code>NETLINK_SOCK_DIAG</code> (4)</td>
+<td><code>ss</code></td>
+<td><code>SOCK_DIAG_BY_FAMILY</code></td>
+</tr>
+<tr>
+<td>netfilter</td>
+<td><code>NETLINK_NETFILTER</code> (12)</td>
+<td><code>nft</code>、<code>iptables-nft</code>、<code>conntrack</code></td>
+<td><code>NFNL_SUBSYS_*</code></td>
+</tr>
+<tr>
+<td>IPsec</td>
+<td><code>NETLINK_XFRM</code> (6)</td>
+<td><code>ip xfrm</code>、strongSwan</td>
+<td><code>XFRM_MSG_NEWSA</code></td>
+</tr>
+<tr>
+<td>内核事件</td>
+<td><code>NETLINK_KOBJECT_UEVENT</code> (15)</td>
+<td><code>udev</code>、<code>systemd-udevd</code></td>
+<td><code>add@/devices/...</code></td>
+</tr>
+<tr>
+<td>通用 netlink</td>
+<td><code>NETLINK_GENERIC</code> (16)</td>
+<td><code>wg</code>、<code>iw</code>、<code>ethtool</code>、<code>devlink</code></td>
+<td>家族自定义命令</td>
+</tr>
+<tr>
+<td>审计</td>
+<td><code>NETLINK_AUDIT</code> (9)</td>
+<td><code>auditd</code></td>
+<td><code>AUDIT_*</code></td>
+</tr>
+<tr>
+<td>加密层</td>
+<td><code>NETLINK_CRYPTO</code> (21)</td>
+<td><code>cryptsetup</code> 部分路径</td>
+<td><code>CRYPTO_MSG_*</code></td>
+</tr>
+<tr>
+<td>SCSI 传输</td>
+<td><code>NETLINK_SCSITRANSPORT</code> (18)</td>
+<td><code>iscsiadm</code></td>
+<td>传输层事件</td>
+</tr>
+<tr>
+<td>RDMA</td>
+<td><code>NETLINK_RDMA</code> (20)</td>
+<td><code>rdma</code></td>
+<td><code>RDMA_NLDEV_CMD_*</code></td>
+</tr>
+<tr>
+<td>用户自定义</td>
+<td><code>NETLINK_USERSOCK</code> (2)</td>
+<td>各类守护进程</td>
+<td>自定义</td>
+</tr>
+</tbody>
+</table></div><p>新子系统大都往 <code>NETLINK_GENERIC</code> 里挤，原因是它支持运行时发现，不用抢那 32 个协议号。用法是先问内核有哪些家族，再按家族发命令：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 第一步：查家族，确认内核支持 nl80211 */</span>
+nlh-&gt;nlmsg_type  = GENL_ID_CTRL;
+nlh-&gt;nlmsg_flags = NLM_F_REQUEST;
+genl-&gt;cmd        = CTRL_CMD_GETFAMILY;
+nla_put_string(nlh, CTRL_ATTR_FAMILY_NAME, <span class="hljs-string">&quot;nl80211&quot;</span>);
+<span class="hljs-comment">/* 回包里能拿到家族 id、版本号、支持的 op 列表 */</span>
+
+<span class="hljs-comment">/* 第二步：用拿到的家族 id 发真正想发的命令 */</span>
+nlh-&gt;nlmsg_type = family_id;
+genl-&gt;cmd       = NL80211_CMD_GET_INTERFACE;
+</code></pre></div></code></pre>
+<p>这条链解释了一件事：<code>iw</code> 是 <code>nl80211</code> 的 CLI 外壳，<code>wg</code> 是 <code>wireguard</code> 家族的外壳，新版 <code>ethtool</code> 走 <code>ethtool</code> 家族。看懂一个 genl 家族的消息序列，同类的都能照着读。</p>
+<p><code>ss</code> 那条线更直接。<code>ss -tan</code> 本质上是一条 <code>SOCK_DIAG_BY_FAMILY</code> 请求，带 <code>inet_diag_req_v2</code> 结构体描述要查的族、协议、状态；内核回一串 <code>inet_diag_msg</code> 加属性。<code>netstat</code> 读 <code>/proc/net/tcp</code> 要全量解析文本，<code>ss</code> 直接拿二进制，差距就在这儿。</p>
+<h2 id="十一调试与抓包" tabindex="-1">十一、调试与抓包 <a class="header-anchor" href="#十一调试与抓包"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>netlink 是二进制，<code>cat</code> 不出来，得靠工具。四招够用。</p>
+<h3 id="nlmon-虚拟接口" tabindex="-1">nlmon 虚拟接口 <a class="header-anchor" href="#nlmon-虚拟接口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<p>内核有个 <code>nlmon</code> 模块，能建一个虚拟接口把 netlink 流量镜像进去，<code>tcpdump</code> 照常抓。这是直接看消息字节的路子。</p>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">sudo</span> modprobe nlmon
+<span class="hljs-built_in">sudo</span> ip <span class="hljs-built_in">link</span> add nlmon0 <span class="hljs-built_in">type</span> nlmon
+<span class="hljs-built_in">sudo</span> ip <span class="hljs-built_in">link</span> <span class="hljs-built_in">set</span> nlmon0 up
+<span class="hljs-built_in">sudo</span> tcpdump -i nlmon0 -v
+</code></pre></div></code></pre>
+<p><code>tcpdump</code> 认 netlink 的链路类型，能直接解出 <code>nlmsg_type</code>、<code>nlmsg_len</code>、<code>nlmsg_flags</code>。配合 <code>-x</code> 看十六进制，对齐问题一眼就露出来。</p>
+<h3 id="procnetnetlink" tabindex="-1">/proc/net/netlink <a class="header-anchor" href="#procnetnetlink"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-built_in">cat</span> /proc/net/netlink
+</code></pre></div></code></pre>
+<p>输出长这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>sk               Eth Pid   Groups   Rmem Wmem Dump Locks Drops Inode
+ffff8800a1b2c000 0   0     00000000 0    0    0    2     0     12345
+ffff8800a1b2d800 15  1234  00000001 0    0    0    2     0     12346
+ffff8800a1b2dc00 0   50    00000000 0    0    0    2     3     12347
+</code></pre></div></code></pre>
+<p>第二列是协议号，<code>Pid</code> 是 portid，<code>Groups</code> 是多播组位图。<code>Drops</code> 那一列非 0，说明用户态收得慢，内核投不动了，消息已经丢。这条信息比任何日志都直接。</p>
+<h3 id="strace" tabindex="-1">strace <a class="header-anchor" href="#strace"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-bash"><div class="code-block" data-lang="bash"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">bash</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>strace -f -e trace=network ip <span class="hljs-built_in">link</span> show 2&gt;&amp;1 | <span class="hljs-built_in">head</span> -40
+</code></pre></div></code></pre>
+<p>整个调用链一次看全：<code>socket(AF_NETLINK, SOCK_RAW|SOCK_CLOEXEC, NETLINK_ROUTE)</code>、<code>bind</code>、<code>sendmsg</code>、<code>recvmsg</code>，连每条消息的字节数都在。用户态发送的消息拼错了、长度算错了，这里先看出来。</p>
+<h3 id="内核侧-printk" tabindex="-1">内核侧 printk <a class="header-anchor" href="#内核侧-printk"><span data-pagefind-ignore aria-hidden="true">#</span></a></h3>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>printk(KERN_DEBUG <span class="hljs-string">&quot;nl len=%u type=%#x flags=%#x seq=%u\n&quot;</span>,
+       nlh-&gt;nlmsg_len, nlh-&gt;nlmsg_type, nlh-&gt;nlmsg_flags, nlh-&gt;nlmsg_seq);
+</code></pre></div></code></pre>
+<p><code>dmesg -w</code> 盯着。内核里挂不上调试器的时候，这是最快的定位手段。<code>insmod</code> 之后先看有没有 <code>init netlink_demo!</code>，再看 <code>netlink demo init ok!</code>，两行都在才说明注册成功。</p>
+<h2 id="十二易错点速查" tabindex="-1">十二、易错点速查 <a class="header-anchor" href="#十二易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把踩过的坑按「现象 → 原因 → 解法」排一遍，排错时对着查。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>原因</th>
+<th>解法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>socket()</code> 返回 <code>EPROTONOSUPPORT</code></td>
+<td>内核模块没加载，协议号没人注册</td>
+<td>先 <code>insmod</code>，<code>dmesg</code> 确认注册</td>
+</tr>
+<tr>
+<td><code>bind()</code> 返回 <code>EADDRINUSE</code></td>
+<td>同协议号下 <code>nl_pid</code> 撞了</td>
+<td>填 0 让内核分配，或换固定值</td>
+</tr>
+<tr>
+<td><code>bind()</code> 返回 <code>EINVAL</code></td>
+<td>长度参数传错</td>
+<td>传 <code>sizeof(struct sockaddr_nl)</code></td>
+</tr>
+<tr>
+<td><code>sendto()</code> 返回 <code>ECONNREFUSED</code></td>
+<td>目标 <code>nl_pid</code> 不存在</td>
+<td>确认对端 <code>bind</code> 了、内核侧已 create</td>
+</tr>
+<tr>
+<td><code>recv()</code> 只拿到半条消息</td>
+<td>缓冲区比消息小</td>
+<td>8KB 起步，或用 <code>MSG_PEEK</code> 探长度</td>
+</tr>
+<tr>
+<td>属性解析越界</td>
+<td><code>nla_len</code> 用了对齐后的值</td>
+<td><code>nla_len</code> 是真实长度，指针前进才用 <code>NLA_ALIGN</code></td>
+</tr>
+<tr>
+<td>第二条消息解出来是乱码</td>
+<td>没走 <code>NLMSG_NEXT()</code></td>
+<td>循环到 <code>NLMSG_OK()</code> 为假为止</td>
+</tr>
+<tr>
+<td>内核收到的消息被截断</td>
+<td><code>nlmsg_len</code> 填了 <code>NLMSG_LENGTH</code></td>
+<td>应该填 <code>NLMSG_SPACE()</code></td>
+</tr>
+<tr>
+<td>多播一条都收不到</td>
+<td><code>cfg.groups</code> 为 0，或位图位填错</td>
+<td>内核侧给足组数，用户态按位查表</td>
+</tr>
+<tr>
+<td><code>setsockopt</code> 加组没效果</td>
+<td>传了位掩码而不是组号</td>
+<td><code>NETLINK_ADD_MEMBERSHIP</code> 要组号</td>
+</tr>
+<tr>
+<td>内核发送后立刻 panic</td>
+<td>发送后自己又 <code>kfree_skb</code></td>
+<td><code>netlink_unicast</code> 已消费 skb</td>
+</tr>
+<tr>
+<td><code>nlmsg_put()</code> 失败后内存只涨不降</td>
+<td>失败分支没释放</td>
+<td>补 <code>nlmsg_free(nl_skb)</code></td>
+</tr>
+<tr>
+<td>卸载模块时崩</td>
+<td><code>sock_release</code> 传了 <code>sock</code></td>
+<td>传 <code>netlinkfd-&gt;sk_socket</code></td>
+</tr>
+<tr>
+<td>用户态 fd 还开着就卸载</td>
+<td><code>sock</code> 已释放，fd 悬空</td>
+<td>加引用计数或拒绝卸载</td>
+</tr>
+<tr>
+<td>3.10 上编不过老代码</td>
+<td><code>netlink_kernel_create</code> 还是六参数</td>
+<td>改成 <code>netlink_kernel_cfg</code> 写法</td>
+</tr>
+<tr>
+<td>拿 <code>nlmsg_seq</code> 配对多播失败</td>
+<td>多播消息不保证序号</td>
+<td>只看 <code>nlmsg_type</code> 和属性</td>
+</tr>
+</tbody>
+</table></div><p>再补两条不成表的心得。</p>
+<p>第一条，对齐。整条消息按 4 对齐，每个属性也按 4 对齐，<code>nla_len</code> 不含填充但指针前进要跳过填充。这条错了，后面所有属性全歪，而且不报错，只是数据看着不对。</p>
+<p>第二条，生命周期与时序。<code>nlmsg_new</code> 出来的 skb，要么交给 <code>netlink_unicast</code> / <code>netlink_broadcast</code>，要么自己 <code>nlmsg_free</code>，没有第三条路。<code>netlink_kernel_create</code> 出来的 <code>sock</code>，卸载时用 <code>sock_release(sk-&gt;sk_socket)</code> 释放，别把两种指针搞混。顺序也一样卡死：内核模块先加载，用户态才建得出套接字；用户态先 <code>bind</code> 到固定 <code>nl_pid</code>，内核才投得进去。反了就是失败，而且报错信息不指向真正的原因。</p>
+<p>到这里，从 <code>sockaddr_nl</code> 的四个字段，到 <code>nlmsghdr</code> 加 <code>nlattr</code> 的两层结构，再到用户态的 <code>socket</code>/<code>bind</code>/<code>send</code>/<code>recv</code> 与内核态的 <code>netlink_kernel_create</code>/<code>input</code> 回调，整条链路的每一段都对上了。下次 <code>strace</code> 看到 <code>socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE)</code>，你知道后面跟着的是哪一段内存布局。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一内核与用户态怎么通信" data-toc-target="一内核与用户态怎么通信">一、内核与用户态怎么通信</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二netlink-的定位" data-toc-target="二netlink-的定位">二、Netlink 的定位</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三与-ioctlprocfssysfs-的对比" data-toc-target="三与-ioctlprocfssysfs-的对比">三、与 ioctl、procfs、sysfs 的对比</a>
+                    
+                    <a class="toc-item toc-lv3" href="#ioctl一命令一结构体" data-toc-target="ioctl一命令一结构体">ioctl：一命令一结构体</a>
+                    
+                    <a class="toc-item toc-lv3" href="#procfs读文本性能差" data-toc-target="procfs读文本性能差">procfs：读文本，性能差</a>
+                    
+                    <a class="toc-item toc-lv3" href="#sysfs一个文件一个值" data-toc-target="sysfs一个文件一个值">sysfs：一个文件一个值</a>
+                    
+                    <a class="toc-item toc-lv3" href="#netlink结构化数据加多播" data-toc-target="netlink结构化数据加多播">Netlink：结构化数据加多播</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四netlink-的地址结构" data-toc-target="四netlink-的地址结构">四、Netlink 的地址结构</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五消息格式与属性-tlv" data-toc-target="五消息格式与属性-tlv">五、消息格式与属性 TLV</a>
+                    
+                    <a class="toc-item toc-lv3" href="#消息头" data-toc-target="消息头">消息头</a>
+                    
+                    <a class="toc-item toc-lv3" href="#对齐与长度宏" data-toc-target="对齐与长度宏">对齐与长度宏</a>
+                    
+                    <a class="toc-item toc-lv3" href="#属性-tlv" data-toc-target="属性-tlv">属性 TLV</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六用户态编程socket-与-bind" data-toc-target="六用户态编程socket-与-bind">六、用户态编程：socket 与 bind</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七发送与接收消息" data-toc-target="七发送与接收消息">七、发送与接收消息</a>
+                    
+                    <a class="toc-item toc-lv3" href="#sendto" data-toc-target="sendto">sendto</a>
+                    
+                    <a class="toc-item toc-lv3" href="#接收循环" data-toc-target="接收循环">接收循环</a>
+                    
+                    <a class="toc-item toc-lv3" href="#完整用户态-demo" data-toc-target="完整用户态-demo">完整用户态 demo</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八内核态编程netlink_kernel_create" data-toc-target="八内核态编程netlink_kernel_create">八、内核态编程：netlink_kernel_create</a>
+                    
+                    <a class="toc-item toc-lv3" href="#函数原型" data-toc-target="函数原型">函数原型</a>
+                    
+                    <a class="toc-item toc-lv3" href="#netlink_kernel_cfg" data-toc-target="netlink_kernel_cfg">netlink_kernel_cfg</a>
+                    
+                    <a class="toc-item toc-lv3" href="#内核侧发送单播与多播" data-toc-target="内核侧发送单播与多播">内核侧发送：单播与多播</a>
+                    
+                    <a class="toc-item toc-lv3" href="#拼一条内核消息" data-toc-target="拼一条内核消息">拼一条内核消息</a>
+                    
+                    <a class="toc-item toc-lv3" href="#完整内核态-demo" data-toc-target="完整内核态-demo">完整内核态 demo</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九多播组与事件通知" data-toc-target="九多播组与事件通知">九、多播组与事件通知</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十常见子系统用到的-netlink" data-toc-target="十常见子系统用到的-netlink">十、常见子系统用到的 Netlink</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一调试与抓包" data-toc-target="十一调试与抓包">十一、调试与抓包</a>
+                    
+                    <a class="toc-item toc-lv3" href="#nlmon-虚拟接口" data-toc-target="nlmon-虚拟接口">nlmon 虚拟接口</a>
+                    
+                    <a class="toc-item toc-lv3" href="#procnetnetlink" data-toc-target="procnetnetlink">/proc/net/netlink</a>
+                    
+                    <a class="toc-item toc-lv3" href="#strace" data-toc-target="strace">strace</a>
+                    
+                    <a class="toc-item toc-lv3" href="#内核侧-printk" data-toc-target="内核侧-printk">内核侧 printk</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二易错点速查" data-toc-target="十二易错点速查">十二、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","title":"Netlink：内核态与用户态通信","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","type":"current"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","title":"Linux 网络协议栈的架构与分层","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","title":"NAT 原理与实现","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","title":"Netfilter 与 hook 点","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-原理与配置/","title":"VLAN 原理与配置","url":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-原理与配置/","type":"neighbor"}],"links":[{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Linux-网络协议栈的架构与分层/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/NAT-原理与实现/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netfilter-与-hook-点/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/Netlink：内核态与用户态通信/","target":"/F.通信与协议/01-TCPIP与套接字/02-协议栈与内核实现/VLAN-原理与配置/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>

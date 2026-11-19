@@ -1,0 +1,1543 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>IO 模型：从阻塞到 epoll · LemonCyan</title>
+<meta name="description" content="LemonCyan 的个人技术知识库：从硬件电气、固件启动、Linux 内核与操作系统接口、驱动开发，到通信协议、工程工具链、应用界面、数据智能与行业实践。">
+<link rel="icon" href="/img/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/favicon-192.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/img/favicon-180.png">
+<link rel="stylesheet" href="/css/tokens.css">
+<link rel="stylesheet" href="/css/desktop.css">
+<link rel="stylesheet" href="/css/window.css">
+<link rel="stylesheet" href="/css/reader.css">
+<link rel="stylesheet" href="/css/callout.css">
+<link rel="stylesheet" href="/css/ai-summary.css">
+<link rel="stylesheet" href="/css/graph.css">
+<link rel="stylesheet" href="/css/ui.css">
+<link rel="stylesheet" href="/css/notice.css">
+<link rel="stylesheet" href="/css/hljs.css">
+<link rel="stylesheet" href="/css/katex.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Regular.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/satouriko/LxgwWenKai_Webfonts@v1.101/dist/LXGWWenKaiMono-Bold.css">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.css">
+<link rel="stylesheet" href="/css/comments.css">
+
+</head>
+<body data-wallpaper="grid" data-scheme="light">
+
+
+
+<div class="viewport">
+
+  <header class="topbar" data-pagefind-ignore>
+    <div class="topbar-left">
+      <a class="brand" href="/">LemonCyan</a>
+      <nav class="topnav">
+        
+        <a href="/A.%E7%A1%AC%E4%BB%B6%E4%B8%8E%E5%9B%BA%E4%BB%B6/" class="topnav-item" style="--dot:#f44336" title="硬件与固件">硬件与固件</a>
+        
+        <a href="/B.%E5%86%85%E6%A0%B8/" class="topnav-item" style="--dot:#2196f3" title="内核">内核</a>
+        
+        <a href="/C.%E9%A9%B1%E5%8A%A8/" class="topnav-item" style="--dot:#00bcd4" title="驱动">驱动</a>
+        
+        <a href="/D.%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" class="topnav-item" style="--dot:#455a64" title="操作系统">操作系统</a>
+        
+        <a href="/E.%E7%BC%96%E7%A8%8B%E8%AF%AD%E8%A8%80%E4%B8%8E%E6%A1%86%E6%9E%B6/" class="topnav-item" style="--dot:#3f51b5" title="编程语言与框架">编程语言与框架</a>
+        
+        <a href="/F.%E9%80%9A%E4%BF%A1%E4%B8%8E%E5%8D%8F%E8%AE%AE/" class="topnav-item" style="--dot:#009688" title="通信与协议">通信与协议</a>
+        
+        <a href="/G.%E5%B7%A5%E7%A8%8B%E4%B8%8E%E5%B7%A5%E5%85%B7%E9%93%BE/" class="topnav-item" style="--dot:#607d8b" title="工程与工具链">工程与工具链</a>
+        
+        <a href="/H.%E6%95%B0%E6%8D%AE%E4%B8%8E%E6%99%BA%E8%83%BD/" class="topnav-item" style="--dot:#9c27b0" title="数据与智能">数据与智能</a>
+        
+        <a href="/I.%E9%A1%B9%E7%9B%AE%E4%B8%8E%E4%BA%A7%E5%87%BA/" class="topnav-item" style="--dot:#ffc107" title="项目与产出">项目与产出</a>
+        
+        <a href="/Z.%E6%9D%82%E9%A1%B9/" class="topnav-item" style="--dot:#f44336" title="杂项">杂项</a>
+        
+        <a href="/about/" class="topnav-item" style="--dot:#607d8b" title="关于本站">关于本站</a>
+        
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <button class="tbtn" id="btn-search" type="button" title="搜索">搜索</button>
+      <button class="tbtn" id="btn-restore" type="button" title="恢复窗口">▣</button>
+      <button class="tbtn" id="btn-theme" type="button" title="切换主题">主题</button>
+    </div>
+  </header>
+
+  <div class="desktop-viewport">
+    <div class="desktop">
+
+      <div class="wallpaper" aria-hidden="true"></div>
+
+      <!-- Canvas Nest 粒子背景：加载后把 canvas 移进 .desktop，限制在桌面内 -->
+      <script
+        color="0,200,255"
+        opacity="0.5"
+        zIndex="0"
+        count="80"
+        src="https://cdn.staticfile.org/canvas-nest.js/1.0.1/canvas-nest.js">
+      </script>
+      <script>
+      (function() {
+        function relocateNest() {
+          var c = document.querySelector('body > canvas');
+          if (!c) { setTimeout(relocateNest, 100); return; }
+          var desktop = document.querySelector('.desktop');
+          if (!desktop) return;
+          c.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0;';
+          desktop.insertBefore(c, desktop.querySelector('.wallpaper').nextSibling);
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', relocateNest);
+        } else {
+          relocateNest();
+        }
+      })();
+      </script>
+
+      <nav class="desk-icons" aria-label="桌面图标">
+        
+        <a class="desk-icon" href="/apps/car.html">
+          <span class="desk-icon-badge" style="--c:#f59e0b">🏎️</span>
+          <figcaption>3D 沙盒赛车</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/dongpian.html">
+          <span class="desk-icon-badge" style="--c:#f43f5e">🎬</span>
+          <figcaption>懂片</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/ETF.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📊</span>
+          <figcaption>ETF</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/fighter.html">
+          <span class="desk-icon-badge" style="--c:#1b2838">✈️</span>
+          <figcaption>像素战机</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/games.html">
+          <span class="desk-icon-badge" style="--c:#6366f1">🎮</span>
+          <figcaption>游戏中心</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/quant.html">
+          <span class="desk-icon-badge" style="--c:#38bdf8">📈</span>
+          <figcaption>Quant</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/radar.html">
+          <span class="desk-icon-badge" style="--c:#38d9ff">📡</span>
+          <figcaption>GitHub Radar</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/tiktok.html">
+          <span class="desk-icon-badge" style="--c:#ffd60a">💃</span>
+          <figcaption>Tiktok</figcaption>
+        </a>
+        
+        <a class="desk-icon" href="/apps/yinghe.html">
+          <span class="desk-icon-badge" style="--c:#10b981">🗺️</span>
+          <figcaption>硬核</figcaption>
+        </a>
+        
+      </nav>
+
+      <div class="window-list" id="window-list">
+
+
+        
+        
+        <section class="app-window" data-app="reader" data-focused="true" data-windowed="true" data-expanded="true" data-max-default="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">IO 模型：从阻塞到 epoll</div>
+    <div class="window-actions">
+      <button class="wbtn" type="button" data-act="expand" title="全屏">⤢</button>
+    </div>
+  </div>
+
+
+          <div class="window-content">
+            <div class="reader-view">
+
+              <aside class="reader-sidebar" data-pagefind-ignore>
+                <div class="sidebar-search">
+                  <input type="search" id="sidebar-search-input" placeholder="搜索知识库…" autocomplete="off">
+                </div>
+                <div class="sidebar-tree" id="sidebar-tree" data-current="/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/IO-模型：从阻塞到-epoll/">
+                  <p class="search-hint">加载目录…</p>
+                </div>
+              </aside>
+
+              <main class="reader-main" data-pagefind-body>
+                <span class="sr-only" data-pagefind-meta="title">IO 模型：从阻塞到 epoll</span>
+                <div class="reader-content">
+                  
+                  <header class="article-header">
+                    <h1 class="article-title">IO 模型：从阻塞到 epoll</h1>
+                  </header>
+                  <div class="ai-summary-card" id="ai-summary-card" data-pagefind-ignore>
+                    <div class="ai-summary-head">
+                      <div class="ai-summary-title">
+                        <span class="ai-summary-icon" aria-hidden="true">🤖</span>
+                        <span>AI 摘要</span>
+                      </div>
+                      <div class="ai-summary-badge">OpenRouter</div>
+                    </div>
+                    <div class="ai-summary-body" id="ai-summary-text">
+                      <span class="ai-summary-loading"><span class="ai-summary-pulse"></span>正在思考并提取文章核心…</span>
+                    </div>
+                  </div>
+                  
+                  <div class="article-body">
+                    <blockquote>
+<p>这篇讲服务器性能的理论底座：一次 IO 到底把时间花在哪，五种 IO 模型各自怎么处理这段时间。</p>
+<p>讲什么：IO 的两个阶段、阻塞与非阻塞、同步与异步、五种 IO 模型（阻塞 / 非阻塞 / 多路复用 / 信号驱动 / 异步）、select 与 poll 的接口和就绪条件、epoll 的三个接口、水平触发与边缘触发、五种模型的选型、易错点。</p>
+<p>不讲什么：socket/bind/listen/accept 的参数细节、TCP 三次握手与状态机、套接字选项的调优、UDP 与广播。这些各有专篇。</p>
+<p>跨篇指路：</p>
+<ul>
+<li>socket 函数族、地址结构体、字节序转换 → 同组《套接字与网络字节序》</li>
+<li>回声服务器、完整可编译的并发改造 → 同组《TCP 套接字编程》</li>
+<li>阻塞 / 多进程 / 多线程 / UDP 循环服务器怎么写 → 同目录《服务器并发模型》</li>
+<li>SO_RCVLOWAT、SO_SNDLOWAT、NODELAY → 父目录《套接字选项》</li>
+<li>抓包看 FIN、RST、重传 → 同组《网络设备与排查速记》</li>
+</ul>
+<p>读完你应该能回答三个问题：为什么非阻塞 IO 单独用是浪费 CPU；为什么 select 被叫作「同步」却又「不阻塞」；为什么 epoll 的 ET 模式漏读一次就再也收不到通知。</p>
+</blockquote>
+<h2 id="一io-到底在等什么" tabindex="-1">一、IO 到底在等什么 <a class="header-anchor" href="#一io-到底在等什么"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>从一行代码开始。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>n = recv(fd, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);
+</code></pre></div></code></pre>
+<p>这行调用返回时，<code>buf</code> 里有了数据。数据是从哪来的？很多人第一反应是「从网卡来的」。不准确。网卡收到的是一串电信号，协议栈把它拼成报文，校验、去头、按四元组找到对应的 socket，再把载荷放进这个 socket 在内核里的接收缓冲区。<code>recv</code> 干的事，是把内核缓冲区里的字节搬进你的 <code>buf</code>。</p>
+<p>所以一次 socket 读操作，中间隔着两个完全不同的世界：内核态和用户态。两块内存：内核的 socket 接收缓冲区和你的用户缓冲区。搬运动作由内核做，你只负责发出请求、等它做完。</p>
+<p>一次输入操作拆成两个阶段：</p>
+<ol>
+<li>等数据准备好。数据从网络到达，被协议栈放进内核的 socket 接收缓冲区。</li>
+<li>从内核向进程复制数据。把内核缓冲区里的字节拷进应用进程的缓冲区。</li>
+</ol>
+<p>第一阶段等的是网络和对端。第二阶段等的是内存带宽和 CPU。</p>
+<p>画成时间轴更清楚：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>recv 调用
+  │
+  ├──── 阶段一：等数据就绪 ────┐        这段时间长度不可控
+  │    （对端什么时候发、发多少，你说了不算）
+  │                            │
+  ├──── 阶段二：拷数据 ────────┘        这段时间由数据量决定
+  │    （内核缓冲区 → 用户缓冲区）
+  ▼
+recv 返回
+</code></pre></div></code></pre>
+<p>这两个阶段的耗时比例，决定了服务器的性能上限。阶段二的成本基本固定：数据量定了，拷贝就是那么久，再优化也省不了多少。阶段一才是变量。对端十毫秒后发数据，还是十分钟后发，还是永远不发，你说了不算。一个连接上如果没事干，你的线程就卡在阶段一里干耗。</p>
+<p>于是所有 IO 模型要解决的问题只有一个：阶段一这段时间，怎么处理。</p>
+<p>不光是套接字。读磁盘、读管道、读终端，都是这两段。你敲键盘，字符先在终端驱动的缓冲区里排着，<code>read</code> 的第一阶段等的是「你按下回车」，第二阶段才是把字符拷给你。</p>
+<p>五种 IO 模型的差别，全在「等」这一段怎么处理：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>模型</th>
+<th>等数据就绪</th>
+<th>拷数据</th>
+<th>一句话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>阻塞 IO</td>
+<td>进程睡在调用里</td>
+<td>进程睡在调用里</td>
+<td>死等</td>
+</tr>
+<tr>
+<td>非阻塞 IO</td>
+<td>反复问，问一次返回一次</td>
+<td>进程睡在调用里</td>
+<td>反复问</td>
+</tr>
+<tr>
+<td>IO 多路复用</td>
+<td>睡在 select/epoll 上，一次盯一批</td>
+<td>进程自己拷</td>
+<td>一次问一批</td>
+</tr>
+<tr>
+<td>信号驱动 IO</td>
+<td>等内核发 SIGIO 通知</td>
+<td>进程自己拷</td>
+<td>等通知</td>
+</tr>
+<tr>
+<td>异步 IO</td>
+<td>内核全包，完成后才通知</td>
+<td>内核全包</td>
+<td>内核全包</td>
+</tr>
+</tbody>
+</table></div><p>注意最后一列。前四种模型在阶段二上完全一样：数据到了内核缓冲区，进程得自己调 <code>recvfrom</code> 去拷，这一拷就阻塞。只有异步 IO 把阶段二也交给内核。这一条差异，后面会反复用到，它是「同步」与「异步」的分界线。</p>
+<h2 id="二阻塞与非阻塞" tabindex="-1">二、阻塞与非阻塞 <a class="header-anchor" href="#二阻塞与非阻塞"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>先看阻塞。</p>
+<p>最流行的 IO 模型是阻塞式 IO（blocking I/O）。默认情况下，所有的套接字都是阻塞的。</p>
+<p>阻塞调用的定义：调用结果返回之前，当前线程被挂起。挂起指线程进入非可执行状态，在这个状态下 CPU 不会给它分配时间片，线程暂停运行。函数只有在拿到结果之后才返回。</p>
+<p>以数据报套接字为例，进程调用 <code>recvfrom</code>：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>进程                                内核
+  │                                  │
+  │── recvfrom ─────────────────────►│
+  │                                  │  等数据报到达
+  │   （进程被挂起，不占 CPU）         │  把数据报拷进内核缓冲区
+  │                                  │  再拷进用户缓冲区
+  │◄───────────────── 返回数据报 ─────│
+  │                                  │
+处理数据报
+</code></pre></div></code></pre>
+<p>系统调用一直到数据报到达、被拷贝到应用进程的缓冲区，或者发生错误，才返回。最常见的错误是系统调用被信号中断。从调用 <code>recvfrom</code> 开始到它返回的整段时间里，进程都是被阻塞的。<code>recvfrom</code> 成功返回后，进程才开始处理数据报。</p>
+<p>有个误会要先拆掉：阻塞不等于慢。阻塞的意思是「这段时间你什么都干不了」。数据一秒后来，线程就睡一秒；数据十分钟后来，线程就睡十分钟。CPU 不用为这段睡眠付钱，代价在别处——这个线程被占住了，它没法去服务第二个连接。</p>
+<p>一个线程一个连接，就是阻塞 IO 的宿命。十个客户端要十个线程，一千个客户端要一千个线程。线程本身要栈、要调度、要上下文切换，一千个线程的空转和切换开销能把机器吃干净。这就是服务器并发模型要单独开一篇讲的原因。</p>
+<p>非阻塞和阻塞的概念相对应：在不能立刻得到结果之前，函数不阻塞当前线程，而立刻返回。</p>
+<p>把套接字设置成非阻塞，等于通知内核：当所请求的 IO 操作非得把本进程投入睡眠才能完成时，不要把本进程投入睡眠，而是返回一个错误。</p>
+<p>还是那段 <code>recvfrom</code>，前三次调用没有数据可返回，内核转而立即返回一个 <code>EWOULDBLOCK</code> 错误。第四次调用时已经有一个数据报准备好，它被复制到应用程序缓冲区，<code>recvfrom</code> 成功返回，我们接着处理数据。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>第 1 次 recvfrom  →  EWOULDBLOCK（没数据）
+第 2 次 recvfrom  →  EWOULDBLOCK（还没数据）
+第 3 次 recvfrom  →  EWOULDBLOCK（仍然没数据）
+第 4 次 recvfrom  →  成功，拷贝完成，返回字节数
+</code></pre></div></code></pre>
+<p><code>EWOULDBLOCK</code> 和 <code>EAGAIN</code> 在 Linux 上是同一个值。你写代码判断哪一个都行，看 <code>EWOULDBLOCK</code> 更符合语义。</p>
+<p>一个应用进程像这样对一个非阻塞描述符循环调用 <code>recvfrom</code>，我们称之为轮询（polling）。应用程序持续轮询内核，查看某个操作是否就绪。</p>
+<p>轮询的代码长这样：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> n;
+<span class="hljs-keyword">while</span> ((n = recv(fd, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>)) &lt; <span class="hljs-number">0</span>) {
+    <span class="hljs-keyword">if</span> (errno == EAGAIN || errno == EWOULDBLOCK) {
+        <span class="hljs-keyword">continue</span>;   <span class="hljs-comment">/* 没数据，马上再问一次 */</span>
+    }
+    perror(<span class="hljs-string">&quot;recv&quot;</span>);
+    <span class="hljs-keyword">break</span>;
+}
+</code></pre></div></code></pre>
+<p>这样做往往耗费大量 CPU 时间。<code>continue</code> 转一圈就是一次系统调用，一次系统调用就是一次用户态到内核态的切换。数据没到的时候，这个循环百分之百的运行时间都在做无用功，而且它把 CPU 占死了，同一台机器上的其他进程抢不到时间片。</p>
+<p>设置非阻塞有两个口子：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* 推荐：fcntl 取旧标志再按位或，别直接覆盖 */</span>
+<span class="hljs-type">int</span> flags = fcntl(fd, F_GETFL, <span class="hljs-number">0</span>);
+fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+<span class="hljs-comment">/* 老写法：ioctl */</span>
+<span class="hljs-type">int</span> on = <span class="hljs-number">1</span>;
+ioctl(fd, FIONBIO, &amp;on);
+</code></pre></div></code></pre>
+<p>要回到阻塞，同样是 <code>fcntl</code>，把 <code>O_NONBLOCK</code> 位清掉。<code>accept</code> 出来的新连接不继承监听套接字的非阻塞标志，Linux 上要单独设一遍——这是后面易错点里的一条。</p>
+<h2 id="三同步与异步" tabindex="-1">三、同步与异步 <a class="header-anchor" href="#三同步与异步"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这一节是整篇最容易讲岔的地方。</p>
+<p>先把 POSIX 的定义摆出来：</p>
+<ul>
+<li>同步 IO 操作（synchronous I/O operation）导致请求进程阻塞，直到 IO 操作完成。</li>
+<li>异步 IO 操作（asynchronous I/O operation）不导致请求进程阻塞。</li>
+</ul>
+<p>定义干净，判据只有一个：真正的 IO 操作（数据从内核缓冲区拷到用户缓冲区）这一步，是谁在等。进程自己在等，就是同步。内核把数据拷完了才来通知你，才是异步。</p>
+<p>按这个判据回头看那五种模型：</p>
+<ul>
+<li>阻塞 IO 是同步的。进程睡在 <code>recvfrom</code> 里，一直睡到拷贝完成。</li>
+<li>非阻塞 IO 是同步的。轮询到数据就绪，然后调 <code>recvfrom</code> 拷数据，拷的时候照样阻塞。</li>
+<li>IO 多路复用的前四种模型都是同步的。<code>select</code> 返回只代表「数据可以读了」，真正的 <code>recvfrom</code> 还得你自己调，拷数据这一步照样阻塞进程。</li>
+<li>信号驱动 IO 是同步的。SIGIO 只告诉你「可以启动了」，<code>recvfrom</code> 还得自己调。</li>
+<li>只有异步 IO 与 POSIX 定义的异步 IO 相匹配。内核把数据拷进你的缓冲区之后，才通知你。</li>
+</ul>
+<p>前面四种模型的主要区别在于第一阶段。第二阶段是一样的：数据从内核复制到调用者的缓冲区期间，进程阻塞于 <code>recvfrom</code> 调用。异步 IO 模型在两个阶段都要处理，从而不同于其他四种模型。</p>
+<p>所以有一句话要背下来：<strong><code>select</code> 是同步的，它只是非阻塞地等</strong>。</p>
+<p>这两个概念是两组独立的轴，不是一根滑杆的两端。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th></th>
+<th>阻塞</th>
+<th>非阻塞</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>同步</td>
+<td>默认 socket 上的 read/recv</td>
+<td>轮询 recv，或 select/epoll 等就绪后自己 recv</td>
+</tr>
+<tr>
+<td>异步</td>
+<td>几乎没有实际意义</td>
+<td>aio_read / io_uring，内核拷完再回调</td>
+</tr>
+</tbody>
+</table></div><p>四个格子都有内容，说明两件事不冲突。阻塞与非阻塞描述的是「调用返回的方式」：调用是立刻返回，还是卡住等到有结果。同步与异步描述的是「IO 操作由谁完成并等待」：是进程自己完成并等待，还是内核完成后再通知进程。</p>
+<p>很多资料把这两组概念混成一团，说着说着就出现「异步非阻塞」「同步阻塞」这种把两件事焊在一起的词。词本身没错，错在拿它当分类标准。真正的分类标准只有一条：拷数据那一段，谁在等。</p>
+<p>顺带澄清一个流传很广的叫法。IO 多路复用模型常被叫作「异步阻塞 IO」：<code>select</code> 调用会阻塞线程，所以是「阻塞」；用户线程注册完就去干别的，所以是「异步」。这个叫法能用，但很容易把人带偏——它说的「异步」是「你不需要盯着」，不是 POSIX 定义的异步。在 POSIX 的语境里，<code>select</code> 加 <code>recv</code> 这一套是彻头彻尾的同步 IO。</p>
+<p>还有一个缩写坑：非阻塞 IO 写成 NIO 时，别跟 Java 的 NIO（New IO）库混。Java 的 NIO 是另一套东西，底层用的是多路复用。</p>
+<p>至于「异步阻塞 IO」里的那个「阻塞」指的是什么，也要说清：指的是 <code>select</code> 函数执行时线程被阻塞，不是指 socket 被阻塞。用多路复用时 socket 多数会设成 <code>O_NONBLOCK</code>，这不会带来麻烦，因为用户发起 <code>recv</code> 时数据已经到了，那一次调用不会被阻塞。</p>
+<h2 id="四五种-io-模型总览" tabindex="-1">四、五种 IO 模型总览 <a class="header-anchor" href="#四五种-io-模型总览"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>Unix 下可用的 5 种 IO 模型，一份清单：</p>
+<ol>
+<li>阻塞 IO</li>
+<li>非阻塞 IO</li>
+<li>IO 复用（select 和 poll）</li>
+<li>信号驱动 IO（SIGIO）</li>
+<li>异步 IO（POSIX 的 <code>aio_</code> 系列函数）</li>
+</ol>
+<p>把五条时间轴并排画在一起，差异一眼可见。竖线是「调用发起」，横线长度是「进程不干活的时间」：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>阻塞 IO      ├████████ 等数据 ████████├██ 拷 ██┤
+非阻塞 IO    ├问┤问┤问┤问┤问┤问┤问┤问├██ 拷 ██┤
+多路复用     ├████ select 等一批 ████├██ 拷 ██┤
+信号驱动     ├──── 干自己的事 ────┤SIGIO├██ 拷 ██┤
+异步 IO      ├──────── 干自己的事 ────────┤数据已就位┤
+</code></pre></div></code></pre>
+<p>对着这张图读三条结论。</p>
+<p>第一条，前四条的「拷」都一样长，都是进程自己动手。只有异步 IO 把这一段吃进内核，进程被通知的时候数据已经在自己的缓冲区里了。</p>
+<p>第二条，非阻塞 IO 的那串「问」全在阶段一。它没有省掉等待，只是把等待摊成了一堆立刻返回的系统调用。</p>
+<p>第三条，多路复用的黑条并不比阻塞 IO 短，一个 fd 的时候甚至更长——它多了一次 <code>select</code> 调用。它的价值在「一批」：黑条覆盖的是 N 个 fd，摊到每个 fd 上就短了。</p>
+<p>模型的骨架对照：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>模型</th>
+<th>关键函数</th>
+<th>进程阻塞在哪</th>
+<th>一次能等几个 fd</th>
+<th>阶段二谁拷</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>阻塞 IO</td>
+<td><code>recvfrom</code></td>
+<td>调用里，直到拷贝完</td>
+<td>1 个</td>
+<td>进程</td>
+</tr>
+<tr>
+<td>非阻塞 IO</td>
+<td><code>recvfrom</code></td>
+<td>只在拷贝那一瞬</td>
+<td>1 个</td>
+<td>进程</td>
+</tr>
+<tr>
+<td>IO 多路复用</td>
+<td><code>select</code> / <code>poll</code> / <code>epoll_wait</code></td>
+<td>多路分离函数上</td>
+<td>一批</td>
+<td>进程</td>
+</tr>
+<tr>
+<td>信号驱动 IO</td>
+<td><code>sigaction</code> + <code>recvfrom</code></td>
+<td>只在自己调 <code>recvfrom</code> 时</td>
+<td>取决于信号</td>
+<td>进程</td>
+</tr>
+<tr>
+<td>异步 IO</td>
+<td><code>aio_read</code></td>
+<td>全程不阻塞</td>
+<td>多个</td>
+<td>内核</td>
+</tr>
+</tbody>
+</table></div><p>一个容易忽略的细节：多路复用模型比阻塞 IO 多了一次「两次调用、两次返回」。对一个 IO 端口来说，这并没有优越性，纯属倒贴。它的全部意义在「同时」。</p>
+<h2 id="五阻塞-io" tabindex="-1">五、阻塞 IO <a class="header-anchor" href="#五阻塞-io"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>这是最直觉的模型，也是默认行为。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>n = recv(fd, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);   <span class="hljs-comment">/* 没数据就睡，睡到有数据 */</span>
+<span class="hljs-keyword">if</span> (n &gt; <span class="hljs-number">0</span>) {
+    process(buf, n);
+}
+</code></pre></div></code></pre>
+<p>数据没到，进程就挂在这个调用上。挂起期间不占 CPU，也不响应任何别的事。数据到了、拷完了，调用返回字节数，代码往下走。</p>
+<p>阻塞 IO 的优点：</p>
+<ul>
+<li>代码简单。一个连接一个循环，读-处理-写，顺序直白。</li>
+<li>不浪费 CPU。等的时候真的在睡，调度器不用管它。</li>
+<li>出错路径清楚。要么返回正数，要么 0（对端关闭），要么 -1。</li>
+</ul>
+<p>缺点也直接：</p>
+<ul>
+<li>一个线程同时只能盯一个 fd。要服务 N 个连接就得 N 个线程（或多进程）。</li>
+<li>线程和连接绑死。连接空闲时线程也空闲，但它占着栈和调度名额。</li>
+<li>规模上不去。几千个连接意味着几千个线程，上下文切换和内存占用两笔账都难看。</li>
+</ul>
+<p>阻塞调用被打断要单独处理。系统调用被信号中断时返回 -1，<code>errno</code> 为 <code>EINTR</code>。这不是错误，重来一次就行：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">do</span> {
+    n = recv(fd, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);
+} <span class="hljs-keyword">while</span> (n &lt; <span class="hljs-number">0</span> &amp;&amp; errno == EINTR);
+</code></pre></div></code></pre>
+<p>漏了这一层，你的服务器会在收到 <code>SIGCHLD</code>、<code>SIGALRM</code> 之类的信号时莫名其妙地退出。多进程服务器里这个坑几乎必踩。</p>
+<p>阻塞 IO 并不是过时的东西。它的替代方案是「每连接一个线程」——Thread-per-Connection。这个模型在连接数可控（几百以内）、每个连接的事都不轻（比如要查库、要算）时，比多路复用更省心，调试也更好受。真正让它失宠的是海量长连接：C10K 那种场景，一个连接一个线程撑不住。</p>
+<h2 id="六非阻塞-io" tabindex="-1">六、非阻塞 IO <a class="header-anchor" href="#六非阻塞-io"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把 socket 设成 <code>O_NONBLOCK</code>，<code>recv</code> 的行为就变了：没数据立刻返回 <code>EWOULDBLOCK</code>，不等。</p>
+<p>上一节那段 <code>recv</code> 改成循环：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> n;
+<span class="hljs-keyword">for</span> (;;) {
+    n = recv(fd, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);
+    <span class="hljs-keyword">if</span> (n &gt; <span class="hljs-number">0</span>) {
+        process(buf, n);
+        <span class="hljs-keyword">break</span>;
+    }
+    <span class="hljs-keyword">if</span> (n == <span class="hljs-number">0</span>) {
+        <span class="hljs-keyword">break</span>;                        <span class="hljs-comment">/* 对端关了 */</span>
+    }
+    <span class="hljs-keyword">if</span> (errno == EAGAIN || errno == EWOULDBLOCK) {
+        <span class="hljs-keyword">continue</span>;                     <span class="hljs-comment">/* 没数据，再来一次 */</span>
+    }
+    perror(<span class="hljs-string">&quot;recv&quot;</span>);
+    <span class="hljs-keyword">break</span>;
+}
+</code></pre></div></code></pre>
+<p>这段代码和阻塞版的区别只有一个：没数据的时候它不退让，立刻重来。</p>
+<p>问题就出在这。循环转一圈是一次系统调用，一次系统调用是一次特权级切换。数据没到的时候，这个循环烧掉百分之百的 CPU，产出的结果为零。更糟的是它不释放 CPU，同机器上的其他进程抢不到时间片。轮询的另一个变种是加个 <code>usleep</code> 让一让，但睡多久全靠猜：睡短了还是空转，睡长了延迟上去了。</p>
+<p>所以，非阻塞 IO 单独用没有意义。它几乎总是作为别的模型的零件出现。</p>
+<ul>
+<li>在多路复用里：<code>select</code> 告诉你哪个 fd 就绪，<code>recv</code> 用非阻塞模式去读，读到 <code>EAGAIN</code> 就收手。</li>
+<li>在 ET 模式的 epoll 里：必须用非阻塞，因为 <code>epoll_wait</code> 只通知一次，你得一口气读到 <code>EAGAIN</code> 为止。</li>
+<li>在 <code>accept</code> 循环里：非阻塞 <code>accept</code> 才能安全地把就绪队列一次抽干。</li>
+</ul>
+<p>三个阶段的行为，写代码时要分清楚：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>调用结果</th>
+<th>含义</th>
+<th>该做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>返回值 &gt; 0</td>
+<td>读到 n 字节</td>
+<td>处理数据，按需继续读</td>
+</tr>
+<tr>
+<td>返回 0</td>
+<td>对端关闭了写端</td>
+<td><code>close(fd)</code>，从监听集合摘掉</td>
+</tr>
+<tr>
+<td>返回 -1，<code>EAGAIN</code></td>
+<td>暂时没数据</td>
+<td>收手，回去等通知</td>
+</tr>
+<tr>
+<td>返回 -1，<code>EINTR</code></td>
+<td>被信号打断</td>
+<td>重试</td>
+</tr>
+<tr>
+<td>返回 -1，其他</td>
+<td>真错误</td>
+<td>记日志，关 fd</td>
+</tr>
+</tbody>
+</table></div><p><code>EAGAIN</code> 不是错误，是「现在没有」的礼貌说法。把它当错误处理，服务器会随机踢掉健康连接。</p>
+<p>非阻塞还有个副作用要留意：它影响的是这个 fd 上所有会阻塞的调用，包括 <code>read</code>、<code>write</code>、<code>accept</code>、<code>connect</code>。非阻塞 <code>connect</code> 会立刻返回 <code>EINPROGRESS</code>，得靠 <code>select</code> 可写或 <code>SO_ERROR</code> 去确认连上没有。写侧也一样：<code>write</code> 返回 <code>EAGAIN</code> 说明发送缓冲区满了，得把剩下的数据缓存起来，等下次可写再发。这就是「写半包」问题，写服务器时绕不开。</p>
+<h2 id="七io-多路复用" tabindex="-1">七、IO 多路复用 <a class="header-anchor" href="#七io-多路复用"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>一句话说清它的定位：<strong>一次系统调用，问一批 fd 谁就绪了</strong>。</p>
+<p>主要可以调用 <code>select</code>、<code>poll</code>、<code>epoll</code>。对一个 IO 端口，两次调用、两次返回，比阻塞 IO 并没有什么优越性。关键是能实现同时对多个 IO 端口进行监听，可以等待多个描述符就绪。</p>
+<p>这几个函数也会使进程阻塞，但和阻塞 IO 不同：它们可以同时阻塞多个 IO 操作，同时对多个读操作、多个写操作的 IO 函数进行检测，直到有数据可读或可写时，才真正调用 IO 操作函数。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>用户线程                                  内核
+  │                                        │
+  │── select(fd_set) ─────────────────────►│  盯着集合里所有 fd
+  │                                        │  一个都没就绪 → 睡着
+  │                                        │  fd 7 有数据了
+  │◄──────────── 返回，fd 7 置位 ──────────│
+  │                                        │
+  │── recv(7, ...) ───────────────────────►│  拷贝（这一段照样阻塞）
+  │◄──────────── 数据 ────────────────────│
+</code></pre></div></code></pre>
+<p>单线程服务多个连接的骨架：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>fd_set rfds;
+<span class="hljs-type">int</span> maxfd = listenfd;
+
+FD_ZERO(&amp;rfds);
+FD_SET(listenfd, &amp;rfds);
+
+<span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+    fd_set cur = rfds;                  <span class="hljs-comment">/* 每次都要重新拷一份，见下一章 */</span>
+    <span class="hljs-type">int</span> n = select(maxfd + <span class="hljs-number">1</span>, &amp;cur, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>);
+    <span class="hljs-keyword">if</span> (n &lt; <span class="hljs-number">0</span> &amp;&amp; errno == EINTR) <span class="hljs-keyword">continue</span>;
+
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt;= maxfd; i++) {
+        <span class="hljs-keyword">if</span> (!FD_ISSET(i, &amp;cur)) <span class="hljs-keyword">continue</span>;
+        <span class="hljs-keyword">if</span> (i == listenfd) {
+            <span class="hljs-type">int</span> c = accept(listenfd, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>);
+            FD_SET(c, &amp;rfds);
+            <span class="hljs-keyword">if</span> (c &gt; maxfd) maxfd = c;
+        } <span class="hljs-keyword">else</span> {
+            <span class="hljs-comment">/* 就绪的连接，读一次 */</span>
+        }
+    }
+}
+</code></pre></div></code></pre>
+<p>注意 <code>select</code> 的第一个参数是「最大 fd 加一」，不是 fd 个数。这个 <code>+1</code> 忘掉的人不少，后果是最后一个 fd 永远不生效。</p>
+<p>多路复用为什么值得？把话说透：</p>
+<ul>
+<li>从流程上看，用 <code>select</code> 做一次 IO 请求，和同步阻塞模型没太大区别，还多了添加监视 fd、调用 <code>select</code> 的开销。</li>
+<li>但它最大的优势是一个线程内同时处理多个 socket 的 IO 请求。注册一批 fd，不断调用 <code>select</code> 读取被激活的那个，就在单线程里做到了阻塞模型必须多线程才能做到的事。</li>
+<li>线程数从「跟连接数走」变成「跟 CPU 核数走」。这一条，是它能撑住 C10K 的全部原因。</li>
+</ul>
+<p>这套机制有个名字：Reactor 设计模式。结构不复杂：</p>
+<ul>
+<li><code>EventHandler</code>：抽象类，持有 IO 句柄 <code>Handle</code>（通过 <code>get_handle</code> 取），以及操作句柄的 <code>handle_event</code>（读 / 写等）。子类定制具体行为。</li>
+<li><code>Reactor</code>：管理 <code>EventHandler</code> 的注册与删除，用 <code>handle_events</code> 跑事件循环，不断调用内核的多路分离函数 <code>select</code>。</li>
+</ul>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>        ┌─────────────┐
+        │   Reactor   │  handle_events() 死循环
+        │             │  ├─ select() 等就绪
+        └──┬───────┬──┘  └─ 分发 handle_event
+           │       │
+    ┌──────▼──┐ ┌──▼───────┐
+    │Handler A│ │Handler B │   各自绑定一个 fd
+    └─────────┘ └──────────┘
+</code></pre></div></code></pre>
+<p>用户自己写的部分：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">UserEventHandler::handle_event</span><span class="hljs-params">()</span> {
+    <span class="hljs-keyword">if</span> (can_read(socket)) {
+        read(socket, buffer);
+        process(buffer);
+    }
+}
+
+<span class="hljs-comment">/* 注册阶段：把 handler 挂到 Reactor 上就行 */</span>
+Reactor.<span class="hljs-keyword">register</span>(new UserEventHandler(socket));
+</code></pre></div></code></pre>
+<p>Reactor 那侧的循环：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>Reactor::handle_events() {
+    <span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+        sockets = select();
+        <span class="hljs-keyword">for</span> (socket in sockets) {
+            get_event_handler(socket).handle_event();
+        }
+    }
+}
+</code></pre></div></code></pre>
+<p>通过 Reactor，用户线程轮询 IO 状态的工作统一交给了 <code>handle_events</code> 事件循环。用户线程注册完事件处理器就可以去干别的，Reactor 线程负责调内核的 <code>select</code> 检查 socket 状态；某个 socket 被激活，就调对应的 <code>handle_event</code> 去读数据、处理数据。</p>
+<p>多路复用是最常使用的 IO 模型，但它的异步程度不够彻底——它内部用的是会阻塞线程的 <code>select</code> 系统调用。所以它只能叫「异步阻塞 IO」，不是真正的异步 IO。真正异步的门槛在后面的对比表里。</p>
+<h2 id="八select-与-poll" tabindex="-1">八、select 与 poll <a class="header-anchor" href="#八select-与-poll"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>select</code> 干的事：允许进程指示内核等待多个事件中的任何一个发生，并在有一个或多个事件发生、或者经历一段指定时间之后唤醒它。</p>
+<p>举个例子，我们可以调用 <code>select</code>，告知内核仅在下列情况发生时才返回：</p>
+<ol>
+<li>集合 <code>{ 1, 4, 5 }</code> 中任何描述符准备好读</li>
+<li>集合 <code>{ 2, 7 }</code> 中任何描述符准备好写</li>
+<li>集合 <code>{ 1, 4 }</code> 中任何描述符有异常条件待处理</li>
+</ol>
+<p>也就是说，我们通过 <code>select</code> 告知内核：对哪些描述符（读、写或异常条件）感兴趣，以及愿意等多久。感兴趣的描述符不局限于套接字，任何描述符都能用 <code>select</code> 测试。这一点有时很有用——标准输入、管道、终端都能塞进同一个循环里。</p>
+<p>函数原型：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/select.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/time.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">select</span><span class="hljs-params">(<span class="hljs-type">int</span> maxfdp1, fd_set *readset, fd_set *writeset,
+           fd_set *exceptset, <span class="hljs-type">const</span> <span class="hljs-keyword">struct</span> timeval *timeout)</span>;
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">timeval</span> {</span>
+    <span class="hljs-type">long</span> tv_sec;    <span class="hljs-comment">/* seconds */</span>
+    <span class="hljs-type">long</span> tv_usec;   <span class="hljs-comment">/* microseconds */</span>
+};
+</code></pre></div></code></pre>
+<p>从最后一个参数 <code>timeout</code> 说起，它告知内核：等待指定描述符中任何一个就绪，可以花多长时间。<code>timeval</code> 结构用秒和微秒指定这段时间。这个参数有三种取值：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>取值</th>
+<th>行为</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>空指针 <code>NULL</code></td>
+<td>永远等下去</td>
+<td>仅在有一个描述符准备好 IO 时才返回</td>
+</tr>
+<tr>
+<td>指向一个正值的 <code>timeval</code></td>
+<td>等一段固定时间</td>
+<td>有描述符就绪就返回，不超时也返回</td>
+</tr>
+<tr>
+<td>指向全零的 <code>timeval</code></td>
+<td>根本不等待</td>
+<td>检查完立即返回，这叫轮询（polling）</td>
+</tr>
+</tbody>
+</table></div><p>中间的三个参数 <code>readset</code>、<code>writeset</code>、<code>exceptset</code> 指定要让内核测试读、写、异常条件的描述符。</p>
+<p><code>select</code> 用描述符集，本质上是一个整数数组，每个整数里的每一位对应一个描述符。假设用 32 位整数，那么数组的每个元素对应描述符 0~31，第二个元素对应 32~63，依次类推。它们被包装成 <code>fd_set</code> 数据类型，配四个宏：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">FD_ZERO</span><span class="hljs-params">(fd_set *fdset)</span>;            <span class="hljs-comment">/* 清空集合里所有描述符 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">FD_SET</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, fd_set *fdset)</span>;     <span class="hljs-comment">/* 把 fd 加进集合 */</span>
+<span class="hljs-type">void</span> <span class="hljs-title function_">FD_CLR</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, fd_set *fdset)</span>;     <span class="hljs-comment">/* 把 fd 从集合里清掉 */</span>
+<span class="hljs-type">int</span>  <span class="hljs-title function_">FD_ISSET</span><span class="hljs-params">(<span class="hljs-type">int</span> fd, fd_set *fdset)</span>;   <span class="hljs-comment">/* 判断 fd 是否在集合里 */</span>
+</code></pre></div></code></pre>
+<p>定义一个 <code>fd_set</code>，然后打开描述符 1、4、5 对应的位：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>fd_set rset;
+FD_ZERO(&amp;rset);
+FD_SET(<span class="hljs-number">1</span>, &amp;rset);
+FD_SET(<span class="hljs-number">4</span>, &amp;rset);
+FD_SET(<span class="hljs-number">5</span>, &amp;rset);
+</code></pre></div></code></pre>
+<p>描述符集的初始化非常关键。作为自动变量分配的一个描述符集如果没有初始化，里面是栈上的垃圾值，后果不可预期。<code>FD_ZERO</code> 不能省。</p>
+<p>还有一处是 <code>select</code> 最反直觉的设计。<code>select</code> 函数会修改由指针 <code>readset</code>、<code>writeset</code>、<code>exceptset</code> 指向的描述符集，所以这三个参数都是值-结果参数。调用时你指定所关心的描述符，函数返回时，结果指示哪些描述符就绪。返回后要用 <code>FD_ISSET</code> 逐个测。集合里与未就绪描述符对应的位，返回时全被清零。</p>
+<p>结果是：每次重新调用 <code>select</code>，都得把关心的位重新置一遍。这个「拷一份、传进去、被改掉、再拷一份」的循环，是 <code>select</code> 性能问题的根源，也是 <code>epoll</code> 出现的理由。</p>
+<p>返回值：表示跨所有描述符集的已就绪总位数。任何描述符就绪之前定时器到时，返回 0。返回 -1 表示出错。</p>
+<p><code>select</code> 能报什么，取决于内核怎么判定「就绪」。这个判定标准必须记牢，否则你会盯着一个「可读」的 fd 读不到数据。</p>
+<p>可读，四种情况会置位：</p>
+<ol>
+<li>socket 接收缓冲区中的数据量大于或等于当前缓冲区的低水位线。此时 <code>read</code> 不会被阻塞，返回一个正值（读取的字节数）。低水位线可以通过 <code>SO_RCVLOWAT</code> 选项设定，对 TCP 和 UDP 来说默认值为 1。</li>
+<li>socket 连接的读端被关闭，比如 <code>shutdown(socket, SHUT_RD)</code> 或 <code>close(socket)</code>。底层此时会收到一个 FIN 包，<code>read</code> 不会被阻塞，但返回 0，代表读到 socket 末端。</li>
+<li>socket 是一个监听 socket，并且有新连接等待。此时 <code>accept</code> 不会被阻塞。</li>
+<li>发生 socket 错误。此时 <code>read</code> 会返回 -1，可以通过 <code>errno</code> 取具体错误信息。</li>
+</ol>
+<p>可写，四种情况会置位：</p>
+<ol>
+<li>socket 发送缓冲区中的可用空间大于或等于低水位线，并且满足以下条件之一：socket 已连接；或 socket 本身不要求连接，典型如 UDP。低水位线通过 <code>SO_SNDLOWAT</code> 设置，对 TCP 和 UDP 来说多为 2048。</li>
+<li>socket 连接的写端被关闭，比如 <code>shutdown(socket, SHUT_WR)</code> 或 <code>close(socket)</code>。在一个已经关闭写端的句柄上写数据会收到 <code>SIGPIPE</code>。</li>
+<li>一个非阻塞的 <code>connect</code> 操作连接成功，或者 <code>connect</code> 操作失败。</li>
+<li>发生 socket 错误。此时 <code>write</code> 会返回 -1，可以通过 <code>errno</code> 取具体错误信息。</li>
+</ol>
+<p>异常，只有一种情况（针对带外数据）：收到带外数据（out-of-band），或者 socket 的带外数据标志未被清除。平时用不到，但它在，就说明 <code>select</code> 的三个集合不是对称的。</p>
+<p>看一个能跑的例子。服务端用 <code>select</code> 同时盯住监听 fd 和所有已连接 fd，收到什么就回什么：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdio.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;stdlib.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;string.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;unistd.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;errno.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;arpa/inet.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/socket.h&gt;</span></span>
+<span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/select.h&gt;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> PORT    8888</span>
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> MAXSIZE 128</span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">main</span><span class="hljs-params">(<span class="hljs-type">void</span>)</span>
+{
+    <span class="hljs-type">int</span> i, nbyte;
+    <span class="hljs-type">int</span> listenfd, confd, maxfd;
+    <span class="hljs-type">char</span> buffer[MAXSIZE];
+    fd_set global_rdfs, current_rdfs;
+    <span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">sockaddr_in</span> <span class="hljs-title">addr</span>, <span class="hljs-title">clientaddr</span>;</span>
+    <span class="hljs-type">int</span> addrlen  = <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> sockaddr_in);
+    <span class="hljs-type">int</span> caddrlen = <span class="hljs-keyword">sizeof</span>(<span class="hljs-keyword">struct</span> sockaddr_in);
+
+    <span class="hljs-keyword">if</span> ((listenfd = socket(AF_INET, SOCK_STREAM, <span class="hljs-number">0</span>)) == <span class="hljs-number">-1</span>) {
+        perror(<span class="hljs-string">&quot;socket error&quot;</span>);
+        <span class="hljs-built_in">exit</span>(<span class="hljs-number">-1</span>);
+    }
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;socket successfully!\n&quot;</span>);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;listenfd : %d\n&quot;</span>, listenfd);
+
+    <span class="hljs-built_in">memset</span>(&amp;addr, <span class="hljs-number">0</span>, addrlen);
+    addr.sin_family      = AF_INET;
+    addr.sin_port        = htons(PORT);
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    <span class="hljs-keyword">if</span> (bind(listenfd, (<span class="hljs-keyword">struct</span> sockaddr *)&amp;addr, addrlen) == <span class="hljs-number">-1</span>) {
+        perror(<span class="hljs-string">&quot;bind error&quot;</span>);
+        <span class="hljs-built_in">exit</span>(<span class="hljs-number">-1</span>);
+    }
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;bind successfully!\n&quot;</span>);
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;listen port:%d\n&quot;</span>, PORT);
+
+    <span class="hljs-keyword">if</span> (listen(listenfd, <span class="hljs-number">5</span>) == <span class="hljs-number">-1</span>) {
+        perror(<span class="hljs-string">&quot;listen error&quot;</span>);
+        <span class="hljs-built_in">exit</span>(<span class="hljs-number">-1</span>);
+    }
+    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;listening...\n&quot;</span>);
+
+    maxfd = listenfd;
+    FD_ZERO(&amp;global_rdfs);
+    FD_SET(listenfd, &amp;global_rdfs);
+
+    <span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+        current_rdfs = global_rdfs;              <span class="hljs-comment">/* 值-结果参数，每轮都要重置 */</span>
+        <span class="hljs-keyword">if</span> (select(maxfd + <span class="hljs-number">1</span>, &amp;current_rdfs, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>, <span class="hljs-number">0</span>) &lt; <span class="hljs-number">0</span>) {
+            perror(<span class="hljs-string">&quot;select error&quot;</span>);
+            <span class="hljs-built_in">exit</span>(<span class="hljs-number">-1</span>);
+        }
+
+        <span class="hljs-keyword">for</span> (i = <span class="hljs-number">0</span>; i &lt;= maxfd; i++) {
+            <span class="hljs-keyword">if</span> (!FD_ISSET(i, &amp;current_rdfs)) {
+                <span class="hljs-keyword">continue</span>;
+            }
+            <span class="hljs-keyword">if</span> (i == listenfd) {
+                <span class="hljs-keyword">if</span> ((confd = accept(listenfd,
+                                    (<span class="hljs-keyword">struct</span> sockaddr *)&amp;clientaddr,
+                                    &amp;caddrlen)) == <span class="hljs-number">-1</span>) {
+                    perror(<span class="hljs-string">&quot;accept error&quot;</span>);
+                    <span class="hljs-built_in">exit</span>(<span class="hljs-number">-1</span>);
+                }
+                <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;Connect from [IP:%s PORT:%d]\n&quot;</span>,
+                       inet_ntoa(clientaddr.sin_addr),
+                       ntohs(clientaddr.sin_port));
+                FD_SET(confd, &amp;global_rdfs);
+                <span class="hljs-keyword">if</span> (confd &gt; maxfd) {
+                    maxfd = confd;
+                }
+            } <span class="hljs-keyword">else</span> {
+                nbyte = recv(i, buffer, <span class="hljs-keyword">sizeof</span>(buffer) - <span class="hljs-number">1</span>, <span class="hljs-number">0</span>);
+                <span class="hljs-keyword">if</span> (nbyte &lt; <span class="hljs-number">0</span>) {
+                    perror(<span class="hljs-string">&quot;recv error&quot;</span>);
+                    <span class="hljs-built_in">exit</span>(<span class="hljs-number">-1</span>);
+                } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (nbyte == <span class="hljs-number">0</span>) {
+                    close(i);
+                    FD_CLR(i, &amp;global_rdfs);
+                } <span class="hljs-keyword">else</span> {
+                    buffer[nbyte] = <span class="hljs-string">&#x27;\0&#x27;</span>;
+                    <span class="hljs-built_in">printf</span>(<span class="hljs-string">&quot;recv:%s\n&quot;</span>, buffer);
+                    send(i, buffer, nbyte, <span class="hljs-number">0</span>);
+                }
+            }
+        }
+    }
+    <span class="hljs-keyword">return</span> <span class="hljs-number">0</span>;
+}
+</code></pre></div></code></pre>
+<p>跑起来像这样：</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>fs@ubuntu:~$ ./select_srv
+socket successfully!
+listenfd : 3
+bind successfully!
+listen port:8888
+listening...
+Connect from [IP:192.168.3.51 PORT:1992]
+recv:hello
+Connect from [IP:192.168.3.53 PORT:2248]
+</code></pre></div></code></pre>
+<p>几个坑在这段代码里全占了：</p>
+<ul>
+<li><code>current_rdfs = global_rdfs</code> 这一句不能挪出循环。<code>select</code> 会把没就绪的位清零，不重置就只剩第一轮管用。</li>
+<li><code>listenfd</code> 和 <code>confd</code> 都放在同一个循环里判 <code>FD_ISSET</code>，靠 <code>i == listenfd</code> 区分。</li>
+<li><code>maxfd</code> 只增不减。有连接关闭时它没跟着降，代价是每轮多扫几个空位，不影响正确性。</li>
+<li>收到 0 字节要 <code>close</code> 加 <code>FD_CLR</code>，只 <code>close</code> 不 <code>FD_CLR</code> 会让下一轮 <code>select</code> 拿着一个已关闭的 fd 报错。</li>
+</ul>
+<p><code>select</code> 有一个绕不过去的上限。<code>fd_set</code> 是位图，位数由 <code>FD_SETSIZE</code> 决定，Linux 上默认 1024。这意味着一个 <code>select</code> 循环最多盯 1024 个 fd。想改就得改宏并重新编译内核和 libc，不现实。这是 <code>select</code> 在服务器上被淘汰的直接原因。</p>
+<p><code>poll</code> 是同一思路的修补版。它不用位图，用结构体数组：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;poll.h&gt;</span></span>
+
+<span class="hljs-type">int</span> <span class="hljs-title function_">poll</span><span class="hljs-params">(<span class="hljs-keyword">struct</span> pollfd *fdarray, <span class="hljs-type">unsigned</span> <span class="hljs-type">long</span> nfds, <span class="hljs-type">int</span> timeout)</span>;
+
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">pollfd</span> {</span>
+    <span class="hljs-type">int</span>   fd;        <span class="hljs-comment">/* 要检查的描述符 */</span>
+    <span class="hljs-type">short</span> events;    <span class="hljs-comment">/* 感兴趣的事件 */</span>
+    <span class="hljs-type">short</span> revents;   <span class="hljs-comment">/* 实际发生的事件（内核填） */</span>
+};
+</code></pre></div></code></pre>
+<p><code>events</code> 里填 <code>POLLIN</code>、<code>POLLOUT</code>、<code>POLLERR</code> 这些标志。<code>poll</code> 返回时，内核把结果写进 <code>revents</code>，所以「输入」和「输出」分开了，不需要每次调用前重置。</p>
+<p><code>poll</code> 解掉了 1024 的数量限制，也免掉了每轮重置位图的麻烦。但它的问题没解决：每调一次，整个 <code>pollfd</code> 数组还是从用户态拷进内核态，内核对每个元素还是线性扫一遍。fd 越多，这两笔开销越大。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>对比项</th>
+<th>select</th>
+<th>poll</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>数据结构</td>
+<td><code>fd_set</code> 位图</td>
+<td><code>pollfd</code> 数组</td>
+</tr>
+<tr>
+<td>数量上限</td>
+<td><code>FD_SETSIZE</code>，默认 1024</td>
+<td>无上限，只受内存限制</td>
+</tr>
+<tr>
+<td>每次调用是否要重置</td>
+<td>要，<code>select</code> 会改写集合</td>
+<td>不要，<code>revents</code> 由内核填</td>
+</tr>
+<tr>
+<td>事件与 fd 的分离</td>
+<td>三个集合分开传</td>
+<td>一个结构体带 <code>events</code> / <code>revents</code></td>
+</tr>
+<tr>
+<td>用户态到内核态的拷贝</td>
+<td>每轮拷三个位图</td>
+<td>每轮拷整个数组</td>
+</tr>
+<tr>
+<td>内核扫描方式</td>
+<td>线性扫位数</td>
+<td>线性扫数组元素</td>
+</tr>
+<tr>
+<td>超时精度</td>
+<td>微秒</td>
+<td>毫秒</td>
+</tr>
+</tbody>
+</table></div><h2 id="九epoll-的三个接口" tabindex="-1">九、epoll 的三个接口 <a class="header-anchor" href="#九epoll-的三个接口"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>epoll</code> 换了一套思路：注册一次，之后只取结果。</p>
+<p>三个函数，一个都不多：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">int</span> <span class="hljs-title function_">epoll_create</span><span class="hljs-params">(<span class="hljs-type">int</span> size)</span>;                                    <span class="hljs-comment">/* 1. 建个实例 */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">epoll_ctl</span><span class="hljs-params">(<span class="hljs-type">int</span> epfd, <span class="hljs-type">int</span> op, <span class="hljs-type">int</span> fd, <span class="hljs-keyword">struct</span> epoll_event *ev)</span>; <span class="hljs-comment">/* 2. 增删改关注 */</span>
+<span class="hljs-type">int</span> <span class="hljs-title function_">epoll_wait</span><span class="hljs-params">(<span class="hljs-type">int</span> epfd, <span class="hljs-keyword">struct</span> epoll_event *evs,
+               <span class="hljs-type">int</span> maxevents, <span class="hljs-type">int</span> timeout)</span>;                    <span class="hljs-comment">/* 3. 取就绪 */</span>
+</code></pre></div></code></pre>
+<p><code>epoll_create</code> 返回一个 epoll 实例的 fd，<code>size</code> 在早期内核里是「预计监视多少个 fd」的提示，现在被忽略，传个大于 0 的数就行。</p>
+<p><code>epoll_ctl</code> 是注册动作，<code>op</code> 取三个值：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>op</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>EPOLL_CTL_ADD</code></td>
+<td>把 fd 加进监听集合，注册感兴趣的事件</td>
+</tr>
+<tr>
+<td><code>EPOLL_CTL_MOD</code></td>
+<td>改一个已在集合里的 fd 的感兴趣事件</td>
+</tr>
+<tr>
+<td><code>EPOLL_CTL_DEL</code></td>
+<td>摘掉一个 fd</td>
+</tr>
+</tbody>
+</table></div><p>事件结构体：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">epoll_event</span> {</span>
+    <span class="hljs-type">uint32_t</span>     events;    <span class="hljs-comment">/* EPOLLIN / EPOLLOUT / EPOLLET / EPOLLONESHOT ... */</span>
+    <span class="hljs-type">epoll_data_t</span> data;      <span class="hljs-comment">/* 用户数据，常用 .fd 或 .ptr */</span>
+};
+</code></pre></div></code></pre>
+<p><code>epoll_wait</code> 取结果，返回就绪的 fd 个数，<code>maxevents</code> 是这次最多取几个，<code>timeout</code> 是毫秒（-1 表示一直等，0 表示立刻返回）。</p>
+<p><code>epoll</code> 快在哪，三句话说清：</p>
+<ul>
+<li>监听集合存在内核的一棵红黑树里。注册一次就一直在，<code>epoll_wait</code> 不需要把整个集合从用户态拷进去。<code>select</code> / <code>poll</code> 每轮都要拷，<code>select</code> 拷三个位图，<code>poll</code> 拷整个数组。</li>
+<li>内核把就绪的 fd 挂到一条就绪链表上。<code>epoll_wait</code> 只要看这条链表有没有东西，不用线性扫描全部 fd。<code>select</code> 每次调用都要把位图扫一遍，fd 越多越慢。</li>
+<li>数量没有上限，只受能打开多少 fd 限制（<code>ulimit -n</code>）。</li>
+</ul>
+<p>一个最小的 <code>epoll</code> 服务端骨架：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-meta">#<span class="hljs-keyword">include</span> <span class="hljs-string">&lt;sys/epoll.h&gt;</span></span>
+
+<span class="hljs-meta">#<span class="hljs-keyword">define</span> MAXEVENTS 64</span>
+
+<span class="hljs-type">int</span> epfd = epoll_create(<span class="hljs-number">1</span>);
+<span class="hljs-class"><span class="hljs-keyword">struct</span> <span class="hljs-title">epoll_event</span> <span class="hljs-title">ev</span>, <span class="hljs-title">events</span>[<span class="hljs-title">MAXEVENTS</span>];</span>
+
+ev.events  = EPOLLIN;
+ev.data.fd = listenfd;
+epoll_ctl(epfd, EPOLL_CTL_ADD, listenfd, &amp;ev);
+
+<span class="hljs-keyword">while</span> (<span class="hljs-number">1</span>) {
+    <span class="hljs-type">int</span> n = epoll_wait(epfd, events, MAXEVENTS, <span class="hljs-number">-1</span>);
+    <span class="hljs-keyword">for</span> (<span class="hljs-type">int</span> i = <span class="hljs-number">0</span>; i &lt; n; i++) {
+        <span class="hljs-type">int</span> fd = events[i].data.fd;
+
+        <span class="hljs-keyword">if</span> (fd == listenfd) {
+            <span class="hljs-type">int</span> c = accept(listenfd, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>);
+            set_nonblock(c);
+            ev.events  = EPOLLIN | EPOLLET;      <span class="hljs-comment">/* 边缘触发，见下一章 */</span>
+            ev.data.fd = c;
+            epoll_ctl(epfd, EPOLL_CTL_ADD, c, &amp;ev);
+        } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (events[i].events &amp; EPOLLIN) {
+            <span class="hljs-comment">/* 读，一直读到 EAGAIN */</span>
+        } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> (events[i].events &amp; EPOLLERR) {
+            epoll_ctl(epfd, EPOLL_CTL_DEL, fd, <span class="hljs-literal">NULL</span>);
+            close(fd);
+        }
+    }
+}
+</code></pre></div></code></pre>
+<p>三个接口的用量对比，一眼看出 <code>epoll</code> 的调用次数是常数级：<code>select</code> 每轮一次调用传全量，<code>epoll</code> 只在增删改时调 <code>epoll_ctl</code>，事件循环里只调 <code>epoll_wait</code>。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>对比项</th>
+<th>select</th>
+<th>poll</th>
+<th>epoll</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>fd 数量上限</td>
+<td>1024（<code>FD_SETSIZE</code>）</td>
+<td>无</td>
+<td>无（受 <code>ulimit -n</code>）</td>
+</tr>
+<tr>
+<td>内核里的数据结构</td>
+<td>无，每次重建</td>
+<td>无，每次重建</td>
+<td>红黑树 + 就绪链表</td>
+</tr>
+<tr>
+<td>每次调用是否拷贝整个集合</td>
+<td>是，三个位图</td>
+<td>是，整个数组</td>
+<td>否，只在 <code>epoll_ctl</code> 时拷</td>
+</tr>
+<tr>
+<td>判断谁就绪的方式</td>
+<td>线性扫位图</td>
+<td>线性扫数组</td>
+<td>直接取就绪链表</td>
+</tr>
+<tr>
+<td>时间复杂度</td>
+<td>O(n)</td>
+<td>O(n)</td>
+<td>O(就绪数)</td>
+</tr>
+<tr>
+<td>触发模式</td>
+<td>只有水平触发</td>
+<td>只有水平触发</td>
+<td>水平 + 边缘</td>
+</tr>
+<tr>
+<td>跨平台</td>
+<td>全平台</td>
+<td>全平台</td>
+<td>Linux 专有</td>
+</tr>
+<tr>
+<td>适用规模</td>
+<td>几百以内</td>
+<td>几百到几千</td>
+<td>万级以上</td>
+</tr>
+</tbody>
+</table></div><p>一句话收尾：<code>select</code> 的限制不在「1024」这个数字本身，而在「每轮全量拷进内核 + 线性扫一遍」这个做法。1024 只是把这套做法撑不住的地方提前画了条线。</p>
+<h2 id="十水平触发与边缘触发" tabindex="-1">十、水平触发与边缘触发 <a class="header-anchor" href="#十水平触发与边缘触发"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p><code>epoll</code> 比 <code>select</code> / <code>poll</code> 多给了一个开关：事件怎么通知。水平触发（Level Triggered，LT）和边缘触发（Edge Triggered，ET）。这个开关决定了你的读取循环写成什么样，也决定了一批线上事故。</p>
+<p>先用一句话记住差别：LT 看的是「状态」，ET 看的是「变化」。</p>
+<pre><code class="language-text"><div class="code-block" data-lang="text"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">text</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>缓冲区里有数据的时长：   ├────────────────────┤
+LT 通知：                ↑        ↑        ↑
+                       （还有数据就一直叫）
+
+ET 通知：                ↑
+                       （只在从空变满那一刻叫一次）
+</code></pre></div></code></pre>
+<p><code>epoll</code> 默认是 LT。想用 ET，注册时加 <code>EPOLLET</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>ev.events  = EPOLLIN | EPOLLET;
+ev.data.fd = fd;
+epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &amp;ev);
+</code></pre></div></code></pre>
+<p>行为差异写进代码里就非常具体。LT 的读法，读一次就走，剩下的下次再说：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* LT：读多少算多少，没读完下次 epoll_wait 还会返回这个 fd */</span>
+n = recv(fd, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);
+<span class="hljs-keyword">if</span> (n &gt; <span class="hljs-number">0</span>) process(buf, n);
+</code></pre></div></code></pre>
+<p>ET 的读法，必须一次读到 <code>EAGAIN</code>：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-comment">/* ET：必须循环读到 EAGAIN，否则剩下的数据没有第二次通知 */</span>
+<span class="hljs-keyword">for</span> (;;) {
+    n = recv(fd, buf, <span class="hljs-keyword">sizeof</span>(buf), <span class="hljs-number">0</span>);
+    <span class="hljs-keyword">if</span> (n &gt; <span class="hljs-number">0</span>) {
+        process(buf, n);
+        <span class="hljs-keyword">continue</span>;
+    }
+    <span class="hljs-keyword">if</span> (n == <span class="hljs-number">0</span>) {                 <span class="hljs-comment">/* 对端关闭 */</span>
+        close(fd);
+        <span class="hljs-keyword">break</span>;
+    }
+    <span class="hljs-keyword">if</span> (errno == EAGAIN || errno == EWOULDBLOCK) {
+        <span class="hljs-keyword">break</span>;                    <span class="hljs-comment">/* 读干净了，收手 */</span>
+    }
+    <span class="hljs-keyword">if</span> (errno == EINTR) <span class="hljs-keyword">continue</span>;
+    perror(<span class="hljs-string">&quot;recv&quot;</span>);
+    <span class="hljs-keyword">break</span>;
+}
+</code></pre></div></code></pre>
+<p>ET 模式下这个 <code>for</code> 循环不是可选的。假设缓冲区里有 10 KB，你的 <code>buf</code> 只有 1 KB，读一次只拿走 1 KB。LT 下一轮 <code>epoll_wait</code> 还会告诉你「这个 fd 可读」，剩下的 9 KB 迟早读走。ET 不会再有第二次通知——「可读」这个状态没有再次发生变化，内核认为你已经知道了。剩下的 9 KB 就烂在缓冲区里，直到对端再发一个包触发下一次变化。</p>
+<p>这就是 ET 最典型的故障形态：连接不断、不报错、数据丢一半、业务层超时。抓包看数据都到了，程序里就是没有。查一天也查不出，因为代码看起来完全正常。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>对比项</th>
+<th>水平触发 LT</th>
+<th>边缘触发 ET</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>通知条件</td>
+<td>缓冲区还有数据就通知</td>
+<td>只在状态变化时通知一次</td>
+</tr>
+<tr>
+<td>一次 <code>epoll_wait</code> 能否重复返回同一 fd</td>
+<td>能</td>
+<td>不能</td>
+</tr>
+<tr>
+<td>是否必须一次读到 <code>EAGAIN</code></td>
+<td>不必</td>
+<td>必须</td>
+</tr>
+<tr>
+<td>是否必须非阻塞</td>
+<td>不必</td>
+<td>必须</td>
+</tr>
+<tr>
+<td>漏读的后果</td>
+<td>下次还会通知，能自愈</td>
+<td>数据滞留，不再通知，业务超时</td>
+</tr>
+<tr>
+<td>通知次数</td>
+<td>多</td>
+<td>少</td>
+</tr>
+<tr>
+<td>系统调用次数</td>
+<td>多</td>
+<td>少</td>
+</tr>
+<tr>
+<td>代码难度</td>
+<td>低，写错也不容易卡死</td>
+<td>高，一处漏读就卡死</td>
+</tr>
+<tr>
+<td>适合场景</td>
+<td>通用，中小规模，逻辑复杂</td>
+<td>高并发，追求少唤醒</td>
+</tr>
+</tbody>
+</table></div><p>ET 的效率优势在哪：<code>epoll_wait</code> 的返回次数少了，<code>epoll_wait</code> 的调用次数也跟着少了。数据一次到齐，一次通知、一次循环抽干，省掉大量「返回一次只读一点」的空转。代价是代码必须严丝合缝。</p>
+<p>ET 配阻塞 fd 是自找麻烦。ET 要求「读到 EAGAIN」，阻塞 fd 上最后一次 <code>recv</code> 没有 <code>EAGAIN</code>，它会睡在那里等下一条数据。整个事件循环就此停摆，所有连接一起卡死。所以 <code>EPOLLET</code> 和 <code>O_NONBLOCK</code> 是一条绳上的两件事，缺一不可：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code>set_nonblock(fd);                  <span class="hljs-comment">/* 这行在前 */</span>
+ev.events = EPOLLIN | EPOLLET;     <span class="hljs-comment">/* 这行在后 */</span>
+</code></pre></div></code></pre>
+<p>ET 下 <code>accept</code> 也要循环。监听 fd 注册成 ET 之后，一次事件可以对应多个已完成握手的连接。只 <code>accept</code> 一次，剩下的连接躺在全连接队列里等下一个事件——而那个事件很久都不来：</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-keyword">for</span> (;;) {
+    <span class="hljs-type">int</span> c = accept(listenfd, <span class="hljs-literal">NULL</span>, <span class="hljs-literal">NULL</span>);
+    <span class="hljs-keyword">if</span> (c &lt; <span class="hljs-number">0</span>) {
+        <span class="hljs-keyword">if</span> (errno == EAGAIN || errno == EWOULDBLOCK) <span class="hljs-keyword">break</span>;  <span class="hljs-comment">/* 抽干了 */</span>
+        <span class="hljs-keyword">if</span> (errno == EINTR) <span class="hljs-keyword">continue</span>;
+        <span class="hljs-keyword">break</span>;
+    }
+    set_nonblock(c);
+    add_to_epoll(epfd, c, EPOLLIN | EPOLLET);
+}
+</code></pre></div></code></pre>
+<p>还有一个配套的坑：一个 fd 上的事件如果交给线程池处理，多个线程会同时被唤醒去处理同一个 fd。要独占就用 <code>EPOLLONESHOT</code>，事件处理完后必须重新 <code>epoll_ctl</code> 加 <code>EPOLL_CTL_MOD</code> 把它挂回去，否则这个 fd 从此静默。</p>
+<p>选 LT 还是 ET，别纠结理论。连接数在万级以内、逻辑分支多、团队里有人不熟这套，用 LT。压到十万级、要抠每一次唤醒、团队能把读写循环写死，用 ET。搞不清就用 LT，它容错。</p>
+<h2 id="十一五种模型的对比与选型" tabindex="-1">十一、五种模型的对比与选型 <a class="header-anchor" href="#十一五种模型的对比与选型"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<p>把前面所有内容压进一张表。</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>模型</th>
+<th>阶段一怎么等</th>
+<th>阶段二谁拷</th>
+<th>同步/异步</th>
+<th>一个线程能管几个 fd</th>
+<th>主要缺点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>阻塞 IO</td>
+<td>睡在 <code>recvfrom</code> 里死等</td>
+<td>进程</td>
+<td>同步</td>
+<td>1</td>
+<td>连接数 = 线程数</td>
+</tr>
+<tr>
+<td>非阻塞 IO</td>
+<td>反复 <code>recvfrom</code> 轮询</td>
+<td>进程</td>
+<td>同步</td>
+<td>1</td>
+<td>空转烧 CPU</td>
+</tr>
+<tr>
+<td>IO 多路复用</td>
+<td>睡在 <code>select</code>/<code>epoll_wait</code>，一次盯一批</td>
+<td>进程</td>
+<td>同步</td>
+<td>一批</td>
+<td>两次系统调用；逻辑分散</td>
+</tr>
+<tr>
+<td>信号驱动 IO</td>
+<td>内核发 SIGIO 通知</td>
+<td>进程</td>
+<td>同步</td>
+<td>多个</td>
+<td>信号处理难写，队列易溢出</td>
+</tr>
+<tr>
+<td>异步 IO</td>
+<td>内核全包，完成后回调</td>
+<td>内核</td>
+<td>异步</td>
+<td>多个</td>
+<td>支持不完善，库少</td>
+</tr>
+</tbody>
+</table></div><p>这张表的每一行，都在回答开篇那个问题：等数据这段时间怎么办。死等、反复问、一次问一批、等通知、内核全包。</p>
+<p>再看两个设计模式的对应关系，它们在工程里比模型名字更常用：</p>
+<div class="table-wrap"><table><thead>
+<tr>
+<th></th>
+<th>Reactor</th>
+<th>Proactor</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>谁读数据</td>
+<td>用户线程</td>
+<td>内核</td>
+</tr>
+<tr>
+<td>通知什么</td>
+<td>「可以读了」</td>
+<td>「已经读完了」</td>
+</tr>
+<tr>
+<td>对应模型</td>
+<td>IO 多路复用</td>
+<td>异步 IO</td>
+</tr>
+<tr>
+<td>编程模型</td>
+<td>事件循环 + 回调</td>
+<td>异步调用 + 完成回调</td>
+</tr>
+<tr>
+<td>典型实现</td>
+<td>epoll + 事件循环</td>
+<td>IOCP、io_uring、Java AIO</td>
+</tr>
+</tbody>
+</table></div><p>Proactor 的结构跟 Reactor 长得很像，差别在用户怎么用。Reactor 里，用户线程向 Reactor 注册感兴趣的事件，事件触发时调用事件处理函数。Proactor 里，用户线程把异步操作（读 / 写等）、Proactor 本身、以及操作完成时的 <code>CompletionHandler</code> 一起注册给 <code>AsynchronousOperationProcessor</code>。</p>
+<p><code>AsynchronousOperationProcessor</code> 用 Facade 模式提供一组异步操作 API 给用户，用户调用后继续干自己的事。它内部开独立的内核线程执行异步操作，这才是真异步。操作完成时，它把用户注册的 Proactor 和 <code>CompletionHandler</code> 取出来，把结果数据和 <code>CompletionHandler</code> 一起转发给 Proactor，Proactor 回调对应的事件完成处理函数。</p>
+<pre><code class="language-c"><div class="code-block" data-lang="c"><div class="code-head"><span class="code-mac-dots" aria-hidden="true"><span class="code-dot code-dot-r"></span><span class="code-dot code-dot-y"></span><span class="code-dot code-dot-g"></span></span><span class="code-lang">c</span><button class="code-copy" type="button" aria-label="复制代码">复制</button></div><pre class="hljs"><code><span class="hljs-type">void</span> <span class="hljs-title function_">UserCompletionHandler::handle_event</span><span class="hljs-params">(buffer)</span> {
+    process(buffer);        <span class="hljs-comment">/* buffer 是内核已经拷好的数据，直接用 */</span>
+}
+
+<span class="hljs-comment">/* 注册阶段：把回调交给内核，然后立刻返回 */</span>
+aio_read(socket, new UserCompletionHandler);
+</code></pre></div></code></pre>
+<p>代码只有这么多。用户重写 <code>CompletionHandler::handle_event</code> 处理数据，参数 <code>buffer</code> 是 Proactor 已经准备好的缓冲区。用户线程调完 <code>aio_read</code> 就往下走，数据到达、读取、拷进用户缓冲区全由内核做，做完才回调。</p>
+<p>Proactor 在操作系统里多被实现成 Singleton，集中分发操作完成事件。每个异步操作理论上都能绑一个 Proactor 对象，实际不会这么干。</p>
+<p>信号驱动 IO 为什么列在表里却少有人用，理由具体：SIGIO 信号不排队，TCP 上信号一到就意味着「有新数据」，但信号处理函数里能做的事很少，读写逻辑塞进信号上下文容易出问题；通知密集时信号会被合并，你收不到「每个包一次」的粒度。它适合的是少量、低频、状态简单的场景。</p>
+<p>异步 IO 的现状要摆明。相比多路复用，异步 IO 并不十分常用。不少高性能并发服务用「IO 多路复用 + 多线程任务处理」的架构就能满足需求。操作系统对异步 IO 的支持也谈不上完善：Linux 原生 <code>aio</code> 长期只对 <code>O_DIRECT</code> 真正异步，缓冲 IO 会退化成同步；直到 <code>io_uring</code> 才把这套东西做实。更多时候大家用多路复用模拟异步：IO 事件触发时不直接通知用户线程，而是在把数据读写完放到用户指定缓冲区之后再回调。</p>
+<p>Java 那边，Java 7 之后有了异步 IO 支持（AIO / NIO.2），Selector 则是多路复用的封装。</p>
+<p>选型按规模来，别按名词来：</p>
+<ul>
+<li>连接数几十个，每个连接的计算都重（查库、编解码、算力密集）：阻塞 IO + 线程池。代码最短，问题最好查。</li>
+<li>连接数几百到几千，每个连接的数据量不大：<code>select</code> 或 <code>poll</code> 够用，代码直观。</li>
+<li>连接数上万，长连接多，事件稀疏：<code>epoll</code> 的 LT，稳。</li>
+<li>连接数十万级，每次唤醒都要省：<code>epoll</code> 的 ET，读写循环写死，配非阻塞。</li>
+<li>磁盘 IO 密集且内核支持：<code>io_uring</code>，这是当下真异步的方向。</li>
+</ul>
+<p>还有一句要说给做业务的人：多路复用解决的是「等」的问题，不解决「算」的问题。事件循环里塞一个耗时操作，整条链路一起卡。读到了数据要处理，处理这段应该扔给线程池，事件循环只负责收发和分发。这就是「多路复用 + 线程池」成为标配的原因——它同时管住了等待和计算两件事。</p>
+<h2 id="十二易错点速查" tabindex="-1">十二、易错点速查 <a class="header-anchor" href="#十二易错点速查"><span data-pagefind-ignore aria-hidden="true">#</span></a></h2>
+<div class="table-wrap"><table><thead>
+<tr>
+<th>现象</th>
+<th>根因</th>
+<th>处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>select</code> 第一轮正常，之后再也不返回</td>
+<td>每轮没重新置位集合，被 <code>select</code> 清零了</td>
+<td>循环内重新 <code>FD_ZERO</code> + <code>FD_SET</code></td>
+</tr>
+<tr>
+<td>最后一个 fd 永远没反应</td>
+<td><code>select</code> 第一个参数传成 <code>maxfd</code></td>
+<td>传 <code>maxfd + 1</code></td>
+</tr>
+<tr>
+<td>fd 数超过 1024 就乱</td>
+<td><code>FD_SETSIZE</code> 限制</td>
+<td>换 <code>poll</code> 或 <code>epoll</code></td>
+</tr>
+<tr>
+<td><code>accept</code> 报 <code>EMFILE</code></td>
+<td>fd 用光了，连接还堆在队列里</td>
+<td>预留一个 fd，满了就关它再 <code>accept</code> 一个丢掉</td>
+</tr>
+<tr>
+<td>ET 模式下数据丢一半</td>
+<td>没循环读到 <code>EAGAIN</code></td>
+<td>循环抽干，读到 <code>EAGAIN</code> 才收手</td>
+</tr>
+<tr>
+<td>ET 模式下事件循环整个卡死</td>
+<td>fd 是阻塞的，最后一次 <code>recv</code> 睡着了</td>
+<td><code>O_NONBLOCK</code> 必须在注册前设好</td>
+</tr>
+<tr>
+<td>ET 模式下新连接迟迟不处理</td>
+<td><code>accept</code> 只调了一次</td>
+<td><code>accept</code> 也要循环到 <code>EAGAIN</code></td>
+</tr>
+<tr>
+<td>fd 静默，再也不触发</td>
+<td>用了 <code>EPOLLONESHOT</code> 没重新挂</td>
+<td>处理完 <code>epoll_ctl</code> 用 <code>MOD</code> 加回去</td>
+</tr>
+<tr>
+<td>服务器被信号打断就退出</td>
+<td>系统调用返回 <code>EINTR</code> 没重试</td>
+<td><code>while (n &lt; 0 &amp;&amp; errno == EINTR)</code> 或 <code>do/while</code> 包一层</td>
+</tr>
+<tr>
+<td>非阻塞 <code>connect</code> 判断错</td>
+<td>只看了返回值 <code>-1</code></td>
+<td>看 <code>errno == EINPROGRESS</code>，再用可写事件查 <code>SO_ERROR</code></td>
+</tr>
+<tr>
+<td>写数据只发出去一半</td>
+<td>非阻塞 <code>write</code> 返回 <code>EAGAIN</code></td>
+<td>剩余数据挂到写缓冲，注册 <code>EPOLLOUT</code> 再发</td>
+</tr>
+<tr>
+<td><code>EAGAIN</code> 被当错误处理</td>
+<td>把「暂时没有」当成故障</td>
+<td><code>EAGAIN</code> / <code>EWOULDBLOCK</code> 直接收手，别关 fd</td>
+</tr>
+<tr>
+<td><code>recv</code> 返回 0 被忽略</td>
+<td>对端关闭了写端</td>
+<td>返回 0 就 <code>close</code> + 从集合摘掉</td>
+</tr>
+<tr>
+<td>新连接继承不了非阻塞</td>
+<td><code>accept</code> 出来的 fd 不继承监听 fd 的标志</td>
+<td>每个新 fd 单独设一次</td>
+</tr>
+<tr>
+<td>缓冲区打出乱码</td>
+<td>打印 <code>buffer</code> 没补 <code>\0</code></td>
+<td><code>buffer[n] = '\0'</code>，长度用 <code>n</code> 而不是 <code>sizeof</code></td>
+</tr>
+</tbody>
+</table></div><p>三条最常踩的，单独说一句。</p>
+<p>第一条，<code>select</code> 的集合每轮都要重置。这不是编码风格问题，是接口本意——它是值-结果参数，进去是你的输入，出来是内核的输出，同一块内存被当两个东西用。写成循环外一次 <code>FD_SET</code>，代码看起来干净，跑起来只有第一轮管用。</p>
+<p>第二条，ET 加阻塞 fd 等于死锁。这个组合的错误不在逻辑上，在时序上：<code>epoll_wait</code> 正常返回、<code>recv</code> 正常执行、然后它就永远不返回了。现象是全服无响应，CPU 掉到零。看到「CPU 为零且不响应」，先查这个。</p>
+<p>第三条，<code>EAGAIN</code> 不是错误。初学者常写 <code>if (n &lt; 0) { perror(); close(fd); }</code>，结果高并发下连接被随机关掉，日志里全是「Resource temporarily unavailable」。正确做法是把 <code>EAGAIN</code> 和 <code>EWOULDBLOCK</code> 单独拎出来，它是「现在没有，回头再来」的正常信号。</p>
+<p>最后一句话收整篇：IO 模型这件事，说到底就一句话——数据从内核缓冲区到你的缓冲区，那一段拷贝躲不掉；在它之前的那段等待，你怎么排布线程、怎么让内核替你盯着，决定了服务器能撑多少连接。</p>
+
+                  </div>
+                  
+                  <section class="comments-card" id="comments" data-pagefind-ignore>
+                    <div class="comments-head">
+                      <div class="comments-title">
+                        <svg class="comments-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+                        </svg>
+                        <span>评论与讨论</span>
+                      </div>
+                      <div class="comments-badge">Giscus</div>
+                    </div>
+                    <div id="giscus-container"></div>
+                  </section>
+                  
+                </div>
+              </main>
+
+              
+              <aside class="toc-rail" data-pagefind-ignore aria-label="页面导览与关系图谱">
+                <div class="rail-card rail-graph-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">
+                      <svg class="rail-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="3"></circle>
+                        <circle cx="18" cy="18" r="3"></circle>
+                        <circle cx="18" cy="6" r="3"></circle>
+                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"></line>
+                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"></line>
+                      </svg>
+                      关系图谱
+                    </span>
+                    <div class="graph-tools">
+                      <button class="graph-btn" id="graph-zoom-in" title="放大" aria-label="放大">+</button>
+                      <button class="graph-btn" id="graph-zoom-out" title="缩小" aria-label="缩小">-</button>
+                      <button class="graph-btn" id="graph-reset" title="重置视角" aria-label="重置视角">↺</button>
+                      <button class="graph-btn" id="graph-expand-btn" title="展开大图谱" aria-label="展开大图谱">⛶</button>
+                    </div>
+                  </div>
+                  <div class="graph-viewport" id="graph-viewport">
+                    <svg id="local-graph-svg"></svg>
+                  </div>
+                </div>
+
+                
+
+                
+                <div class="rail-card rail-toc-card">
+                  <div class="rail-card-head">
+                    <span class="rail-card-title">本页目录</span>
+                  </div>
+                  <nav class="toc-list">
+                    
+                    <a class="toc-item toc-lv2" href="#一io-到底在等什么" data-toc-target="一io-到底在等什么">一、IO 到底在等什么</a>
+                    
+                    <a class="toc-item toc-lv2" href="#二阻塞与非阻塞" data-toc-target="二阻塞与非阻塞">二、阻塞与非阻塞</a>
+                    
+                    <a class="toc-item toc-lv2" href="#三同步与异步" data-toc-target="三同步与异步">三、同步与异步</a>
+                    
+                    <a class="toc-item toc-lv2" href="#四五种-io-模型总览" data-toc-target="四五种-io-模型总览">四、五种 IO 模型总览</a>
+                    
+                    <a class="toc-item toc-lv2" href="#五阻塞-io" data-toc-target="五阻塞-io">五、阻塞 IO</a>
+                    
+                    <a class="toc-item toc-lv2" href="#六非阻塞-io" data-toc-target="六非阻塞-io">六、非阻塞 IO</a>
+                    
+                    <a class="toc-item toc-lv2" href="#七io-多路复用" data-toc-target="七io-多路复用">七、IO 多路复用</a>
+                    
+                    <a class="toc-item toc-lv2" href="#八select-与-poll" data-toc-target="八select-与-poll">八、select 与 poll</a>
+                    
+                    <a class="toc-item toc-lv2" href="#九epoll-的三个接口" data-toc-target="九epoll-的三个接口">九、epoll 的三个接口</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十水平触发与边缘触发" data-toc-target="十水平触发与边缘触发">十、水平触发与边缘触发</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十一五种模型的对比与选型" data-toc-target="十一五种模型的对比与选型">十一、五种模型的对比与选型</a>
+                    
+                    <a class="toc-item toc-lv2" href="#十二易错点速查" data-toc-target="十二易错点速查">十二、易错点速查</a>
+                    
+                  </nav>
+                </div>
+                
+              </aside>
+              
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="app-window app-window--hidden" data-app="search" data-windowed="true">
+          
+  <div class="window-bar">
+    <div class="window-dots">
+      <button class="wdot wdot-close" type="button" aria-label="关闭"></button>
+      <button class="wdot wdot-min" type="button" aria-label="最小化"></button>
+      <button class="wdot wdot-max" type="button" aria-label="展开"></button>
+    </div>
+    <div class="window-title">搜索</div>
+    <div class="window-actions">
+      
+    </div>
+  </div>
+
+          <div class="window-content">
+            <div class="search-pane">
+              <input type="search" id="search-input" placeholder="输入关键词，回车搜索…" autocomplete="off">
+              <div id="search-results" class="search-results"><p class="search-hint">共 736 篇笔记</p></div>
+            </div>
+          </div>
+        </section>
+
+
+<div class="graph-modal-backdrop" id="graph-modal-backdrop" aria-hidden="true">
+  <div class="graph-modal-window">
+    <div class="graph-modal-header">
+      <div class="graph-modal-tabs">
+        <button class="graph-tab-btn active" data-tab="local">局部关系图</button>
+        <button class="graph-tab-btn" data-tab="global">全库知识网络</button>
+      </div>
+      <div class="graph-modal-tools">
+        <input type="text" id="graph-search" placeholder="搜索图谱节点…" class="graph-search-input" autocomplete="off">
+        <button class="graph-close-btn" id="graph-modal-close" aria-label="关闭">✕</button>
+      </div>
+    </div>
+    <div class="graph-modal-body">
+      <div id="modal-graph-container">
+        <svg id="modal-graph-svg" width="100%" height="100%"></svg>
+        <canvas id="modal-graph-canvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+window.__SITE__ = { total: 736 };
+</script>
+<script src="/js/tree.js"></script>
+<script src="/js/toc.js"></script>
+<script src="/js/window-manager.js"></script>
+<script src="/js/code-copy.js"></script>
+<script src="/js/mermaid-loader.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/notice.js"></script>
+
+<script src="/js/d3.min.js"></script>
+<script src="/js/graph.js"></script>
+
+
+<script>
+window.__GRAPH_DATA__ = {"nodes":[{"id":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/IO-模型：从阻塞到-epoll/","title":"IO 模型：从阻塞到 epoll","url":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/IO-模型：从阻塞到-epoll/","type":"current"},{"id":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/TCP-套接字编程/","title":"TCP 套接字编程","url":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/TCP-套接字编程/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/主机与开发板通信/","title":"主机与开发板通信","url":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/主机与开发板通信/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/协议分析与报文格式/","title":"协议分析与报文格式","url":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/协议分析与报文格式/","type":"neighbor"},{"id":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/原始套接字与协议构造/","title":"原始套接字与协议构造","url":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/原始套接字与协议构造/","type":"neighbor"}],"links":[{"source":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/IO-模型：从阻塞到-epoll/","target":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/TCP-套接字编程/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/IO-模型：从阻塞到-epoll/","target":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/主机与开发板通信/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/IO-模型：从阻塞到-epoll/","target":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/协议分析与报文格式/","type":"neighbor"},{"source":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/IO-模型：从阻塞到-epoll/","target":"/F.通信与协议/01-TCPIP与套接字/01-套接字编程基础/原始套接字与协议构造/","type":"neighbor"}]};
+</script>
+<script src="/js/ai-summary.js"></script>
+
+
+
+<!-- 阅读进度条：监听 .reader-main 滚动容器 -->
+<div id="reading-progress-bar"></div>
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress-bar');
+  var scroller = document.querySelector('.reader-main');
+  if (!bar || !scroller) return;
+  scroller.addEventListener('scroll', function() {
+    var scrolled = scroller.scrollTop;
+    var total = scroller.scrollHeight - scroller.clientHeight;
+    bar.style.width = (total > 0 ? (scrolled / total * 100) : 0) + '%';
+  }, { passive: true });
+})();
+</script>
+
+<!-- Fancybox 图片灯箱 -->
+<script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0/dist/fancybox/fancybox.umd.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('.article-body img').forEach(function(img) {
+    var parent = img.parentElement;
+    if (parent.tagName !== 'A') {
+      var a = document.createElement('a');
+      a.href = img.src;
+      a.setAttribute('data-fancybox', 'gallery');
+      a.setAttribute('data-caption', img.alt || '');
+      parent.insertBefore(a, img);
+      a.appendChild(img);
+    }
+  });
+  if (typeof Fancybox !== 'undefined') {
+    Fancybox.bind("[data-fancybox='gallery']", {});
+  }
+});
+</script>
+
+
+
+<script>
+window.__COMMENTS_CONFIG__ = {
+  repo: "LemonCyan/LemonCyan.github.io",
+  repoId: "R_kgDOKi1Owg",
+  category: "Announcements",
+  categoryId: "DIC_kwDOKi1Ows4DERse",
+  mapping: "pathname",
+  reactionsEnabled: "1",
+  inputPosition: "top",
+  lang: "zh-CN"
+};
+</script>
+<script src="/js/comments.js"></script>
+
+
+</body>
+</html>
