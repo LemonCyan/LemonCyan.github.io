@@ -388,7 +388,7 @@
 
       // 文字标签
       if (transform.k > 1.35 || hoveredNode || filterQuery) {
-        ctx.font = '10px "LXGWWenKaiMono", -apple-system, sans-serif';
+        ctx.font = '10px "FangSong", "仿宋", "STFangsong", "华文仿宋", serif, sans-serif';
         ctx.textBaseline = 'middle';
 
         for (var m = 0; m < nodes.length; m++) {

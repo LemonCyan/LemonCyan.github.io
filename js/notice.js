@@ -109,7 +109,7 @@
     var paused = false;
     var remaining = AUTO_CLOSE_MS;
     var tickId = 0;
-    var tickAt = 0;
+    var endTime = Date.now() + remaining;
 
     function dismiss() {
       if (closed) return;
@@ -138,32 +138,30 @@
     }
     document.addEventListener('keydown', onKey, true);
 
-    /* ================= 倒计时（可暂停） ================= */
+    /* ================= 倒计时（基于绝对时间，杜绝累积误差与跳秒） ================= */
     function paint() {
       var left = Math.max(0, remaining);
-      timer.textContent = (left / 1000).toFixed(1) + 's';
+      var sec = Math.ceil(left / 1000);
+      timer.textContent = sec + 's' + (paused ? ' (已暂停)' : '');
       var ratio = AUTO_CLOSE_MS > 0 ? left / AUTO_CLOSE_MS : 1;
       fill.style.transform = 'scaleX(' + ratio + ')';
       card.dataset.paused = paused ? 'true' : 'false';
     }
 
-    // 用 setInterval + performance.now() 计时，而不是 requestAnimationFrame：
-    // rAF 在后台标签页/部分无头环境会被完全停掉，会让倒计时永久冻结。
     function tick() {
-      if (closed) return;
-      var now = (window.performance && performance.now) ? performance.now() : Date.now();
-      if (!tickAt) { tickAt = now; return; }
-      var dt = now - tickAt;
-      tickAt = now;
-      if (paused) return;
-      remaining -= dt;
-      if (remaining <= 0) { remaining = 0; paint(); dismiss(); return; }
+      if (closed || paused) return;
+      var now = Date.now();
+      remaining = Math.max(0, endTime - now);
       paint();
+      if (remaining <= 0) {
+        remaining = 0;
+        dismiss();
+      }
     }
 
     function startClock() {
       if (closed || AUTO_CLOSE_MS <= 0 || tickId) return;
-      tickAt = 0;
+      endTime = Date.now() + remaining;
       tickId = window.setInterval(tick, 100);
     }
 
@@ -171,15 +169,20 @@
       if (tickId) { clearInterval(tickId); tickId = 0; }
     }
 
-    /* 读的时候别被关掉：悬停 / 键盘焦点 / 页面隐藏 都要暂停，
-       多个原因同时成立时，只有全部解除才恢复计时。 */
+    /* 悬停暂停：悬停/阅读时暂停倒计时，移开时精准恢复（基于绝对时间） */
     var holds = { hover: false, focus: false, hidden: false };
 
     function syncPaused() {
       var next = holds.hover || holds.focus || holds.hidden;
       if (next === paused) return;
+      if (next) {
+        // 进入暂停态：固定保存此刻剩余的毫秒数
+        remaining = Math.max(0, endTime - Date.now());
+      } else {
+        // 恢复计时：以当前时间为新基准加上剩余毫秒，消除停滞期间的时间漂移
+        endTime = Date.now() + remaining;
+      }
       paused = next;
-      tickAt = 0;
       paint();
     }
     function hold(kind, on) {
@@ -188,7 +191,11 @@
     }
 
     card.addEventListener('pointerenter', function () { hold('hover', true); });
-    card.addEventListener('pointerleave', function () { hold('hover', false); });
+    card.addEventListener('pointerleave', function () {
+      holds.hover = false;
+      holds.focus = false; // 鼠标移开时同时解除焦点状态，避免点击卡片内部滚动物料后导致 focus 永久残留卡死
+      syncPaused();
+    });
     card.addEventListener('focusin', function () { hold('focus', true); });
     card.addEventListener('focusout', function (e) {
       if (!card.contains(e.relatedTarget)) hold('focus', false);
